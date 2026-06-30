@@ -17,6 +17,9 @@ SAMPLE_ARTICLES = [
     Article("015", "3003", "한국경제", "주요 대기업 임단협 시즌…노사 상생 모델 주목",
             "https://n.news.naver.com/article/015/3003",
             body="올해 임단협에서 노사 상생 모델이 화두로 떠올랐다. ..."),
+    Article("009", "4004", "매일경제", "기업들 'AI 에이전트' 도입 가속…업무 자동화 본격화",
+            "https://n.news.naver.com/article/009/4004",
+            body="생성형 AI를 넘어 자율적으로 업무를 수행하는 AI 에이전트 도입이 확산되고 있다. ..."),
 ]
 
 # Claude 없이 미리보기할 때 쓰는 가짜 브리핑 결과
@@ -44,6 +47,13 @@ STUB_BRIEFING = {
                       "리스킬링·업스킬링을 동시에 추진하며 사내대학과 연계한다. "
                       "우리 부서의 연간 교육계획에 AI 기초/심화 트랙을 반영할지 검토가 필요하다. "
                       "타사 대비 진도와 예산 규모를 벤치마킹할 포인트다.",
+        }],
+        "AI": [{
+            "headline": "기업들 'AI 에이전트' 도입 가속…업무 자동화 본격화",
+            "press": "매일경제", "importance": "high",
+            "summary": "생성형 AI를 넘어 자율적으로 업무를 수행하는 AI 에이전트 도입이 확산.",
+            "talking_point": "AX Platform Company 비전과 직결 — 사내 AI 에이전트 활용 교육 필요",
+            "url": "https://n.news.naver.com/article/009/4004", "detail": "",
         }],
         "HRM": [],
         "ESG": [],

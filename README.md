@@ -4,11 +4,13 @@
 네이버뉴스 **지면보기**로 수집하고, **Claude**가 아래 관점으로 분석해
 **매일 아침 이메일로 브리핑**을 보냅니다.
 
-- **KT 관련** 꼭 알아야 할 기사
+- **KT 관련** 꼭 알아야 할 기사 (계열사·박윤영 대표 포함, `KT&G`·`KTX` 오탐 제외)
+- **경쟁사·타사 동향** — 직접 경쟁사 **SKT·LG U+** 는 HR뿐 아니라 AI/AX·사업 전략까지 폭넓게,
+  그 외 주요 대기업은 인사/조직/노사/ESG/문화 관점
+- **AI·AX 트렌드** — KT 비전 *AX Platform Company* 와 연결한 AI 동향
 - **HRD**(인재개발) — *가장 상세히*
 - **HRM**(인사·채용·평가보상 등)
 - **ESG** / **기업문화** / **노사상생**
-- 위 관점에서 의미 있는 **타사 동향**(경쟁사·주요 대기업의 인사/조직/노사/ESG/문화 움직임)
 
 각 항목에는 **요약**, 부서장이 회의·대화에서 꺼낼 만한 **💬 언급 포인트**,
 **중요도**(🔴/🟡/⚪), **기사 링크**가 붙습니다.
@@ -131,8 +133,12 @@ Gmail 발송                    briefing/mailer.py
 
 ## 🛠️ 설정 커스터마이징
 
-- **언론사 / 키워드 / 경쟁사 목록**: [`config.yaml`](config.yaml) 에서 자유롭게 수정
-  - 예: 모니터링할 KT 계열사 추가, HRD 키워드 보강, 경쟁사 변경 등
+- **언론사 / 키워드 / 경쟁사 / 오탐 목록**: [`config.yaml`](config.yaml) 에서 자유롭게 수정
+  - `keywords.kt` : KT 본사·계열사·대표(박윤영) — 걸리면 무조건 후보 포함
+  - `keywords.competitor` : 직접 경쟁사(SKT·LG U+) — 하드 포함
+  - `keywords.ai` : AI/AX 트렌드 키워드 (양이 많으면 줄이세요)
+  - `competitors` : 넓은 비교군(삼성·네이버 등) — HR/조직 관점만, Claude 가 의미로 선별
+  - `excludes` : `KT&G`·`KTX` 등 'KT' 부분일치 오탐 차단어
 - **분석 관점(프롬프트)**: `briefing/analyzer.py` 의 `SELECT_SYSTEM` / `BRIEF_SYSTEM`
 - **메일 디자인**: `briefing/renderer.py` 의 `to_html`
 - **비용 절감**: `ANTHROPIC_MODEL` 을 `claude-sonnet-4-6` 등으로,

@@ -82,7 +82,7 @@ def run(argv=None) -> int:
             return 3
 
     # 2~3) 후보 선별 -------------------------------------------------------
-    cand_keys = prefilter.candidate_keys(articles, settings.keywords)
+    cand_keys = prefilter.candidate_keys(articles, settings.keywords, settings.excludes)
     log.info("키워드 후보: %d건", len(cand_keys))
 
     if not (args.no_llm or args.sample):

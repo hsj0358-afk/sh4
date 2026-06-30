@@ -23,7 +23,11 @@ DEFAULT_PRESSES = {
 
 DEFAULT_KEYWORDS = {
     "kt": ["KT", "케이티", "kt", "KT클라우드", "BC카드", "케이뱅크", "스카이라이프",
-           "KT엠모바일", "지니뮤직", "나스미디어", "현대HCN", "김영섭"],
+           "KT엠모바일", "지니뮤직", "나스미디어", "현대HCN", "박윤영"],
+    "competitor": ["SK텔레콤", "SKT", "LG유플러스", "LGU+", "유플러스"],
+    "ai": ["AI", "인공지능", "생성형 AI", "생성형", "LLM", "거대언어모델",
+           "파운데이션 모델", "멀티모달", "AI 에이전트", "에이전트", "AX", "AI 전환",
+           "소버린 AI", "온디바이스 AI", "피지컬 AI", "AI 반도체", "데이터센터", "AICC", "AGI"],
     "hrd": ["HRD", "인재개발", "인재육성", "교육훈련", "사내교육", "직무교육",
             "역량개발", "리스킬링", "업스킬링", "리더십 개발", "사내대학", "온보딩"],
     "hrm": ["HRM", "인사", "채용", "인력", "성과급", "연봉", "임금", "승진",
@@ -33,8 +37,10 @@ DEFAULT_KEYWORDS = {
     "labor": ["노사", "노조", "노동조합", "파업", "임단협", "노사상생", "노사관계", "상생협력"],
 }
 
-DEFAULT_COMPETITORS = ["SK텔레콤", "SKT", "LG유플러스", "삼성전자", "삼성", "현대차",
-                       "네이버", "카카오", "포스코", "LG전자", "SK하이닉스"]
+DEFAULT_COMPETITORS = ["삼성전자", "삼성", "현대차", "네이버", "카카오",
+                       "포스코", "LG전자", "SK하이닉스"]
+
+DEFAULT_EXCLUDES = ["KT&G", "케이티앤지", "KTX", "KT-1", "KTL"]
 
 
 def _load_dotenv(path: Path) -> None:
@@ -75,6 +81,7 @@ class Settings:
     presses: dict = field(default_factory=lambda: dict(DEFAULT_PRESSES))
     keywords: dict = field(default_factory=lambda: dict(DEFAULT_KEYWORDS))
     competitors: list = field(default_factory=lambda: list(DEFAULT_COMPETITORS))
+    excludes: list = field(default_factory=lambda: list(DEFAULT_EXCLUDES))
     body_char_limit: int = 2500
     max_titles_for_select: int = 800
 
@@ -122,6 +129,8 @@ def load_settings(config_path: Path | None = None, env_path: Path | None = None)
         s.keywords = cfg["keywords"]
     if cfg.get("competitors"):
         s.competitors = cfg["competitors"]
+    if cfg.get("excludes"):
+        s.excludes = cfg["excludes"]
     if cfg.get("body_char_limit"):
         s.body_char_limit = int(cfg["body_char_limit"])
     if cfg.get("max_titles_for_select"):

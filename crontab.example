@@ -1,0 +1,13 @@
+# 로컬 PC / 상시 켜진 서버에서 cron 으로 매일 실행하는 예시
+# (PC를 항상 켜둘 수 없다면 GitHub Actions 방식을 권장 — README 참고)
+#
+# 1) 편집기 열기:   crontab -e
+# 2) 아래 한 줄 추가 (경로는 실제 설치 위치로 수정):
+#
+# 매일 오전 7시(서버 로컬시간 기준)에 실행, 로그 남기기
+0 7 * * * /path/to/sh4/run.sh >> /path/to/sh4/reports/cron.log 2>&1
+#
+# 시간대가 UTC인 서버라면 run.sh 안에서 TZ=Asia/Seoul 로 날짜를 보정하지만,
+# cron 자체의 실행 '시각'은 서버 로컬시간을 따릅니다.
+# 한국시간 7시에 맞추려면 서버 타임존을 KST로 두거나, UTC면 22시(전날)에 실행하세요:
+# 0 22 * * * /path/to/sh4/run.sh >> /path/to/sh4/reports/cron.log 2>&1

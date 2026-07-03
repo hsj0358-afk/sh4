@@ -17,7 +17,21 @@
 
 ---
 
-## 🚀 빠른 시작 (PC를 켜두지 않아도 자동 실행 — GitHub Actions, 권장)
+## 실행 방식 두 가지
+
+| 방식 | 비용 | PC | 요약 품질 | 설정 |
+|---|---|---|---|---|
+| **A. Routine (구독 포함, 권장)** | **추가 과금 없음** (Claude Pro/Max 구독 사용량) | 불필요 | ◎ (세션 Claude) | [`docs/ROUTINE_SETUP.md`](docs/ROUTINE_SETUP.md) |
+| **B. GitHub Actions + Claude API** | 종량 과금(월 1~2만 원대) | 불필요 | ◎ | 아래 |
+
+- **A(권장)**: 매일 클라우드 **Routine** 이 수집 스크립트를 돌리고, **세션의 Claude 가 요약**해
+  **Gmail 커넥터**로 발송합니다. **API 키·앱 비밀번호 불필요**, 구독 한도 안에서 무료.
+  → 설정은 [`docs/ROUTINE_SETUP.md`](docs/ROUTINE_SETUP.md) 참고.
+- **B**: 아래 GitHub Actions 방식(유료 API). Routine 을 못 쓰는 경우의 대안입니다.
+
+---
+
+## 🚀 방식 B — GitHub Actions + Claude API (유료)
 
 PC를 매일 켤 필요 없이 GitHub 서버에서 매일 아침 자동 실행됩니다.
 
@@ -106,10 +120,26 @@ python -m briefing -v                     # 상세 로그
 | `--no-llm` | Claude 분석 생략(샘플 브리핑) — 형식 테스트용 |
 | `--sample` | 네이버 스크래핑 대신 샘플 기사 사용(오프라인) |
 | `--save-dir` | 리포트 저장 폴더 (기본 `reports/`) |
+| `--collect-only` | (방식 A용) 수집+키워드필터+본문까지만 → 다이제스트 JSON 저장, LLM/메일 없음 |
+| `--out PATH` | `--collect-only` 출력 경로 (기본 `digest_YYYYMMDD.json`) |
+| `--fetch-body URL` | 단일 기사 본문을 정제해 출력 (세션 Claude 가 추가 본문 확보용) |
+
+> **방식 A(Routine)** 는 `--collect-only` 로 만든 다이제스트를 세션 Claude 가 읽어 요약합니다.
+> 분석 규격은 [`docs/briefing_spec.md`](docs/briefing_spec.md) 에 정리되어 있습니다.
 
 ---
 
 ## 🧩 동작 구조
+
+**방식 A (Routine, 구독):**
+```
+Routine(매일, 클라우드)
+   → python -m briefing --collect-only   (scraper + prefilter + collector → digest.json)
+   → 세션 Claude 가 digest.json 읽고 docs/briefing_spec.md 규격대로 요약
+   → Gmail 커넥터로 발송
+```
+
+**방식 B (GitHub Actions, 유료 API):**
 
 ```
 6개 신문 지면 목록 수집      briefing/scraper.py   (Playwright)

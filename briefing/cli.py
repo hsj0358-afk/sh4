@@ -10,10 +10,14 @@
   7) Gmail 발송                                        [--no-email 이면 생략]
 
 사용 예:
-  python -m briefing                         # 오늘자, 분석 후 메일 발송
+  python -m briefing                         # 오늘자, 분석 후 메일 발송(유료 API 경로)
   python -m briefing --date 20260630         # 특정 날짜
   python -m briefing --no-email --save-dir reports   # 메일 없이 파일만
   python -m briefing --sample --no-llm --no-email     # 완전 오프라인 미리보기
+
+수집 전용(Routine/구독 경로 — LLM/메일 없이 다이제스트만 생성):
+  python -m briefing --collect-only --out digest.json
+  python -m briefing --fetch-body https://n.news.naver.com/article/009/1001  # 단일 본문 출력
 """
 from __future__ import annotations
 
@@ -37,8 +41,21 @@ def _parse_args(argv=None):
     p.add_argument("--no-llm", action="store_true", help="Claude 분석 생략(샘플 브리핑 사용)")
     p.add_argument("--sample", action="store_true", help="네이버 스크래핑 대신 샘플 기사 사용(오프라인)")
     p.add_argument("--save-dir", default="reports", help="리포트 저장 폴더(기본: reports)")
+    p.add_argument("--collect-only", action="store_true",
+                   help="수집+키워드필터+본문까지만 하고 다이제스트 JSON 저장(LLM/메일 없음)")
+    p.add_argument("--out", help="--collect-only 다이제스트 출력 경로(기본: digest_YYYYMMDD.json)")
+    p.add_argument("--fetch-body", metavar="URL",
+                   help="단일 기사 본문을 정제해 stdout 출력 후 종료")
     p.add_argument("-v", "--verbose", action="store_true", help="상세 로그")
     return p.parse_args(argv)
+
+
+def _selected_presses(settings, presses_arg):
+    presses = settings.presses
+    if presses_arg:
+        wanted = {x.strip() for x in presses_arg.split(",")}
+        presses = {k: v for k, v in presses.items() if k in wanted}
+    return presses
 
 
 def run(argv=None) -> int:
@@ -51,6 +68,39 @@ def run(argv=None) -> int:
     settings = load_settings()
     date_str = args.date or dt.date.today().strftime("%Y%m%d")
     date_human = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
+
+    # 단일 본문 조회 (세션 Claude 가 추가 본문이 필요할 때 사용) -----------------
+    if args.fetch_body:
+        from . import scraper
+        m = scraper.ARTICLE_HREF_RE.search(args.fetch_body)
+        if not m:
+            log.error("기사 URL 형식이 아닙니다: %s", args.fetch_body)
+            return 2
+        art = scraper.Article(oid=m.group(1), aid=m.group(2), press="", title="",
+                              url=args.fetch_body)
+        scraper.fetch_article_body(art)
+        print(art.title)
+        print(art.url)
+        print()
+        print(art.body or "(본문을 가져오지 못했습니다)")
+        return 0
+
+    # 수집 전용(Routine/구독 경로): 다이제스트 JSON 생성 후 종료 --------------------
+    if args.collect_only:
+        from . import collector
+        presses = _selected_presses(settings, args.presses)
+        digest = collector.collect(settings, date_str, presses, sample=args.sample)
+        out_path = Path(args.out) if args.out else (ROOT / f"digest_{date_str}.json")
+        if not out_path.is_absolute():
+            out_path = ROOT / out_path
+        collector.write_digest(out_path, digest)
+        n_all = len(digest["all_articles"])
+        n_cand = len(digest["candidates"])
+        if n_all == 0:
+            log.error("수집된 기사가 없습니다. (네이버 접근 차단/구조 변경 가능성)")
+        log.info("다이제스트 저장: %s (전체 %d건 / 후보 %d건)", out_path, n_all, n_cand)
+        print(f"완료: 전체 {n_all}건, 후보 {n_cand}건 → {out_path}")
+        return 0 if n_all else 3
 
     # 필수값 점검 (조기 실패)
     missing = settings.validate_for_run(
@@ -69,10 +119,7 @@ def run(argv=None) -> int:
         articles = list(SAMPLE_ARTICLES)
         log.info("샘플 모드: 기사 %d건", len(articles))
     else:
-        presses = settings.presses
-        if args.presses:
-            wanted = {x.strip() for x in args.presses.split(",")}
-            presses = {k: v for k, v in presses.items() if k in wanted}
+        presses = _selected_presses(settings, args.presses)
         from . import scraper
         log.info("네이버 지면 수집 시작: %s (%s)", ", ".join(presses.values()), date_human)
         articles = scraper.scrape_all(presses, date=date_str)

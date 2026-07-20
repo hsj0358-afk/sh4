@@ -1,0 +1,563 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HR·HRD 주간 브리핑 — 2026.07.20</title>
+<style>*{margin:0;box-sizing:border-box}img{max-width:100%}</style>
+</head>
+<body>
+<style>
+  :root{
+    --paper:#f6f5f1; --surface:#ffffff; --surface-2:#fbfaf7;
+    --ink:#1a2233; --ink-soft:#39404f; --muted:#5c6374; --line:#e4e2da;
+    --accent:#2f6f6a; --accent-ink:#215049; --accent-soft:#e4efec;
+    --exec:#3b5b8c; --exec-soft:#ebf1f8;
+    --prac:#a9631f; --prac-soft:#f6ecdf;
+    --emp:#2c8a66;  --emp-soft:#e6f3ec;
+    --shadow:0 1px 2px rgba(26,34,51,.05), 0 8px 24px rgba(26,34,51,.07);
+    --sans:'Pretendard','Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',system-ui,-apple-system,'Segoe UI',sans-serif;
+    --mono:'SF Mono',ui-monospace,Menlo,'Cascadia Mono',monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --paper:#12161f; --surface:#1c222e; --surface-2:#222836;
+      --ink:#e9ebf0; --ink-soft:#c3c8d4; --muted:#98a0b2; --line:#2c3342;
+      --accent:#5fbcae; --accent-ink:#8fd3c8; --accent-soft:#17302c;
+      --exec:#8aabd8; --exec-soft:#1a2436;
+      --prac:#d59a5c; --prac-soft:#2b2117;
+      --emp:#6cc39e;  --emp-soft:#152720;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"]{
+    --paper:#f6f5f1; --surface:#ffffff; --surface-2:#fbfaf7;
+    --ink:#1a2233; --ink-soft:#39404f; --muted:#5c6374; --line:#e4e2da;
+    --accent:#2f6f6a; --accent-ink:#215049; --accent-soft:#e4efec;
+    --exec:#3b5b8c; --exec-soft:#ebf1f8;
+    --prac:#a9631f; --prac-soft:#f6ecdf;
+    --emp:#2c8a66;  --emp-soft:#e6f3ec;
+    --shadow:0 1px 2px rgba(26,34,51,.05), 0 8px 24px rgba(26,34,51,.07);
+  }
+  :root[data-theme="dark"]{
+    --paper:#12161f; --surface:#1c222e; --surface-2:#222836;
+    --ink:#e9ebf0; --ink-soft:#c3c8d4; --muted:#98a0b2; --line:#2c3342;
+    --accent:#5fbcae; --accent-ink:#8fd3c8; --accent-soft:#17302c;
+    --exec:#8aabd8; --exec-soft:#1a2436;
+    --prac:#d59a5c; --prac-soft:#2b2117;
+    --emp:#6cc39e;  --emp-soft:#152720;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;}
+  body{
+    background:var(--paper); color:var(--ink); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+    overflow:hidden;
+  }
+
+  /* ---- deck scroller ---- */
+  .deck{
+    height:100vh; height:100dvh; overflow-y:scroll; overflow-x:hidden;
+    scroll-snap-type:y mandatory; scroll-behavior:smooth;
+    scrollbar-width:none;
+  }
+  .deck::-webkit-scrollbar{display:none;}
+  .slide{
+    min-height:100vh; min-height:100dvh; scroll-snap-align:start;
+    display:flex; flex-direction:column; justify-content:center;
+    padding:clamp(28px,5vh,64px) clamp(24px,6vw,96px) clamp(64px,9vh,96px);
+    position:relative;
+  }
+  .wrap{width:100%; max-width:1120px; margin:0 auto;}
+
+  /* ---- eyebrow ---- */
+  .eyebrow{
+    display:flex; align-items:center; gap:12px; margin-bottom:18px;
+    font-family:var(--mono); font-size:.72rem; letter-spacing:.16em; text-transform:uppercase;
+    color:var(--muted);
+  }
+  .eyebrow .tag{
+    color:var(--accent-ink); font-weight:600;
+  }
+  .eyebrow .num{
+    margin-left:auto; color:var(--muted); font-variant-numeric:tabular-nums;
+  }
+  .eyebrow .bar{flex:1; height:1px; background:var(--line);}
+
+  h1,h2,h3,p{margin:0; text-wrap:balance;}
+  .summary{text-wrap:pretty;}
+
+  /* ---- cover ---- */
+  .cover{background:
+      radial-gradient(120% 90% at 100% 0%, var(--accent-soft) 0%, transparent 55%),
+      var(--paper);}
+  .cover .kicker{
+    font-family:var(--mono); font-size:.8rem; letter-spacing:.24em; text-transform:uppercase;
+    color:var(--accent-ink); margin-bottom:26px;
+  }
+  .cover h1{
+    font-size:clamp(2.4rem,6.4vw,4.6rem); line-height:1.04; letter-spacing:-.02em; font-weight:800;
+  }
+  .cover h1 .thin{font-weight:400; color:var(--ink-soft);}
+  .cover .lede{
+    margin-top:22px; max-width:60ch; font-size:clamp(1rem,1.7vw,1.25rem);
+    color:var(--ink-soft); line-height:1.6;
+  }
+  .meta-row{
+    display:flex; flex-wrap:wrap; align-items:center; gap:14px 22px; margin-top:34px;
+    font-family:var(--mono); font-size:.82rem; letter-spacing:.04em; color:var(--muted);
+  }
+  .meta-row .date{color:var(--ink); font-weight:600; letter-spacing:.02em;}
+  .chips{display:flex; flex-wrap:wrap; gap:10px; margin-top:30px;}
+  .chip{
+    font-size:.82rem; padding:7px 14px; border-radius:999px;
+    border:1px solid var(--line); background:var(--surface); color:var(--ink-soft);
+    display:inline-flex; align-items:center; gap:8px;
+  }
+  .chip .dot{width:8px; height:8px; border-radius:50%;}
+
+  /* ---- agenda ---- */
+  h2.title{
+    font-size:clamp(1.7rem,3.6vw,2.7rem); line-height:1.1; letter-spacing:-.015em; font-weight:750;
+  }
+  .agenda{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:34px;}
+  .agenda-item{
+    display:flex; gap:18px; align-items:flex-start; padding:22px 24px;
+    background:var(--surface); border:1px solid var(--line); border-radius:16px; box-shadow:var(--shadow);
+  }
+  .agenda-item .idx{
+    font-family:var(--mono); font-size:1.05rem; font-weight:600; color:var(--accent);
+    padding-top:2px; font-variant-numeric:tabular-nums;
+  }
+  .agenda-item h3{font-size:1.16rem; letter-spacing:-.01em;}
+  .agenda-item p{margin-top:6px; color:var(--muted); font-size:.94rem; line-height:1.5;}
+
+  /* ---- TL;DR ---- */
+  .tldr{display:flex; flex-direction:column; gap:14px; margin-top:30px;}
+  .tldr-item{
+    display:flex; gap:18px; padding:20px 22px; background:var(--surface);
+    border:1px solid var(--line); border-left:4px solid var(--accent); border-radius:12px;
+    box-shadow:var(--shadow); align-items:baseline;
+  }
+  .tldr-item .k{font-family:var(--mono); color:var(--accent); font-size:.9rem; font-weight:600;}
+  .tldr-item p{font-size:clamp(1rem,1.5vw,1.14rem); line-height:1.55; color:var(--ink-soft);}
+  .tldr-item p b{color:var(--ink); font-weight:700;}
+
+  /* ---- topic slide ---- */
+  h2.topic{font-size:clamp(1.55rem,3.2vw,2.35rem); line-height:1.12; letter-spacing:-.015em; font-weight:750;}
+  .summary{margin-top:14px; max-width:74ch; font-size:clamp(1rem,1.45vw,1.12rem); line-height:1.6; color:var(--ink-soft);}
+  .summary b{color:var(--ink); font-weight:700;}
+
+  .lens{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-top:26px;}
+  .lens-card{
+    background:var(--surface); border:1px solid var(--line); border-top:3px solid var(--c);
+    border-radius:14px; padding:18px 18px 20px; box-shadow:var(--shadow);
+    display:flex; flex-direction:column; gap:10px;
+  }
+  .lens-card .lens-h{display:flex; align-items:center; gap:9px;}
+  .lens-card .lens-h .ico{
+    width:26px; height:26px; border-radius:8px; background:var(--cs); color:var(--c);
+    display:grid; place-items:center; flex:none;
+  }
+  .lens-card .lens-h .ico svg{width:15px; height:15px;}
+  .lens-card .lens-h .lbl{font-weight:700; font-size:.98rem; color:var(--ink);}
+  .lens-card .lens-h .sub{font-family:var(--mono); font-size:.66rem; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin-top:1px;}
+  .lens-card p{font-size:.93rem; line-height:1.55; color:var(--ink-soft);}
+  .c-exec{--c:var(--exec); --cs:var(--exec-soft);}
+  .c-prac{--c:var(--prac); --cs:var(--prac-soft);}
+  .c-emp{--c:var(--emp); --cs:var(--emp-soft);}
+
+  .apply{
+    margin-top:20px; display:flex; gap:14px; align-items:flex-start;
+    background:var(--accent-soft); border-radius:12px; padding:16px 20px;
+  }
+  .apply .pin{font-family:var(--mono); font-size:.72rem; letter-spacing:.12em; text-transform:uppercase; color:var(--accent-ink); font-weight:700; white-space:nowrap; padding-top:3px;}
+  .apply p{font-size:.98rem; line-height:1.55; color:var(--ink-soft);}
+  .apply p b{color:var(--ink);}
+
+  .src{margin-top:18px; display:flex; flex-wrap:wrap; gap:8px 10px; align-items:center;
+       font-family:var(--mono); font-size:.74rem; color:var(--muted);}
+  .src .sl{color:var(--muted); letter-spacing:.08em; text-transform:uppercase;}
+  .src a{color:var(--accent-ink); text-decoration:none; border-bottom:1px solid transparent; padding-bottom:1px;}
+  .src a:hover{border-bottom-color:var(--accent);}
+
+  /* ---- actions ---- */
+  .acts{display:flex; flex-direction:column; gap:12px; margin-top:28px;}
+  .act{
+    display:flex; gap:16px; align-items:flex-start; padding:16px 20px;
+    background:var(--surface); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow);
+  }
+  .act .n{font-family:var(--mono); font-weight:700; color:var(--accent); font-size:1rem; font-variant-numeric:tabular-nums; padding-top:2px;}
+  .act .who{
+    font-size:.72rem; font-family:var(--mono); letter-spacing:.06em; text-transform:uppercase;
+    padding:4px 9px; border-radius:6px; font-weight:700; white-space:nowrap; align-self:flex-start; margin-top:1px;
+  }
+  .who.exec{background:var(--exec-soft); color:var(--exec);}
+  .who.prac{background:var(--prac-soft); color:var(--prac);}
+  .who.emp{background:var(--emp-soft); color:var(--emp);}
+  .act p{font-size:1rem; line-height:1.5; color:var(--ink-soft);}
+  .act p b{color:var(--ink);}
+
+  /* ---- references ---- */
+  .refs{columns:2; column-gap:38px; margin-top:26px;}
+  @media (max-width:720px){.refs{columns:1;}}
+  .refs a{
+    display:block; break-inside:avoid; padding:9px 0; border-bottom:1px solid var(--line);
+    color:var(--ink-soft); text-decoration:none; font-size:.9rem; line-height:1.4;
+  }
+  .refs a:hover{color:var(--accent-ink);}
+  .refs a span{font-family:var(--mono); color:var(--muted); font-size:.72rem; margin-right:8px;}
+
+  .closing{margin-top:26px; color:var(--muted); font-size:.86rem; line-height:1.6; max-width:70ch;}
+
+  /* ---- chrome: progress, counter, nav ---- */
+  .progress{position:fixed; top:0; left:0; height:3px; width:0%; background:var(--accent); z-index:40; transition:width .25s ease;}
+  .chrome{
+    position:fixed; bottom:0; left:0; right:0; height:52px; z-index:30;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:0 clamp(18px,4vw,40px);
+    font-family:var(--mono); font-size:.74rem; letter-spacing:.06em; color:var(--muted);
+    background:linear-gradient(to top, var(--paper) 40%, transparent);
+    pointer-events:none;
+  }
+  .chrome .brand{display:flex; align-items:center; gap:9px;}
+  .chrome .brand .mk{width:9px; height:9px; border-radius:2px; background:var(--accent); transform:rotate(45deg);}
+  .nav{display:flex; align-items:center; gap:8px; pointer-events:auto;}
+  .nav button{
+    width:30px; height:30px; border-radius:8px; border:1px solid var(--line);
+    background:var(--surface); color:var(--ink-soft); cursor:pointer; display:grid; place-items:center;
+    transition:border-color .15s, color .15s;
+  }
+  .nav button:hover{border-color:var(--accent); color:var(--accent);}
+  .nav button:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+  .nav .count{min-width:58px; text-align:center; font-variant-numeric:tabular-nums; color:var(--ink-soft);}
+  .nav svg{width:14px; height:14px;}
+  .hint{
+    position:fixed; bottom:60px; left:50%; transform:translateX(-50%); z-index:30;
+    font-family:var(--mono); font-size:.7rem; letter-spacing:.08em; color:var(--muted);
+    background:var(--surface); border:1px solid var(--line); border-radius:999px; padding:6px 14px;
+    box-shadow:var(--shadow); transition:opacity .5s ease; pointer-events:none;
+  }
+
+  @media (max-width:720px){
+    .agenda,.lens{grid-template-columns:1fr;}
+    .slide{justify-content:flex-start; padding-top:64px;}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .deck{scroll-behavior:auto;} .progress{transition:none;} .hint{transition:none;}
+  }
+</style>
+
+<div class="progress" id="progress"></div>
+
+<div class="deck" id="deck">
+
+  <!-- 1. COVER -->
+  <section class="slide cover">
+    <div class="wrap">
+      <div class="kicker">People · HRD Weekly Briefing</div>
+      <h1>HR·HRD <span class="thin">주간 브리핑</span></h1>
+      <p class="lede">이번 주 HR(피플)과 HRD의 핵심 트렌드와 사례를 <b style="color:var(--ink)">경영진 · 직무전문가 · 직원</b> 세 관점으로 정리했습니다. 화살표 키(← →)로 넘겨 바로 발표하세요.</p>
+      <div class="meta-row">
+        <span class="date">2026. 07. 20 (월)</span>
+        <span>·</span><span>국내 + 글로벌</span>
+        <span>·</span><span>상세 리포트 · 11 slides</span>
+      </div>
+      <div class="chips">
+        <span class="chip"><span class="dot" style="background:var(--accent)"></span>HR(피플) 트렌드</span>
+        <span class="chip"><span class="dot" style="background:var(--prac)"></span>HRD · L&amp;D</span>
+        <span class="chip"><span class="dot" style="background:var(--exec)"></span>HR 테크 &amp; AI</span>
+        <span class="chip"><span class="dot" style="background:var(--emp)"></span>기업 사례 &amp; 정책</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. AGENDA -->
+  <section class="slide">
+    <div class="wrap">
+      <div class="eyebrow"><span class="tag">Agenda</span><span class="bar"></span><span class="num">02 / 11</span></div>
+      <h2 class="title">오늘 다룰 네 가지</h2>
+      <div class="agenda">
+        <div class="agenda-item"><span class="idx">01</span><div><h3>HR(피플) 트렌드</h3><p>팀핏·스킬 기반 채용, 상시 경청과 웰빙 중심 리텐션</p></div></div>
+        <div class="agenda-item"><span class="idx">02</span><div><h3>HRD · L&amp;D</h3><p>임팩트 증명으로의 전환, AI 리터러시의 기본 역량화</p></div></div>
+        <div class="agenda-item"><span class="idx">03</span><div><h3>HR 테크 &amp; AI</h3><p>에이전틱 AI의 HR 운영 진입과 거버넌스</p></div></div>
+        <div class="agenda-item"><span class="idx">04</span><div><h3>기업 사례 &amp; 정책</h3><p>정년연장·계속고용·포괄임금 제한, 2026 하반기 노동규제</p></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. TL;DR -->
+  <section class="slide">
+    <div class="wrap">
+      <div class="eyebrow"><span class="tag">This Week</span><span class="bar"></span><span class="num">03 / 11</span></div>
+      <h2 class="title">이번 주 한눈에</h2>
+      <div class="tldr">
+        <div class="tldr-item"><span class="k">채용</span><p>채용 기준이 스펙에서 <b>스킬·팀핏</b>으로 이동. 국내는 4~7년차 경력직(49.7%)과 AI 활용 인재를 최우선.</p></div>
+        <div class="tldr-item"><span class="k">AI</span><p>AI가 <b>에이전틱(자율 실행)</b> 단계로. 국내 500대 기업의 <b>86.7%</b>가 이미 인사 업무에 AI 활용.</p></div>
+        <div class="tldr-item"><span class="k">L&amp;D</span><p>L&amp;D의 임무가 '교육 제공'에서 <b>비즈니스 임팩트 증명</b>으로. 핵심은 리스킬링과 AI 리터러시.</p></div>
+        <div class="tldr-item"><span class="k">정책</span><p><b>정년연장(65세)</b> 입법이 2026 하반기 가시화. 포괄임금 제한·계속고용 설계 재정비 시급.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. TOPIC 1A -->
+  <section class="slide">
+    <div class="wrap">
+      <div class="eyebrow"><span class="tag">01 · HR(피플) 트렌드</span><span class="bar"></span><span class="num">04 / 11</span></div>
+      <h2 class="topic">컬처핏을 넘어 '팀핏' — 그리고 스킬 기반 채용</h2>
+      <p class="summary">'조직문화 적합성'이 <b>'팀 적합성(팀핏)'</b>으로 구체화된다. "뛰어난 사람"이 아니라 "이 팀에 맞는 사람"을 뽑고, 학력·연차 대신 <b>실제 직무 스킬</b>로 평가한다. 국내 최다 채용 연차는 4~7년차(49.7%), 인재상 4위로 'AI·데이터 활용 역량(24.2%)'이 부상.</p>
+      <div class="lens">
+        <div class="lens-card c-exec">
+          <div class="lens-h"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h.01M9 13h.01M15 9h.01M15 13h.01"/></svg></span><div><div class="lbl">경영진</div><div class="sub">Executive</div></div></div>
+          <p>잘못된 채용의 비용을 팀 단위에서 줄일 기회. 단, 팀핏이 동질성·다양성 저하로 흐르지 않게 기준 관리.</p>
+        </div>
+        <div class="lens-card c-prac">
+          <div class="lens-h"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.1 2.1-2.4-.6-.6-2.4z"/></svg></span><div><div class="lbl">직무전문가</div><div class="sub">Practitioner</div></div></div>
+          <p>현업 팀장·팀원의 채용 참여(팀핏 인터뷰) 확대. 직무기술서를 '스킬' 단위로 재정의해야 한다.</p>
+        </div>
+        <div class="lens-card c-emp">
+          <div class="lens-h"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.87"/></svg></span><div><div class="lbl">직원</div><div class="sub">Employee</div></div></div>
+          <p>스펙보다 실제 역량으로 평가받는 통로가 넓어진다. RJP로 입사 후 기대 불일치가 줄어든다.</p>
+        </div>
+      </div>
+      <div class="apply"><span class="pin">국내 적용</span><p>채용 공고·평가표를 <b>요구 스킬 중심</b>으로 재작성하고, 팀 단위 인터뷰 루브릭을 표준화해 팀핏을 '인상'에서 '구조화된 평가'로 전환.</p></div>
+      <div class="src"><span class="sl">Source</span><a href="https://blog.wantedlab.com/hr/report/hr-trend-report-2026" target="_blank" rel="noopener">원티드 채용 트렌드 2026</a><a href="https://v.daum.net/v/20251208161412362" target="_blank" rel="noopener">다음 뉴스 · 4~7년차·AI 인재</a></div>
+    </div>
+  </section>
+
+  <!-- 5. TOPIC 1B -->
+  <section class="slide">
+    <div class="wrap">
+      <div class="eyebrow"><span class="tag">01 · HR(피플) 트렌드</span><span class="bar"></span><span class="num">05 / 11</span></div>
+      <h2 class="topic">상시 '직원 경청'과 웰빙 중심 리텐션</h2>
+      <p class="summary">연 1회 서베이로는 부족하다. 펄스·성과·결근·감정 신호를 실시간으로 읽어 <b>이직 위험을 조기 감지</b>하고 선제 대응하는 '상시 경청'이 표준화. Wellhub 2026 보고서에서 직원 <b>86%</b>가 "웰빙이 급여만큼 중요"하다고 답했다.</p>
+      <div class="lens">
+        <div class="lens-card c-exec">
+          <div class="lens-h"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18M7 15l4-4 3 3 5-6"/></svg></span><div><div class="lbl">경영진</div><div class="sub">Executive</div></div></div>
+          <p>리텐션이 사후 대응에서 예측·예방으로 이동. 이탈 예측 모델은 인건비·채용비 절감으로 직결.</p>
+        </div>
+        <div class="lens-card c-prac">
+          <div class="lens-h"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM12 8v4l3 2"/></svg></span><div><div class="lbl">직무전문가</div><div class="sub">Practitioner</div></div></div>
+          <p>HR 애널리틱스 역량이 필수. '짧고 잦게, 맥락 있게'로 서베이 피로를 줄이는 경청 설계가 관건.</p>
+        </div>
+        <div class="lens-card c-emp">
+          <div class="lens-h"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1a5.5 5.5 0 1 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z"/></svg></span><div><div class="lbl">직원</div><div class="sub">Employee</div></div></div>
+          <p>획일적 복지가 아니라 개인화된 성장·유연근무·웰빙을 기대. '들어주고 바뀐다'는 경험이 몰입을 좌우.</p>
+        </div>
+      </div>
+      <div class="apply"><span class="pin">국내 적용</span><p>익명 펄스 + <b>후속 액션 루프(You said / We did)</b>를 제도화해 '서베이만 하고 끝'이라는 냉소를 방지.</p></div>
+      <div class="src"><span class="sl">Source</span><a href="https://blog.perceptyx.com/employee-experience-trends-what-the-data-says-about-2026" target="_blank" rel="noopener">Perceptyx · EX Trends 2026</a><a href="https://www.adp.com/spark/articles/2026/01/key-employee-experience-trends-for-2026-and-how-to-prioritize.aspx" target="_blank" rel="noopener">ADP · EX Trends 2026</a></div>
+    </div>
+  </section>
+
+  <!-- 6. TOPIC 2A -->
+  <section class="slide">
+    <div class="wrap">
+      <div class="eyebrow"><span class="tag">02 · HRD · L&amp;D</span><span class="bar"></span><span class="num">06 / 11</span></div>
+      <h2 class="topic">L&amp;D의 임무 이동: '교육 제공'에서 '임팩트 증명'으로</h2>
+      <p class="summary">2026년 L&amp;D 리더는 교육 제공을 넘어 <b>측정 가능한 사업 성과</b>를 입증해야 한다. WEF는 핵심 스킬의 <b>44%</b>가 2027년까지 바뀔 것으로 보며, 경영진 <b>70%+</b>가 스킬 격차를 사업 전환의 최대 장애로 꼽는다. 마이크로러닝과 가상 강의(VILT)가 주 전달 방식으로.</p>
+      <div class="lens">
+        <div class="lens-card c-exec">
+          <div class="lens-h"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/></svg></span><div><div class="lbl">경영진</div><div class="sub">Executive</div></div></div>
+          <p>교육을 '비용'이 아닌 '역량 투자'로 정당화하려면 학습–성과 연결 지표가 필수. AI 업스킬링은 30%+ 생산성 향상 보고도.</p>
+        </div>
+        <div class="lens-card c-prac">
+          <div class="lens-h"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 7l10-5 10 5-10 5L2 7zM6 10v5c0 1.7 2.7 3 6 3s6-1.3 6-3v-5"/></svg></span><div><div class="lbl">직무전문가</div><div class="sub">Practitioner</div></div></div>
+          <p>집합교육에서 '업무 흐름 속 학습'으로 설계 전환. 현업 SME의 콘텐츠 참여가 커진다.</p>
+        </div>
+        <div class="lens-card c-emp">
+          <div class="lens-h"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg></span><div><div class="lbl">직원</div><div class="sub">Employee</div></div></div>
+          <p>길고 지루한 과정 대신 짧고 적시적인 마이크로러닝 선호. 학습이 곧 내부 커리어 이동의 통로가 된다.</p>
+        </div>
+      </div>
+      <div class="apply"><span class="pin">국내 적용</span><p>만족도 평가에 머물지 말고, 핵심 직무의 <b>스킬 인벤토리 → 갭 진단 → 학습 → 성과</b> KPI 사슬을 한 과정에서라도 시범 구축.</p></div>
+      <div class="src"><span class="sl">Source</span><a href="https://trainingindustry.com/articles/strategy-alignment-and-planning/trends-2026-reinforcing-the-strategic-value-of-learning/" target="_blank" rel="noopener">Training Industry · 2026 L&amp;D</a><a href="https://www.intellezy.com/blog/learning-and-development-trends" target="_blank" rel="noopener">Intellezy · L&amp;D Trends 2026</a></div>
+    </div>
+  </section>
+
+  <!-- 7. TOPIC 2B -->
+  <section class="slide">
+    <div class="wrap">
+      <div class="eyebrow"><span class="tag">02 · HRD · L&amp;D</span><span class="bar"></span><span class="num">07 / 11</span></div>
+      <h2 class="topic">AI 리터러시가 전 직무의 '기본 역량'으로</h2>
+      <p class="summary">L&amp;D는 직원이 AI를 책임 있고 효과적으로 쓰도록 돕는 중심 역할을 맡는다. 국내에서도 직무와 무관하게 <b>'AI·데이터 활용 역량'</b>이 상위 인재상으로 부상. 리스킬링/업스킬링 대상이 특정 직군을 넘어 <b>전사</b>로 확대된다.</p>
+      <div class="lens">
+        <div class="lens-card c-exec">
+          <div class="lens-h"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h.01M9 13h.01M15 9h.01M15 13h.01"/></svg></span><div><div class="lbl">경영진</div><div class="sub">Executive</div></div></div>
+          <p>AI 리터러시는 개별 스킬이 아닌 조직 생산성의 토대. 전사 공통 커리큘럼 투자 판단이 필요.</p>
+        </div>
+        <div class="lens-card c-prac">
+          <div class="lens-h"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.1 2.1-2.4-.6-.6-2.4z"/></svg></span><div><div class="lbl">직무전문가</div><div class="sub">Practitioner</div></div></div>
+          <p>자기 업무를 AI와 재설계하는 역량(프롬프트·검증·거버넌스)이 핵심 경쟁력이 된다.</p>
+        </div>
+        <div class="lens-card c-emp">
+          <div class="lens-h"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.87"/></svg></span><div><div class="lbl">직원</div><div class="sub">Employee</div></div></div>
+          <p>'AI가 내 일을 대체'가 아니라 '내 일을 증강'하도록 배우는 기회로 인식할 때 수용성이 높아진다.</p>
+        </div>
+      </div>
+      <div class="apply"><span class="pin">국내 적용</span><p>직급·직무별 <b>'AI 리터러시 레벨'</b>을 정의하고, 실제 업무 과제 기반의 실습형 학습으로 설계.</p></div>
+      <div class="src"><span class="sl">Source</span><a href="https://www.ilxgroup.com/usa/blog/ld-predictions-for-2026-the-trends-shaping-learning-and-development" target="_blank" rel="noopener">ILX · L&amp;D Predictions 2026</a><a href="https://www.aihr.com/blog/hr-trends/" target="_blank" rel="noopener">AIHR · 11 HR Trends 2026</a></div>
+    </div>
+  </section>
+
+  <!-- 8. TOPIC 3 -->
+  <section class="slide">
+    <div class="wrap">
+      <div class="eyebrow"><span class="tag">03 · HR 테크 &amp; AI</span><span class="bar"></span><span class="num">08 / 11</span></div>
+      <h2 class="topic">'에이전틱 AI'가 HR 운영에 진입한다</h2>
+      <p class="summary">2026년은 <b>에이전틱 AI가 기업 전반으로 확산되는 해</b>. AI 에이전트는 몰입도 하락·채용 정체·급여 이상 신호를 상시 모니터링하고 Workday·ServiceNow·Slack을 넘나들며 <b>자율 조치</b>한다. 리더 <b>69%</b>가 변화를 기대, 대기업 <b>48%</b>가 도입. 국내 500대 기업 <b>86.7%</b>가 인사에 AI 활용 중.</p>
+      <div class="lens">
+        <div class="lens-card c-exec">
+          <div class="lens-h"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 17V9a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8M9 21h6M12 7V4M12 11h.01M9 14h6"/></svg></span><div><div class="lbl">경영진</div><div class="sub">Executive</div></div></div>
+          <p>반복 업무 자동화로 HR 운영비 절감 가능. 단, 휴먼-인-더-루프 거버넌스와 HR–IT 협업이 전제.</p>
+        </div>
+        <div class="lens-card c-prac">
+          <div class="lens-h"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></svg></span><div><div class="lbl">직무전문가</div><div class="sub">Practitioner</div></div></div>
+          <p>HR의 일이 '처리'에서 '감독·설계·예외 판단'으로 이동. 에이전트 결정을 검증·개입하는 새 업무가 생긴다.</p>
+        </div>
+        <div class="lens-card c-emp">
+          <div class="lens-h"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span><div><div class="lbl">직원</div><div class="sub">Employee</div></div></div>
+          <p>문의 응답·행정 처리가 빨라지는 편익. 채용·평가 자동화의 공정성·설명가능성 신뢰 확보가 필요.</p>
+        </div>
+      </div>
+      <div class="apply"><span class="pin">국내 적용</span><p><b>자동화 가능 업무 지도</b>를 그린 뒤 리스크 낮은 행정 워크플로부터 파일럿하고, AI 결정에 대한 <b>이의제기·검토 절차</b>를 함께 설계.</p></div>
+      <div class="src"><span class="sl">Source</span><a href="https://www.shrm.org/topics-tools/research/state-of-ai-hr-2026/full-report" target="_blank" rel="noopener">SHRM · State of AI in HR 2026</a><a href="https://avature.ai/blogs/hr-trends-for-2026-accelerating-into-the-human-ai-era/" target="_blank" rel="noopener">Avature · Human–AI Era</a></div>
+    </div>
+  </section>
+
+  <!-- 9. TOPIC 4 -->
+  <section class="slide">
+    <div class="wrap">
+      <div class="eyebrow"><span class="tag">04 · 기업 사례 &amp; 정책</span><span class="bar"></span><span class="num">09 / 11</span></div>
+      <h2 class="topic">정년연장(65세)·계속고용·포괄임금 제한 — 2026 하반기 노동규제 재편</h2>
+      <p class="summary">법정 정년을 2028~2029년 61세를 시작으로 <b>2037년까지 단계적 65세</b>로 올리는 입법이 추진(2026 하반기 완료 목표). 실제 적용은 2027년 초 300인 이상 대기업·공공기관부터 단계 확대 전망. 함께 정부는 <b>포괄임금제를 원칙적으로 제한</b>하는 방향을 검토 중.</p>
+      <div class="lens">
+        <div class="lens-card c-exec">
+          <div class="lens-h"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M5 6l14 0M7 6l-3 7a4 4 0 0 0 8 0L9 6M17 6l-3 7a4 4 0 0 0 8 0l-3-7"/></svg></span><div><div class="lbl">경영진</div><div class="sub">Executive</div></div></div>
+          <p>인건비·임금피크·재무모델링에 큰 영향. 계약서 전수조사와 시나리오별 재무 시뮬레이션이 필요.</p>
+        </div>
+        <div class="lens-card c-prac">
+          <div class="lens-h"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zM14 2v6h6M9 15l2 2 4-4"/></svg></span><div><div class="lbl">직무전문가</div><div class="sub">Practitioner</div></div></div>
+          <p>고령 인력 직무 재설계·재훈련, 근로시간 기록 시스템과 인사정보시스템 통합 등 실무 과제 증가.</p>
+        </div>
+        <div class="lens-card c-emp">
+          <div class="lens-h"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.87"/></svg></span><div><div class="lbl">직원</div><div class="sub">Employee</div></div></div>
+          <p>고용 안정성 확대(긍정)와 임금체계 개편·직무 조정의 불확실성이 공존. 투명한 커뮤니케이션이 관건.</p>
+        </div>
+      </div>
+      <div class="apply"><span class="pin">국내 적용</span><p>정년연장·재고용·계속고용 <b>3가지 방식의 리스크 맵</b>을 만들고, 포괄임금 사업장은 <b>근로시간 기록 체계</b>를 선제 정비.</p></div>
+      <div class="src"><span class="sl">Source</span><a href="https://www.kjob.news/news/500525" target="_blank" rel="noopener">전국인력신문 · 노동규제 변화</a><a href="https://www.shoplworks.com/blog-insight/korea-labor-policy-hr-2026-update" target="_blank" rel="noopener">샤플 · 노동법 이슈</a><a href="https://www.lawtimes.co.kr/news/articleViewAmp.html?idxno=222770" target="_blank" rel="noopener">법률신문 · 정년연장</a></div>
+    </div>
+  </section>
+
+  <!-- 10. ACTIONS -->
+  <section class="slide">
+    <div class="wrap">
+      <div class="eyebrow"><span class="tag">Action Items</span><span class="bar"></span><span class="num">10 / 11</span></div>
+      <h2 class="title">이번 주 실행 제안</h2>
+      <div class="acts">
+        <div class="act"><span class="n">1</span><span class="who exec">경영진</span><p>정년연장·포괄임금 대비 <b>TF 구성</b> — 계약서 전수조사 + 임금피크/정년 시나리오별 재무모델링 착수.</p></div>
+        <div class="act"><span class="n">2</span><span class="who prac">현업</span><p>채용 직무기술서를 <b>요구 스킬 단위</b>로 재정의하고 팀핏 인터뷰 루브릭을 표준화.</p></div>
+        <div class="act"><span class="n">3</span><span class="who prac">현업</span><p>리스크 낮은 HR 행정 워크플로(온보딩 안내·문의 응답)부터 <b>AI 에이전트 파일럿</b> + 검토 절차 설계.</p></div>
+        <div class="act"><span class="n">4</span><span class="who emp">직원</span><p>직무별 <b>'AI 리터러시 레벨'</b>을 정의하고 실습형 마이크로러닝 1개 과정 시범 운영.</p></div>
+        <div class="act"><span class="n">5</span><span class="who exec">경영진</span><p>상시 직원 경청(펄스 + You said/We did 루프)으로 리텐션을 <b>예측·예방 체계</b>로 전환.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 11. REFERENCES -->
+  <section class="slide">
+    <div class="wrap">
+      <div class="eyebrow"><span class="tag">References</span><span class="bar"></span><span class="num">11 / 11</span></div>
+      <h2 class="title">참고자료</h2>
+      <div class="refs">
+        <a href="https://blog.wantedlab.com/hr/report/hr-trend-report-2026" target="_blank" rel="noopener"><span>KR</span>원티드 — 채용 트렌드 2026: 팀핏</a>
+        <a href="https://v.daum.net/v/20251208161412362" target="_blank" rel="noopener"><span>KR</span>다음 — 4~7년차·AI 활용 인재</a>
+        <a href="https://blog.perceptyx.com/employee-experience-trends-what-the-data-says-about-2026" target="_blank" rel="noopener"><span>EN</span>Perceptyx — EX Trends 2026</a>
+        <a href="https://www.adp.com/spark/articles/2026/01/key-employee-experience-trends-for-2026-and-how-to-prioritize.aspx" target="_blank" rel="noopener"><span>EN</span>ADP — EX Trends 2026</a>
+        <a href="https://trainingindustry.com/articles/strategy-alignment-and-planning/trends-2026-reinforcing-the-strategic-value-of-learning/" target="_blank" rel="noopener"><span>EN</span>Training Industry — 2026 L&amp;D</a>
+        <a href="https://www.intellezy.com/blog/learning-and-development-trends" target="_blank" rel="noopener"><span>EN</span>Intellezy — L&amp;D Trends 2026</a>
+        <a href="https://www.ilxgroup.com/usa/blog/ld-predictions-for-2026-the-trends-shaping-learning-and-development" target="_blank" rel="noopener"><span>EN</span>ILX — L&amp;D Predictions 2026</a>
+        <a href="https://www.aihr.com/blog/hr-trends/" target="_blank" rel="noopener"><span>EN</span>AIHR — 11 HR Trends 2026</a>
+        <a href="https://www.shrm.org/topics-tools/research/state-of-ai-hr-2026/full-report" target="_blank" rel="noopener"><span>EN</span>SHRM — State of AI in HR 2026</a>
+        <a href="https://avature.ai/blogs/hr-trends-for-2026-accelerating-into-the-human-ai-era/" target="_blank" rel="noopener"><span>EN</span>Avature — Human–AI Era</a>
+        <a href="https://uk.adp.com/about-adp/press-centre/hr-in-2026-will-be-defined-by-the-impact-of-ai-innovation-on-work.aspx" target="_blank" rel="noopener"><span>EN</span>ADP — HR in 2026 &amp; AI</a>
+        <a href="https://www.kjob.news/news/500525" target="_blank" rel="noopener"><span>KR</span>전국인력신문 — 노동규제 변화</a>
+        <a href="https://www.shoplworks.com/blog-insight/korea-labor-policy-hr-2026-update" target="_blank" rel="noopener"><span>KR</span>샤플 — 2026 노동법 이슈</a>
+        <a href="https://www.lawtimes.co.kr/news/articleViewAmp.html?idxno=222770" target="_blank" rel="noopener"><span>KR</span>법률신문 — 정년연장 대응</a>
+      </div>
+      <p class="closing">이 브리핑은 <b style="color:var(--ink-soft)">HR·HRD 주간 브리핑 에이전트</b>가 매주 월요일 자동 생성합니다. 수치·사례는 각 출처에서 원문을 확인하세요.</p>
+    </div>
+  </section>
+
+</div>
+
+<div class="chrome">
+  <div class="brand"><span class="mk"></span><span>HR·HRD 주간 브리핑 · 2026.07.20</span></div>
+  <div class="nav">
+    <button id="prev" aria-label="이전 슬라이드"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 18l-6-6 6-6"/></svg></button>
+    <span class="count" id="count">01 / 11</span>
+    <button id="next" aria-label="다음 슬라이드"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 18l6-6-6-6"/></svg></button>
+  </div>
+</div>
+
+<div class="hint" id="hint">← → 키로 넘기기</div>
+
+<script>
+  (function(){
+    var deck = document.getElementById('deck');
+    var slides = Array.prototype.slice.call(deck.querySelectorAll('.slide'));
+    var total = slides.length;
+    var progress = document.getElementById('progress');
+    var count = document.getElementById('count');
+    var hint = document.getElementById('hint');
+    var current = 0;
+
+    function pad(n){return (n<10?'0':'')+n;}
+    function render(){
+      count.textContent = pad(current+1) + ' / ' + pad(total);
+      progress.style.width = ((current)/(total-1)*100) + '%';
+    }
+    function go(i){
+      current = Math.max(0, Math.min(total-1, i));
+      slides[current].scrollIntoView({behavior: matchMedia('(prefers-reduced-motion:reduce)').matches ? 'auto':'smooth'});
+      render();
+    }
+
+    // Track active slide on scroll (covers wheel/trackpad/manual scroll)
+    if('IntersectionObserver' in window){
+      var io = new IntersectionObserver(function(entries){
+        entries.forEach(function(e){
+          if(e.isIntersecting){
+            var idx = slides.indexOf(e.target);
+            if(idx > -1){ current = idx; render(); }
+          }
+        });
+      }, {root: deck, threshold: 0.55});
+      slides.forEach(function(s){ io.observe(s); });
+    }
+
+    document.getElementById('prev').addEventListener('click', function(){ go(current-1); });
+    document.getElementById('next').addEventListener('click', function(){ go(current+1); });
+
+    window.addEventListener('keydown', function(e){
+      var k = e.key;
+      if(k==='ArrowRight' || k==='ArrowDown' || k==='PageDown' || k===' '){ e.preventDefault(); go(current+1); }
+      else if(k==='ArrowLeft' || k==='ArrowUp' || k==='PageUp'){ e.preventDefault(); go(current-1); }
+      else if(k==='Home'){ e.preventDefault(); go(0); }
+      else if(k==='End'){ e.preventDefault(); go(total-1); }
+    });
+
+    // hide hint after first interaction / timeout
+    var hideHint = function(){ hint.style.opacity = '0'; };
+    setTimeout(hideHint, 4200);
+    window.addEventListener('keydown', hideHint, {once:true});
+    deck.addEventListener('scroll', function(){ hint.style.opacity='0'; }, {once:true, passive:true});
+
+    render();
+  })();
+</script>
+</body>
+</html>

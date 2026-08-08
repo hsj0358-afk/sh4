@@ -1,0 +1,203 @@
+"""베트맨 축구토토 승무패 14경기 목록 수집.
+
+베트맨 게임슬립은 JS 로 렌더링되므로 Playwright 가 필요하다
+(briefing/scraper.py 의 sync_playwright 사용 패턴을 그대로 따른다).
+
+사이트 구조는 예고 없이 바뀔 수 있으므로 파서를 여러 겹으로 둔다:
+  1. 테이블 행(tr) 기반 파싱 — 가장 흔한 구조
+  2. 실패 시 텍스트 정규식 기반 파싱 — 표 구조가 바뀌어도 팀명/시간은 잡힘
+  3. 그래도 실패하면 원본 HTML 을 cache 에 남기고 빈 목록 반환
+
+수집이 실패해도 `--matches-file` 로 직접 적어 넣으면 이후 분석은 동일하게 돈다.
+"""
+from __future__ import annotations
+
+import logging
+import re
+from pathlib import Path
+
+from ..models import Match, TeamRef
+from ..settings import Settings, load_yaml
+
+log = logging.getLogger(__name__)
+
+UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
+
+# "2026-08-09 20:00" / "08.09 20:00" / "8/9 20:00" 등을 잡는다
+_TIME_RE = re.compile(r"(\d{1,4}[./-]\d{1,2}(?:[./-]\d{1,2})?)?\s*(\d{1,2}:\d{2})")
+# "맨체스터시티 vs 리버풀" / "맨체스터시티 - 리버풀"
+_VS_RE = re.compile(r"(.+?)\s*(?:vs\.?|VS\.?|[-–:])\s*(.+)")
+
+
+# --------------------------------------------------------------------------
+# 수동 입력 파일
+# --------------------------------------------------------------------------
+def load_matches_file(path: Path, settings: Settings) -> list[Match]:
+    """matches.yaml 에서 14경기를 읽는다 (크롤링 폴백/우회 경로).
+
+    형식은 examples/matches.yaml 참고.
+    """
+    data = load_yaml(path)
+    if not data:
+        log.error("경기 목록 파일을 읽지 못했습니다: %s", path)
+        return []
+
+    rows = data.get("matches") or []
+    matches: list[Match] = []
+    for i, row in enumerate(rows, start=1):
+        league_raw = str(row.get("league", ""))
+        key = settings.league_of(league_raw) or league_raw
+        matches.append(Match(
+            no=int(row.get("no", i)),
+            league=key,
+            league_ko=settings.league_ko(key),
+            home=TeamRef(name_ko=str(row.get("home", ""))),
+            away=TeamRef(name_ko=str(row.get("away", ""))),
+            kickoff_kst=str(row.get("kickoff", "")),
+        ))
+    log.info("수동 경기 목록 %d경기 로드 (%s)", len(matches), path)
+    return matches
+
+
+# --------------------------------------------------------------------------
+# 베트맨 크롤링
+# --------------------------------------------------------------------------
+def _parse_rows(rows: list[dict], settings: Settings) -> list[Match]:
+    """행 텍스트 리스트 → Match 목록."""
+    matches: list[Match] = []
+    for row in rows:
+        cells = [c.strip() for c in row.get("cells", []) if c and c.strip()]
+        if len(cells) < 3:
+            continue
+        blob = " ".join(cells)
+
+        league_key = settings.league_of(blob)
+        home = away = ""
+
+        # 홈/원정이 별도 셀로 있는 경우를 먼저 시도
+        for idx, cell in enumerate(cells):
+            m = _VS_RE.match(cell)
+            if m and not _TIME_RE.search(cell):
+                home, away = m.group(1).strip(), m.group(2).strip()
+                break
+        if not home:
+            # 팀명으로 보이는 셀 2개를 고른다 (숫자/시간/리그명이 아닌 것)
+            cands = [c for c in cells
+                     if not _TIME_RE.search(c)
+                     and not re.fullmatch(r"[\d.\s%]+", c)
+                     and settings.league_of(c) is None
+                     and len(c) >= 2]
+            if len(cands) >= 2:
+                home, away = cands[0], cands[1]
+
+        if not home or not away:
+            continue
+
+        tm = _TIME_RE.search(blob)
+        kickoff = " ".join(x for x in (tm.group(1), tm.group(2)) if x) if tm else ""
+
+        matches.append(Match(
+            no=len(matches) + 1,
+            league=league_key or "",
+            league_ko=settings.league_ko(league_key) if league_key else "",
+            home=TeamRef(name_ko=home),
+            away=TeamRef(name_ko=away),
+            kickoff_kst=kickoff,
+        ))
+    return matches
+
+
+def fetch_matches(settings: Settings, round_id: str | None = None,
+                  cache=None) -> tuple[list[Match], str]:
+    """이번(또는 지정) 회차의 승무패 14경기를 수집한다.
+
+    Returns: (경기 목록, 회차 ID)
+    """
+    try:
+        from playwright.sync_api import sync_playwright  # noqa: F401
+    except Exception:
+        log.error("playwright 가 설치되지 않았습니다. "
+                  "`pip install -r requirements-toto.txt && playwright install chromium` "
+                  "또는 --matches-file 을 사용하세요.")
+        return [], round_id or ""
+
+    cfg = settings.betman
+    expected = int(cfg.get("expected_matches", 14))
+
+    from playwright.sync_api import sync_playwright
+    rows: list[dict] = []
+    resolved_round = round_id or ""
+    html = ""
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
+        try:
+            page = browser.new_page(user_agent=UA, locale="ko-KR")
+
+            if not resolved_round:
+                resolved_round = _detect_round(page, settings) or ""
+                if not resolved_round:
+                    log.error("판매중인 승무패 회차를 찾지 못했습니다. "
+                              "--round 로 회차를 직접 지정하거나 --matches-file 을 쓰세요.")
+                    return [], ""
+
+            url = cfg["slip_url"].format(game_id=cfg.get("game_id", "G101"),
+                                         round=resolved_round)
+            log.info("베트맨 게임슬립 로드: %s", url)
+            page.goto(url, wait_until="domcontentloaded", timeout=45000)
+            try:
+                page.wait_for_selector("tr, .game-list, [class*=match]", timeout=20000)
+            except Exception:
+                log.warning("게임슬립 셀렉터 대기 실패 — 구조 확인 필요")
+            page.wait_for_timeout(2500)
+
+            rows = page.eval_on_selector_all(
+                "tr",
+                "els => els.map(el => ({cells: Array.from(el.querySelectorAll('td,th'))"
+                ".map(c => c.innerText)}))") or []
+            html = page.content()
+        except Exception as exc:
+            log.error("베트맨 수집 실패: %s", exc)
+        finally:
+            browser.close()
+
+    matches = _parse_rows(rows, settings)
+
+    if len(matches) < expected:
+        log.warning("베트맨에서 %d경기만 파싱됨 (기대 %d경기)", len(matches), expected)
+        if html and cache is not None:
+            cache.save_debug("betman", f"round_{resolved_round}", html)
+    if len(matches) > expected:
+        matches = matches[:expected]
+
+    for i, m in enumerate(matches, start=1):
+        m.no = i
+    log.info("베트맨 %s회차 — %d경기 수집", resolved_round, len(matches))
+    return matches, resolved_round
+
+
+def _detect_round(page, settings: Settings) -> str | None:
+    """판매중인 승무패 회차 코드를 찾는다."""
+    cfg = settings.betman
+    game_id = cfg.get("game_id", "G101")
+    try:
+        page.goto(cfg["buy_url"], wait_until="domcontentloaded", timeout=45000)
+        page.wait_for_timeout(2000)
+        # gmId=G101&gmTs=###### 형태의 링크에서 회차를 뽑는다
+        hrefs = page.eval_on_selector_all(
+            "a", "els => els.map(e => e.getAttribute('href') || '')") or []
+        pattern = re.compile(rf"gmId={game_id}[^\"']*?gmTs=(\d+)")
+        found = [pattern.search(h) for h in hrefs]
+        rounds = sorted({m.group(1) for m in found if m})
+        if rounds:
+            log.info("승무패 회차 후보: %s → %s 사용", rounds, rounds[-1])
+            return rounds[-1]
+        # 링크에 없으면 페이지 전체 텍스트에서 탐색
+        body = page.content()
+        m = pattern.search(body)
+        if m:
+            return m.group(1)
+    except Exception as exc:
+        log.warning("회차 자동 탐지 실패: %s", exc)
+    return None

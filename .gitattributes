@@ -1,0 +1,8 @@
+# Windows batch files must keep CRLF. cmd.exe seeks by byte offset, so
+# LF-only endings make it resume mid-command and fail with a truncated
+# command name.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Shell scripts must keep LF even when checked out on Windows.
+*.sh text eol=lf

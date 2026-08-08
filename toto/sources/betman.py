@@ -32,6 +32,19 @@ _TIME_RE = re.compile(r"(\d{1,4}[./-]\d{1,2}(?:[./-]\d{1,2})?)?\s*(\d{1,2}:\d{2}
 # "맨체스터시티 vs 리버풀" / "맨체스터시티 - 리버풀"
 _VS_RE = re.compile(r"(.+?)\s*(?:vs\.?|VS\.?|[-–:])\s*(.+)")
 
+# 게임슬립 표의 머리글 행에 나타나는 문구. 이 중 하나라도 들어 있으면
+# 경기 행이 아니다.
+_HEADER_HINTS = ("홈팀", "원정팀", "대상경기", "개최시간", "경기결과", "적중")
+
+# 팀명일 리 없는 셀: 순번("1경기"), 순수 숫자/기호, 구분자, 날짜, 요일
+_NOT_TEAM_RE = re.compile(
+    r"\d+\s*경기"                       # 1경기, 14경기
+    r"|[\d.\s%:/()-]+"                  # 숫자·기호만
+    r"|vs\.?|VS\.?"                     # 구분자
+    r"|\d{2}\.\d{2}\.\d{2}.*"           # 26.08.08 (토) 19:00
+    r"|\(.\)",                          # (토)
+    re.IGNORECASE)
+
 
 # --------------------------------------------------------------------------
 # 수동 입력 파일
@@ -66,6 +79,29 @@ def load_matches_file(path: Path, settings: Settings) -> list[Match]:
 # --------------------------------------------------------------------------
 # 베트맨 크롤링
 # --------------------------------------------------------------------------
+# 베트맨 표기 "26.08.08 (토) 19:00" 은 날짜와 시각 사이에 요일이 끼어 있어서
+# 한 정규식으로 붙여 잡히지 않는다. 날짜와 시각을 따로 뽑아 합친다.
+_YMD_RE = re.compile(r"\b(\d{2})\.(\d{2})\.(\d{2})\b")        # 26.08.08
+_ISO_RE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")          # 2026-08-08
+_HM_RE = re.compile(r"\b(\d{1,2}):(\d{2})\b")                 # 19:00
+
+
+def _parse_kickoff(blob: str) -> str:
+    """행 텍스트에서 'YYYY-MM-DD HH:MM' 을 만든다. 날짜가 없으면 시각만."""
+    date = ""
+    m = _ISO_RE.search(blob)
+    if m:
+        date = f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+    else:
+        m = _YMD_RE.search(blob)
+        if m:
+            date = f"20{m.group(1)}-{m.group(2)}-{m.group(3)}"
+
+    t = _HM_RE.search(blob)
+    time_s = f"{int(t.group(1)):02d}:{t.group(2)}" if t else ""
+    return " ".join(x for x in (date, time_s) if x)
+
+
 def _parse_rows(rows: list[dict], settings: Settings) -> list[Match]:
     """행 텍스트 리스트 → Match 목록."""
     matches: list[Match] = []
@@ -74,6 +110,10 @@ def _parse_rows(rows: list[dict], settings: Settings) -> list[Match]:
         if len(cells) < 3:
             continue
         blob = " ".join(cells)
+
+        # 표 머리글 행을 경기로 착각하면 실제 경기 하나가 밀려서 빠진다.
+        if any(h in blob for h in _HEADER_HINTS):
+            continue
 
         league_key = settings.league_of(blob)
         home = away = ""
@@ -85,10 +125,12 @@ def _parse_rows(rows: list[dict], settings: Settings) -> list[Match]:
                 home, away = m.group(1).strip(), m.group(2).strip()
                 break
         if not home:
-            # 팀명으로 보이는 셀 2개를 고른다 (숫자/시간/리그명이 아닌 것)
+            # 팀명으로 보이는 셀 2개를 고른다.
+            # 순번("1경기")·시간·날짜·구분자 셀을 걸러내지 않으면 그것들이
+            # 팀명 자리로 올라온다.
             cands = [c for c in cells
                      if not _TIME_RE.search(c)
-                     and not re.fullmatch(r"[\d.\s%]+", c)
+                     and not _NOT_TEAM_RE.fullmatch(c)
                      and settings.league_of(c) is None
                      and len(c) >= 2]
             if len(cands) >= 2:
@@ -97,8 +139,7 @@ def _parse_rows(rows: list[dict], settings: Settings) -> list[Match]:
         if not home or not away:
             continue
 
-        tm = _TIME_RE.search(blob)
-        kickoff = " ".join(x for x in (tm.group(1), tm.group(2)) if x) if tm else ""
+        kickoff = _parse_kickoff(blob)
 
         matches.append(Match(
             no=len(matches) + 1,

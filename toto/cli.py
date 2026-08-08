@@ -62,8 +62,9 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _resolve_teams(matches, resolver: TeamResolver, report: Report) -> None:
-    """베트맨 한글 팀명을 영문 정규명으로 해석한다."""
+def _resolve_teams(matches, resolver: TeamResolver, report: Report,
+                   settings) -> None:
+    """베트맨 한글 팀명을 영문 정규명으로 해석하고, 리그를 채운다."""
     for match in matches:
         for side in ("home", "away"):
             ref = getattr(match, side)
@@ -79,6 +80,29 @@ def _resolve_teams(matches, resolver: TeamResolver, report: Report) -> None:
                 report.warnings.append(
                     f"{match.no}번 경기: '{ref.name_ko}' 팀명을 매칭하지 못했습니다. "
                     f"data/teams.yaml 에 별칭을 추가하면 다음 실행부터 해결됩니다.")
+
+        # 베트맨 경기표에는 리그명 컬럼이 없다. 리그를 모르면 배당률 조회가
+        # 통째로 불가능하므로 팀 소속 리그로 역추론한다(홈팀 우선).
+        if not match.league:
+            for ref in (match.home, match.away):
+                league = resolver.league_of(ref.canonical) if ref.canonical else None
+                if league:
+                    match.league = league
+                    match.league_ko = settings.league_ko(league)
+                    break
+            else:
+                report.warnings.append(
+                    f"{match.no}번 경기({match.title}): 리그를 알 수 없어 "
+                    f"배당률을 조회하지 못합니다.")
+
+        # 컵대회 등으로 두 팀의 리그가 다르면 표시에 남긴다
+        lh = resolver.league_of(match.home.canonical) if match.home.canonical else None
+        la = resolver.league_of(match.away.canonical) if match.away.canonical else None
+        if lh and la and lh != la:
+            match.notes.append(
+                f"두 팀의 소속 리그가 다릅니다 ({settings.league_ko(lh)} vs "
+                f"{settings.league_ko(la)}) — 컵대회 경기로 보이며, "
+                f"배당률·순위 데이터가 없을 수 있습니다.")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -122,7 +146,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"경기 수가 {len(matches)}개입니다 (승무패는 {expected}경기). "
                 f"목록을 확인하세요.")
 
-        _resolve_teams(matches, resolver, report)
+        _resolve_teams(matches, resolver, report, settings)
 
         # ---- 2. 배당률 ----------------------------------------------------
         if args.skip_odds:

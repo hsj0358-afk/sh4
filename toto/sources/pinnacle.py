@@ -144,6 +144,12 @@ class PinnacleClient:
         lid = self.league_id(league_key)
         if lid is None:
             return [], []
+        return self.payload_by_id(lid)
+
+    def payload_by_id(self, lid) -> tuple[list, list]:
+        """피나클 리그 ID 로 (matchups, markets) 를 가져온다."""
+        if lid is None:
+            return [], []
 
         matchups = self.cache.get("pinnacle", f"matchups_{lid}") if self.cache else None
         markets = self.cache.get("pinnacle", f"markets_{lid}") if self.cache else None
@@ -160,7 +166,7 @@ class PinnacleClient:
                     self.cache.set("pinnacle", f"markets_{lid}", markets)
             self.ok = True
         except Exception as exc:
-            log.error("피나클 %s 수집 실패: %s", league_key, exc)
+            log.error("피나클 리그 %s 수집 실패: %s", lid, exc)
             return matchups or [], markets or []
         return matchups or [], markets or []
 
@@ -285,36 +291,103 @@ def fetch_odds(matches, settings: Settings, resolver: TeamResolver,
     filled = 0
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
+    # 1차: 각 경기의 소속 리그에서 찾는다
     for league_key, group in by_league.items():
         matchups, markets = client.league_payload(league_key)
         if not matchups:
             continue
         for match in group:
-            if not (match.home.canonical and match.away.canonical):
-                continue
-            mu = _find_matchup(matchups, resolver,
-                               match.home.canonical, match.away.canonical)
-            if not mu:
-                log.warning("피나클에서 경기를 찾지 못함: %s", match.title)
-                continue
-            rows = _markets_for(markets, mu.get("id"))
-            ml, sp, tot = _moneyline(rows), _spread(rows), _total(rows)
-            if not ml:
-                log.warning("머니라인 없음: %s", match.title)
-                continue
-            match.odds = Odds(
-                home=ml.get("home"), draw=ml.get("draw"), away=ml.get("away"),
-                ah_line=sp.get("line"), ah_home=sp.get("home"), ah_away=sp.get("away"),
-                ou_line=tot.get("line"), ou_over=tot.get("over"), ou_under=tot.get("under"),
-                fetched_at=now, source="arcadia-api",
-            )
-            # 베트맨에서 킥오프를 못 읽었으면 피나클 startTime(UTC)으로 채운다
-            if not match.kickoff_kst and mu.get("startTime"):
-                match.kickoff_kst = _to_kst(str(mu["startTime"]))
-            filled += 1
+            if _apply_odds(match, matchups, markets, resolver, now):
+                filled += 1
+
+    # 2차: 못 찾은 경기는 같은 나라의 다른 대회에서 찾는다.
+    # 승무패에는 컵대회(르방컵·코리아컵 등)가 섞여 나오는데, 그런 경기는
+    # 리그 피드에 없다. 나라 단위로 범위를 넓혀 한 번 더 훑는다.
+    missing = [m for m in matches
+               if not m.odds.available and m.home.canonical and m.away.canonical]
+    if missing:
+        log.info("리그 피드에서 못 찾은 %d경기 — 같은 나라의 다른 대회를 탐색합니다.",
+                 len(missing))
+        filled += _search_country_wide(client, missing, settings, resolver, now)
+
+    for match in matches:
+        if not match.odds.available:
+            log.warning("피나클에서 배당을 찾지 못함: %s", match.title)
 
     if filled:
         return f"ok ({filled}/{len(matches)}경기)"
     if client.ok:
         return "연결됨 · 경기 매칭 실패"
     return "실패"
+
+
+def _apply_odds(match, matchups: list, markets: list, resolver: TeamResolver,
+                now: str) -> bool:
+    """matchups 에서 경기를 찾아 배당을 채운다. 채웠으면 True."""
+    if not (match.home.canonical and match.away.canonical):
+        return False
+    mu = _find_matchup(matchups, resolver, match.home.canonical, match.away.canonical)
+    if not mu:
+        return False
+    rows = _markets_for(markets, mu.get("id"))
+    ml, sp, tot = _moneyline(rows), _spread(rows), _total(rows)
+    if not ml or ml.get("home") is None or ml.get("away") is None:
+        return False
+    match.odds = Odds(
+        home=ml.get("home"), draw=ml.get("draw"), away=ml.get("away"),
+        ah_line=sp.get("line"), ah_home=sp.get("home"), ah_away=sp.get("away"),
+        ou_line=tot.get("line"), ou_over=tot.get("over"), ou_under=tot.get("under"),
+        fetched_at=now, source="arcadia-api",
+    )
+    # 베트맨에서 킥오프를 못 읽었으면 피나클 startTime(UTC)으로 채운다
+    if not match.kickoff_kst and mu.get("startTime"):
+        match.kickoff_kst = _to_kst(str(mu["startTime"]))
+    return True
+
+
+def _country_of(settings: Settings, league_key: str) -> str:
+    """설정된 리그명에서 나라 부분을 뽑는다. 'Japan - J League' → 'Japan'."""
+    name = (settings.leagues.get(league_key) or {}).get("pinnacle_name", "")
+    return name.split("-")[0].strip()
+
+
+def _search_country_wide(client: "PinnacleClient", missing: list,
+                         settings: Settings, resolver: TeamResolver,
+                         now: str, max_leagues: int = 15) -> int:
+    """같은 나라에 속한 모든 대회를 훑어 남은 경기의 배당을 찾는다."""
+    payload = client._all_leagues()
+    if not payload:
+        return 0
+
+    by_country: dict[str, list] = {}
+    for match in missing:
+        country = _country_of(settings, match.league)
+        if country:
+            by_country.setdefault(country, []).append(match)
+
+    filled = 0
+    for country, group in by_country.items():
+        prefix = country.lower()
+        candidates = []
+        for item in payload:
+            full = f"{(item.get('sport') or {}).get('name', '')} {item.get('name', '')}"
+            if full.strip().lower().startswith(prefix) or \
+                    str(item.get("name", "")).lower().startswith(prefix):
+                candidates.append(item)
+        if not candidates:
+            continue
+        log.info("%s: 대회 %d개 탐색", country, min(len(candidates), max_leagues))
+
+        for item in candidates[:max_leagues]:
+            remaining = [m for m in group if not m.odds.available]
+            if not remaining:
+                break
+            lid = item.get("id")
+            matchups, markets = client.payload_by_id(lid)
+            if not matchups:
+                continue
+            for match in remaining:
+                if _apply_odds(match, matchups, markets, resolver, now):
+                    log.info("  %s → %s 에서 발견", match.title, item.get("name"))
+                    filled += 1
+    return filled

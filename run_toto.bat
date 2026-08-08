@@ -1,18 +1,23 @@
 @echo off
 REM ===================================================================
-REM  축구토토 승무패 분석 리포트 실행 (Windows)
+REM  Soccer toto (Korean sports lottery) analysis report launcher.
 REM
-REM  사용법 (이 파일이 있는 폴더에서):
-REM    run_toto.bat --demo                네트워크 없이 샘플 리포트
-REM    run_toto.bat --skip-whoscored      배당률까지만 (빠름)
-REM    run_toto.bat                       전체 수집
+REM  Usage, from the folder containing this file:
+REM    run_toto.bat --demo                 offline sample report
+REM    run_toto.bat --skip-whoscored       odds only (fast)
+REM    run_toto.bat --round 260043         specific round
+REM    run_toto.bat                        full collection
 REM
-REM  .venv 폴더가 있으면 그 안의 파이썬을 쓴다.
-REM  (PowerShell 실행 정책 때문에 activate 가 막히는 경우를 피하려고
-REM   가상환경을 활성화하지 않고 직접 실행한다.)
+REM  If a .venv folder exists, its python.exe is used directly. The venv is
+REM  deliberately NOT activated: PowerShell execution policy often blocks
+REM  Activate.ps1.
 REM
-REM  시간대: 윈도우 시스템 시각을 그대로 쓴다. 한국에서 쓰신다면
-REM  이미 KST 이므로 따로 설정할 것이 없다.
+REM  Timezone: the Windows system clock is used as-is (already KST in Korea).
+REM
+REM  NOTE: this file must keep CRLF line endings and stay ASCII-only.
+REM  cmd.exe seeks batch files by byte offset; LF-only endings make it
+REM  resume mid-command (symptom: "'oto.bat' is not recognized").
+REM  .gitattributes pins the line endings.
 REM ===================================================================
 setlocal
 cd /d "%~dp0"

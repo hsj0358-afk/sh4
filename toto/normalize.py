@@ -79,6 +79,7 @@ class TeamResolver:
         self.learned_file = learned_file or LEARNED_FILE
         self._index: dict[str, str] = {}     # 정규화 별칭 → 정규명
         self._canonicals: list[str] = []
+        self._league: dict[str, str] = {}    # 정규명 → 리그 키
         self._learned: dict[str, str] = {}   # 원본 표기 → 정규명 (신규 학습분)
         self._dirty = False
         self._load()
@@ -100,6 +101,8 @@ class TeamResolver:
                 self._register(str(alias), canonical)
             for alias in (entry.get("en") or []):
                 self._register(str(alias), canonical)
+            if entry.get("league"):
+                self._league[canonical] = str(entry["league"])
 
         for alias, canonical in (load_yaml(self.learned_file) or {}).items():
             self._register(str(alias), str(canonical))
@@ -178,6 +181,11 @@ class TeamResolver:
             log.info("학습 별칭 %d건 저장 → %s", len(self._learned), self.learned_file)
         except Exception as exc:
             log.warning("학습 별칭 저장 실패: %s", exc)
+
+    def league_of(self, canonical: str) -> str | None:
+        """정규명 → 소속 리그 키. 베트맨 경기표에는 리그명이 없어서
+        팀명으로 리그를 역추론해야 배당률 조회가 가능하다."""
+        return self._league.get(canonical)
 
     def match_pair(self, name_a: str, name_b: str) -> bool:
         """두 표기가 같은 팀인지."""

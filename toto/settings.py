@@ -166,9 +166,9 @@ def load_settings(config_path: Path | None = None, env_path: Path | None = None)
     cfg = load_yaml(config_path)
     s = Settings()
     s.betman = cfg.get("betman") or {
-        "game_id": "G101",
-        "slip_url": ("https://www.betman.co.kr/main/mainPage/gamebuy/gameSlipIFR.do"
-                     "?gmId={game_id}&gmTs={round}&gameDivCd=C&isIFR=Y"),
+        "game_id": "G011",
+        "slip_url": ("https://www.betman.co.kr/main/mainPage/gamebuy/gameSlip.do"
+                     "?frameType=typeA&gmId={game_id}&gmTs={round}"),
         "buy_url": "https://www.betman.co.kr/main/mainPage/gamebuy/gameBuyList.do",
         "expected_matches": 14,
     }

@@ -24,6 +24,9 @@ log = logging.getLogger(__name__)
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
 
+# 축구토토 승무패 게임 ID. 게임슬립 URL 의 gmId 파라미터와 같다.
+DEFAULT_GAME_ID = "G011"
+
 # "2026-08-09 20:00" / "08.09 20:00" / "8/9 20:00" 등을 잡는다
 _TIME_RE = re.compile(r"(\d{1,4}[./-]\d{1,2}(?:[./-]\d{1,2})?)?\s*(\d{1,2}:\d{2})")
 # "맨체스터시티 vs 리버풀" / "맨체스터시티 - 리버풀"
@@ -127,6 +130,7 @@ def fetch_matches(settings: Settings, round_id: str | None = None,
 
     from playwright.sync_api import sync_playwright
     rows: list[dict] = []
+    frames_html: list[tuple[str, str]] = []
     resolved_round = round_id or ""
     html = ""
 
@@ -142,7 +146,7 @@ def fetch_matches(settings: Settings, round_id: str | None = None,
                               "--round 로 회차를 직접 지정하거나 --matches-file 을 쓰세요.")
                     return [], ""
 
-            url = cfg["slip_url"].format(game_id=cfg.get("game_id", "G101"),
+            url = cfg["slip_url"].format(game_id=cfg.get("game_id", DEFAULT_GAME_ID),
                                          round=resolved_round)
             log.info("베트맨 게임슬립 로드: %s", url)
             page.goto(url, wait_until="domcontentloaded", timeout=45000)
@@ -152,22 +156,41 @@ def fetch_matches(settings: Settings, round_id: str | None = None,
                 log.warning("게임슬립 셀렉터 대기 실패 — 구조 확인 필요")
             page.wait_for_timeout(2500)
 
-            rows = page.eval_on_selector_all(
-                "tr",
-                "els => els.map(el => ({cells: Array.from(el.querySelectorAll('td,th'))"
-                ".map(c => c.innerText)}))") or []
+            # 게임슬립은 frameType 파라미터가 붙는 프레임 구성이라, 경기표가
+            # 메인 문서가 아니라 하위 프레임 안에 있을 수 있다. 모든 프레임에서
+            # 행을 긁어 합친다.
+            for frame in page.frames:
+                try:
+                    found = frame.eval_on_selector_all(
+                        "tr",
+                        "els => els.map(el => ({cells: "
+                        "Array.from(el.querySelectorAll('td,th')).map(c => c.innerText)}))"
+                    ) or []
+                except Exception:
+                    continue
+                if found:
+                    log.debug("프레임 %s 에서 %d행 수집", frame.url or "(main)", len(found))
+                    rows.extend(found)
+                    frames_html.append((frame.name or "main", frame.content()))
             html = page.content()
         except Exception as exc:
             log.error("베트맨 수집 실패: %s", exc)
         finally:
             browser.close()
 
+    log.info("베트맨 페이지에서 표 %d행 수집", len(rows))
     matches = _parse_rows(rows, settings)
 
     if len(matches) < expected:
-        log.warning("베트맨에서 %d경기만 파싱됨 (기대 %d경기)", len(matches), expected)
-        if html and cache is not None:
-            cache.save_debug("betman", f"round_{resolved_round}", html)
+        log.warning("베트맨에서 %d경기만 파싱됨 (기대 %d경기). "
+                    "원본을 cache 에 저장합니다 — 이 파일로 파서를 맞출 수 있습니다.",
+                    len(matches), expected)
+        if cache is not None:
+            if html:
+                cache.save_debug("betman", f"round_{resolved_round}", html)
+            for idx, (name, fhtml) in enumerate(frames_html):
+                cache.save_debug("betman", f"round_{resolved_round}_frame{idx}_{name}",
+                                 fhtml)
     if len(matches) > expected:
         matches = matches[:expected]
 
@@ -180,11 +203,11 @@ def fetch_matches(settings: Settings, round_id: str | None = None,
 def _detect_round(page, settings: Settings) -> str | None:
     """판매중인 승무패 회차 코드를 찾는다."""
     cfg = settings.betman
-    game_id = cfg.get("game_id", "G101")
+    game_id = cfg.get("game_id", DEFAULT_GAME_ID)
     try:
         page.goto(cfg["buy_url"], wait_until="domcontentloaded", timeout=45000)
         page.wait_for_timeout(2000)
-        # gmId=G101&gmTs=###### 형태의 링크에서 회차를 뽑는다
+        # gmId=G011&gmTs=###### 형태의 링크에서 회차를 뽑는다
         hrefs = page.eval_on_selector_all(
             "a", "els => els.map(e => e.getAttribute('href') || '')") or []
         pattern = re.compile(rf"gmId={game_id}[^\"']*?gmTs=(\d+)")

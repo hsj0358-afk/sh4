@@ -99,7 +99,7 @@ python -m toto                        # 3) 풀 수집 (10~20분)
 
 | 항목 | 출처 | 방식 |
 |---|---|---|
-| 14경기 목록 | 베트맨 (`gmId=G101`) | Playwright |
+| 14경기 목록 | 베트맨 (`gmId=G011`) | Playwright |
 | 승/무/패 배당, 핸디캡, O/U | Pinnacle Arcadia **guest API** | REST (웹앱 내장 공개 키) |
 | 순위표·팀 통계 | WhoScored 리그 페이지 | Playwright (리그당 1회) |
 | 강점/약점/스타일·폼·결장자 | WhoScored 팀 페이지 | Playwright (팀당 1회) |

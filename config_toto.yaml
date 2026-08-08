@@ -6,10 +6,11 @@
 
 # 베트맨 -------------------------------------------------------------------
 betman:
-  # 축구토토 승무패 게임 ID (베트맨 고정값)
-  game_id: "G101"
-  # 게임슬립 URL 템플릿. {round} 자리에 회차 코드가 들어간다.
-  slip_url: "https://www.betman.co.kr/main/mainPage/gamebuy/gameSlipIFR.do?gmId={game_id}&gmTs={round}&gameDivCd=C&isIFR=Y"
+  # 축구토토 승무패 게임 ID (게임슬립 URL 의 gmId 파라미터)
+  game_id: "G011"
+  # 게임슬립 URL 템플릿. {round} 자리에 회차 코드(gmTs)가 들어간다.
+  # 예: .../gameSlip.do?frameType=typeA&gmId=G011&gmTs=260043
+  slip_url: "https://www.betman.co.kr/main/mainPage/gamebuy/gameSlip.do?frameType=typeA&gmId={game_id}&gmTs={round}"
   # 회차 목록/판매중 회차 확인용 페이지
   buy_url: "https://www.betman.co.kr/main/mainPage/gamebuy/gameBuyList.do"
   expected_matches: 14

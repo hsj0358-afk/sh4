@@ -130,7 +130,16 @@ class WhoScoredBrowser:
                     self._page.wait_for_selector(wait_selector, timeout=15000)
                 except Exception:
                     log.debug("셀렉터 대기 실패(%s) — 그래도 진행: %s", wait_selector, url)
-            self._page.wait_for_timeout(1200)
+            # 순위표·통계표는 스크롤해야 채워지는 경우가 있다.
+            try:
+                self._page.evaluate(
+                    "window.scrollTo(0, document.body.scrollHeight / 2)")
+                self._page.wait_for_timeout(800)
+                self._page.evaluate(
+                    "window.scrollTo(0, document.body.scrollHeight)")
+            except Exception:
+                pass
+            self._page.wait_for_timeout(2000)
             html = self._page.content()
             self._last_load = time.time()
             if _looks_blocked(html):
@@ -219,6 +228,12 @@ def read_league(browser: WhoScoredBrowser, settings: Settings,
         log.error("리그 페이지 수집 실패: %s", league_key)
         return {}
 
+    # 잘못된 리그 경로면 후스코어드가 홈으로 리다이렉트해 버린다.
+    # 제목을 남겨 두면 '차단'인지 '엉뚱한 페이지'인지 바로 구분된다.
+    title = re.search(r"<title[^>]*>(.*?)</title>", html, re.S | re.I)
+    log.info("[%s] 페이지 제목: %s", league_key,
+             re.sub(r"\s+", " ", title.group(1)).strip()[:90] if title else "(없음)")
+
     soup = _soup(html)
     out: dict[str, dict] = {}
 
@@ -293,7 +308,19 @@ def read_league(browser: WhoScoredBrowser, settings: Settings,
             st.rating = _f(row, i_rating) or st.rating
 
     if not out:
-        log.error("리그 페이지에서 팀을 하나도 파싱하지 못함: %s", league_key)
+        # 왜 실패했는지 구분되도록 구조 정보를 남긴다.
+        team_links = [a["href"] for a in soup.find_all("a", href=True)
+                      if "/Teams/" in a["href"]]
+        tables = soup.find_all("table")
+        log.error("리그 페이지에서 팀을 하나도 파싱하지 못함: %s "
+                  "(/Teams/ 링크 %d개, <table> %d개, 문서 %.0fKB)",
+                  league_key, len(team_links), len(tables), len(html) / 1024)
+        if team_links:
+            log.error("  링크는 있는데 팀명이 안 맞습니다. 예: %s", team_links[:3])
+        else:
+            log.error("  팀 링크가 없습니다 — 리그 경로(config_toto.yaml 의 "
+                      "leagues.%s.whoscored)가 틀렸거나 JS 렌더링 대기가 "
+                      "부족한 것으로 보입니다.", league_key)
         if cache:
             cache.save_debug("whoscored", f"league_{league_key}", html)
         return {}

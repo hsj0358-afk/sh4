@@ -13,11 +13,26 @@ pip install -r requirements-toto.txt
 playwright install chromium          # 베트맨·후스코어드는 실제 브라우저가 필요
 ```
 
+### Windows
+
+가상환경을 만들었다면 **활성화하지 말고 그 안의 파이썬을 직접 부르는 편이 안전하다**
+(PowerShell 실행 정책 때문에 `Activate.ps1` 이 막히는 경우가 잦다).
+
+```powershell
+py -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements-toto.txt
+.venv\Scripts\python.exe -m playwright install chromium
+.venv\Scripts\python.exe -m toto --demo
+```
+
+`run_toto.bat` 은 `.venv` 가 있으면 알아서 그 파이썬을 쓴다.
+
 ## 2. 실행
 
 ```bash
 python -m toto                       # 이번 회차 자동 탐지 → 풀 수집 → 리포트
-./run_toto.sh                        # 동일 (TZ=Asia/Seoul 고정)
+./run_toto.sh                        # macOS/Linux (TZ=Asia/Seoul 고정)
+run_toto.bat                         # Windows (시스템 시각 사용)
 ```
 
 리포트는 `reports/toto_<회차>.html` 로 생성된다. 브라우저로 열면 끝 —

@@ -1,13 +1,17 @@
-# 축구토토 승무패 분석기 의존성
-# (신문 브리핑 도구와 분리 — 둘을 같이 쓰려면 두 파일 다 설치하면 된다)
+# Dependencies for the soccer toto (Korean sports lottery) analysis tool.
 #
 #   pip install -r requirements-toto.txt
 #   playwright install chromium
 #
-# 차트는 인라인 SVG 를 직접 생성하므로 pandas/matplotlib/plotly 가 필요 없다.
+# Charts are generated as inline SVG by hand, so no pandas/matplotlib/plotly.
+#
+# NOTE: keep this file ASCII-only. pip decodes requirements files using the
+# system locale encoding (cp949 on Korean Windows) unless a BOM is present,
+# so non-ASCII comments here crash the install with UnicodeDecodeError.
+# Korean documentation lives in docs/toto_usage.md instead.
 
-playwright>=1.40.0        # 베트맨·후스코어드 (JS 렌더링 + 봇 차단 우회)
-requests>=2.31.0          # 피나클 guest API
-beautifulsoup4>=4.12.0    # 후스코어드 HTML 파싱
-lxml>=5.0.0               # bs4 파서 백엔드
+playwright>=1.40.0        # Betman / WhoScored: JS rendering + bot protection
+requests>=2.31.0          # Pinnacle guest API
+beautifulsoup4>=4.12.0    # WhoScored HTML parsing
+lxml>=5.0.0               # parser backend for bs4
 PyYAML>=6.0               # config_toto.yaml / teams.yaml / matches.yaml

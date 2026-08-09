@@ -20,9 +20,13 @@ BLOCK_SIGNS = ("incapsula", "_incap_", "request unsuccessful", "access denied",
 
 
 def find_dir(arg: str | None) -> Path | None:
-    if arg:
+    # '-' 로 시작하면 경로가 아니라 옵션이다(메뉴에서 넘어온 --menu 등).
+    if arg and not arg.startswith("-"):
         p = Path(arg)
-        return p if p.exists() else None
+        if p.exists():
+            return p
+        print(f"지정한 경로가 없습니다: {p}")
+        return None
     cache = ROOT / "cache"
     if not cache.exists():
         return None
@@ -95,11 +99,18 @@ def summarize(path: Path) -> None:
         print(f"  id 가진 요소 예시: {ids}")
 
 
-def main() -> int:
-    target = find_dir(sys.argv[1] if len(sys.argv) > 1 else None)
+def main(argv: list[str] | None = None) -> int:
+    # 메뉴에서 호출할 때는 argv=[] 로 넘어온다. sys.argv 를 그대로 읽으면
+    # 부모 프로세스의 옵션(--menu 등)을 경로로 오인한다.
+    argv = sys.argv[1:] if argv is None else argv
+    target = find_dir(argv[0] if argv else None)
     if target is None:
-        print("cache 안에서 whoscored 폴더를 찾지 못했습니다. "
-              "경로를 인자로 넘겨주세요.")
+        print()
+        print("후스코어드 실패 원본을 찾지 못했습니다.")
+        print(f"  찾아본 위치: {ROOT / 'cache'}/<날짜>/whoscored/")
+        print()
+        print("먼저 후스코어드 수집을 한 번 실행해야 파일이 생깁니다.")
+        print("  메뉴 [1] 전체 수집  또는  [3] 회차 지정해서 수집")
         return 1
 
     files = sorted(target.glob("FAILED_*.html"))

@@ -63,12 +63,12 @@ def run_menu() -> int | None:
 
     _, title, _, args = entry
 
-    # 진단 도구는 별도 스크립트
+    # 진단 도구는 별도 스크립트 (리포트를 만들지 않으므로 따로 표시)
     if args == "diagnose":
         from pathlib import Path
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
         from tools.diagnose_whoscored import main as diag_main  # type: ignore
-        return diag_main()
+        return ("diagnose", diag_main([]))   # 빈 인자 — sys.argv 의 --menu 를 쓰지 않게
 
     if args is None:                       # 회차 직접 입력
         rnd = _ask("회차 번호 (예: 260043): ")
@@ -89,15 +89,21 @@ def run_menu() -> int | None:
 
 def main() -> int:
     try:
-        code = run_menu()
+        result = run_menu()
     except KeyboardInterrupt:
         print("\n중단했습니다.")
         return 130
-    if code is None:                       # 사용자가 종료를 고름
+
+    if result is None:                     # 사용자가 종료를 고름
         return 0
+
+    kind, code = result if isinstance(result, tuple) else ("report", result)
+
     print()
-    if code == 0:
-        print("완료했습니다. 리포트는 reports 폴더에 있습니다.")
-    else:
+    if code != 0:
         print(f"오류로 끝났습니다 (코드 {code}). 위 로그를 확인하세요.")
+    elif kind == "diagnose":
+        print("진단을 마쳤습니다. 위 출력을 복사해서 전달하세요.")
+    else:
+        print("완료했습니다. 리포트는 reports 폴더에 있습니다.")
     return code

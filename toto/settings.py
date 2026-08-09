@@ -54,7 +54,7 @@ DEFAULT_LEAGUES: dict[str, dict] = {
         "ko": "K리그2", "aliases": ["K리그2", "K리그 2", "케이리그2"],
         "pinnacle_url": "https://www.pinnacle.com/en/soccer/korea-republic-k-league-2/matchups/#all",
         "pinnacle_name": "Korea Republic - K League 2",
-        "whoscored": "/Regions/260/Tournaments/388/South-Korea-K-League-2",
+        "whoscored": "/Regions/260/Tournaments/418/South-Korea-K-League-2",
         "whoscored_slug": ["south-korea", "k-league-2"],
     },
     "jleague": {

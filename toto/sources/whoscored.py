@@ -174,6 +174,12 @@ def _looks_like_home(html: str) -> bool:
     return "live scores" in title and "/Teams/" not in html
 
 
+def _same_path(a: str, b: str) -> str:
+    """두 후스코어드 경로가 사실상 같은지 (대소문자·끝 슬래시 무시)."""
+    norm = lambda s: re.sub(r"/+$", "", (s or "").strip().lower())  # noqa: E731
+    return norm(a) == norm(b)
+
+
 def slugify_href(href: str) -> str:
     """링크에서 비교용 슬러그만 남긴다. 대소문자·구분자 차이를 흡수."""
     tail = re.sub(r"^.*?/Tournaments/\d+/?", "", href, flags=re.I)
@@ -299,7 +305,13 @@ def read_league(browser: WhoScoredBrowser, settings: Settings,
         log.warning("[%s] 설정된 리그 경로가 홈으로 리다이렉트됐습니다 (%s). "
                     "메뉴에서 주소를 찾아 재시도합니다.", league_key, path)
         found = discover_league_url(browser, settings, league_key, cache=cache)
-        if found and slugify_href(found) != slugify_href(path):
+        # 슬러그가 아니라 경로 전체로 비교해야 한다. 슬러그는 Tournament ID 를
+        # 떼어낸 값이라, 정확히 그 ID 만 다른 경우에도 "같다"고 나온다.
+        if found and _same_path(found, path):
+            log.error("[%s] 자동 탐색 결과가 설정과 같습니다 (%s). "
+                      "이 리그는 후스코어드에서 다루지 않을 수 있습니다.",
+                      league_key, found)
+        elif found:
             html = browser.get_html(browser.abs_url(found), wait_selector="table")
             if html and not _looks_like_home(html):
                 log.info("[%s] 자동 탐색 주소로 성공: %s", league_key, found)
@@ -750,7 +762,8 @@ def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None) -> s
         return "실패 (bs4 미설치)"
 
     leagues = sorted({m.league for m in matches if m.league})
-    teams_done = 0
+    teams_done = 0          # 팀 페이지(강점/약점/폼)까지 받은 팀 수
+    stats_done = 0          # 리그 순위표 지표만이라도 확보한 팀 수
 
     with WhoScoredBrowser(settings, cache=cache) as browser:
         if not browser.available:
@@ -767,8 +780,16 @@ def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None) -> s
                 profile = TeamProfile(team=ref, league=match.league)
                 entry = table.get(ref.canonical) if ref.canonical else None
                 if entry:
+                    # 리그 순위표에서 얻은 지표만으로도 순위·레이더·지표비교는
+                    # 그릴 수 있다. 팀 페이지 수집이 실패해도 이건 살린다.
                     profile.stats = entry["stats"]
+                    profile.source_ok = True
+                    stats_done += 1
+
                     ref.whoscored_url = entry.get("url", "")
+                    if not ref.whoscored_url:
+                        log.debug("%s: 팀 페이지 링크가 없어 강점/약점·폼은 생략",
+                                  ref.canonical)
                     payload = read_team(browser, settings, ref.whoscored_url,
                                         ref.canonical, resolver, cache=cache)
                     if payload:
@@ -777,7 +798,6 @@ def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None) -> s
                         profile.style_of_play = payload.get("style") or []
                         profile.form = [FormEntry(**f) for f in (payload.get("form") or [])]
                         profile.missing_players = payload.get("missing") or []
-                        profile.source_ok = True
                         teams_done += 1
                 else:
                     match.notes.append(
@@ -790,6 +810,10 @@ def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None) -> s
                                      match.league, cache=cache)
 
     total = len(matches) * 2
-    if teams_done == 0:
+    if stats_done == 0:
         return "실패 (수집 0팀)"
+    if teams_done == 0:
+        return f"부분 ({stats_done}/{total}팀 순위·지표만, 강점/약점 없음)"
+    if teams_done < stats_done:
+        return f"부분 ({stats_done}/{total}팀 지표, {teams_done}팀 상세)"
     return f"ok ({teams_done}/{total}팀)"

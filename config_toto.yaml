@@ -93,8 +93,7 @@ leagues:
     aliases: ["K리그2", "K리그 2", "케이리그2"]
     pinnacle_url: "https://www.pinnacle.com/en/soccer/korea-republic-k-league-2/matchups/#all"
     pinnacle_name: "Korea Republic - K League 2"
-    # K리그2 ID 는 미확인 — 자동 탐색이 슬러그로 찾아낸다
-    whoscored: "/Regions/260/Tournaments/388/South-Korea-K-League-2"
+    whoscored: "/Regions/260/Tournaments/418/South-Korea-K-League-2"
     whoscored_slug: ["south-korea", "k-league-2"]
   jleague:
     ko: "J리그"

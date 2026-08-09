@@ -80,6 +80,10 @@ class TeamResolver:
         self._index: dict[str, str] = {}     # 정규화 별칭 → 정규명
         self._canonicals: list[str] = []
         self._league: dict[str, str] = {}    # 정규명 → 리그 키
+        # 조회 결과 기억. 같은 이름을 여러 번 묻는 일이 잦은데(리그 피드를
+        # 경기마다 훑는다), 매번 유사도 계산을 돌리고 경고까지 찍으면
+        # 느리고 로그가 도배된다. 실패도 기억해서 한 번만 경고한다.
+        self._memo: dict[str, str | None] = {}
         self._learned: dict[str, str] = {}   # 원본 표기 → 정규명 (신규 학습분)
         self._dirty = False
         self._load()
@@ -117,6 +121,15 @@ class TeamResolver:
         if not name or not name.strip():
             return None
 
+        memo_key = (name.strip(), learn)
+        if memo_key in self._memo:
+            return self._memo[memo_key]
+
+        result = self._resolve_uncached(name, learn)
+        self._memo[memo_key] = result
+        return result
+
+    def _resolve_uncached(self, name: str, learn: bool) -> str | None:
         key = normalize_name(name)
         if not key:
             log.warning("팀명 정규화 결과가 비었음: %r", name)
@@ -161,6 +174,7 @@ class TeamResolver:
         self._index[key] = canonical
         self._learned[alias.strip()] = canonical
         self._dirty = True
+        self._memo.clear()          # 인덱스가 바뀌었으니 기억한 결과를 버린다
 
     def save_learned(self) -> None:
         """이번 실행에서 새로 알아낸 별칭을 파일에 누적 저장한다."""

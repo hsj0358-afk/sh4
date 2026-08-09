@@ -47,19 +47,22 @@ DEFAULT_LEAGUES: dict[str, dict] = {
         "ko": "K리그1", "aliases": ["K리그1", "K리그 1", "케이리그1"],
         "pinnacle_url": "https://www.pinnacle.com/en/soccer/korea-republic-k-league-1/matchups/#all",
         "pinnacle_name": "Korea Republic - K League 1",
-        "whoscored": "/Regions/197/Tournaments/196/South-Korea-K-League-1",
+        "whoscored": "/Regions/260/Tournaments/387/South-Korea-K-League-1",
+        "whoscored_slug": ["south-korea", "k-league-1"],
     },
     "kleague2": {
         "ko": "K리그2", "aliases": ["K리그2", "K리그 2", "케이리그2"],
         "pinnacle_url": "https://www.pinnacle.com/en/soccer/korea-republic-k-league-2/matchups/#all",
         "pinnacle_name": "Korea Republic - K League 2",
-        "whoscored": "/Regions/197/Tournaments/197/South-Korea-K-League-2",
+        "whoscored": "/Regions/260/Tournaments/388/South-Korea-K-League-2",
+        "whoscored_slug": ["south-korea", "k-league-2"],
     },
     "jleague": {
         "ko": "J리그", "aliases": ["J리그", "제이리그", "일본"],
         "pinnacle_url": "https://www.pinnacle.com/en/soccer/japan-j-league/matchups/#all",
         "pinnacle_name": "Japan - J League",
-        "whoscored": "/Regions/141/Tournaments/291/Japan-J1-League",
+        "whoscored": "/Regions/110/Tournaments/150/Japan-J-League",
+        "whoscored_slug": ["japan", "j-league"],
     },
 }
 

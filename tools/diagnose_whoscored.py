@@ -98,6 +98,43 @@ def summarize(path: Path) -> None:
         ids = [d.get("id") for d in soup.find_all(id=True)][:25]
         print(f"  id 가진 요소 예시: {ids}")
 
+    _tournament_links(raw)
+
+
+# 저장된 페이지가 홈으로 리다이렉트된 것이라면, 그 안에 대회 메뉴가 들어 있다.
+# 거기서 우리가 쓰는 리그의 실제 주소를 뽑아낸다.
+_TOURNAMENT_HREF = re.compile(r"/Regions/\d+/Tournaments/\d+[^\"'\s>]*", re.I)
+
+WANTED = {
+    "K리그1": ("south-korea", "k-league-1"),
+    "K리그2": ("south-korea", "k-league-2"),
+    "J리그": ("japan", "j-league"),
+    "프리미어리그": ("england", "premier-league"),
+    "라리가": ("spain", "laliga"),
+    "분데스리가": ("germany", "bundesliga"),
+    "세리에A": ("italy", "serie-a"),
+    "리그앙": ("france", "ligue-1"),
+}
+
+
+def _tournament_links(raw: str) -> None:
+    hrefs = {}
+    for href in _TOURNAMENT_HREF.findall(raw):
+        tail = re.sub(r"^.*?/Tournaments/\d+/?", "", href, flags=re.I)
+        slug = re.sub(r"[^a-z0-9]+", "-", tail.lower()).strip("-")
+        if slug:
+            hrefs.setdefault(slug, href)
+    print(f"  대회(/Regions/../Tournaments/..) 링크: {len(hrefs)}개")
+    if not hrefs:
+        return
+    for label, tokens in WANTED.items():
+        hits = [(s, h) for s, h in hrefs.items() if all(t in s for t in tokens)]
+        if hits:
+            slug, href = min(hits, key=lambda x: len(x[0]))
+            print(f"      {label:<8} → {href}")
+        else:
+            print(f"      {label:<8} → (없음)")
+
 
 def main(argv: list[str] | None = None) -> int:
     # 메뉴에서 호출할 때는 argv=[] 로 넘어온다. sys.argv 를 그대로 읽으면

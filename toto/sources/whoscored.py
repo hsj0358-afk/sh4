@@ -156,6 +156,74 @@ class WhoScoredBrowser:
         return urljoin(self.base, path)
 
 
+# /Regions/{지역}/Tournaments/{대회}/... 형태의 리그 링크
+_TOURNAMENT_HREF = re.compile(r"/Regions/\d+/Tournaments/\d+[^\"'\s>]*", re.I)
+
+
+def _looks_like_home(html: str) -> bool:
+    """리그 페이지가 아니라 라이브스코어 홈으로 리다이렉트됐는지.
+
+    후스코어드는 존재하지 않는 Region/Tournament ID 를 받으면 조용히 홈으로
+    보낸다. 그러면 표도 팀 링크도 없어서 '파싱 실패'처럼 보이지만 원인은
+    전혀 다르다.
+    """
+    if not html:
+        return False
+    m = re.search(r"<title[^>]*>(.*?)</title>", html, re.S | re.I)
+    title = re.sub(r"\s+", " ", m.group(1)).strip().lower() if m else ""
+    return "live scores" in title and "/Teams/" not in html
+
+
+def slugify_href(href: str) -> str:
+    """링크에서 비교용 슬러그만 남긴다. 대소문자·구분자 차이를 흡수."""
+    tail = re.sub(r"^.*?/Tournaments/\d+/?", "", href, flags=re.I)
+    return re.sub(r"[^a-z0-9]+", "-", tail.lower()).strip("-")
+
+
+def discover_league_url(browser: "WhoScoredBrowser", settings: Settings,
+                        league_key: str, cache=None) -> str | None:
+    """후스코어드 자체 메뉴에서 리그 주소를 찾아낸다.
+
+    Region/Tournament ID 는 시즌이 바뀌거나 사이트가 개편되면 달라진다.
+    ID 를 설정에 박아두는 대신, 홈페이지에 들어 있는 대회 목록에서
+    슬러그(예: south-korea-k-league-1)로 찾는 편이 훨씬 오래 간다.
+    """
+    cfg = settings.leagues.get(league_key) or {}
+    tokens = [str(t).lower() for t in (cfg.get("whoscored_slug") or [])]
+    if not tokens:
+        return None
+
+    key = f"leagueurl_{league_key}"
+    cached = cache.get("whoscored", key) if cache else None
+    if cached:
+        return cached
+
+    html = browser.get_html(browser.base)
+    if not html:
+        return None
+
+    seen: dict[str, str] = {}
+    for href in _TOURNAMENT_HREF.findall(html):
+        slug = slugify_href(href)
+        if slug:
+            seen.setdefault(slug, href)
+
+    # 모든 토큰을 포함하는 슬러그 중 가장 짧은 것 (Stages/Seasons 가 붙은
+    # 긴 변형보다 리그 메인 경로를 고른다)
+    hits = [(slug, href) for slug, href in seen.items()
+            if all(t in slug for t in tokens)]
+    if not hits:
+        log.warning("[%s] 후스코어드 메뉴에서 리그를 찾지 못했습니다 "
+                    "(슬러그 %s, 후보 %d개)", league_key, tokens, len(seen))
+        return None
+
+    slug, href = min(hits, key=lambda x: len(x[0]))
+    log.info("[%s] 리그 주소 자동 탐색: %s", league_key, href)
+    if cache:
+        cache.set("whoscored", key, href)
+    return href
+
+
 def _looks_blocked(html: str) -> bool:
     if not html or len(html) < 800:
         return True
@@ -224,6 +292,24 @@ def read_league(browser: WhoScoredBrowser, settings: Settings,
 
     url = browser.abs_url(path)
     html = browser.get_html(url, wait_selector="table")
+
+    # 설정된 ID 가 틀리면 후스코어드가 조용히 홈으로 보낸다.
+    # 그때는 사이트 메뉴에서 주소를 직접 찾아 한 번 더 시도한다.
+    if html and _looks_like_home(html):
+        log.warning("[%s] 설정된 리그 경로가 홈으로 리다이렉트됐습니다 (%s). "
+                    "메뉴에서 주소를 찾아 재시도합니다.", league_key, path)
+        found = discover_league_url(browser, settings, league_key, cache=cache)
+        if found and slugify_href(found) != slugify_href(path):
+            html = browser.get_html(browser.abs_url(found), wait_selector="table")
+            if html and not _looks_like_home(html):
+                log.info("[%s] 자동 탐색 주소로 성공: %s", league_key, found)
+            else:
+                log.error("[%s] 자동 탐색 주소로도 실패했습니다.", league_key)
+        else:
+            log.error("[%s] 대체 주소를 찾지 못했습니다. config_toto.yaml 의 "
+                      "leagues.%s.whoscored 를 실제 주소로 고쳐주세요.",
+                      league_key, league_key)
+
     if not html:
         log.error("리그 페이지 수집 실패: %s", league_key)
         return {}

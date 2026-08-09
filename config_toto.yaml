@@ -52,48 +52,57 @@ leagues:
     pinnacle_url: "https://www.pinnacle.com/en/soccer/england-premier-league/matchups/#all"
     pinnacle_name: "England - Premier League"
     whoscored: "/Regions/252/Tournaments/2/England-Premier-League"
+    whoscored_slug: ["england", "premier-league"]
   laliga:
     ko: "라리가"
     aliases: ["라리가", "프리메라", "스페인"]
     pinnacle_url: "https://www.pinnacle.com/en/soccer/spain-la-liga/matchups/#all"
     pinnacle_name: "Spain - La Liga"
     whoscored: "/Regions/206/Tournaments/4/Spain-LaLiga"
+    whoscored_slug: ["spain", "laliga"]
   bundesliga:
     ko: "분데스리가"
     aliases: ["분데스", "독일"]
     pinnacle_url: "https://www.pinnacle.com/en/soccer/germany-bundesliga/matchups/#all"
     pinnacle_name: "Germany - Bundesliga"
     whoscored: "/Regions/81/Tournaments/3/Germany-Bundesliga"
+    whoscored_slug: ["germany", "bundesliga"]
   seriea:
     ko: "세리에A"
     aliases: ["세리에", "이탈리아"]
     pinnacle_url: "https://www.pinnacle.com/en/soccer/italy-serie-a/matchups/#all"
     pinnacle_name: "Italy - Serie A"
     whoscored: "/Regions/108/Tournaments/5/Italy-Serie-A"
+    whoscored_slug: ["italy", "serie-a"]
   ligue1:
     ko: "리그앙"
     aliases: ["리그앙", "리그 1", "프랑스"]
     pinnacle_url: "https://www.pinnacle.com/en/soccer/france-ligue-1/matchups/#all"
     pinnacle_name: "France - Ligue 1"
     whoscored: "/Regions/74/Tournaments/22/France-Ligue-1"
+    whoscored_slug: ["france", "ligue-1"]
   kleague1:
     ko: "K리그1"
     aliases: ["K리그1", "K리그 1", "케이리그1"]
     pinnacle_url: "https://www.pinnacle.com/en/soccer/korea-republic-k-league-1/matchups/#all"
     pinnacle_name: "Korea Republic - K League 1"
-    whoscored: "/Regions/197/Tournaments/196/South-Korea-K-League-1"
+    whoscored: "/Regions/260/Tournaments/387/South-Korea-K-League-1"
+    whoscored_slug: ["south-korea", "k-league-1"]
   kleague2:
     ko: "K리그2"
     aliases: ["K리그2", "K리그 2", "케이리그2"]
     pinnacle_url: "https://www.pinnacle.com/en/soccer/korea-republic-k-league-2/matchups/#all"
     pinnacle_name: "Korea Republic - K League 2"
-    whoscored: "/Regions/197/Tournaments/197/South-Korea-K-League-2"
+    # K리그2 ID 는 미확인 — 자동 탐색이 슬러그로 찾아낸다
+    whoscored: "/Regions/260/Tournaments/388/South-Korea-K-League-2"
+    whoscored_slug: ["south-korea", "k-league-2"]
   jleague:
     ko: "J리그"
     aliases: ["J리그", "제이리그", "일본"]
     pinnacle_url: "https://www.pinnacle.com/en/soccer/japan-j-league/matchups/#all"
     pinnacle_name: "Japan - J League"
-    whoscored: "/Regions/141/Tournaments/291/Japan-J1-League"
+    whoscored: "/Regions/110/Tournaments/150/Japan-J-League"
+    whoscored_slug: ["japan", "j-league"]
 
 # 레이더 차트 항목 ---------------------------------------------------------
 # key      : TeamStats 의 속성명

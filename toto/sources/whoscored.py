@@ -259,11 +259,33 @@ def _table_rows(table) -> list[list[str]]:
     return rows
 
 
-def _header_index(rows: list[list[str]], *names: str) -> int | None:
+_TEAM_LABELS = ("team", "팀", "club")
+_PLAYED_LABELS = ("pl", "p", "played", "mp", "gp")
+
+
+def _find_header(rows: list[list[str]]) -> int:
+    """실제 컬럼 머리글 행의 인덱스를 찾는다.
+
+    후스코어드 순위표는 머리글이 두 줄이다. 첫 줄은 'Overall | Home | Away'
+    같은 묶음 라벨이고, 컬럼명(Team/P/W/D/L/GF/GA/Pts)은 그 다음 줄에 있다.
+    첫 줄을 헤더로 쓰면 모든 컬럼 인덱스가 어긋나 값이 0 으로 읽힌다.
+    """
+    for i, row in enumerate(rows[:4]):
+        low = [c.strip().lower() for c in row]
+        if any(c in _TEAM_LABELS for c in low):
+            return i
+    for i, row in enumerate(rows[:4]):
+        low = [c.strip().lower() for c in row]
+        if any(c in _PLAYED_LABELS for c in low):
+            return i
+    return 0
+
+
+def _header_index(rows: list[list[str]], *names: str, hdr: int = 0) -> int | None:
     """헤더 행에서 주어진 이름 중 하나와 맞는 컬럼 인덱스를 찾는다."""
-    if not rows:
+    if not rows or hdr >= len(rows):
         return None
-    header = [h.lower() for h in rows[0]]
+    header = [h.strip().lower() for h in rows[hdr]]
     for want in names:
         w = want.lower()
         for i, h in enumerate(header):
@@ -353,19 +375,20 @@ def read_league(browser: WhoScoredBrowser, settings: Settings,
         rows = _table_rows(table)
         if len(rows) < 3:
             continue
-        i_team = _header_index(rows, "team", "")
-        i_pl = _header_index(rows, "pl", "p", "played", "mp")
-        i_pts = _header_index(rows, "pts", "points")
+        hdr = _find_header(rows)
+        i_team = _header_index(rows, "team", "club", hdr=hdr)
+        i_pl = _header_index(rows, "pl", "p", "played", "mp", "gp", hdr=hdr)
+        i_pts = _header_index(rows, "pts", "points", hdr=hdr)
         if i_pl is None or i_pts is None:
             continue
         idx = {
-            "w": _header_index(rows, "w", "won"),
-            "d": _header_index(rows, "d", "drawn"),
-            "l": _header_index(rows, "l", "lost"),
-            "gf": _header_index(rows, "gf", "f", "goals for"),
-            "ga": _header_index(rows, "ga", "a", "goals against"),
+            "w": _header_index(rows, "w", "won", hdr=hdr),
+            "d": _header_index(rows, "d", "drawn", hdr=hdr),
+            "l": _header_index(rows, "l", "lost", hdr=hdr),
+            "gf": _header_index(rows, "gf", "f", "goals for", hdr=hdr),
+            "ga": _header_index(rows, "ga", "a", "goals against", hdr=hdr),
         }
-        for row in rows[1:]:
+        for row in rows[hdr + 1:]:
             canon = _row_team(row, resolver, i_team)
             if not canon:
                 continue
@@ -386,15 +409,16 @@ def read_league(browser: WhoScoredBrowser, settings: Settings,
         rows = _table_rows(table)
         if len(rows) < 3:
             continue
-        i_team = _header_index(rows, "team", "")
-        i_shots = _header_index(rows, "shots pg", "shotspg")
-        i_poss = _header_index(rows, "possession%", "possession")
-        i_pass = _header_index(rows, "pass%", "passsuccess", "pass success")
-        i_aerial = _header_index(rows, "aerialswon", "aerials won")
-        i_rating = _header_index(rows, "rating")
+        hdr = _find_header(rows)
+        i_team = _header_index(rows, "team", "club", hdr=hdr)
+        i_shots = _header_index(rows, "shots pg", "shotspg", hdr=hdr)
+        i_poss = _header_index(rows, "possession%", "possession", hdr=hdr)
+        i_pass = _header_index(rows, "pass%", "passsuccess", "pass success", hdr=hdr)
+        i_aerial = _header_index(rows, "aerialswon", "aerials won", hdr=hdr)
+        i_rating = _header_index(rows, "rating", hdr=hdr)
         if not any(x is not None for x in (i_shots, i_poss, i_pass, i_rating)):
             continue
-        for row in rows[1:]:
+        for row in rows[hdr + 1:]:
             canon = _row_team(row, resolver, i_team)
             if not canon:
                 continue
@@ -404,6 +428,12 @@ def read_league(browser: WhoScoredBrowser, settings: Settings,
             st.pass_success = _f(row, i_pass) or st.pass_success
             st.aerials_won_pg = _f(row, i_aerial) or st.aerials_won_pg
             st.rating = _f(row, i_rating) or st.rating
+
+    # 다음에 파서를 고칠 때 쓸 수 있도록 원본을 항상 남긴다.
+    # (실패했을 때만 남기면, 이번처럼 "표는 찾았는데 값이 전부 0" 인
+    #  어정쩡한 경우에 정작 볼 자료가 없다.)
+    if cache is not None:
+        cache.save_debug("whoscored", f"page_league_{league_key}", html)
 
     if not out:
         # 왜 실패했는지 구분되도록 구조 정보를 남긴다.
@@ -423,7 +453,16 @@ def read_league(browser: WhoScoredBrowser, settings: Settings,
             cache.save_debug("whoscored", f"league_{league_key}", html)
         return {}
 
-    log.info("후스코어드 %s — 팀 %d개 수집", league_key, len(out))
+    with_played = sum(1 for v in out.values() if (v["stats"].played or 0) > 0)
+    if with_played == 0:
+        log.error("후스코어드 %s — 팀 %d개를 찾았지만 경기수/승점이 모두 비었습니다. "
+                  "순위표 컬럼 해석이 어긋난 것으로 보입니다. 원본: %s",
+                  league_key, len(out),
+                  f"cache/<날짜>/whoscored/FAILED_page_league_{league_key}.html")
+        return {}
+
+    log.info("후스코어드 %s — 팀 %d개 수집 (경기수 확보 %d팀)",
+             league_key, len(out), with_played)
     if cache:
         cache.set("whoscored", f"league_{league_key}", _freeze_league(out))
     return out

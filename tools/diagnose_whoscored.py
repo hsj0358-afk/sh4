@@ -79,19 +79,15 @@ def summarize(path: Path) -> None:
     print(f"  <table>: {len(tables)}개")
     for i, t in enumerate(tables[:8]):
         rows = t.find_all("tr")
-        header = []
-        if rows:
-            header = [c.get_text(" ", strip=True)
-                      for c in rows[0].find_all(["th", "td"])][:12]
         tid = t.get("id") or ""
         cls = " ".join(t.get("class") or [])[:34]
         print(f"      [{i}] {len(rows):>3}행  id={tid[:26]:<28} class={cls}")
-        if header:
-            print(f"           헤더: {header}")
-        if len(rows) > 1:
-            first = [c.get_text(" ", strip=True)
-                     for c in rows[1].find_all(["th", "td"])][:12]
-            print(f"           1행 : {first}")
+        # 머리글이 여러 줄일 수 있으므로 앞 3줄과 첫 데이터 2줄을 그대로 보여준다
+        for j, r in enumerate(rows[:5]):
+            cells = [c.get_text(" ", strip=True)
+                     for c in r.find_all(["th", "td"])][:14]
+            tag = "th" if r.find("th") else "td"
+            print(f"           r{j} ({tag}): {cells}")
 
     # 표가 없다면 어떤 컨테이너가 있는지
     if not tables:
@@ -150,7 +146,10 @@ def main(argv: list[str] | None = None) -> int:
         print("  메뉴 [1] 전체 수집  또는  [3] 회차 지정해서 수집")
         return 1
 
-    files = sorted(target.glob("FAILED_*.html"))
+    # 리그 페이지 원본(page_league_*)을 우선 본다. 파싱이 '되긴 했는데
+    # 값이 이상한' 경우는 이 파일에만 단서가 있다.
+    files = sorted(target.glob("FAILED_page_league_*.html"))
+    files += [f for f in sorted(target.glob("FAILED_*.html")) if f not in files]
     if not files:
         files = sorted(target.glob("*.html"))
     if not files:
@@ -158,7 +157,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     print(f"대상 폴더: {target}")
-    for f in files[:4]:
+    for f in files[:3]:
         summarize(f)
     print("=" * 72)
     print("위 출력을 그대로 복사해서 전달해 주세요.")

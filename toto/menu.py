@@ -24,8 +24,8 @@ ITEMS = [
      "회차 번호를 직접 입력합니다.", None),          # None = 추가 입력 필요
     ("4", "데모 보기 (네트워크 불필요)",
      "샘플 데이터로 화면만 확인합니다.", ["--demo"]),
-    ("5", "캐시 비우고 새로 수집",
-     "저장된 응답을 무시하고 다시 받습니다.", ["--no-cache"]),
+    ("5", "캐시 지우고 처음부터 다시 수집",
+     "저장된 응답을 삭제하고 전부 새로 받습니다.", "clear-cache"),
     ("6", "후스코어드 수집 실패 진단",
      "저장된 실패 원본을 분석해 원인을 출력합니다.", "diagnose"),
 ]
@@ -62,6 +62,24 @@ def run_menu() -> int | None:
         return 1
 
     _, title, _, args = entry
+
+    # 캐시를 실제로 지운다. --no-cache 는 읽기만 건너뛰고 낡은 파일은
+    # 그대로 남아서, 파서를 고쳐도 옛 결과가 계속 쓰이는 일이 있었다.
+    if args == "clear-cache":
+        import shutil
+        from .cache import CACHE_ROOT
+        removed = 0
+        if CACHE_ROOT.exists():
+            for child in CACHE_ROOT.iterdir():
+                if child.name == "browser":     # 봇 통과 쿠키는 남긴다
+                    continue
+                shutil.rmtree(child, ignore_errors=True) if child.is_dir() \
+                    else child.unlink(missing_ok=True)
+                removed += 1
+        print(f"캐시 {removed}개 항목을 지웠습니다 "
+              f"(브라우저 프로필은 유지).")
+        rnd = _ask("회차 번호 (비우면 자동 탐지): ")
+        args = ["--round", rnd] if rnd else []
 
     # 진단 도구는 별도 스크립트 (리포트를 만들지 않으므로 따로 표시)
     if args == "diagnose":

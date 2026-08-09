@@ -310,8 +310,13 @@ def read_league(browser: WhoScoredBrowser, settings: Settings,
     Returns: {정규명: {"stats": TeamStats, "url": 팀페이지 경로}}
     """
     cached = cache.get("whoscored", f"league_{league_key}") if cache else None
+    revived = _revive_league(cached) if cached is not None else None
+    if revived:
+        log.info("[%s] 캐시 사용 (팀 %d개). 새로 받으려면 캐시 비우기를 쓰세요.",
+                 league_key, len(revived))
+        return revived
     if cached is not None:
-        return _revive_league(cached)
+        log.info("[%s] 저장된 캐시가 구버전이라 새로 받습니다.", league_key)
 
     path = (settings.leagues.get(league_key) or {}).get("whoscored", "")
     if not path:
@@ -495,17 +500,29 @@ def _f(row: list[str], i: int | None) -> float | None:
     return _num(row[i])
 
 
+# 캐시 형식/파싱 로직이 바뀌면 이 값을 올린다. 옛 캐시는 자동으로 버려진다.
+# (파서를 고쳐도 같은 날 저장된 잘못된 캐시가 계속 쓰이는 것을 막는다)
+_LEAGUE_CACHE_VERSION = 2
+
+
 def _freeze_league(data: dict) -> dict:
     from dataclasses import asdict
-    return {k: {"stats": asdict(v["stats"]), "url": v["url"]} for k, v in data.items()}
+    return {
+        "_v": _LEAGUE_CACHE_VERSION,
+        "teams": {k: {"stats": asdict(v["stats"]), "url": v["url"]}
+                  for k, v in data.items()},
+    }
 
 
-def _revive_league(data: dict) -> dict:
+def _revive_league(data: dict) -> dict | None:
+    """캐시 → 리그 데이터. 버전이 다르면 None (다시 받게 한다)."""
+    if not isinstance(data, dict) or data.get("_v") != _LEAGUE_CACHE_VERSION:
+        return None
     out = {}
-    for k, v in (data or {}).items():
+    for k, v in (data.get("teams") or {}).items():
         st = TeamStats(**(v.get("stats") or {}))
         out[k] = {"stats": st, "url": v.get("url", "")}
-    return out
+    return out or None
 
 
 # --------------------------------------------------------------------------

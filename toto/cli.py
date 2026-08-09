@@ -58,6 +58,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--open", action="store_true",
                    help="생성 후 기본 브라우저로 열기")
     p.add_argument("-v", "--verbose", action="store_true", help="디버그 로그")
+    p.add_argument("--menu", action="store_true",
+                   help="대화형 메뉴 (바탕화면 바로가기용)")
     p.add_argument("--version", action="version", version=f"toto {__version__}")
     return p
 
@@ -107,6 +109,11 @@ def _resolve_teams(matches, resolver: TeamResolver, report: Report,
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    if args.menu:
+        from .menu import main as menu_main
+        return menu_main()
+
     _setup_logging(args.verbose)
 
     settings = load_settings()

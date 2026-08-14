@@ -15,3 +15,4 @@ reports/
 # 토토 분석기 생성물
 cache/
 data/teams.learned.yaml
+data/last_round.txt

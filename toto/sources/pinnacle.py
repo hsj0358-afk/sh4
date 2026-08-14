@@ -215,7 +215,10 @@ def _find_matchup(matchups: list, resolver: TeamResolver,
         h, a = _participants(mu)
         if not h or not a:
             continue
-        rh, ra = resolver.resolve(h, learn=False), resolver.resolve(a, learn=False)
+        # 같은 나라의 다른 대회까지 훑을 때는 K3·아마추어 팀이 잔뜩 섞여
+        # 들어온다. 그건 못 찾는 게 정상이라 경고로 남기지 않는다.
+        rh = resolver.resolve(h, learn=False, quiet=True)
+        ra = resolver.resolve(a, learn=False, quiet=True)
         if rh == home_canon and ra == away_canon:
             return mu
     return None

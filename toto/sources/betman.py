@@ -17,7 +17,7 @@ import re
 from pathlib import Path
 
 from ..models import Match, TeamRef
-from ..settings import Settings, load_yaml
+from ..settings import ROOT, Settings, load_yaml
 
 log = logging.getLogger(__name__)
 
@@ -200,19 +200,7 @@ def fetch_matches(settings: Settings, round_id: str | None = None,
             # 게임슬립은 frameType 파라미터가 붙는 프레임 구성이라, 경기표가
             # 메인 문서가 아니라 하위 프레임 안에 있을 수 있다. 모든 프레임에서
             # 행을 긁어 합친다.
-            for frame in page.frames:
-                try:
-                    found = frame.eval_on_selector_all(
-                        "tr",
-                        "els => els.map(el => ({cells: "
-                        "Array.from(el.querySelectorAll('td,th')).map(c => c.innerText)}))"
-                    ) or []
-                except Exception:
-                    continue
-                if found:
-                    log.debug("프레임 %s 에서 %d행 수집", frame.url or "(main)", len(found))
-                    rows.extend(found)
-                    frames_html.append((frame.name or "main", frame.content()))
+            rows = _scrape_rows(page, frames_html)
             html = page.content()
         except Exception as exc:
             log.error("베트맨 수집 실패: %s", exc)
@@ -238,30 +226,121 @@ def fetch_matches(settings: Settings, round_id: str | None = None,
     for i, m in enumerate(matches, start=1):
         m.no = i
     log.info("베트맨 %s회차 — %d경기 수집", resolved_round, len(matches))
+    if len(matches) >= expected:
+        # 다음 실행에서 회차를 자동 탐지할 때의 출발점으로 남긴다.
+        _remember_round(resolved_round)
     return matches, resolved_round
 
 
+def _scrape_rows(page, frames_html: list | None = None) -> list[dict]:
+    """모든 프레임에서 표 행을 긁어 합친다.
+
+    게임슬립은 frameType 파라미터가 붙는 프레임 구성이라, 경기표가 메인
+    문서가 아니라 하위 프레임 안에 있을 수 있다.
+    """
+    rows: list[dict] = []
+    for frame in page.frames:
+        try:
+            found = frame.eval_on_selector_all(
+                "tr",
+                "els => els.map(el => ({cells: "
+                "Array.from(el.querySelectorAll('td,th')).map(c => c.innerText)}))"
+            ) or []
+        except Exception:
+            continue
+        if found:
+            log.debug("프레임 %s 에서 %d행 수집", frame.url or "(main)", len(found))
+            rows.extend(found)
+            if frames_html is not None:
+                try:
+                    frames_html.append((frame.name or "main", frame.content()))
+                except Exception:
+                    pass
+    return rows
+
+
+LAST_ROUND_FILE = ROOT / "data" / "last_round.txt"
+
+
+def _remember_round(round_id: str) -> None:
+    """마지막으로 성공한 회차를 남긴다 (다음 자동 탐지의 출발점)."""
+    if not round_id or not round_id.isdigit():
+        return
+    try:
+        LAST_ROUND_FILE.parent.mkdir(parents=True, exist_ok=True)
+        LAST_ROUND_FILE.write_text(round_id, encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _last_round() -> int | None:
+    try:
+        return int(LAST_ROUND_FILE.read_text(encoding="utf-8").strip())
+    except Exception:
+        return None
+
+
 def _detect_round(page, settings: Settings) -> str | None:
-    """판매중인 승무패 회차 코드를 찾는다."""
+    """판매중인 승무패 회차 코드를 찾는다.
+
+    베트맨 구매 목록은 링크를 href 가 아니라 스크립트로 여는 경우가 있어서
+    href 만 보면 한 건도 못 찾는다(실측에서 그랬다). 그래서
+    href → 페이지 전체 HTML → 직전 회차에서 앞으로 세어보기 순으로 시도한다.
+    """
     cfg = settings.betman
     game_id = cfg.get("game_id", DEFAULT_GAME_ID)
+    # gmTs 가 gmId 앞에 오기도 하고, 따옴표·쉼표로 넘겨지기도 한다
+    patterns = [
+        re.compile(rf"gmId={game_id}[^\"'\s]*?gmTs=(\d{{5,8}})"),
+        re.compile(rf"gmTs=(\d{{5,8}})[^\"'\s]*?gmId={game_id}"),
+        re.compile(rf"['\"]{game_id}['\"]\s*,\s*['\"]?(\d{{5,8}})"),
+    ]
+
+    def _scan(text: str) -> list[str]:
+        out: set[str] = set()
+        for pattern in patterns:
+            out.update(pattern.findall(text or ""))
+        return sorted(out)
+
     try:
         page.goto(cfg["buy_url"], wait_until="domcontentloaded", timeout=45000)
-        page.wait_for_timeout(2000)
-        # gmId=G011&gmTs=###### 형태의 링크에서 회차를 뽑는다
+        page.wait_for_timeout(2500)
+
         hrefs = page.eval_on_selector_all(
-            "a", "els => els.map(e => e.getAttribute('href') || '')") or []
-        pattern = re.compile(rf"gmId={game_id}[^\"']*?gmTs=(\d+)")
-        found = [pattern.search(h) for h in hrefs]
-        rounds = sorted({m.group(1) for m in found if m})
+            "a", "els => els.map(e => (e.getAttribute('href') || '') + '|' "
+                 "+ (e.getAttribute('onclick') || ''))") or []
+        rounds = _scan(" ".join(hrefs))
+        if not rounds:
+            # 프레임 안에 목록이 있을 수 있다
+            for frame in page.frames:
+                try:
+                    rounds = _scan(frame.content())
+                except Exception:
+                    continue
+                if rounds:
+                    break
         if rounds:
             log.info("승무패 회차 후보: %s → %s 사용", rounds, rounds[-1])
             return rounds[-1]
-        # 링크에 없으면 페이지 전체 텍스트에서 탐색
-        body = page.content()
-        m = pattern.search(body)
-        if m:
-            return m.group(1)
     except Exception as exc:
         log.warning("회차 자동 탐지 실패: %s", exc)
+
+    # 마지막 수단: 직전에 성공한 회차부터 앞으로 세어 실제로 열리는 회차를 찾는다.
+    last = _last_round()
+    if last is None:
+        return None
+    expected = int(cfg.get("expected_matches", 14))
+    for step in range(1, 7):
+        candidate = str(last + step)
+        url = cfg["slip_url"].format(game_id=game_id, round=candidate)
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=45000)
+            page.wait_for_timeout(2000)
+            rows = _scrape_rows(page)
+        except Exception:
+            continue
+        if len(_parse_rows(rows, settings)) >= expected:
+            log.info("회차 %s 부터 세어 %s 회차를 찾았습니다.", last, candidate)
+            return candidate
+    log.warning("직전 회차 %s 이후로 열리는 회차를 찾지 못했습니다.", last)
     return None

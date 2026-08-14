@@ -570,9 +570,16 @@ def build_h2h(matches: list[dict], home_canon: str, away_canon: str,
     """
     h2h = H2H()
     pair = {home_canon, away_canon}
-    for m in matches:
+    # 여러 리그 목록을 합쳐 넘길 수 있어(컵대회) 여기서 다시 최신순으로
+    # 정렬하고, 같은 경기가 두 리그 응답에 실린 경우를 걸러낸다.
+    seen: set[tuple] = set()
+    for m in sorted(matches, key=lambda x: x.get("utc", ""), reverse=True):
         if not m["finished"] or {m["home"], m["away"]} != pair:
             continue
+        key = (m["home"], m["away"], m.get("utc", ""))
+        if key in seen:
+            continue
+        seen.add(key)
         h2h.entries.append(H2HEntry(
             date=m["date"], home_team=m["home"], away_team=m["away"],
             home_goals=m["home_goals"], away_goals=m["away_goals"]))
@@ -634,7 +641,17 @@ def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None) -> s
 
     이미 프로필이 있으면(다른 소스가 먼저 채웠으면) 빈 칸만 메운다.
     """
-    leagues = sorted({m.league for m in matches if m.league})
+    # 경기의 리그만 받으면 컵대회에서 구멍이 난다. 부천(K2) vs 전북(K1) 같은
+    # 경기는 match.league 가 홈팀 기준으로 하나만 정해지는데, 그러면 원정팀은
+    # 그 리그 순위표에 없어서 통째로 빈칸이 된다. 그래서 **등장하는 모든 팀의
+    # 소속 리그**를 함께 받는다.
+    leagues = {m.league for m in matches if m.league}
+    for match in matches:
+        for ref in (match.home, match.away):
+            own = resolver.league_of(ref.canonical) if ref.canonical else None
+            if own:
+                leagues.add(own)
+    leagues = sorted(k for k in leagues if k in settings.leagues)
     if not leagues:
         return "생략 (리그 미상)"
 
@@ -649,13 +666,19 @@ def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None) -> s
         data = {key: read_league(browser, settings, key, resolver, cache=cache)
                 for key in leagues}
 
+    # 팀 → 항목 통합 색인. 어느 리그에서 왔든 팀만 알면 찾을 수 있게 한다.
+    index: dict[str, dict] = {}
+    for league_key in leagues:
+        for canon, entry in (data.get(league_key) or {}).get("teams", {}).items():
+            index.setdefault(canon, entry)
+
     for match in matches:
         league = data.get(match.league) or {"teams": {}, "matches": []}
         for side in ("home", "away"):
             ref: TeamRef = getattr(match, side)
             profile = getattr(match, f"{side}_profile") or TeamProfile(
                 team=ref, league=match.league)
-            entry = league["teams"].get(ref.canonical) if ref.canonical else None
+            entry = index.get(ref.canonical) if ref.canonical else None
             if entry:
                 fill_stats(profile.stats, entry["stats"])
                 profile.source_ok = True
@@ -668,8 +691,13 @@ def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None) -> s
             setattr(match, f"{side}_profile", profile)
 
         if match.home.canonical and match.away.canonical and not match.h2h.entries:
-            h2h = build_h2h(league["matches"], match.home.canonical,
-                            match.away.canonical,
+            # 컵대회는 두 팀의 리그가 달라, 어느 쪽 경기 목록에 실려 있을지
+            # 모른다. 받아 둔 리그를 전부 뒤진다.
+            pool = list(league["matches"])
+            for other in leagues:
+                if other != match.league:
+                    pool.extend((data.get(other) or {}).get("matches", []))
+            h2h = build_h2h(pool, match.home.canonical, match.away.canonical,
                             limit=int(settings.whoscored.get("h2h_count", 10)))
             if h2h.entries:
                 match.h2h = h2h

@@ -763,14 +763,15 @@ def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None) -> s
                         f"{ref.display}: 후스코어드에서 팀을 찾지 못했습니다.")
                 setattr(match, f"{side}_profile", profile)
 
-            if match.home.canonical and match.away.canonical:
-                h2h = read_h2h(browser, settings, match.home.canonical,
-                               match.away.canonical, resolver,
-                               match.league, cache=cache)
-                # 후스코어드 상대전적은 다년치라 더 낫지만, 못 가져왔을 때
-                # FotMob 이 채운 시즌 내 맞대결을 지우면 안 된다.
-                if h2h.entries or not match.h2h.entries:
-                    match.h2h = h2h
+            # FotMob 이 이미 맞대결을 채웠으면 건너뛴다. 후스코어드 H2H 는
+            # 경기당 20초 넘게 걸리는데(일정 검색 → 프리뷰), 실측에서 14경기
+            # 전부 '일정에서 경기를 찾지 못함' 이었다. 있는 데이터를 두고
+            # 5분을 버릴 이유가 없다.
+            if (match.home.canonical and match.away.canonical
+                    and not match.h2h.entries):
+                match.h2h = read_h2h(browser, settings, match.home.canonical,
+                                     match.away.canonical, resolver,
+                                     match.league, cache=cache)
 
     total = len(matches) * 2
     if stats_done == 0:

@@ -14,6 +14,7 @@ from datetime import datetime
 from . import charts
 from .models import Match, Report
 from .settings import Settings
+from .ticket import TICKET_CSS, render_ticket
 
 
 def esc(text) -> str:
@@ -436,45 +437,6 @@ def _verdict_box(report: Report) -> str:
             f'포아송 이항 분포로 직접 계산한 참고치입니다.</p>{warn}</div>')
 
 
-def _pick_table(matches: list[Match]) -> str:
-    """통합표 (지침 §7)."""
-    rows = ""
-    for m in matches:
-        p = m.probs
-        if p is None:
-            rows += (f'<tr><td>{m.no}</td><td>{esc(m.league_ko or m.league)}</td>'
-                     f'<td>{esc(m.home.display)}</td><td>{esc(m.away.display)}</td>'
-                     f'<td class="num" colspan="3">배당 없음</td>'
-                     f'<td class="num">—</td><td class="num">—</td>'
-                     f'<td>배당 미수집</td></tr>')
-            continue
-        ph, pd, pa = p.pct()
-        note = []
-        if p.toss_up:
-            note.append('<span class="tossup">백중세</span>')
-        if p.veto_note:
-            note.append(f'<span class="veto">Veto {esc(p.veto_note)}</span>')
-        if p.clamped:
-            note.append('<span class="veto">클램프</span>')
-        best = {"H": 0, "D": 1, "A": 2}[p.pick]
-        cells = []
-        for i, val in enumerate((ph, pd, pa)):
-            mark = ' class="num hi"' if i == best else ' class="num"'
-            cells.append(f'<td{mark}>{val:.1f}%</td>')
-        rows += (f'<tr><td>{m.no}</td><td>{esc(m.league_ko or m.league)}</td>'
-                 f'<td>{esc(m.home.display)}</td><td>{esc(m.away.display)}</td>'
-                 f'{"".join(cells)}'
-                 f'<td class="num pk">{esc(p.pick_ko)}</td>'
-                 f'<td class="num">{p.p_pick * 100:.1f}%</td>'
-                 f'<td>{" ".join(note)}</td></tr>')
-    return (f'<div class="tablewrap"><table class="picks">'
-            f'<thead><tr><th>No</th><th>리그</th><th>홈</th><th>원정</th>'
-            f'<th class="num">P(승)</th><th class="num">P(무)</th>'
-            f'<th class="num">P(패)</th><th class="num">픽</th>'
-            f'<th class="num">예상적중률</th><th>비고</th></tr></thead>'
-            f'<tbody>{rows}</tbody></table></div>')
-
-
 def _tossup_list(matches: list[Match]) -> str:
     """직관 적용 후보 (지침 §7, §9-(1))."""
     items = [m for m in matches if m.probs is not None and m.probs.toss_up]
@@ -541,7 +503,7 @@ def render_report(report: Report, settings: Settings) -> str:
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{esc(title)}</title>
-<style>{CSS}</style>
+<style>{CSS}{TICKET_CSS}</style>
 </head><body><div class="wrap" id="top">
 <header class="top">
   <h1>⚽ {esc(title)}</h1>
@@ -550,12 +512,11 @@ def render_report(report: Report, settings: Settings) -> str:
 </header>
 {warnings}
 {_verdict_box(report)}
-<h2 class="sec">통합표 — 보정 확률과 픽 (argmax)</h2>
 <p class="sub" style="color:var(--text-muted);font-size:12.5px;margin:0 0 12px">
   피나클 배당에서 <b>가산(균등) 마진</b>을 제거한 확률입니다(지침 §3-(b)).
-  픽은 각 경기의 최댓값을 그대로 고른 것이며(§4), 무승부 가중이나 리그 보정 같은
+  픽 기본값은 각 경기의 최댓값(argmax, §4)이며, 무승부 가중이나 리그 보정 같은
   임의 조정은 하지 않습니다.</p>
-{_pick_table(report.matches)}
+{render_ticket(report)}
 
 <h2 class="sec">직관 적용 후보 (백중세)</h2>
 {_tossup_list(report.matches)}

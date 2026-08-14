@@ -127,9 +127,9 @@ def radar(axes: list[dict], home_name: str, away_name: str,
     parts.append(polygon("home_pct", C_HOME, home_name))
     parts.append(polygon("away_pct", C_AWAY, away_name))
 
-    svg = (f'<svg viewBox="0 0 {size} {size}" width="100%" height="auto" '
+    svg = (f'<svg viewBox="0 0 {size} {size}" width="100%" '
            f'role="img" aria-label="리그 내 위치 레이더 차트" '
-           f'style="max-width:{size}px">{"".join(parts)}</svg>')
+           f'style="max-width:{size}px;height:auto">{"".join(parts)}</svg>')
     return (f'<figure class="chart">{svg}'
             f'{legend([(C_HOME, home_name), (C_AWAY, away_name)])}'
             f'<figcaption>바깥쪽일수록 해당 리그에서 상위. '
@@ -332,9 +332,9 @@ def diverging_bar(rows: list[dict], home_name: str, away_name: str,
                 f'dominant-baseline="central" font-size="11.5" font-weight="600" '
                 f'fill="{C_PRIMARY}">{esc(fmt.format(av))}</text>')
 
-    svg = (f'<svg viewBox="0 0 {width} {height}" width="100%" height="auto" '
+    svg = (f'<svg viewBox="0 0 {width} {height}" width="100%" '
            f'role="img" aria-label="두 팀 지표 직접 비교" '
-           f'style="max-width:{width}px">{"".join(parts)}</svg>')
+           f'style="max-width:{width}px;height:auto">{"".join(parts)}</svg>')
     return (f'<figure class="chart">{svg}'
             f'{legend([(C_HOME, home_name), (C_AWAY, away_name)])}'
             f'<figcaption>각 줄에서 막대 길이는 두 팀 중 큰 값을 기준으로 한 상대 길이입니다.'

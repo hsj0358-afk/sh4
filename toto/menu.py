@@ -31,6 +31,9 @@ ITEMS = [
      "저장된 실패 원본을 분석해 원인을 출력합니다.", "diagnose"),
     ("7", "데이터 소스 점검 (FBref · FotMob · Sofascore)",
      "새 소스에 접속해 구조를 확인합니다. 파싱은 하지 않습니다.", "probe"),
+    ("8", "저장된 점검 응답 다시 분석",
+     "접속하지 않고 [7]이 저장해 둔 응답에서 지표 위치를 찾습니다.",
+     "probe-analyze"),
 ]
 
 
@@ -85,13 +88,15 @@ def run_menu() -> int | None:
         args = ["--round", rnd] if rnd else []
 
     # 진단·점검 도구는 별도 스크립트 (리포트를 만들지 않으므로 따로 표시)
-    if args in ("diagnose", "probe"):
+    if args in ("diagnose", "probe", "probe-analyze"):
         from pathlib import Path
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
         if args == "diagnose":
             from tools.diagnose_whoscored import main as tool_main  # type: ignore
             return ("diagnose", tool_main([]))  # 빈 인자 — sys.argv 의 --menu 무시
         from tools.probe_sources import main as tool_main  # type: ignore
+        if args == "probe-analyze":
+            return ("diagnose", tool_main(["--analyze"]))
         use_browser = _ask("차단될 때를 대비해 브라우저로 시도할까요? (y/N): ")
         extra = ["--browser"] if use_browser.lower().startswith("y") else []
         return ("diagnose", tool_main(extra))

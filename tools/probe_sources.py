@@ -68,6 +68,12 @@ UNDERSTAT = {
     "EPL(대조군)": "https://understat.com/league/EPL",
 }
 
+# --analyze 로 저장본에서 찾을 키. 레이더에 아직 못 채운 항목들이다.
+DEFAULT_ANALYZE_KEYS = (
+    "possession", "xg", "expected", "shot", "pass", "duel", "aerial",
+    "tackle", "interception", "rating", "injur", "suspend", "form",
+)
+
 
 # --------------------------------------------------------------------------
 def _session():
@@ -114,7 +120,7 @@ def save(name: str, text: str) -> None:
     try:
         DUMP.mkdir(parents=True, exist_ok=True)
         (DUMP / f"{re.sub(r'[^0-9A-Za-z가-힣._-]+', '_', name)[:60]}.txt").write_text(
-            text[:400000], encoding="utf-8")
+            text[:4000000], encoding="utf-8")
     except Exception:
         pass
 
@@ -299,6 +305,115 @@ def _walk_keys(obj, prefix="", depth=0, out=None, maxd=3):
     return out
 
 
+def _sample(value) -> str:
+    """값을 한 줄로 줄여 보여준다."""
+    if isinstance(value, dict):
+        keys = ", ".join(list(value)[:6])
+        return f"(dict: {keys})" if keys else "(dict, 비어 있음)"
+    if isinstance(value, list):
+        if not value:
+            return "(list, 0)"
+        first = value[0]
+        if isinstance(first, dict):
+            return f"(list, {len(value)}) 첫 원소 키: " + ", ".join(list(first)[:6])
+        return f"(list, {len(value)}) 예: {str(first)[:40]}"
+    return str(value)[:60]
+
+
+def find_key_paths(data, patterns: tuple, max_paths: int = 60,
+                   max_nodes: int = 400_000) -> list[tuple[str, list[str]]]:
+    """patterns 가 **키 이름 또는 문자열 값**에 들어간 경로를 전부 찾는다.
+
+    두 가지를 다 봐야 한다. FotMob 은 지표 이름을 키가 아니라 값에 담는다 —
+    `seasonStats[].localizedTitleId = "expected_goals"` 처럼. 키만 훑으면
+    "xG 가 없다"는 잘못된 결론이 나온다.
+
+    리스트는 첫 원소만 보지 않고 전부 훑되, 경로의 인덱스를 `[]` 로 뭉개
+    같은 모양이 수백 줄 반복되지 않게 한다.
+    """
+    from collections import deque
+    found: dict[str, list[str]] = {}
+    order: list[str] = []
+    queue = deque([("", data)])
+    nodes = 0
+
+    def note(path: str, sample: str) -> None:
+        if path not in found:
+            if len(order) >= max_paths:
+                return
+            found[path] = []
+            order.append(path)
+        bucket = found[path]
+        if sample not in bucket and len(bucket) < 3:
+            bucket.append(sample)
+
+    while queue and nodes < max_nodes:
+        path, node = queue.popleft()
+        nodes += 1
+        if isinstance(node, dict):
+            for key, value in node.items():
+                child = f"{path}.{key}" if path else str(key)
+                low_k = str(key).lower()
+                if any(p in low_k for p in patterns):
+                    note(child, _sample(value))
+                elif isinstance(value, str) and any(p in value.lower() for p in patterns):
+                    note(child, value[:60])
+                queue.append((child, value))
+        elif isinstance(node, list):
+            for item in node:
+                queue.append((f"{path}[]", item))
+    return [(p, found[p]) for p in order]
+
+
+def report_key_paths(data, hint_keys: tuple) -> None:
+    if not hint_keys:
+        return
+    patterns = tuple(k.lower() for k in hint_keys)
+    hits = find_key_paths(data, patterns)
+    if not hits:
+        print(f"      찾는 키({', '.join(hint_keys)})가 경로에 없습니다.")
+        return
+    print(f"      ▼ 찾는 지표가 실제로 있는 경로 ({len(hits)}개):")
+    for path, samples in hits:
+        print(f"        {path} = {' | '.join(samples)}")
+
+
+def analyze_dumps(hint_keys: tuple) -> int:
+    """저장된 응답을 다시 뜯어본다 — 네트워크 없이 즉시 실행된다.
+
+    한 번 받아둔 응답이 cache/probe 에 그대로 있는데, 구조를 더 보려고
+    매번 다시 접속할 이유가 없다.
+    """
+    head("저장된 응답 다시 분석 (네트워크 사용 안 함)")
+    files = sorted(DUMP.glob("*.txt")) if DUMP.exists() else []
+    if not files:
+        print(f"  {DUMP} 에 저장된 응답이 없습니다.")
+        print("  먼저 점검을 한 번 실행하세요 (메뉴 [7]).")
+        return 1
+
+    for path in files:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        print(f"\n  ── {path.name}  ({len(text) / 1024:.0f}KB)")
+        body = unwrap_json(text)
+        try:
+            data = json.loads(body)
+        except Exception as exc:
+            m = re.search(
+                r'<script[^>]+id="__NEXT_DATA__"[^>]*>(.*?)</script>', body, re.S)
+            if not m:
+                print(f"     JSON 이 아닙니다 ({exc.__class__.__name__}) — 건너뜁니다.")
+                continue
+            try:
+                data = json.loads(m.group(1))
+                print("     __NEXT_DATA__ 내장 JSON 으로 분석합니다.")
+            except Exception:
+                print("     내장 JSON 도 잘렸습니다 — 건너뜁니다.")
+                continue
+        report_key_paths(data, hint_keys)
+    print()
+    return 0
+
+
 def probe_json(title: str, urls: dict, browser=None,
                hint_keys: tuple = ()) -> None:
     head(title)
@@ -333,24 +448,10 @@ def probe_json(title: str, urls: dict, browser=None,
         for k in keys[:20]:
             print(f"        {k}")
 
-        # 순위표·팀 지표가 들어 있을 만한 경로를 더 깊이 펼친다
-        for path in ("props.pageProps.table", "table", "details", "overview",
-                     "leagues", "stats"):
-            node = data
-            try:
-                for part in path.split("."):
-                    node = node[part]
-            except Exception:
-                continue
-            deep = _walk_keys(node, path, maxd=5)
-            if deep:
-                print(f"      ▼ {path} 상세 ({len(deep)}개 중 앞부분):")
-                for k in deep[:30]:
-                    print(f"        {k}")
-                break
-        low = text.lower()
-        for hk in hint_keys:
-            print(f"        · '{hk}' 포함: {'예' if hk.lower() in low else '아니오'}")
+        # 찾는 지표가 '어느 경로에' 있는지 — 이게 파서를 쓰는 데 필요한 정보다.
+        # (예전에는 본문에 문자열이 있는지 예/아니오만 찍어서, 있다는 건
+        #  알아도 어디서 꺼내야 하는지는 알 수 없었다.)
+        report_key_paths(data, hint_keys)
 
 
 # --------------------------------------------------------------------------
@@ -373,7 +474,18 @@ def main(argv: list[str] | None = None) -> int:
                     help="requests 가 막히면 실제 브라우저로 시도")
     ap.add_argument("--only", default="",
                     help="fbref / fotmob / sofascore / understat 중 하나만")
+    ap.add_argument("--analyze", action="store_true",
+                    help="접속하지 않고, 저장된 응답만 다시 뜯어본다")
+    ap.add_argument("--keys", default="",
+                    help="--analyze 로 찾을 키 (쉼표 구분). 기본: 지표 키 모음")
     args = ap.parse_args(argv if argv is not None else sys.argv[1:])
+
+    if args.analyze:
+        keys = tuple(k.strip() for k in args.keys.split(",") if k.strip()) \
+            or DEFAULT_ANALYZE_KEYS
+        print("저장된 응답을 다시 분석합니다 (접속하지 않습니다).")
+        print(f"찾는 키: {', '.join(keys)}")
+        return analyze_dumps(keys)
 
     try:
         import requests  # noqa: F401

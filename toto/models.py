@@ -101,9 +101,14 @@ class TeamStats:
     fouls_pg: float | None = None
     rating: float | None = None
 
-    # 기대득점 (제공되는 경우)
-    xg_pg: float | None = None
-    xga_pg: float | None = None
+    # 기대득점 — 시즌 누계와 그 표본 경기수를 함께 둔다. FotMob 의 xG 표는
+    # 순위표와 경기수가 다를 수 있어(집계 시점 차이) 따로 나눠야 정확하다.
+    xg_total: float | None = None
+    xga_total: float | None = None
+    xg_played: int | None = None
+    # 소스가 경기당 값을 직접 주는 경우 (후스코어드 등)
+    xg_pg_raw: float | None = None
+    xga_pg_raw: float | None = None
 
     # ---- 파생 지표 ----
     @property
@@ -177,6 +182,40 @@ class TeamStats:
         if not self.shots_pg or self.goals_for_pg is None:
             return None
         return self.goals_for_pg / self.shots_pg * 100
+
+    @property
+    def xg_pg(self) -> float | None:
+        if self.xg_pg_raw is not None:
+            return self.xg_pg_raw
+        if self.xg_total is None or not self.xg_played:
+            return None
+        return self.xg_total / self.xg_played
+
+    @property
+    def xga_pg(self) -> float | None:
+        if self.xga_pg_raw is not None:
+            return self.xga_pg_raw
+        if self.xga_total is None or not self.xg_played:
+            return None
+        return self.xga_total / self.xg_played
+
+    @property
+    def finishing_delta(self) -> float | None:
+        """실제 득점 − xG. 양수면 기대 이상으로 넣고 있다는 뜻.
+
+        FotMob 도 xgDiff 를 주지만 부호 규칙이 문서화돼 있지 않아 쓰지 않는다.
+        득점은 순위표에서 이미 확보했으므로 직접 뺀다.
+        """
+        if self.goals_for is None or self.xg_total is None:
+            return None
+        return self.goals_for - self.xg_total
+
+    @property
+    def defending_delta(self) -> float | None:
+        """실제 실점 − 피xG. 음수면 기대보다 덜 실점하고 있다는 뜻."""
+        if self.goals_against is None or self.xga_total is None:
+            return None
+        return self.goals_against - self.xga_total
 
     @property
     def defensive_solidity(self) -> float | None:

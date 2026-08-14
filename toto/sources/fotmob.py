@@ -257,7 +257,9 @@ def _parse_standings(data: Any, resolver: TeamResolver,
     unmatched: list[str] = []
 
     for block in _standings_blocks(data):
-        for section in ("all", "home", "away"):
+        # xg 는 all/home/away 와 나란히 있는 또 하나의 표다. 리그 응답 한 번에
+        # 이미 들어 있으므로 추가 요청 없이 xG·피xG 축을 채울 수 있다.
+        for section in ("all", "home", "away", "xg"):
             rows = block.get(section)
             if not isinstance(rows, list):
                 continue
@@ -286,6 +288,17 @@ def _parse_standings(data: Any, resolver: TeamResolver,
 def _apply_row(stats: TeamStats, row: dict, section: str) -> None:
     played = _int(row.get("played"))
     pts = _int(row.get("pts"))
+
+    if section == "xg":
+        # FotMob 이 함께 주는 xgDiff 는 쓰지 않는다. 부호 규칙(득점-xG 인지
+        # xG-득점 인지)이 문서화돼 있지 않아서, 득점은 all 표에서 이미
+        # 확보했으니 차이는 우리가 직접 계산한다.
+        if played is None or (stats.xg_played or 0) > played:
+            return
+        stats.xg_played = played
+        stats.xg_total = _float(row.get("xg"))
+        stats.xga_total = _float(row.get("xgConceded"))
+        return
 
     if section in ("home", "away"):
         # 스플릿 리그는 같은 팀이 여러 블록에 나온다. 경기수가 더 많은 쪽
@@ -342,6 +355,15 @@ def _int(value: Any) -> int | None:
         return None
     try:
         return int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _float(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return float(str(value).strip())
     except (TypeError, ValueError):
         return None
 

@@ -76,8 +76,8 @@ def _stats(rng: random.Random, strong: bool) -> TeamStats:
         dribbles_pg=rng.uniform(6, 12),
         fouls_pg=rng.uniform(8, 13),
         rating=rng.uniform(6.9, 7.3) if strong else rng.uniform(6.4, 6.75),
-        xg_pg=gf_pg * rng.uniform(0.85, 1.15),
-        xga_pg=ga_pg * rng.uniform(0.85, 1.15),
+        xg_pg_raw=gf_pg * rng.uniform(0.85, 1.15),
+        xga_pg_raw=ga_pg * rng.uniform(0.85, 1.15),
     )
 
 

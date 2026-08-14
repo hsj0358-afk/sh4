@@ -378,6 +378,86 @@ def report_key_paths(data, hint_keys: tuple) -> None:
         print(f"        {path} = {' | '.join(samples)}")
 
 
+def _iter_paths(node, max_nodes: int = 400_000):
+    """(정규화된 경로, 값) 을 얕은 것부터. 리스트 인덱스는 [] 로 뭉갠다."""
+    from collections import deque
+    queue = deque([("", node)])
+    seen = 0
+    while queue and seen < max_nodes:
+        path, cur = queue.popleft()
+        seen += 1
+        yield path, cur
+        if isinstance(cur, dict):
+            for key, value in cur.items():
+                queue.append((f"{path}.{key}" if path else str(key), value))
+        elif isinstance(cur, list):
+            for item in cur:
+                queue.append((f"{path}[]", item))
+
+
+def catalog_values(data, needle: str, limit: int = 80) -> list[str]:
+    """경로에 needle 이 든 모든 스칼라 값을 중복 없이 모은다.
+
+    find_key_paths 는 값 샘플을 3개까지만 보여준다. '이 리그에서 받을 수 있는
+    통계 종류가 전부 무엇인가' 같은 질문에는 전량이 필요하다.
+    """
+    out: list[str] = []
+    for path, value in _iter_paths(data):
+        if needle in path and isinstance(value, (str, int, float)) \
+                and not isinstance(value, bool):
+            text = str(value)
+            if text not in out:
+                out.append(text)
+                if len(out) >= limit:
+                    break
+    return out
+
+
+def expand_subtree(data, needle: str, maxd: int = 4, limit: int = 45) -> None:
+    """경로가 needle 로 끝나는 첫 노드의 하위 구조를 펼친다."""
+    for path, value in _iter_paths(data):
+        if path.endswith(needle) and isinstance(value, (dict, list)) and value:
+            lines = _walk_keys(value, path, maxd=maxd)
+            if not lines:
+                continue
+            print(f"     ▼ {path} 펼침 ({len(lines)}개 중 앞 {min(limit, len(lines))}개):")
+            for line in lines[:limit]:
+                print(f"        {line}")
+            return
+    print(f"     ({needle} 를 찾지 못했습니다)")
+
+
+def find_filled(data, key: str, limit: int = 2) -> None:
+    """해당 키가 비어 있지 않은 실제 사례를 찾아 보여준다.
+
+    `injury = None` 만 보면 필드가 있다는 것만 알 뿐, 값이 들어올 때 어떤
+    모양인지는 모른다. 결장자를 걸러내려면 그 모양을 알아야 한다.
+    """
+    shown = 0
+    for path, value in _iter_paths(data):
+        if not isinstance(value, dict) or key not in value:
+            continue
+        if value[key] in (None, "", [], {}):
+            continue
+        keep = {k: v for k, v in value.items()
+                if k in ("name", "id", key, "rating", "minutesPlayed", "role")}
+        print(f"     · {path}: {json.dumps(keep, ensure_ascii=False)[:220]}")
+        shown += 1
+        if shown >= limit:
+            return
+    if not shown:
+        print(f"     ('{key}' 에 값이 든 사례가 이 응답에는 없습니다)")
+
+
+# 저장본에서 자동으로 펼쳐 볼 지점. 4차 점검에서 '여기 있다'까지는 확인됐지만
+# 안쪽 모양을 못 본 곳들이다.
+EXPAND_POINTS = (
+    ("경기 스탯 표 (점유율·슈팅·피슈팅)", "content.stats"),
+    ("슛맵 1건 (팀별 슈팅/유효슈팅 집계용)", "shotmap.shots"),
+    ("선수 명단 1명 (결장·평점 필터용)", "squad[].members"),
+)
+
+
 def analyze_dumps(hint_keys: tuple) -> int:
     """저장된 응답을 다시 뜯어본다 — 네트워크 없이 즉시 실행된다.
 
@@ -410,6 +490,29 @@ def analyze_dumps(hint_keys: tuple) -> int:
                 print("     내장 JSON 도 잘렸습니다 — 건너뜁니다.")
                 continue
         report_key_paths(data, hint_keys)
+
+        # FotMob 통계 피드 카탈로그 — stats.teams[] 에 이 리그에서 받을 수
+        # 있는 팀 통계 종류가 전부 들어 있다. 여기서 '피슈팅'이 나오는지가
+        # '수비 견고함' 축의 성립 여부를 가른다.
+        names = catalog_values(data, "stats.teams[].header")
+        if names:
+            print(f"     ▼ 이 리그에서 받을 수 있는 팀 통계 {len(names)}종:")
+            for i in range(0, len(names), 3):
+                print("        " + " · ".join(names[i:i + 3]))
+            ids = catalog_values(data, "stats.teams[].name")
+            if ids:
+                print(f"     ▼ 피드 이름(URL 조각) {len(ids)}개:")
+                for i in range(0, len(ids), 4):
+                    print("        " + " · ".join(ids[i:i + 4]))
+
+        for title, needle in EXPAND_POINTS:
+            if any(needle.rstrip("[]") in p for p, _ in _iter_paths(data)):
+                print(f"     ── {title}")
+                expand_subtree(data, needle)
+
+        if any("injury" in p for p, _ in _iter_paths(data)):
+            print("     ── 결장(injury) 값이 실제로 든 사례")
+            find_filled(data, "injury")
     print()
     return 0
 

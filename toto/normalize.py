@@ -24,6 +24,9 @@ log = logging.getLogger(__name__)
 
 TEAMS_FILE = ROOT / "data" / "teams.yaml"
 LEARNED_FILE = ROOT / "data" / "teams.learned.yaml"
+# 승강으로 바뀐 소속 리그를 실제 순위표에서 배워 적어 두는 파일.
+# teams.yaml 보다 우선한다 (사람이 적은 값보다 이번 시즌 순위표가 옳다).
+LEAGUE_FILE = ROOT / "data" / "teams.league.yaml"
 
 # 팀명에서 떼어내도 의미가 유지되는 접미/접두어
 _NOISE_TOKENS = {
@@ -74,9 +77,12 @@ class TeamResolver:
     """별칭 테이블을 들고 팀명을 정규명으로 해석한다."""
 
     def __init__(self, teams_file: Path | None = None,
-                 learned_file: Path | None = None) -> None:
+                 learned_file: Path | None = None,
+                 league_file: Path | None = None) -> None:
         self.teams_file = teams_file or TEAMS_FILE
         self.learned_file = learned_file or LEARNED_FILE
+        self.league_file = league_file or LEAGUE_FILE
+        self._league_dirty = False
         self._index: dict[str, str] = {}     # 정규화 별칭 → 정규명
         self._canonicals: list[str] = []
         self._league: dict[str, str] = {}    # 정규명 → 리그 키
@@ -112,6 +118,10 @@ class TeamResolver:
             self._register(str(alias), str(canonical))
             if str(canonical) not in self._canonicals:
                 self._canonicals.append(str(canonical))
+
+        # 승강 반영분은 teams.yaml 을 덮어쓴다
+        for canonical, league in (load_yaml(self.league_file) or {}).items():
+            self._league[str(canonical)] = str(league)
 
         log.debug("팀 별칭 %d개 / 정규명 %d개 로드", len(self._index), len(self._canonicals))
 
@@ -204,6 +214,45 @@ class TeamResolver:
             log.info("학습 별칭 %d건 저장 → %s", len(self._learned), self.learned_file)
         except Exception as exc:
             log.warning("학습 별칭 저장 실패: %s", exc)
+
+    def set_league(self, canonical: str, league: str) -> bool:
+        """실제 순위표에서 확인된 소속 리그로 고친다. 바뀌었으면 True.
+
+        승강은 매 시즌 일어나는데 표를 손으로 고치면 반드시 한 시즌 늦는다.
+        2026 시즌에도 대구·수원FC 가 강등되고 인천·부천이 승격했는데 표는
+        2025 상태였고, 그 탓에 배당 조회가 엉뚱한 리그로 나갔다.
+        """
+        if not canonical or not league:
+            return False
+        old = self._league.get(canonical)
+        if old == league:
+            return False
+        self._league[canonical] = league
+        self._league_dirty = True
+        if old:
+            log.warning("소속 리그 정정: %s  %s → %s (순위표 기준)",
+                        canonical, old, league)
+        return True
+
+    def save_leagues(self) -> None:
+        """정정된 소속 리그를 파일에 남긴다 (다음 실행부터 처음부터 옳다)."""
+        if not self._league_dirty:
+            return
+        try:
+            import yaml  # type: ignore
+        except Exception:
+            return
+        try:
+            self.league_file.parent.mkdir(parents=True, exist_ok=True)
+            self.league_file.write_text(
+                "# 실제 순위표에서 확인한 소속 리그 (프로그램이 갱신한다).\n"
+                "# data/teams.yaml 의 league 값보다 우선한다.\n"
+                + yaml.safe_dump(dict(sorted(self._league.items())),
+                                 allow_unicode=True, sort_keys=True),
+                encoding="utf-8")
+            log.info("소속 리그 %d팀분 저장 → %s", len(self._league), self.league_file)
+        except Exception as exc:
+            log.warning("소속 리그 저장 실패: %s", exc)
 
     def league_of(self, canonical: str) -> str | None:
         """정규명 → 소속 리그 키. 베트맨 경기표에는 리그명이 없어서

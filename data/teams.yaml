@@ -408,7 +408,7 @@ Toulouse:
 Daegu FC:
   ko: [대구FC, 대구]
   en: [Daegu]
-  league: kleague1
+  league: kleague2
 Daejeon Citizen:
   ko: [대전하나시티즌, 대전, 대전시티즌, 대전하나]
   en: [Daejeon Hana Citizen, Daejeon]
@@ -448,7 +448,7 @@ Pohang Steelers:
 Suwon FC:
   ko: [수원FC]
   en: [Suwon City]
-  league: kleague1
+  league: kleague2
 Ulsan HD:
   ko: [울산HD, 울산, 울산현대, 울산HDFC]
   en: [Ulsan Hyundai, Ulsan]
@@ -462,7 +462,7 @@ Ansan Greeners:
 Bucheon FC 1995:
   ko: [부천FC, 부천]
   en: [Bucheon]
-  league: kleague2
+  league: kleague1
 Busan IPark:
   ko: [부산아이파크, 부산]
   en: [Busan]
@@ -490,7 +490,7 @@ Gimhae FC:
 Incheon United:
   ko: [인천유나이티드, 인천]
   en: [Incheon]
-  league: kleague2
+  league: kleague1
 Jeonnam Dragons:
   ko: [전남드래곤즈, 전남]
   en: [Jeonnam]

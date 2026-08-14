@@ -157,21 +157,11 @@ def main(argv: list[str] | None = None) -> int:
 
         _resolve_teams(matches, resolver, report, settings)
 
-        # ---- 2. 배당률 ----------------------------------------------------
-        if args.skip_odds:
-            report.source_status["배당률"] = "생략"
-        else:
-            from .sources import pinnacle
-            try:
-                report.source_status["배당률"] = pinnacle.fetch_odds(
-                    matches, settings, resolver, cache=cache)
-            except Exception as exc:
-                log.error("배당률 수집 중 오류: %s", exc)
-                report.source_status["배당률"] = "실패"
-
-        # ---- 3. FotMob (순위·홈원정 승점·폼·맞대결) -------------------------
-        # 후스코어드보다 먼저 돌린다. 리그당 요청 1회로 끝나 빠르고, 여기서
-        # 채운 값을 뒤에 오는 후스코어드가 덮어쓰지 않는다(빈 칸만 메운다).
+        # ---- 2. FotMob (순위·홈원정 승점·폼·맞대결) -------------------------
+        # 배당보다 먼저 돌린다. 순위표를 읽으면서 승강으로 바뀐 소속 리그를
+        # 정정하는데, 그게 끝난 뒤라야 피나클이 옳은 리그 피드를 조회한다.
+        # (2026 시즌에 대구·수원FC 가 K2 로, 인천·부천이 K1 로 옮겼는데 표가
+        #  2025 상태여서 배당 조회가 전부 헛돌고 폴백으로 겨우 건졌다.)
         if args.skip_fotmob:
             report.source_status["순위·폼"] = "생략"
         else:
@@ -182,6 +172,18 @@ def main(argv: list[str] | None = None) -> int:
             except Exception as exc:
                 log.error("FotMob 수집 중 오류: %s", exc)
                 report.source_status["순위·폼"] = "실패"
+
+        # ---- 3. 배당률 ----------------------------------------------------
+        if args.skip_odds:
+            report.source_status["배당률"] = "생략"
+        else:
+            from .sources import pinnacle
+            try:
+                report.source_status["배당률"] = pinnacle.fetch_odds(
+                    matches, settings, resolver, cache=cache)
+            except Exception as exc:
+                log.error("배당률 수집 중 오류: %s", exc)
+                report.source_status["배당률"] = "실패"
 
         # ---- 4. 후스코어드 (강점/약점·스타일·팀 통계) ------------------------
         if args.skip_whoscored:
@@ -210,6 +212,7 @@ def main(argv: list[str] | None = None) -> int:
                                                          league=match.league)
 
         resolver.save_learned()
+        resolver.save_leagues()
 
     # ---- 5. 분석 ----------------------------------------------------------
     report.matches = matches

@@ -672,6 +672,36 @@ def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None) -> s
         for canon, entry in (data.get(league_key) or {}).get("teams", {}).items():
             index.setdefault(canon, entry)
 
+    # 순위표에 실제로 올라 있는 리그로 소속을 정정한다. 승강이 반영되지 않은
+    # 표는 배당 조회를 통째로 엉뚱한 리그로 보낸다(2026 시즌 대구·수원FC·
+    # 인천·부천이 그랬다).
+    moved = 0
+    for league_key in leagues:
+        for canon in (data.get(league_key) or {}).get("teams", {}):
+            if resolver.set_league(canon, league_key):
+                moved += 1
+    if moved:
+        for match in matches:
+            own = (resolver.league_of(match.home.canonical)
+                   if match.home.canonical else None)
+            if own and own != match.league:
+                match.league = own
+                match.league_ko = settings.league_ko(own)
+            # 승강 반영 전에 붙은 '컵대회로 보인다' 경고는 근거가 사라졌다.
+            # (부천 vs 전북은 둘 다 K리그1 이라 컵대회가 아니었다.)
+            match.notes = [n for n in match.notes
+                           if not n.startswith("두 팀의 소속 리그가 다릅니다")]
+            lh = (resolver.league_of(match.home.canonical)
+                  if match.home.canonical else None)
+            la = (resolver.league_of(match.away.canonical)
+                  if match.away.canonical else None)
+            if lh and la and lh != la:
+                match.notes.append(
+                    f"두 팀의 소속 리그가 다릅니다 ({settings.league_ko(lh)} vs "
+                    f"{settings.league_ko(la)}) — 컵대회 경기로 보이며, "
+                    f"배당률·순위 데이터가 없을 수 있습니다.")
+        log.info("소속 리그 %d팀을 순위표 기준으로 정정했습니다.", moved)
+
     for match in matches:
         league = data.get(match.league) or {"teams": {}, "matches": []}
         for side in ("home", "away"):

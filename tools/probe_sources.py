@@ -579,6 +579,49 @@ def probe_fotmob_match(browser=None) -> None:
         return
 
 
+def probe_fotmob_stat_feed(browser=None) -> None:
+    """팀 통계 피드(data.fotmob.com)의 실제 스키마를 본다.
+
+    리그 응답의 stats.teams[] 가 통계 29종과 각각의 fetchAllUrl 을 알려준다.
+    URL 은 응답이 준 그대로 쓰지만, 그 안의 '팀 이름 ↔ 값' 구조는 아직 본 적이
+    없다. 파서는 모양으로 찾도록 짜뒀으니 이건 검증용이다.
+    """
+    head("②-3 FotMob 팀 통계 피드 — 팀 이름과 값이 어떤 모양인가")
+    league, status = _get_json(
+        "https://www.fotmob.com/api/data/leagues?id=9080", browser)
+    print(f"  리그 응답: {status}")
+    if league is None:
+        return
+
+    feeds: list[tuple[str, str, str]] = []
+    for node in _iter_all(league):
+        if not isinstance(node, dict):
+            continue
+        name, url, header = (node.get("name"), node.get("fetchAllUrl"),
+                             node.get("header"))
+        if isinstance(name, str) and isinstance(url, str) \
+                and url.startswith("http") and "_team" in name:
+            feeds.append((name, str(header or ""), url))
+    print(f"  팀 통계 피드 {len(feeds)}종 발견")
+    if not feeds:
+        print("  stats.teams[] 를 찾지 못했습니다.")
+        return
+
+    # 점유율이 있으면 그걸로, 없으면 첫 번째로 확인한다
+    pick = next((f for f in feeds if "possession" in f[0]), feeds[0])
+    print(f"  확인 대상: {pick[1]} ({pick[0]})")
+    print(f"    {pick[2]}")
+    time.sleep(1.5)
+    data, status = _get_json(pick[2], browser)
+    print(f"  [{'OK ' if data is not None else '실패'}] 피드 응답  {status}")
+    if data is None:
+        return
+    save(f"fotmob_feed_{pick[0]}", json.dumps(data)[:4000000])
+    print("     ▼ 전체 구조:")
+    for line in _walk_keys(data, maxd=5)[:40]:
+        print(f"        {line}")
+
+
 def probe_sofascore_stats(browser=None) -> None:
     """Sofascore 팀 시즌 통계 — FotMob 에 피슈팅이 없을 때의 대안."""
     head("③-2 Sofascore 팀 시즌 통계 — 피슈팅(shots against) 이 있는가")
@@ -745,6 +788,7 @@ def main(argv: list[str] | None = None) -> int:
                        hint_keys=("possession", "expected_goals", "xg",
                                   "shotsOnTarget", "rating", "injur"))
             probe_fotmob_match(browser)
+            probe_fotmob_stat_feed(browser)
         if not only or only == "sofascore":
             probe_json("③ Sofascore — 아시아 리그 보조", SOFASCORE, browser,
                        hint_keys=("k league", "j1 league", "uniqueTournament"))

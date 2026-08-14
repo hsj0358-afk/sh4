@@ -116,8 +116,14 @@ class TeamResolver:
         log.debug("팀 별칭 %d개 / 정규명 %d개 로드", len(self._index), len(self._canonicals))
 
     # ---- 해석 -----------------------------------------------------------
-    def resolve(self, name: str, learn: bool = True) -> str | None:
-        """팀명 → 정규명. 못 찾으면 None."""
+    def resolve(self, name: str, learn: bool = True,
+                quiet: bool = False) -> str | None:
+        """팀명 → 정규명. 못 찾으면 None.
+
+        quiet: 매칭 실패를 경고로 남기지 않는다. JSON 트리를 훑으며
+        "이 문자열이 팀명인가?"를 시험 삼아 물을 때 쓴다 — 그때는 실패가
+        정상이고, 경고를 남기면 로그가 수천 줄로 불어난다.
+        """
         if not name or not name.strip():
             return None
 
@@ -125,14 +131,16 @@ class TeamResolver:
         if memo_key in self._memo:
             return self._memo[memo_key]
 
-        result = self._resolve_uncached(name, learn)
+        result = self._resolve_uncached(name, learn, quiet)
         self._memo[memo_key] = result
         return result
 
-    def _resolve_uncached(self, name: str, learn: bool) -> str | None:
+    def _resolve_uncached(self, name: str, learn: bool,
+                          quiet: bool = False) -> str | None:
         key = normalize_name(name)
         if not key:
-            log.warning("팀명 정규화 결과가 비었음: %r", name)
+            if not quiet:
+                log.warning("팀명 정규화 결과가 비었음: %r", name)
             return None
         if key in self._index:
             return self._index[key]
@@ -164,7 +172,8 @@ class TeamResolver:
                 self._learn(name, best)
             return best
 
-        log.warning("팀명 매칭 실패: %r", name)
+        if not quiet:
+            log.warning("팀명 매칭 실패: %r", name)
         return None
 
     def _learn(self, alias: str, canonical: str) -> None:

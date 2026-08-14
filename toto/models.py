@@ -89,8 +89,19 @@ class TeamStats:
     # 팀 통계 (경기당 평균)
     shots_pg: float | None = None
     shots_on_target_pg: float | None = None
-    shots_against_pg: float | None = None      # 피슈팅 — '수비 견고함' 축
-    key_passes_pg: float | None = None         # '공격 창출력' 축
+    shots_against_pg: float | None = None      # 피슈팅 — 경기별 슛맵에서만 나온다
+    shots_on_target_against_pg: float | None = None
+    key_passes_pg: float | None = None
+    # FotMob 시즌 통계 피드에서 오는 항목 (리그 카탈로그 29종 중 쓰는 것)
+    big_chances_pg: float | None = None        # 결정적 기회 — '공격 창출력'
+    big_chances_missed_pg: float | None = None
+    touches_opp_box_pg: float | None = None    # 상대 박스 터치 — '경기 지배력'
+    accurate_passes_pg: float | None = None
+    poss_won_att_3rd_pg: float | None = None   # 상대 진영 볼 탈취
+    saves_pg: float | None = None
+    clearances_pg: float | None = None
+    corners_pg: float | None = None
+    clean_sheets: float | None = None
     possession: float | None = None
     pass_success: float | None = None
     pass_success_opp_half: float | None = None  # 상대 진영 패스 성공률

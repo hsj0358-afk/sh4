@@ -16,10 +16,14 @@
 리그당 **요청 1회**로 아래를 한꺼번에 얻는다(후스코어드는 팀마다 페이지를
 열어야 했고 그마저 자주 막혔다):
 
-  · 순위표 all/home/away  → 경기수·승·무·패·득실·승점, **홈/원정 승점**
-  · 시즌 전체 경기 목록    → 팀별 최근 5경기 폼, 두 팀 간 상대전적
+  · 순위표 all/home/away  → 경기수·승·무·패·득실·승점, **홈/원정 승점·득실**
+  · xG 표                 → 시즌 xG·피xG (같은 응답 안에 들어 있다)
+  · 시즌 전체 경기 목록    → 팀별 최근 N경기 폼, 두 팀 간 상대전적
+  · stats.teams[]         → 이 리그에서 받을 수 있는 팀 통계 29종의 URL
 
 홈/원정 승점은 레이더 축에 넣어두고도 후스코어드에서 한 번도 못 채운 항목이다.
+통계 29종은 리그당 지표 1개씩 추가 요청이 들지만, 한 번에 그 리그 전 팀
+값을 받으므로 팀별로 페이지를 여는 것보다 훨씬 싸다.
 
 ## 구조를 이름이 아니라 모양으로 찾는 이유
 
@@ -49,7 +53,7 @@ LEAGUE_PATH = "/api/data/leagues?id={id}"
 ALL_LEAGUES_PATH = "/api/data/allLeagues"
 
 # 캐시 형식이나 파싱 로직이 바뀌면 올린다. 옛 캐시는 자동으로 버려진다.
-_CACHE_VERSION = 1
+_CACHE_VERSION = 2
 
 _SCORE_RE = re.compile(r"(\d+)\s*[-:]\s*(\d+)")
 
@@ -232,7 +236,11 @@ def read_league(browser: FotMobBrowser, settings: Settings, league_key: str,
 
     teams = _parse_standings(data, resolver, league_key)
     matches = _parse_matches(data, resolver)
-    _attach_form(teams, matches, int(settings.whoscored.get("recent_form_count", 5)))
+    _attach_form(teams, matches, int(settings.whoscored.get("recent_form_count", 6)))
+
+    feeds = settings.fotmob.get("team_stats") or DEFAULT_TEAM_STAT_FEEDS
+    if teams and feeds:
+        read_team_stats(browser, data, teams, resolver, feeds, league_key)
 
     if not teams:
         log.error("[%s] FotMob 순위표를 해석하지 못했습니다 (id=%d). "
@@ -266,7 +274,7 @@ def _parse_standings(data: Any, resolver: TeamResolver,
             for row in rows:
                 if not _is_team_row(row):
                     continue
-                canon = resolver.resolve(str(row.get("name")), learn=False)
+                canon = resolver.resolve(str(row.get("name")), learn=False, quiet=True)
                 if not canon:
                     unmatched.append(str(row.get("name")))
                     continue
@@ -368,12 +376,155 @@ def _float(value: Any) -> float | None:
         return None
 
 
+# --------------------------------------------------------------------------
+# 시즌 팀 통계 피드
+# --------------------------------------------------------------------------
+# 리그 응답의 stats.teams[] 에 이 리그에서 받을 수 있는 팀 통계 목록(29종)과
+# 각각의 fetchAllUrl 이 들어 있다. URL 을 우리가 조립하지 않고 응답이 준
+# 그대로 쓰므로, 시즌 ID 가 바뀌어도 따라간다.
+#
+# feed  : stats.teams[].name (URL 조각)
+# field : TeamStats 속성명
+DEFAULT_TEAM_STAT_FEEDS = [
+    {"feed": "possession_percentage_team", "field": "possession"},
+    {"feed": "ontarget_scoring_att_team", "field": "shots_on_target_pg"},
+    {"feed": "big_chance_team", "field": "big_chances_pg"},
+    {"feed": "big_chance_missed_team", "field": "big_chances_missed_pg"},
+    {"feed": "touches_in_opp_box_team", "field": "touches_opp_box_pg"},
+    {"feed": "accurate_pass_team", "field": "accurate_passes_pg"},
+    {"feed": "poss_won_att_3rd_team", "field": "poss_won_att_3rd_pg"},
+    {"feed": "saves_team", "field": "saves_pg"},
+    {"feed": "interception_team", "field": "interceptions_pg"},
+    {"feed": "total_tackle_team", "field": "tackles_pg"},
+    {"feed": "effective_clearance_team", "field": "clearances_pg"},
+    {"feed": "corner_taken_team", "field": "corners_pg"},
+    {"feed": "clean_sheet_team", "field": "clean_sheets"},
+    {"feed": "fk_foul_lost_team", "field": "fouls_pg"},
+    {"feed": "rating_team", "field": "rating"},
+]
+
+# 값으로 쓸 숫자 필드 이름 (앞에 있을수록 우선)
+_VALUE_KEY_HINTS = ("statvalue", "value", "statcount", "stat")
+# 숫자지만 지표가 아닌 것들
+_NOT_VALUE = ("id", "rank", "index", "idx", "order", "position", "minutes",
+              "matches", "played", "count")
+
+
+def _stat_feeds(data: Any) -> dict[str, str]:
+    """{피드이름: fetchAllUrl}. 응답이 알려준 URL 을 그대로 쓴다."""
+    out: dict[str, str] = {}
+    for node in _walk(data):
+        name, url = node.get("name"), node.get("fetchAllUrl")
+        if isinstance(name, str) and isinstance(url, str) and url.startswith("http"):
+            out.setdefault(name, url)
+    return out
+
+
+def _pick_value(node: dict) -> float | None:
+    """지표로 보이는 숫자 필드 하나를 고른다."""
+    best: tuple[int, float] | None = None
+    for key, value in node.items():
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        low = str(key).lower()
+        if any(bad in low for bad in _NOT_VALUE):
+            continue
+        rank = next((i for i, hint in enumerate(_VALUE_KEY_HINTS) if hint in low),
+                    len(_VALUE_KEY_HINTS))
+        if best is None or rank < best[0]:
+            best = (rank, float(value))
+    return best[1] if best else None
+
+
+def _parse_stat_feed(data: Any, resolver: TeamResolver) -> dict[str, float]:
+    """통계 피드 → {정규명: 값}.
+
+    피드의 정확한 스키마를 본 적이 없어서 경로를 박지 않는다. '팀 이름으로
+    해석되는 문자열 + 지표로 보이는 숫자'를 함께 가진 dict 를 찾는 방식이라
+    StatList/TopLists 같은 껍데기 이름이 무엇이든 통과한다.
+    """
+    out: dict[str, float] = {}
+    for node in _walk(data):
+        canon = _find_team_name(node, resolver)
+        if not canon or canon in out:
+            continue
+        value = _pick_value(node)
+        if value is not None:
+            out[canon] = value
+    return out
+
+
+def _find_team_name(node: dict, resolver: TeamResolver) -> str | None:
+    """이 dict 가 가리키는 팀. 자기 필드에 없으면 한 단계 아래까지 본다.
+
+    피드에 따라 이름이 같은 층에 있기도 하고
+    (`{"ParticiantName": "FC Seoul", "StatValue": 54.2}`),
+    한 겹 안에 들어 있기도 하다
+    (`{"participant": {"name": "FC Seoul"}, "statValue": 54.2}`).
+    """
+    for depth, target in ((0, node), *((1, v) for v in node.values()
+                                       if isinstance(v, dict))):
+        for key, value in target.items():
+            if not isinstance(value, str) or len(value) < 2:
+                continue
+            low = str(key).lower()
+            if "name" not in low and "team" not in low and "participant" not in low:
+                continue
+            # 지표 이름("possession_percentage_team")이 팀명 매칭을 타지 않게 한다
+            if "_" in value and " " not in value:
+                continue
+            canon = resolver.resolve(value, learn=False, quiet=True)
+            if canon:
+                return canon
+        if depth == 0 and _pick_value(node) is None:
+            break                       # 값이 없는 껍데기면 더 파고들 이유가 없다
+    return None
+
+
+def read_team_stats(browser: FotMobBrowser, league_data: Any,
+                    teams: dict[str, dict], resolver: TeamResolver,
+                    feeds: list[dict], league_key: str) -> int:
+    """시즌 팀 통계 피드를 받아 teams 의 TeamStats 를 채운다. 채운 지표 수."""
+    available = _stat_feeds(league_data)
+    if not available:
+        log.warning("[%s] FotMob 통계 피드 목록(stats.teams[])이 없습니다.",
+                    league_key)
+        return 0
+
+    filled = 0
+    for spec in feeds:
+        feed, field = spec.get("feed"), spec.get("field")
+        url = available.get(feed)
+        if not url:
+            log.debug("[%s] 통계 피드 '%s' 는 이 리그에 없습니다.", league_key, feed)
+            continue
+        data = browser.get_json(url)
+        if data is None:
+            log.warning("[%s] 통계 피드 '%s' 를 받지 못했습니다.", league_key, feed)
+            continue
+        values = _parse_stat_feed(data, resolver)
+        if not values:
+            log.warning("[%s] 통계 피드 '%s' 에서 팀·값을 찾지 못했습니다 "
+                        "(구조가 예상과 다릅니다).", league_key, feed)
+            continue
+        hit = 0
+        for canon, value in values.items():
+            entry = teams.get(canon)
+            if entry is None:
+                continue
+            setattr(entry["stats"], field, value)
+            hit += 1
+        filled += hit
+        log.info("[%s] %s → %d팀", league_key, feed, hit)
+    return filled
+
+
 def _parse_matches(data: Any, resolver: TeamResolver) -> list[dict]:
     """경기 목록을 정규명 기준으로 평평하게 만든다."""
     out = []
     for raw in _match_list(data):
-        home = resolver.resolve(str(raw["home"].get("name")), learn=False)
-        away = resolver.resolve(str(raw["away"].get("name")), learn=False)
+        home = resolver.resolve(str(raw["home"].get("name")), learn=False, quiet=True)
+        away = resolver.resolve(str(raw["away"].get("name")), learn=False, quiet=True)
         if not home or not away or home == away:
             continue
         hg, ag = _goals(raw)

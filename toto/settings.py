@@ -76,28 +76,26 @@ DEFAULT_LEAGUES: dict[str, dict] = {
 }
 
 DEFAULT_RADAR_METRICS = [
+    {"key": "big_chances_pg", "label": "결정적 기회", "invert": False},
+    {"key": "shots_on_target_pg", "label": "유효슈팅", "invert": False},
     {"key": "goals_for_pg", "label": "경기당 득점", "invert": False},
-    {"key": "goals_against_pg", "label": "경기당 실점", "invert": True},
-    {"key": "xg_pg", "label": "경기당 xG", "invert": False},
-    {"key": "xga_pg", "label": "경기당 피xG", "invert": True},
+    {"key": "xga_pg", "label": "피xG", "invert": True},
     {"key": "possession", "label": "점유율", "invert": False},
-    {"key": "shots_pg", "label": "경기당 슈팅", "invert": False},
-    {"key": "shot_accuracy", "label": "유효슈팅 비율", "invert": False},
-    {"key": "pass_success", "label": "패스 성공률", "invert": False},
-    {"key": "defensive_actions_pg", "label": "수비 액션", "invert": False},
-    {"key": "aerials_won_pg", "label": "공중볼 승리", "invert": False},
-    {"key": "home_points_pg", "label": "홈 경기당 승점", "invert": False},
-    {"key": "away_points_pg", "label": "원정 경기당 승점", "invert": False},
+    {"key": "touches_opp_box_pg", "label": "상대 박스 터치", "invert": False},
+    {"key": "home_points_pg", "label": "홈 승점", "invert": False},
+    {"key": "away_points_pg", "label": "원정 승점", "invert": False},
 ]
 
 DEFAULT_COMPARE_METRICS = [
     {"key": "points_pg", "label": "경기당 승점", "fmt": "{:.2f}"},
     {"key": "goals_for_pg", "label": "경기당 득점", "fmt": "{:.2f}"},
     {"key": "goals_against_pg", "label": "경기당 실점", "fmt": "{:.2f}"},
+    {"key": "xg_pg", "label": "경기당 xG", "fmt": "{:.2f}"},
+    {"key": "xga_pg", "label": "경기당 피xG", "fmt": "{:.2f}"},
+    {"key": "finishing_delta", "label": "결정력(득점−xG)", "fmt": "{:+.1f}"},
     {"key": "possession", "label": "점유율(%)", "fmt": "{:.1f}"},
-    {"key": "shots_pg", "label": "경기당 슈팅", "fmt": "{:.1f}"},
-    {"key": "pass_success", "label": "패스 성공률(%)", "fmt": "{:.1f}"},
-    {"key": "defensive_actions_pg", "label": "수비 액션", "fmt": "{:.1f}"},
+    {"key": "shots_on_target_pg", "label": "유효슈팅", "fmt": "{:.1f}"},
+    {"key": "big_chances_pg", "label": "결정적 기회", "fmt": "{:.1f}"},
     {"key": "rating", "label": "평점", "fmt": "{:.2f}"},
 ]
 
@@ -198,7 +196,7 @@ def load_settings(config_path: Path | None = None, env_path: Path | None = None)
         "delay_sec": 4.0,
         "timeout_ms": 45000,
         "persistent_profile": True,
-        "recent_form_count": 5,
+        "recent_form_count": 6,
         "h2h_count": 10,
     }
     s.fotmob = cfg.get("fotmob") or {

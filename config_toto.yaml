@@ -35,7 +35,7 @@ whoscored:
   timeout_ms: 45000
   # 브라우저 프로필을 유지해 통과 쿠키를 재사용 (권장)
   persistent_profile: true
-  recent_form_count: 5
+  recent_form_count: 6      # 제안서의 '최근 6경기 기세'
   h2h_count: 10
 
 # FotMob -------------------------------------------------------------------
@@ -47,6 +47,28 @@ fotmob:
   delay_sec: 1.5
   timeout_ms: 45000
   persistent_profile: true
+  # 시즌 팀 통계 피드. 리그 응답의 stats.teams[] 가 알려주는 29종 중
+  # 레이더·비교표에 실제로 쓰는 것만 고른다. 지표 1개당 요청 1회지만
+  # 한 번에 그 리그 전 팀 값이 오므로 팀별 페이지보다 훨씬 싸다.
+  #   feed  : stats.teams[].name (FotMob 이 준 URL 조각)
+  #   field : TeamStats 속성명
+  # 비우면 소스의 기본 목록을 쓴다. 항목을 줄이면 그만큼 빨라진다.
+  team_stats:
+    - {feed: "possession_percentage_team", field: "possession"}
+    - {feed: "ontarget_scoring_att_team",  field: "shots_on_target_pg"}
+    - {feed: "big_chance_team",            field: "big_chances_pg"}
+    - {feed: "big_chance_missed_team",     field: "big_chances_missed_pg"}
+    - {feed: "touches_in_opp_box_team",    field: "touches_opp_box_pg"}
+    - {feed: "accurate_pass_team",         field: "accurate_passes_pg"}
+    - {feed: "poss_won_att_3rd_team",      field: "poss_won_att_3rd_pg"}
+    - {feed: "saves_team",                 field: "saves_pg"}
+    - {feed: "interception_team",          field: "interceptions_pg"}
+    - {feed: "total_tackle_team",          field: "tackles_pg"}
+    - {feed: "effective_clearance_team",   field: "clearances_pg"}
+    - {feed: "corner_taken_team",          field: "corners_pg"}
+    - {feed: "clean_sheet_team",           field: "clean_sheets"}
+    - {feed: "fk_foul_lost_team",          field: "fouls_pg"}
+    - {feed: "rating_team",                field: "rating"}
 
 # 리그 정의 ----------------------------------------------------------------
 # key: 내부 식별자
@@ -127,29 +149,35 @@ leagues:
 # label    : 표시명
 # invert   : true 면 값이 낮을수록 좋음 (실점 등) → 백분위를 뒤집는다
 radar_metrics:
-  - {key: "goals_for_pg",       label: "경기당 득점",   invert: false}
-  - {key: "goals_against_pg",   label: "경기당 실점",   invert: true}
-  - {key: "xg_pg",              label: "경기당 xG",     invert: false}
-  - {key: "xga_pg",             label: "경기당 피xG",   invert: true}
-  - {key: "possession",         label: "점유율",        invert: false}
-  - {key: "shots_pg",           label: "경기당 슈팅",   invert: false}
-  - {key: "shot_accuracy",      label: "유효슈팅 비율", invert: false}
-  - {key: "pass_success",       label: "패스 성공률",   invert: false}
-  - {key: "defensive_actions_pg", label: "수비 액션",   invert: false}
-  - {key: "aerials_won_pg",     label: "공중볼 승리",   invert: false}
-  - {key: "home_points_pg",     label: "홈 경기당 승점", invert: false}
-  - {key: "away_points_pg",     label: "원정 경기당 승점", invert: false}
+  # 제안서의 6개 개념을 '지금 실제로 채울 수 있는' 지표로 옮긴 것.
+  # 총 슈팅·키패스·피슈팅은 FotMob 시즌 통계 29종에 없어서 대체했다.
+  #   공격 창출력  → 결정적 기회 + 유효슈팅
+  #   공격 효율성  → 경기당 득점 (유효슈팅 대비 전환은 비교표에서 본다)
+  #   수비 견고함  → 피xG (피슈팅의 상위 호환. 맞은 슈팅의 질까지 반영한다)
+  #   경기 지배력  → 점유율 + 상대 박스 터치
+  #   장소 특화도  → 홈/원정 경기당 승점
+  # 값이 없는 축은 자동으로 빠지므로, 수집이 덜 돼도 차트는 그려진다.
+  - {key: "big_chances_pg",     label: "결정적 기회",    invert: false}
+  - {key: "shots_on_target_pg", label: "유효슈팅",       invert: false}
+  - {key: "goals_for_pg",       label: "경기당 득점",    invert: false}
+  - {key: "xga_pg",             label: "피xG",           invert: true}
+  - {key: "possession",         label: "점유율",         invert: false}
+  - {key: "touches_opp_box_pg", label: "상대 박스 터치", invert: false}
+  - {key: "home_points_pg",     label: "홈 승점",        invert: false}
+  - {key: "away_points_pg",     label: "원정 승점",      invert: false}
 
 # 직접 비교(다이버징 바) 항목 ---------------------------------------------
 compare_metrics:
-  - {key: "points_pg",          label: "경기당 승점",   fmt: "{:.2f}"}
-  - {key: "goals_for_pg",       label: "경기당 득점",   fmt: "{:.2f}"}
-  - {key: "goals_against_pg",   label: "경기당 실점",   fmt: "{:.2f}"}
-  - {key: "possession",         label: "점유율(%)",     fmt: "{:.1f}"}
-  - {key: "shots_pg",           label: "경기당 슈팅",   fmt: "{:.1f}"}
-  - {key: "pass_success",       label: "패스 성공률(%)", fmt: "{:.1f}"}
-  - {key: "defensive_actions_pg", label: "수비 액션",   fmt: "{:.1f}"}
-  - {key: "rating",             label: "평점",          fmt: "{:.2f}"}
+  - {key: "points_pg",          label: "경기당 승점",    fmt: "{:.2f}"}
+  - {key: "goals_for_pg",       label: "경기당 득점",    fmt: "{:.2f}"}
+  - {key: "goals_against_pg",   label: "경기당 실점",    fmt: "{:.2f}"}
+  - {key: "xg_pg",              label: "경기당 xG",      fmt: "{:.2f}"}
+  - {key: "xga_pg",             label: "경기당 피xG",    fmt: "{:.2f}"}
+  - {key: "finishing_delta",    label: "결정력(득점−xG)", fmt: "{:+.1f}"}
+  - {key: "possession",         label: "점유율(%)",      fmt: "{:.1f}"}
+  - {key: "shots_on_target_pg", label: "유효슈팅",       fmt: "{:.1f}"}
+  - {key: "big_chances_pg",     label: "결정적 기회",    fmt: "{:.1f}"}
+  - {key: "rating",             label: "평점",           fmt: "{:.2f}"}
 
 # 출력 ---------------------------------------------------------------------
 output:

@@ -152,6 +152,28 @@ class WhoScoredBrowser:
             self._last_load = time.time()
             return ""
 
+    def get_raw(self, url: str) -> tuple[int, str]:
+        """차단 판정 없이 응답을 그대로 가져온다 (점검 도구용).
+
+        get_html() 은 짧은 응답을 '차단'으로 보는데, JSON API 는 원래 짧아서
+        그 휴리스틱을 적용하면 안 된다.
+        """
+        if not self.available:
+            return 0, ""
+        gap = time.time() - self._last_load
+        if gap < self.delay:
+            time.sleep(self.delay - gap)
+        try:
+            resp = self._page.goto(url, wait_until="domcontentloaded",
+                                   timeout=self.timeout)
+            self._page.wait_for_timeout(1200)
+            self._last_load = time.time()
+            return (resp.status if resp else 0), self._page.content()
+        except Exception as exc:
+            log.warning("원본 로드 실패 %s: %s", url, exc)
+            self._last_load = time.time()
+            return 0, ""
+
     def abs_url(self, path: str) -> str:
         return urljoin(self.base, path)
 

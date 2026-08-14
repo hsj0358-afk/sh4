@@ -47,15 +47,19 @@ WANT_COLS = {
     "키패스": ("kp", "key pass"),
 }
 
+# 경로가 바뀌었을 수 있어 후보를 여러 개 시도한다.
 FOTMOB = {
-    "검색: K League": "https://www.fotmob.com/api/searchapi/?term=K%20League&lang=en",
-    "검색: J League": "https://www.fotmob.com/api/searchapi/?term=J1%20League&lang=en",
-    "리그: K리그1(9080)": "https://www.fotmob.com/api/leagues?id=9080",
+    "api/leagues?id=9080": "https://www.fotmob.com/api/leagues?id=9080",
+    "api/data/leagues?id=9080": "https://www.fotmob.com/api/data/leagues?id=9080",
+    "api/searchapi": "https://www.fotmob.com/api/searchapi/?term=K%20League&lang=en",
+    "api/search/suggest": "https://www.fotmob.com/api/search/suggest?term=K%20League",
+    "웹페이지(K리그1)": "https://www.fotmob.com/leagues/9080/overview/k-league-1",
 }
 
 SOFASCORE = {
-    "검색: K League": "https://api.sofascore.com/api/v1/search/all?q=K%20League",
-    "검색: J League": "https://api.sofascore.com/api/v1/search/all?q=J1%20League",
+    "api 검색": "https://api.sofascore.com/api/v1/search/all?q=K%20League",
+    "www 경유 api": "https://www.sofascore.com/api/v1/search/all?q=K%20League",
+    "웹페이지": "https://www.sofascore.com/tournament/football/south-korea/k-league-1/56",
 }
 
 UNDERSTAT = {
@@ -80,8 +84,8 @@ def fetch(url: str, browser=None, timeout: int = 25) -> tuple[int, str, str]:
     """(status, text, note) — 실패해도 예외를 던지지 않는다."""
     if browser is not None:
         try:
-            html = browser.get_html(url)
-            return (200 if html else 0), html, "browser"
+            code, html = browser.get_raw(url)
+            return code, html, "browser"
         except Exception as exc:
             return 0, "", f"browser 오류: {exc}"
     try:
@@ -121,12 +125,51 @@ def head(title: str) -> None:
     print("=" * 74)
 
 
+def _why_blocked(text: str) -> str:
+    """응답 본문에서 차단 사유 단서를 뽑는다."""
+    if not text:
+        return ""
+    low = text[:6000].lower()
+    for sig, why in (
+            ("cloudflare", "Cloudflare"),
+            ("just a moment", "Cloudflare 챌린지"),
+            ("captcha", "CAPTCHA"),
+            ("incapsula", "Incapsula"),
+            ("access denied", "접근 거부"),
+            ("rate limit", "요청 과다"),
+            ("429", "요청 과다(429)"),
+            ("forbidden", "Forbidden"),
+            ("__next_data__", "Next.js SPA (내장 JSON 있음)"),
+            ("<!doctype html", "HTML 문서 (API 아님)")):
+        if sig in low:
+            return why
+    return ""
+
+
+def _excerpt(text: str, n: int = 150) -> str:
+    """본문에서 태그를 걷어낸 앞부분."""
+    if not text:
+        return ""
+    body = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", text[:20000],
+                  flags=re.S | re.I)
+    body = re.sub(r"<[^>]+>", " ", body)
+    body = re.sub(r"\s+", " ", body).strip()
+    return body[:n]
+
+
 def status_line(label: str, code: int, text: str, note: str) -> bool:
     ok = code == 200 and len(text) > 500
     mark = "OK " if ok else "실패"
     size = f"{len(text) / 1024:.0f}KB" if text else "0KB"
     extra = f"  {note}" if note else ""
-    print(f"  [{mark}] {label:<24} HTTP {code or '---'}  {size:>7}{extra}")
+    print(f"  [{mark}] {label:<26} HTTP {code or '---'}  {size:>7}{extra}")
+    if not ok and text:
+        why = _why_blocked(text)
+        if why:
+            print(f"         단서: {why}")
+        ex = _excerpt(text)
+        if ex:
+            print(f"         본문: {ex}")
     return ok
 
 
@@ -245,9 +288,20 @@ def probe_json(title: str, urls: dict, browser=None,
         try:
             data = json.loads(text)
         except Exception:
-            print("      JSON 파싱 실패 — HTML 이 돌아온 듯합니다(차단 가능성).")
-            print(f"      앞부분: {text[:160].strip()!r}")
-            continue
+            # SPA 페이지라면 내장 JSON(__NEXT_DATA__)에 데이터가 들어 있다.
+            m = re.search(
+                r'<script[^>]+id="__NEXT_DATA__"[^>]*>(.*?)</script>', text, re.S)
+            if m:
+                print("      JSON 이 아니라 SPA 페이지 — __NEXT_DATA__ 발견")
+                try:
+                    data = json.loads(m.group(1))
+                    print(f"      내장 JSON 크기 {len(m.group(1)) / 1024:.0f}KB")
+                except Exception as exc:
+                    print(f"      내장 JSON 파싱 실패: {exc}")
+                    continue
+            else:
+                print("      JSON 파싱 실패, 내장 JSON 도 없음 (차단 가능성)")
+                continue
         keys = _walk_keys(data)
         print(f"      최상위 구조 ({len(keys)}개 경로 중 앞부분):")
         for k in keys[:22]:
@@ -331,7 +385,9 @@ def main(argv: list[str] | None = None) -> int:
     print()
     print("=" * 74)
     print("점검 끝. 위 출력을 그대로 복사해서 전달해 주세요.")
-    print("전부 실패했다면 --browser 를 붙여 다시 실행해 보세요.")
+    if browser is None:
+        print("실패가 많다면 메뉴 [7] 에서 브라우저 사용에 'y' 로 다시 실행해 보세요.")
+        print("(requests 는 UA 만 바꾸므로 Cloudflare 계열 차단을 통과하지 못합니다)")
     print("=" * 74)
     return 0
 

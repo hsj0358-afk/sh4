@@ -1,0 +1,196 @@
+// 콘텐츠 무결성 검사.
+// 손으로 쓰는 시나리오에서 가장 자주 깨지는 것은 오타난 참조다.
+// 장면 이동, 아이템 이름, 단서 id, 동료 id 를 전부 대조한다.
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import episode from '../src/content/episodes/luxor.js';
+import { ITEMS } from '../src/content/items.js';
+import { CLUES } from '../src/content/clues.js';
+import { COMPANIONS } from '../src/content/companions.js';
+import { PROFESSIONS } from '../src/content/professions.js';
+import { STAT_IDS } from '../src/content/stats.js';
+import { createState } from '../src/engine/state.js';
+
+const scenes = episode.scenes;
+const probe = createState({ professionId: 'archaeologist', seed: 1 });
+
+/** 장면 안의 모든 결과 노드(선택지·판정 분기·자유입력)를 훑는다. */
+function* results() {
+  for (const scene of Object.values(scenes)) {
+    const sources = [
+      ...(scene.choices || []),
+      ...(scene.freeform || []),
+      ...(scene.ambientCheck ? [scene.ambientCheck] : []),
+    ];
+    for (const src of sources) {
+      yield { scene, node: src };
+      for (const branch of Object.values(src.outcomes || {})) {
+        yield { scene, node: branch };
+      }
+    }
+  }
+  for (const ev of episode.pressureEvents || []) {
+    yield { scene: { id: `pressure:${ev.id}` }, node: ev };
+  }
+}
+
+test('모든 장면 이동 대상이 존재한다', () => {
+  for (const { scene, node } of results()) {
+    const goto = node.goto || node.effects?.goto;
+    if (!goto) continue;
+    assert.ok(scenes[goto], `${scene.id} → 없는 장면 '${goto}'`);
+  }
+});
+
+test('효과에 등장하는 아이템은 전부 정의되어 있다', () => {
+  for (const { scene, node } of results()) {
+    const eff = node.effects || {};
+    const names = [
+      ...(eff.items || []),
+      ...(eff.removeItems || []),
+      ...Object.keys(eff.spend || {}),
+      ...(node.requires?.items || []),
+    ];
+    for (const n of names) assert.ok(ITEMS[n], `${scene.id}: 없는 아이템 '${n}'`);
+  }
+});
+
+test('직업 시작 장비도 전부 정의되어 있다', () => {
+  for (const p of PROFESSIONS) {
+    for (const n of p.items) assert.ok(ITEMS[n], `${p.name}: 없는 시작 장비 '${n}'`);
+  }
+});
+
+test('단서 id 는 전부 도감에 있다', () => {
+  for (const { scene, node } of results()) {
+    for (const c of node.effects?.clues || []) {
+      assert.ok(CLUES[c], `${scene.id}: 없는 단서 '${c}'`);
+    }
+    for (const c of node.requires?.clues || []) {
+      assert.ok(CLUES[c], `${scene.id}: 없는 단서 조건 '${c}'`);
+    }
+  }
+});
+
+test('동료 id 는 전부 정의되어 있다', () => {
+  for (const { scene, node } of results()) {
+    for (const id of node.effects?.companions || []) {
+      assert.ok(COMPANIONS[id], `${scene.id}: 없는 동료 '${id}'`);
+    }
+    const changes = [
+      ...(node.effects?.companion ? [node.effects.companion] : []),
+      ...(node.effects?.companionChanges || []),
+    ];
+    for (const ce of changes) assert.ok(COMPANIONS[ce.id], `${scene.id}: 없는 동료 '${ce.id}'`);
+    for (const id of node.requires?.companions || []) {
+      assert.ok(COMPANIONS[id], `${scene.id}: 없는 동료 조건 '${id}'`);
+    }
+  }
+});
+
+test('판정은 실재하는 능력치를 쓰고 목표값을 갖는다', () => {
+  for (const { scene, node } of results()) {
+    if (!node.check) continue;
+    assert.ok(STAT_IDS.includes(node.check.stat), `${scene.id}: 없는 능력치 '${node.check.stat}'`);
+    assert.equal(typeof node.check.target, 'number', `${scene.id}: 목표값 누락`);
+    assert.ok(node.check.target >= 8 && node.check.target <= 20, `${scene.id}: 목표값이 범위 밖`);
+  }
+});
+
+test('모든 판정에 최소한 성공과 실패 서술이 있다', () => {
+  for (const scene of Object.values(scenes)) {
+    const sources = [
+      ...(scene.choices || []),
+      ...(scene.freeform || []),
+      ...(scene.ambientCheck ? [scene.ambientCheck] : []),
+    ];
+    for (const src of sources) {
+      if (!src.check) continue;
+      const o = src.outcomes || {};
+      assert.ok(o.success || o.crit, `${scene.id}/${src.id}: 성공 분기 없음`);
+      assert.ok(o.fail || o.fumble, `${scene.id}/${src.id}: 실패 분기 없음`);
+      for (const [key, branch] of Object.entries(o)) {
+        const text = typeof branch.text === 'function' ? branch.text(probe) : branch.text;
+        assert.ok(text && text.length, `${scene.id}/${src.id}/${key}: 서술 없음`);
+      }
+    }
+  }
+});
+
+test('실패 분기가 길을 완전히 막지 않는다', () => {
+  // 실패해도 서술은 남고, 대부분은 다른 결과(대가·단서·이동)를 동반해야 한다.
+  let failWithConsequence = 0;
+  let failTotal = 0;
+  for (const scene of Object.values(scenes)) {
+    for (const src of scene.choices || []) {
+      if (!src.check) continue;
+      for (const key of ['fail', 'fumble']) {
+        const b = src.outcomes?.[key];
+        if (!b) continue;
+        failTotal++;
+        const eff = b.effects || {};
+        const consequence =
+          eff.goto ||
+          b.goto ||
+          eff.hp ||
+          eff.san ||
+          eff.danger ||
+          (eff.clues || []).length ||
+          (eff.items || []).length ||
+          (eff.removeItems || []).length ||
+          eff.flags ||
+          eff.time;
+        if (consequence) failWithConsequence++;
+      }
+    }
+  }
+  assert.ok(failTotal > 0);
+  assert.equal(failWithConsequence, failTotal, '대가 없는 실패 분기가 있다');
+});
+
+test('모든 장면에 위치와 본문이 있다', () => {
+  for (const [id, scene] of Object.entries(scenes)) {
+    assert.equal(scene.id, id, `장면 id 불일치: ${id}`);
+    assert.ok(scene.location, `${id}: 위치 없음`);
+    const body = typeof scene.body === 'function' ? scene.body(probe) : scene.body;
+    assert.ok(body && body.length, `${id}: 본문 없음`);
+  }
+});
+
+test('막다른 장면은 종료 처리를 갖는다', () => {
+  for (const [id, scene] of Object.entries(scenes)) {
+    if ((scene.choices || []).length) continue;
+    assert.ok(scene.end, `${id}: 선택지도 결말도 없는 막다른 장면`);
+  }
+});
+
+test('시작 장면부터 결말까지 도달 가능하다', () => {
+  const seen = new Set();
+  const queue = [episode.start];
+  while (queue.length) {
+    const id = queue.shift();
+    if (seen.has(id) || !scenes[id]) continue;
+    seen.add(id);
+    for (const src of scenes[id].choices || []) {
+      const targets = [
+        src.goto,
+        src.effects?.goto,
+        ...Object.values(src.outcomes || {}).flatMap((b) => [b.goto, b.effects?.goto]),
+      ].filter(Boolean);
+      queue.push(...targets);
+    }
+  }
+  for (const id of Object.keys(scenes)) {
+    assert.ok(seen.has(id), `${id}: 어디에서도 도달할 수 없는 장면`);
+  }
+  assert.ok(seen.has('epilogue'), '결말에 도달할 수 없다');
+});
+
+test('선택지는 장면마다 3개 이상 제시된다 (결말 장면 제외)', () => {
+  for (const [id, scene] of Object.entries(scenes)) {
+    if (scene.end || !(scene.choices || []).length) continue;
+    assert.ok(scene.choices.length >= 3, `${id}: 선택지가 ${scene.choices.length}개뿐`);
+    assert.ok(scene.choices.length <= 6, `${id}: 선택지가 너무 많다`);
+  }
+});

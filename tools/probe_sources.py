@@ -414,6 +414,122 @@ def analyze_dumps(hint_keys: tuple) -> int:
     return 0
 
 
+def _get_json(url: str, browser=None) -> tuple[dict | list | None, str]:
+    """(파싱된 JSON, 상태설명). 실패해도 예외를 던지지 않는다."""
+    code, text, note = fetch(url, browser)
+    if code != 200 or not text:
+        return None, f"HTTP {code or '---'} {_why_blocked(text) or note}".strip()
+    try:
+        return json.loads(unwrap_json(text)), f"HTTP 200 {len(text) / 1024:.0f}KB"
+    except Exception:
+        return None, f"HTTP 200 이지만 JSON 아님 ({len(text) / 1024:.0f}KB)"
+
+
+# --------------------------------------------------------------------------
+# 경기별 스탯 — '최근 폼 기반 레이더'가 성립하는지 가르는 지점
+# --------------------------------------------------------------------------
+def probe_fotmob_match(browser=None) -> None:
+    """리그 응답에서 끝난 경기 하나를 골라 경기 상세를 열어본다.
+
+    이게 핵심 질문이다. 시즌 누적 스탯은 '최근 6경기'나 '홈/원정 분리'로
+    쪼갤 수 없다. 경기별 점유율·슈팅·피슈팅이 나와야 제안서가 말한
+    '최근 폼 기반 + 홈원정 분리' 레이더를 실제로 만들 수 있다.
+    """
+    head("②-2 FotMob 경기 상세 — 경기별 점유율·슈팅·피슈팅이 있는가")
+    league, status = _get_json(
+        "https://www.fotmob.com/api/data/leagues?id=9080", browser)
+    print(f"  리그 응답: {status}")
+    if league is None:
+        print("  리그 응답을 못 받아 경기 ID 를 고를 수 없습니다.")
+        return
+
+    match_id = None
+    for node in _iter_all(league):
+        if not isinstance(node, dict):
+            continue
+        st = node.get("status")
+        if (isinstance(st, dict) and st.get("finished") is True
+                and isinstance(node.get("id"), (int, str))
+                and isinstance(node.get("home"), dict)):
+            match_id = node["id"]
+            print(f"  고른 경기: {node['home'].get('name')} vs "
+                  f"{(node.get('away') or {}).get('name')}  (id={match_id})")
+            break
+    if match_id is None:
+        print("  끝난 경기를 찾지 못했습니다.")
+        return
+
+    time.sleep(1.5)
+    for label, url in (
+            ("api/data/matchDetails",
+             f"https://www.fotmob.com/api/data/matchDetails?matchId={match_id}"),
+            ("api/matchDetails(구경로)",
+             f"https://www.fotmob.com/api/matchDetails?matchId={match_id}"),
+    ):
+        data, status = _get_json(url, browser)
+        print(f"  [{'OK ' if data is not None else '실패'}] {label:<26} {status}")
+        if data is None:
+            continue
+        save(f"fotmob_matchDetails_{match_id}", json.dumps(data)[:4000000])
+        report_key_paths(data, ("possession", "shot", "xg", "expected",
+                                "pass", "duel", "corner", "stat"))
+        return
+
+
+def probe_sofascore_stats(browser=None) -> None:
+    """Sofascore 팀 시즌 통계 — FotMob 에 피슈팅이 없을 때의 대안."""
+    head("③-2 Sofascore 팀 시즌 통계 — 피슈팅(shots against) 이 있는가")
+    ut = 196                                    # 3차 점검에서 확인한 J1 League
+    seasons, status = _get_json(
+        f"https://api.sofascore.com/api/v1/unique-tournament/{ut}/seasons", browser)
+    print(f"  시즌 목록: {status}")
+    if seasons is None:
+        return
+    sid = None
+    for node in _iter_all(seasons):
+        if isinstance(node, dict) and isinstance(node.get("id"), int) \
+                and node.get("year"):
+            sid = node["id"]
+            print(f"  고른 시즌: {node.get('year')} (id={sid})")
+            break
+    if sid is None:
+        print("  시즌 ID 를 찾지 못했습니다.")
+        return
+
+    for label, url in (
+            ("리그 전체 팀 통계",
+             f"https://api.sofascore.com/api/v1/unique-tournament/{ut}"
+             f"/season/{sid}/statistics?limit=20&order=-rating"),
+            ("팀 시즌 통계(대안 경로)",
+             f"https://api.sofascore.com/api/v1/unique-tournament/{ut}"
+             f"/season/{sid}/team-statistics/overall"),
+    ):
+        time.sleep(1.5)
+        data, status = _get_json(url, browser)
+        print(f"  [{'OK ' if data is not None else '실패'}] {label:<26} {status}")
+        if data is None:
+            continue
+        save(f"sofascore_{label}", json.dumps(data)[:4000000])
+        report_key_paths(data, ("shotsagainst", "shots_against", "against",
+                                "possession", "shot", "xg", "expected"))
+        return
+
+
+def _iter_all(node, max_nodes: int = 300_000):
+    """JSON 트리의 모든 dict/list 원소를 훑는다 (얕은 것부터)."""
+    from collections import deque
+    queue = deque([node])
+    seen = 0
+    while queue and seen < max_nodes:
+        cur = queue.popleft()
+        seen += 1
+        yield cur
+        if isinstance(cur, dict):
+            queue.extend(cur.values())
+        elif isinstance(cur, list):
+            queue.extend(cur)
+
+
 def probe_json(title: str, urls: dict, browser=None,
                hint_keys: tuple = ()) -> None:
     head(title)
@@ -525,9 +641,11 @@ def main(argv: list[str] | None = None) -> int:
             probe_json("② FotMob — 팀 상세에 점유율·xG 가 있는지", FOTMOB, browser,
                        hint_keys=("possession", "expected_goals", "xg",
                                   "shotsOnTarget", "rating", "injur"))
+            probe_fotmob_match(browser)
         if not only or only == "sofascore":
             probe_json("③ Sofascore — 아시아 리그 보조", SOFASCORE, browser,
                        hint_keys=("k league", "j1 league", "uniqueTournament"))
+            probe_sofascore_stats(browser)
         if not only or only == "understat":
             probe_understat(browser)
     finally:

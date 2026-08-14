@@ -287,15 +287,19 @@ def _apply_row(stats: TeamStats, row: dict, section: str) -> None:
     played = _int(row.get("played"))
     pts = _int(row.get("pts"))
 
-    if section == "home":
+    if section in ("home", "away"):
         # 스플릿 리그는 같은 팀이 여러 블록에 나온다. 경기수가 더 많은 쪽
         # (= 전체 시즌 표)을 남긴다.
-        if played is not None and (stats.home_played or 0) <= played:
-            stats.home_played, stats.home_points = played, pts
-        return
-    if section == "away":
-        if played is not None and (stats.away_played or 0) <= played:
-            stats.away_played, stats.away_points = played, pts
+        if played is None or (getattr(stats, f"{section}_played") or 0) > played:
+            return
+        setattr(stats, f"{section}_played", played)
+        setattr(stats, f"{section}_points", pts)
+        # 승점만 쓰고 버렸던 득실을 함께 남긴다 — '장소 특화도' 축은
+        # 홈/원정 승점과 득실차를 같이 본다.
+        gf, ga = _parse_scores(row)
+        if gf is not None:
+            setattr(stats, f"{section}_goals_for", gf)
+            setattr(stats, f"{section}_goals_against", ga)
         return
 
     if played is None:

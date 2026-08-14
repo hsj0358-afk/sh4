@@ -76,17 +76,24 @@ class TeamStats:
     goals_against: int | None = None
     points: int | None = None
 
-    # 홈/원정 분리 성적
+    # 홈/원정 분리 성적 ('장소 특화도' 축은 승점만이 아니라 득실차도 본다)
     home_played: int | None = None
     home_points: int | None = None
+    home_goals_for: int | None = None
+    home_goals_against: int | None = None
     away_played: int | None = None
     away_points: int | None = None
+    away_goals_for: int | None = None
+    away_goals_against: int | None = None
 
-    # 후스코어드 팀 통계 (경기당 평균)
+    # 팀 통계 (경기당 평균)
     shots_pg: float | None = None
     shots_on_target_pg: float | None = None
+    shots_against_pg: float | None = None      # 피슈팅 — '수비 견고함' 축
+    key_passes_pg: float | None = None         # '공격 창출력' 축
     possession: float | None = None
     pass_success: float | None = None
+    pass_success_opp_half: float | None = None  # 상대 진영 패스 성공률
     aerials_won_pg: float | None = None
     tackles_pg: float | None = None
     interceptions_pg: float | None = None
@@ -146,6 +153,41 @@ class TeamStats:
         if self.tackles_pg is None and self.interceptions_pg is None:
             return None
         return (self.tackles_pg or 0.0) + (self.interceptions_pg or 0.0)
+
+    # ---- 6축 레이더용 파생 지표 ------------------------------------------
+    # 각 축은 재료가 하나라도 없으면 None 을 돌려준다. 반쪽짜리 값으로
+    # 축을 채우면 리그 백분위가 왜곡돼서, 차라리 축을 빼는 편이 낫다.
+    @property
+    def home_goal_diff_pg(self) -> float | None:
+        if self.home_goals_for is None or self.home_goals_against is None \
+                or not self.home_played:
+            return None
+        return (self.home_goals_for - self.home_goals_against) / self.home_played
+
+    @property
+    def away_goal_diff_pg(self) -> float | None:
+        if self.away_goals_for is None or self.away_goals_against is None \
+                or not self.away_played:
+            return None
+        return (self.away_goals_for - self.away_goals_against) / self.away_played
+
+    @property
+    def conversion_rate(self) -> float | None:
+        """슈팅 대비 득점 전환율(%) — '공격 효율성' 축의 재료."""
+        if not self.shots_pg or self.goals_for_pg is None:
+            return None
+        return self.goals_for_pg / self.shots_pg * 100
+
+    @property
+    def defensive_solidity(self) -> float | None:
+        """피슈팅의 역수 — 적게 맞을수록 높다. '수비 견고함' 축.
+
+        역수를 그대로 쓰지 않고 백분위 단계에서 invert 로 뒤집는 방법도 있지만,
+        제안대로 '역수'를 값으로 두면 지표 비교표에도 그대로 쓸 수 있다.
+        """
+        if not self.shots_against_pg:
+            return None
+        return 1.0 / self.shots_against_pg
 
 
 def fill_stats(dst: TeamStats, src: TeamStats, overwrite: bool = False) -> int:

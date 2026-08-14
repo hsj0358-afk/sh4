@@ -49,17 +49,16 @@ WANT_COLS = {
 
 # 경로가 바뀌었을 수 있어 후보를 여러 개 시도한다.
 FOTMOB = {
-    "api/leagues?id=9080": "https://www.fotmob.com/api/leagues?id=9080",
-    "api/data/leagues?id=9080": "https://www.fotmob.com/api/data/leagues?id=9080",
-    "api/searchapi": "https://www.fotmob.com/api/searchapi/?term=K%20League&lang=en",
-    "api/search/suggest": "https://www.fotmob.com/api/search/suggest?term=K%20League",
+    # 1차 점검에서 200/500KB 로 살아 있음을 확인한 경로
+    "api/data/leagues?id=9080 (K1)": "https://www.fotmob.com/api/data/leagues?id=9080",
+    # 전체 리그 목록 — K리그2·J1 의 id 를 여기서 찾는다
+    "api/data/allLeagues": "https://www.fotmob.com/api/data/allLeagues",
     "웹페이지(K리그1)": "https://www.fotmob.com/leagues/9080/overview/k-league-1",
 }
 
 SOFASCORE = {
-    "api 검색": "https://api.sofascore.com/api/v1/search/all?q=K%20League",
-    "www 경유 api": "https://www.sofascore.com/api/v1/search/all?q=K%20League",
-    "웹페이지": "https://www.sofascore.com/tournament/football/south-korea/k-league-1/56",
+    "api 검색(K League)": "https://api.sofascore.com/api/v1/search/all?q=K%20League",
+    "api 검색(J1)": "https://api.sofascore.com/api/v1/search/all?q=J1%20League",
 }
 
 UNDERSTAT = {
@@ -176,6 +175,20 @@ def status_line(label: str, code: int, text: str, note: str) -> bool:
 # --------------------------------------------------------------------------
 # FBref
 # --------------------------------------------------------------------------
+def unwrap_json(text: str) -> str:
+    """브라우저로 JSON URL 을 열면 <pre> 로 감싼 HTML 이 돌아온다. 알맹이만 꺼낸다."""
+    if not text:
+        return text
+    stripped = text.lstrip()
+    if stripped[:1] in "{[":
+        return text
+    m = re.search(r"<pre[^>]*>(.*?)</pre>", text, re.S | re.I)
+    if m:
+        import html as _h
+        return _h.unescape(m.group(1))
+    return text
+
+
 def _soup(html: str):
     from bs4 import BeautifulSoup
     try:
@@ -207,11 +220,21 @@ def probe_fbref(browser=None) -> None:
     head("① FBref — 정량 지표 (피슈팅 · xG · xGA · SCA · 전진패스)")
     print("  ※ FBref 는 표 상당수를 HTML 주석 안에 넣어둔다. 주석까지 펼쳐 센다.")
     print("  ※ 연속 요청 시 429 가 나므로 요청 사이에 4초 쉰다.")
+    if browser is not None:
+        print("  ※ Cloudflare 챌린지(Just a moment)는 몇 초 뒤 자동 해제된다.")
+        print("    브라우저 모드에서는 해제를 기다렸다가 다시 읽는다.")
 
     for i, (label, url) in enumerate(FBREF.items()):
         if i:
             time.sleep(4)
         code, text, note = fetch(url, browser)
+        # Cloudflare 인터스티셜이면 해제를 기다렸다가 한 번 더 읽는다
+        if browser is not None and "just a moment" in (text or "")[:4000].lower():
+            print(f"      Cloudflare 챌린지 감지 — 12초 대기 후 재시도")
+            time.sleep(12)
+            code2, text2, _ = fetch(url, browser)
+            if code2 == 200 and "just a moment" not in (text2 or "")[:4000].lower():
+                code, text = code2, text2
         ok = status_line(label, code, text, note)
         if not ok:
             continue
@@ -285,6 +308,7 @@ def probe_json(title: str, urls: dict, browser=None,
         if not ok:
             continue
         save(f"{title[:6]}_{label}", text)
+        text = unwrap_json(text)
         try:
             data = json.loads(text)
         except Exception:
@@ -304,8 +328,24 @@ def probe_json(title: str, urls: dict, browser=None,
                 continue
         keys = _walk_keys(data)
         print(f"      최상위 구조 ({len(keys)}개 경로 중 앞부분):")
-        for k in keys[:22]:
+        for k in keys[:20]:
             print(f"        {k}")
+
+        # 순위표·팀 지표가 들어 있을 만한 경로를 더 깊이 펼친다
+        for path in ("props.pageProps.table", "table", "details", "overview",
+                     "leagues", "stats"):
+            node = data
+            try:
+                for part in path.split("."):
+                    node = node[part]
+            except Exception:
+                continue
+            deep = _walk_keys(node, path, maxd=5)
+            if deep:
+                print(f"      ▼ {path} 상세 ({len(deep)}개 중 앞부분):")
+                for k in deep[:30]:
+                    print(f"        {k}")
+                break
         low = text.lower()
         for hk in hint_keys:
             print(f"        · '{hk}' 포함: {'예' if hk.lower() in low else '아니오'}")

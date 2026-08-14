@@ -162,6 +162,46 @@ table.mini tr:last-child td{border-bottom:0}
 .missing{font-size:12.5px;color:var(--text-secondary)}
 .missing ul{margin:4px 0 0;padding-left:17px}
 
+/* 회차 승산 (지침 §5) */
+.verdict{margin:16px 0 22px;padding:16px 18px;border-radius:12px;
+  background:var(--surface-1);border:1px solid var(--border);
+  border-left:4px solid var(--draw);box-shadow:var(--shadow)}
+.verdict.bet{border-left-color:var(--st-good)}
+.verdict.pass{border-left-color:var(--st-critical)}
+.vhead{font-size:14px;font-weight:700;display:flex;align-items:center;gap:10px}
+.vlab{font-size:12px;padding:2px 10px;border-radius:999px;
+  border:1px solid var(--border);background:var(--page)}
+.verdict.bet .vlab{color:var(--st-good)}
+.verdict.pass .vlab{color:var(--st-critical)}
+.vnums{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:10px;font-size:13px;
+  color:var(--text-secondary);font-variant-numeric:tabular-nums}
+.vnums b{color:var(--text-primary);font-size:15px}
+.vex{color:var(--text-muted);font-size:12px}
+.vnote{font-size:11.5px;color:var(--text-muted);margin:10px 0 0}
+.vwarn{font-size:12.5px;color:var(--text-secondary);margin:8px 0 0;
+  padding:8px 10px;border-radius:8px;background:var(--page)}
+
+/* 통합표 (지침 §7) */
+.tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table.picks{width:100%;min-width:760px;border-collapse:collapse;font-size:12.5px;
+  background:var(--surface-1);border:1px solid var(--border);border-radius:10px}
+table.picks th{text-align:left;font-weight:600;color:var(--text-muted);
+  border-bottom:1px solid var(--grid);padding:8px 9px;font-size:11.5px;
+  white-space:nowrap}
+table.picks td{padding:7px 9px;border-bottom:1px solid var(--grid);
+  color:var(--text-secondary);white-space:nowrap}
+table.picks tr:last-child td{border-bottom:0}
+table.picks .num{text-align:right;font-variant-numeric:tabular-nums}
+table.picks .hi{color:var(--text-primary);font-weight:700}
+table.picks .pk{color:var(--text-primary);font-weight:700}
+.tossup{display:inline-block;font-size:10.5px;padding:1px 7px;border-radius:999px;
+  background:var(--page);border:1px solid var(--st-warning);
+  color:var(--text-secondary)}
+.veto{display:inline-block;font-size:10.5px;padding:1px 7px;border-radius:999px;
+  background:var(--page);border:1px solid var(--border);color:var(--text-muted)}
+.pickline{margin-top:12px;font-size:13.5px;color:var(--text-secondary)}
+.pickline .pk{font-size:16px;color:var(--text-primary)}
+
 .kv{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12.5px;
   color:var(--text-secondary);margin-top:8px}
 .kv b{color:var(--text-primary);font-variant-numeric:tabular-nums}
@@ -201,11 +241,21 @@ def _odds_block(match: Match) -> str:
         extra.append(f'오버/언더 <b>{match.odds.ou_line:.1f}</b> '
                      f'(오버 {charts._fmt(match.odds.ou_over)} / '
                      f'언더 {charts._fmt(match.odds.ou_under)})')
-    extra.append(f'북메이커 마진 <b>{p.margin * 100:.2f}%</b>')
+    extra.append(f'오버라운드 <b>{p.overround:.4f}</b> · '
+                 f'옵션당 마진 <b>{p.margin_per_option * 100:.2f}%p</b>')
+    if p.clamped:
+        extra.append('<b>음수 확률 클램프 적용</b>')
+    if p.veto_note:
+        extra.append(f'Veto <b>{esc(p.veto_note)}</b>')
     if match.odds.source:
         extra.append(f'출처 <b>{esc(match.odds.source)}</b>')
 
-    return (f'<div class="block"><h4>배당률 · 내재확률 (마진 제거)</h4>{bar}'
+    tag = ' <span class="tossup">백중세</span>' if p.toss_up else ""
+    pickline = (f'<div class="pickline">픽(argmax) '
+                f'<b class="pk">{esc(p.pick_ko)}</b> — 예상적중률 '
+                f'<b>{p.p_pick * 100:.1f}%</b>{tag}</div>')
+    return (f'<div class="block"><h4>보정 확률 · 픽 (지침 §3-(b) 가산 마진 제거)</h4>'
+            f'{bar}{pickline}'
             f'<div class="kv">{"".join(f"<span>{e}</span>" for e in extra)}</div></div>')
 
 
@@ -358,6 +408,95 @@ def _compare_inner(match: Match, settings: Settings) -> str:
     return charts.diverging_bar(rows, match.home.display, match.away.display, width=480)
 
 
+def _verdict_box(report: Report) -> str:
+    """회차 승산 요약 (지침 §5-(f), §7)."""
+    v = report.verdict
+    if v is None or not v.n:
+        return ('<div class="warnbox">배당률이 없어 회차 승산을 계산할 수 없습니다.'
+                '</div>')
+    cls = "bet" if v.bet else "pass"
+    label = "베팅" if v.bet else "패스"
+    warn = ""
+    if v.incomplete:
+        miss = ", ".join(f"{n}번" for n in v.missing) or "일부"
+        warn = (f'<p class="vwarn">⚠️ 배당을 가져오지 못한 경기({miss})가 있어 '
+                f'{v.n}경기만으로 계산했습니다. 14경기가 모두 채워지기 전까지 '
+                f'이 판정은 참고용입니다.</p>')
+    return (f'<div class="verdict {cls}">'
+            f'<div class="vhead">회차 승산 <span class="vlab">{label}</span></div>'
+            f'<div class="vnums">'
+            f'<span>E <b>{v.expected:.2f}</b></span>'
+            f'<span>σ <b>{v.sigma:.2f}</b></span>'
+            f'<span>z <b>{v.z:+.2f}</b></span>'
+            f'<span>P(≥11) <b>{v.p_ge11 * 100:.0f}%</b></span>'
+            f'<span class="vex">정확값 {v.p_ge11_exact * 100:.1f}%</span>'
+            f'</div>'
+            f'<p class="vnote">게이트: P(≥11) ≥ 15% 이면 베팅, 미만이면 패스. '
+            f'P(≥11)은 지침 §5-(d)의 정규근사 Φ(z)이며, 괄호의 정확값은 '
+            f'포아송 이항 분포로 직접 계산한 참고치입니다.</p>{warn}</div>')
+
+
+def _pick_table(matches: list[Match]) -> str:
+    """통합표 (지침 §7)."""
+    rows = ""
+    for m in matches:
+        p = m.probs
+        if p is None:
+            rows += (f'<tr><td>{m.no}</td><td>{esc(m.league_ko or m.league)}</td>'
+                     f'<td>{esc(m.home.display)}</td><td>{esc(m.away.display)}</td>'
+                     f'<td class="num" colspan="3">배당 없음</td>'
+                     f'<td class="num">—</td><td class="num">—</td>'
+                     f'<td>배당 미수집</td></tr>')
+            continue
+        ph, pd, pa = p.pct()
+        note = []
+        if p.toss_up:
+            note.append('<span class="tossup">백중세</span>')
+        if p.veto_note:
+            note.append(f'<span class="veto">Veto {esc(p.veto_note)}</span>')
+        if p.clamped:
+            note.append('<span class="veto">클램프</span>')
+        best = {"H": 0, "D": 1, "A": 2}[p.pick]
+        cells = []
+        for i, val in enumerate((ph, pd, pa)):
+            mark = ' class="num hi"' if i == best else ' class="num"'
+            cells.append(f'<td{mark}>{val:.1f}%</td>')
+        rows += (f'<tr><td>{m.no}</td><td>{esc(m.league_ko or m.league)}</td>'
+                 f'<td>{esc(m.home.display)}</td><td>{esc(m.away.display)}</td>'
+                 f'{"".join(cells)}'
+                 f'<td class="num pk">{esc(p.pick_ko)}</td>'
+                 f'<td class="num">{p.p_pick * 100:.1f}%</td>'
+                 f'<td>{" ".join(note)}</td></tr>')
+    return (f'<div class="tablewrap"><table class="picks">'
+            f'<thead><tr><th>No</th><th>리그</th><th>홈</th><th>원정</th>'
+            f'<th class="num">P(승)</th><th class="num">P(무)</th>'
+            f'<th class="num">P(패)</th><th class="num">픽</th>'
+            f'<th class="num">예상적중률</th><th>비고</th></tr></thead>'
+            f'<tbody>{rows}</tbody></table></div>')
+
+
+def _tossup_list(matches: list[Match]) -> str:
+    """직관 적용 후보 (지침 §7, §9-(1))."""
+    items = [m for m in matches if m.probs is not None and m.probs.toss_up]
+    if not items:
+        return ('<p class="sub" style="color:var(--text-muted);font-size:12.5px">'
+                '백중세 경기가 없습니다. 지침 §9 기준으로는 직관 개입의 근거가 '
+                '있는 경기가 없다는 뜻입니다.</p>')
+    lis = ""
+    for m in items:
+        p = m.probs
+        ph, pd, pa = p.pct()
+        lis += (f'<li><b>{m.no}. {esc(m.home.display)} vs {esc(m.away.display)}</b> '
+                f'— {ph:.1f}% / {pd:.1f}% / {pa:.1f}% '
+                f'(픽 {esc(p.pick_ko)}, 1·2순위 차 {p.gap * 100:.1f}%p)</li>')
+    return (f'<ul class="mnotes">{lis}</ul>'
+            f'<p class="sub" style="color:var(--text-muted);font-size:12.5px">'
+            f'상위 두 결과가 4%p 이내로 붙어 있어, 1순위를 2순위로 바꿔도 '
+            f'적중률 손실이 작습니다. 지침 §9 기준 직관을 넣어도 되는 유일한 '
+            f'자리입니다. 명확한 정배를 무승부로 바꾸면 P(≥11)이 오히려 '
+            f'낮아집니다(§9 함정).</p>')
+
+
 def _summary_grid(matches: list[Match]) -> str:
     cards = []
     for m in matches:
@@ -410,6 +549,17 @@ def render_report(report: Report, settings: Settings) -> str:
   <div class="badges">{badges}</div>
 </header>
 {warnings}
+{_verdict_box(report)}
+<h2 class="sec">통합표 — 보정 확률과 픽 (argmax)</h2>
+<p class="sub" style="color:var(--text-muted);font-size:12.5px;margin:0 0 12px">
+  피나클 배당에서 <b>가산(균등) 마진</b>을 제거한 확률입니다(지침 §3-(b)).
+  픽은 각 경기의 최댓값을 그대로 고른 것이며(§4), 무승부 가중이나 리그 보정 같은
+  임의 조정은 하지 않습니다.</p>
+{_pick_table(report.matches)}
+
+<h2 class="sec">직관 적용 후보 (백중세)</h2>
+{_tossup_list(report.matches)}
+
 <h2 class="sec">14경기 한눈에 보기</h2>
 <p class="sub" style="color:var(--text-muted);font-size:12.5px;margin:0 0 12px">
   막대는 배당률에서 마진을 제거한 내재확률입니다

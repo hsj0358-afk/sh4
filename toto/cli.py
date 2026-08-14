@@ -19,7 +19,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import __version__
-from .analyze import run_all
+from .analyze import evaluate_round, run_all
 from .cache import Cache
 from .models import Report, TeamProfile
 from .normalize import TeamResolver
@@ -195,6 +195,10 @@ def main(argv: list[str] | None = None) -> int:
     report.matches = matches
     run_all(matches, settings)
 
+    # 회차 승산 (지침 §5)
+    expected = int(settings.betman.get("expected_matches", 14))
+    report.verdict = evaluate_round(matches, expected_total=expected)
+
     missing_odds = [m.no for m in matches if not m.probs]
     if missing_odds:
         report.warnings.append(
@@ -217,9 +221,31 @@ def main(argv: list[str] | None = None) -> int:
     if report.warnings:
         log.warning("확인 필요 %d건 — 리포트 상단에 표시했습니다.", len(report.warnings))
 
+    v = report.verdict
+    if v is not None and v.n:
+        log.info("회차 승산: E=%.2f σ=%.2f z=%+.2f P(>=11)=%.0f%% → %s",
+                 v.expected, v.sigma, v.z, v.p_ge11 * 100, v.verdict_ko)
+        if v.incomplete:
+            log.warning("  배당 미수집 경기가 있어 %d경기만으로 계산했습니다.", v.n)
+        log.info("회차로그 1줄 (지침 §8):")
+        log.info("  %s", _log_line(report))
+
     if args.open:
         webbrowser.open(out.resolve().as_uri())
     return 0
+
+
+def _log_line(report: Report) -> str:
+    """지침 §8 스키마의 회차로그 한 줄 (정산 전이라 결과 칸은 비운다)."""
+    v = report.verdict
+    sum_draw = sum(m.probs.draw for m in report.matches if m.probs is not None)
+    return " | ".join([
+        report.round_id or "", report.generated_at[:10],
+        str(v.n), f"{v.expected:.2f}", f"{v.sigma:.2f}", f"{v.z:+.2f}",
+        f"{v.p_ge11 * 100:.0f}%", v.verdict_ko,
+        "", "", f"{sum_draw:.2f}", "", "", "", "",
+        "정산 전",
+    ])
 
 
 if __name__ == "__main__":

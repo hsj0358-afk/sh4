@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
+
+from .predict import MatchProb, RoundVerdict
 from typing import Any
 
 # --------------------------------------------------------------------------
@@ -192,22 +194,6 @@ class Odds:
         return None not in (self.home, self.draw, self.away)
 
 
-@dataclass
-class Probabilities:
-    """마진(vig) 제거 후 내재확률. 합은 1.0."""
-    home: float = 0.0
-    draw: float = 0.0
-    away: float = 0.0
-    margin: float = 0.0           # 북메이커 마진 (0.05 = 5%)
-
-    def pct(self) -> tuple[float, float, float]:
-        return (self.home * 100, self.draw * 100, self.away * 100)
-
-    @property
-    def favorite(self) -> str:
-        return max((self.home, HOME), (self.draw, DRAW), (self.away, AWAY))[1]
-
-
 # --------------------------------------------------------------------------
 # 상대전적
 # --------------------------------------------------------------------------
@@ -256,7 +242,7 @@ class Match:
 
     # 수집물
     odds: Odds = field(default_factory=Odds)
-    probs: Probabilities | None = None
+    probs: MatchProb | None = None       # 보정 확률 + argmax 픽
     home_profile: TeamProfile | None = None
     away_profile: TeamProfile | None = None
     h2h: H2H = field(default_factory=H2H)
@@ -279,6 +265,7 @@ class Report:
     matches: list[Match] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     source_status: dict[str, str] = field(default_factory=dict)
+    verdict: RoundVerdict | None = None   # 회차 승산 (지침 §5)
 
     def to_dict(self) -> dict:
         return asdict(self)

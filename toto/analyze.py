@@ -8,7 +8,8 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from .models import Match, Probabilities, TeamStats
+from .models import Match, TeamStats
+from .predict import additive_probabilities, round_winnability
 from .settings import Settings
 
 log = logging.getLogger(__name__)
@@ -17,37 +18,27 @@ log = logging.getLogger(__name__)
 # --------------------------------------------------------------------------
 # 배당 → 확률
 # --------------------------------------------------------------------------
-def implied_probabilities(home: float, draw: float, away: float) -> Probabilities:
-    """소수 배당에서 북메이커 마진(vig)을 제거한 내재확률.
-
-    1/배당 의 합은 항상 1보다 크다(그 초과분이 마진). 각 값을 합으로 나누어
-    정규화하는 비례배분(multiplicative) 방식을 쓴다 — 업계 표준이고,
-    피나클처럼 마진이 얇은 북메이커에서는 정교한 방식과 차이가 거의 없다.
-
-    >>> p = implied_probabilities(2.0, 3.5, 4.0)
-    >>> round(p.home + p.draw + p.away, 10)
-    1.0
-    """
-    raw = []
-    for odd in (home, draw, away):
-        if not odd or odd <= 1.0:
-            raise ValueError(f"유효하지 않은 배당: {odd}")
-        raw.append(1.0 / odd)
-    booksum = sum(raw)
-    norm = [r / booksum for r in raw]
-    return Probabilities(home=norm[0], draw=norm[1], away=norm[2],
-                         margin=booksum - 1.0)
-
-
 def attach_probabilities(matches: list[Match]) -> None:
+    """배당 → 보정 확률 (지침 §3-(b) 가산 마진 제거)."""
     for match in matches:
         if not match.odds.available:
             continue
         try:
-            match.probs = implied_probabilities(
+            match.probs = additive_probabilities(
                 match.odds.home, match.odds.draw, match.odds.away)
         except ValueError as exc:
             log.warning("%s 확률 계산 실패: %s", match.title, exc)
+
+
+def evaluate_round(matches: list[Match], expected_total: int = 14):
+    """argmax 단통표의 회차 승산을 평가한다 (지침 §5)."""
+    picks, missing = [], []
+    for m in matches:
+        if m.probs is not None:
+            picks.append(m.probs.p_pick)
+        else:
+            missing.append(m.no)
+    return round_winnability(picks, total_matches=expected_total, missing=missing)
 
 
 # --------------------------------------------------------------------------

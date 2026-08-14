@@ -32,6 +32,7 @@ class TeamRef:
     canonical: str = ""          # 영문 정규 팀명 (매칭 키)
     display: str = ""            # 리포트에 표시할 이름
     whoscored_url: str = ""
+    fotmob_id: str = ""          # FotMob 팀 ID (팀 상세 조회용)
     matched: bool = True         # 별칭 매칭 성공 여부
 
     def __post_init__(self) -> None:
@@ -145,6 +146,24 @@ class TeamStats:
         if self.tackles_pg is None and self.interceptions_pg is None:
             return None
         return (self.tackles_pg or 0.0) + (self.interceptions_pg or 0.0)
+
+
+def fill_stats(dst: TeamStats, src: TeamStats, overwrite: bool = False) -> int:
+    """src 의 값으로 dst 의 빈 칸을 채운다. 채운 항목 수를 돌려준다.
+
+    한 팀의 지표를 두 소스가 나눠서 들고 있다 — 순위표·홈원정 승점은 FotMob,
+    점유율·패스성공률·평점은 후스코어드다. 나중에 붙는 소스가 앞서 채운 값을
+    None 으로 덮어쓰면 안 되므로, 기본은 '비어 있을 때만' 채운다.
+    """
+    filled = 0
+    for name in src.__dataclass_fields__:
+        value = getattr(src, name)
+        if value is None:
+            continue
+        if overwrite or getattr(dst, name) is None:
+            setattr(dst, name, value)
+            filled += 1
+    return filled
 
 
 @dataclass

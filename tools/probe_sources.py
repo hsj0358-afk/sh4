@@ -49,11 +49,13 @@ WANT_COLS = {
 
 # 경로가 바뀌었을 수 있어 후보를 여러 개 시도한다.
 FOTMOB = {
-    # 1차 점검에서 200/500KB 로 살아 있음을 확인한 경로
+    # 3차 점검에서 확인 완료 — 순위표(all/home/away)를 여기서 읽어 쓰고 있다.
+    # 구조가 또 바뀌지 않았는지 확인하는 용도로만 남긴다.
     "api/data/leagues?id=9080 (K1)": "https://www.fotmob.com/api/data/leagues?id=9080",
-    # 전체 리그 목록 — K리그2·J1 의 id 를 여기서 찾는다
-    "api/data/allLeagues": "https://www.fotmob.com/api/data/allLeagues",
-    "웹페이지(K리그1)": "https://www.fotmob.com/leagues/9080/overview/k-league-1",
+    # 아직 안 본 것: 팀 상세. 점유율·슈팅·xG 가 여기 있으면 후스코어드
+    # 없이도 레이더를 채울 수 있다. (id=92630 = FC Seoul)
+    "api/data/teams?id=92630 (서울)": "https://www.fotmob.com/api/data/teams?id=92630",
+    "api/teams?id=92630 (구경로)": "https://www.fotmob.com/api/teams?id=92630",
 }
 
 SOFASCORE = {
@@ -408,8 +410,9 @@ def main(argv: list[str] | None = None) -> int:
         if not only or only == "fbref":
             probe_fbref(browser)
         if not only or only == "fotmob":
-            probe_json("② FotMob — 아시아 리그 + 결장자/평점", FOTMOB, browser,
-                       hint_keys=("kleague", "j1", "shotsOnTarget", "rating"))
+            probe_json("② FotMob — 팀 상세에 점유율·xG 가 있는지", FOTMOB, browser,
+                       hint_keys=("possession", "expected_goals", "xg",
+                                  "shotsOnTarget", "rating", "injur"))
         if not only or only == "sofascore":
             probe_json("③ Sofascore — 아시아 리그 보조", SOFASCORE, browser,
                        hint_keys=("k league", "j1 league", "uniqueTournament"))

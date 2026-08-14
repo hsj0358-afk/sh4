@@ -18,25 +18,14 @@ from __future__ import annotations
 import json
 import logging
 import re
-import time
-from urllib.parse import urljoin
 
 from ..models import FormEntry, H2H, H2HEntry, TeamProfile, TeamRef, TeamStats
+from ..models import fill_stats
 from ..normalize import TeamResolver
 from ..settings import Settings
+from .browser import STEALTH_JS, UA, StealthBrowser  # noqa: F401  (하위호환 재수출)
 
 log = logging.getLogger(__name__)
-
-UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-      "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
-
-# 자동화 탐지를 줄이는 초기 스크립트
-STEALTH_JS = """
-Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-Object.defineProperty(navigator, 'languages', {get: () => ['en-GB', 'en']});
-Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
-window.chrome = window.chrome || {runtime: {}};
-"""
 
 _NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
 _SCORE_RE = re.compile(r"(\d+)\s*[-:]\s*(\d+)")
@@ -53,129 +42,17 @@ def _num(text: str) -> float | None:
 # --------------------------------------------------------------------------
 # 브라우저 세션
 # --------------------------------------------------------------------------
-class WhoScoredBrowser:
-    """Playwright 세션 래퍼 (with 문으로 사용)."""
+class WhoScoredBrowser(StealthBrowser):
+    """후스코어드용 세션. 공용 세션에 Incapsula 차단 판정만 얹는다."""
 
     def __init__(self, settings: Settings, cache=None) -> None:
-        self.cfg = settings.whoscored
-        self.base = self.cfg.get("base", "https://www.whoscored.com")
-        self.delay = float(self.cfg.get("delay_sec", 4.0))
-        self.timeout = int(self.cfg.get("timeout_ms", 45000))
-        self.cache = cache
-        self._pw = None
-        self._ctx = None
-        self._browser = None
-        self._page = None
-        self.available = False
-        self._last_load = 0.0
+        cfg = dict(settings.whoscored or {})
+        cfg.setdefault("base", "https://www.whoscored.com")
+        cfg.setdefault("delay_sec", 4.0)
+        super().__init__(cfg, cache=cache, name="후스코어드")
 
-    def __enter__(self):
-        try:
-            from playwright.sync_api import sync_playwright
-        except Exception:
-            log.error("playwright 미설치 — 후스코어드 수집을 건너뜁니다. "
-                      "`pip install -r requirements-toto.txt && playwright install chromium`")
-            return self
-
-        args = [
-            "--no-sandbox",
-            "--disable-blink-features=AutomationControlled",
-            "--disable-dev-shm-usage",
-        ]
-        headless = bool(self.cfg.get("headless", True))
-        try:
-            self._pw = sync_playwright().start()
-            if self.cfg.get("persistent_profile", True) and self.cache is not None:
-                self._ctx = self._pw.chromium.launch_persistent_context(
-                    str(self.cache.browser_profile), headless=headless, args=args,
-                    user_agent=UA, locale="en-GB",
-                    viewport={"width": 1440, "height": 900})
-                self._page = self._ctx.pages[0] if self._ctx.pages else self._ctx.new_page()
-            else:
-                self._browser = self._pw.chromium.launch(headless=headless, args=args)
-                self._ctx = self._browser.new_context(
-                    user_agent=UA, locale="en-GB",
-                    viewport={"width": 1440, "height": 900})
-                self._page = self._ctx.new_page()
-            self._ctx.add_init_script(STEALTH_JS)
-            self.available = True
-        except Exception as exc:
-            log.error("브라우저 기동 실패: %s", exc)
-        return self
-
-    def __exit__(self, *exc) -> None:
-        # 컨텍스트 → 브라우저 → playwright 순으로 정리. 하나가 실패해도 나머지는 닫는다.
-        for obj, method in ((self._ctx, "close"),
-                            (self._browser, "close"),
-                            (self._pw, "stop")):
-            if obj is None:
-                continue
-            try:
-                getattr(obj, method)()
-            except Exception:
-                pass
-
-    def get_html(self, url: str, wait_selector: str | None = None) -> str:
-        """페이지를 열고 HTML 을 돌려준다. 실패하면 빈 문자열."""
-        if not self.available:
-            return ""
-        # 요청 간격 유지 (차단 방지)
-        gap = time.time() - self._last_load
-        if gap < self.delay:
-            time.sleep(self.delay - gap)
-        try:
-            self._page.goto(url, wait_until="domcontentloaded", timeout=self.timeout)
-            if wait_selector:
-                try:
-                    self._page.wait_for_selector(wait_selector, timeout=15000)
-                except Exception:
-                    log.debug("셀렉터 대기 실패(%s) — 그래도 진행: %s", wait_selector, url)
-            # 순위표·통계표는 스크롤해야 채워지는 경우가 있다.
-            try:
-                self._page.evaluate(
-                    "window.scrollTo(0, document.body.scrollHeight / 2)")
-                self._page.wait_for_timeout(800)
-                self._page.evaluate(
-                    "window.scrollTo(0, document.body.scrollHeight)")
-            except Exception:
-                pass
-            self._page.wait_for_timeout(2000)
-            html = self._page.content()
-            self._last_load = time.time()
-            if _looks_blocked(html):
-                log.warning("봇 차단 화면으로 보입니다: %s "
-                            "(headless: false 로 한 번 실행하면 통과 쿠키가 저장됩니다)", url)
-                return ""
-            return html
-        except Exception as exc:
-            log.warning("페이지 로드 실패 %s: %s", url, exc)
-            self._last_load = time.time()
-            return ""
-
-    def get_raw(self, url: str) -> tuple[int, str]:
-        """차단 판정 없이 응답을 그대로 가져온다 (점검 도구용).
-
-        get_html() 은 짧은 응답을 '차단'으로 보는데, JSON API 는 원래 짧아서
-        그 휴리스틱을 적용하면 안 된다.
-        """
-        if not self.available:
-            return 0, ""
-        gap = time.time() - self._last_load
-        if gap < self.delay:
-            time.sleep(self.delay - gap)
-        try:
-            resp = self._page.goto(url, wait_until="domcontentloaded",
-                                   timeout=self.timeout)
-            self._page.wait_for_timeout(1200)
-            self._last_load = time.time()
-            return (resp.status if resp else 0), self._page.content()
-        except Exception as exc:
-            log.warning("원본 로드 실패 %s: %s", url, exc)
-            self._last_load = time.time()
-            return 0, ""
-
-    def abs_url(self, path: str) -> str:
-        return urljoin(self.base, path)
+    def _is_blocked(self, html: str) -> bool:
+        return _looks_blocked(html)
 
 
 # /Regions/{지역}/Tournaments/{대회}/... 형태의 리그 링크
@@ -855,12 +732,14 @@ def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None) -> s
             table = league_data.get(match.league) or {}
             for side in ("home", "away"):
                 ref: TeamRef = getattr(match, side)
-                profile = TeamProfile(team=ref, league=match.league)
+                # FotMob 이 먼저 채웠을 수 있다. 그 값을 지우지 않는다.
+                profile = getattr(match, f"{side}_profile") or TeamProfile(
+                    team=ref, league=match.league)
                 entry = table.get(ref.canonical) if ref.canonical else None
                 if entry:
                     # 리그 순위표에서 얻은 지표만으로도 순위·레이더·지표비교는
                     # 그릴 수 있다. 팀 페이지 수집이 실패해도 이건 살린다.
-                    profile.stats = entry["stats"]
+                    fill_stats(profile.stats, entry["stats"])
                     profile.source_ok = True
                     stats_done += 1
 
@@ -874,7 +753,9 @@ def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None) -> s
                         profile.strengths = payload.get("strengths") or []
                         profile.weaknesses = payload.get("weaknesses") or []
                         profile.style_of_play = payload.get("style") or []
-                        profile.form = [FormEntry(**f) for f in (payload.get("form") or [])]
+                        form = [FormEntry(**f) for f in (payload.get("form") or [])]
+                        if form:            # 빈 결과로 FotMob 폼을 지우지 않는다
+                            profile.form = form
                         profile.missing_players = payload.get("missing") or []
                         teams_done += 1
                 else:
@@ -883,9 +764,13 @@ def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None) -> s
                 setattr(match, f"{side}_profile", profile)
 
             if match.home.canonical and match.away.canonical:
-                match.h2h = read_h2h(browser, settings, match.home.canonical,
-                                     match.away.canonical, resolver,
-                                     match.league, cache=cache)
+                h2h = read_h2h(browser, settings, match.home.canonical,
+                               match.away.canonical, resolver,
+                               match.league, cache=cache)
+                # 후스코어드 상대전적은 다년치라 더 낫지만, 못 가져왔을 때
+                # FotMob 이 채운 시즌 내 맞대결을 지우면 안 된다.
+                if h2h.entries or not match.h2h.entries:
+                    match.h2h = h2h
 
     total = len(matches) * 2
     if stats_done == 0:

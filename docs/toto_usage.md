@@ -41,8 +41,8 @@ create_shortcut.bat  더블클릭
 더블클릭하면 메뉴가 뜬다.
 
 ```
-  [1] 전체 수집 (배당률 + 후스코어드 상세)
-  [2] 빠른 수집 (배당률·순위 위주)
+  [1] 전체 수집 (배당률 + 순위·폼 + 후스코어드 상세)
+  [2] 빠른 수집 (배당률 + 순위·폼)
   [3] 회차 지정해서 수집
   [4] 데모 보기 (네트워크 불필요)
   [5] 캐시 비우고 새로 수집
@@ -77,7 +77,8 @@ run_toto.bat                         # Windows (시스템 시각 사용)
 | `--demo` | **네트워크 없이** 샘플 데이터로 리포트 생성. 설치 확인용 |
 | `--round 260032` | 회차 직접 지정 |
 | `--matches-file examples/matches.yaml` | 베트맨 크롤링 대신 경기 목록을 직접 입력 |
-| `--skip-whoscored` | 후스코어드 생략 (배당률·순위 위주, 1~2분) |
+| `--skip-whoscored` | 후스코어드 생략. 배당률 + 순위·홈원정 승점·폼까지는 나온다 (1~2분) |
+| `--skip-fotmob` | FotMob 생략 (순위·홈원정 승점·최근 폼·시즌 내 맞대결) |
 | `--skip-odds` | 피나클 배당률 생략 |
 | `--no-cache` | 캐시 무시하고 새로 수집 |
 | `--open` | 생성 후 브라우저로 바로 열기 |
@@ -88,7 +89,7 @@ run_toto.bat                         # Windows (시스템 시각 사용)
 
 ```bash
 python -m toto --demo --open          # 1) 렌더링이 정상인지 먼저 확인
-python -m toto --skip-whoscored       # 2) 배당률 수집까지 확인 (빠름)
+python -m toto --skip-whoscored       # 2) 배당률 + 순위·폼까지 확인 (빠름)
 python -m toto                        # 3) 풀 수집 (10~20분)
 ```
 
@@ -196,8 +197,31 @@ Brighton:
     aliases: ["에레디비시", "네덜란드"]
     pinnacle_url: "https://www.pinnacle.com/en/soccer/netherlands-eredivisie/matchups/#all"
     pinnacle_name: "Netherlands - Eredivisie"
+    fotmob_name: "Eredivisie"        # FotMob 표기. id 는 프로그램이 찾아낸다
     whoscored: "/Regions/155/Tournaments/13/Netherlands-Eredivisie"
 ```
+
+`fotmob_id` 는 적지 않아도 된다. 비워 두면 FotMob 전체 리그 목록에서
+`fotmob_name` 으로 찾아내 캐시에 남긴다 — 시즌이 바뀌어 ID 가 달라져도
+따라간다.
+
+---
+
+## 5-1. 어떤 소스가 무엇을 담당하나
+
+| 소스 | 담당 | 비고 |
+|---|---|---|
+| 베트맨 | 이번 회차 14경기 목록 | 실패 시 `--matches-file` 로 대체 |
+| 피나클 | 승/무/패 배당률 | 지침의 확률 계산은 **피나클만** 쓴다 |
+| **FotMob** | 순위표, **홈/원정 승점**, 최근 5경기 폼, 시즌 내 맞대결 | 리그당 요청 1회. 빠르고 아시아 리그도 덮는다 |
+| 후스코어드 | 강점/약점/스타일, 점유율·패스성공률·평점, 다년치 상대전적 | 봇 차단이 잦다. 실패해도 위 항목은 남는다 |
+
+FotMob 을 먼저 돌리고 후스코어드가 **빈 칸만** 채운다. 그래서 후스코어드가
+막혀도 순위·폼·홈원정 승점은 리포트에 그대로 나온다.
+
+FBref 와 Understat 은 점검 결과 쓸 수 없어 제외했다 — FBref 는 실제
+브라우저로도 Cloudflare 403, Understat 은 아시아 리그를 아예 다루지 않는다
+(`python tools/probe_sources.py --browser` 로 언제든 다시 확인할 수 있다).
 
 ---
 
@@ -205,7 +229,7 @@ Brighton:
 
 ```
 toto/
-  cli.py          실행 흐름 (목록 → 배당 → 상세 → 분석 → 렌더)
+  cli.py          실행 흐름 (목록 → 배당 → 순위·폼 → 상세 → 분석 → 렌더)
   models.py       Match / TeamProfile / Odds / H2H 등 데이터 구조
   settings.py     config_toto.yaml + .env 로더
   normalize.py    팀명 한글↔영문 매칭
@@ -214,7 +238,8 @@ toto/
   render.py       자체 완결 HTML 조립
   cache.py        날짜별 JSON 캐시
   fixtures.py     --demo 샘플 데이터
-  sources/        betman.py · pinnacle.py · whoscored.py
+  sources/        betman.py · pinnacle.py · fotmob.py · whoscored.py
+                  browser.py — 두 소스가 공유하는 Playwright 스텔스 세션
 data/teams.yaml   팀명 별칭 테이블
 config_toto.yaml  리그 URL, 레이더 항목, 수집 옵션
 ```

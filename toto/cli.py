@@ -51,6 +51,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="네트워크 없이 샘플 데이터로 리포트 생성")
     p.add_argument("--skip-whoscored", action="store_true",
                    help="후스코어드 수집 생략 (배당률·순위 위주, 빠름)")
+    p.add_argument("--skip-fotmob", action="store_true",
+                   help="FotMob 수집 생략 (순위·홈원정 승점·폼·맞대결)")
     p.add_argument("--skip-odds", action="store_true",
                    help="피나클 배당률 수집 생략")
     p.add_argument("--no-cache", action="store_true",
@@ -167,12 +169,30 @@ def main(argv: list[str] | None = None) -> int:
                 log.error("배당률 수집 중 오류: %s", exc)
                 report.source_status["배당률"] = "실패"
 
-        # ---- 3. 후스코어드 ------------------------------------------------
+        # ---- 3. FotMob (순위·홈원정 승점·폼·맞대결) -------------------------
+        # 후스코어드보다 먼저 돌린다. 리그당 요청 1회로 끝나 빠르고, 여기서
+        # 채운 값을 뒤에 오는 후스코어드가 덮어쓰지 않는다(빈 칸만 메운다).
+        if args.skip_fotmob:
+            report.source_status["순위·폼"] = "생략"
+        else:
+            from .sources import fotmob
+            try:
+                report.source_status["순위·폼"] = fotmob.enrich(
+                    matches, settings, resolver, cache=cache)
+            except Exception as exc:
+                log.error("FotMob 수집 중 오류: %s", exc)
+                report.source_status["순위·폼"] = "실패"
+
+        # ---- 4. 후스코어드 (강점/약점·스타일·팀 통계) ------------------------
         if args.skip_whoscored:
             report.source_status["상세데이터"] = "생략"
             for match in matches:
-                match.home_profile = TeamProfile(team=match.home, league=match.league)
-                match.away_profile = TeamProfile(team=match.away, league=match.league)
+                if match.home_profile is None:
+                    match.home_profile = TeamProfile(team=match.home,
+                                                     league=match.league)
+                if match.away_profile is None:
+                    match.away_profile = TeamProfile(team=match.away,
+                                                     league=match.league)
         else:
             from .sources import whoscored
             try:
@@ -191,7 +211,7 @@ def main(argv: list[str] | None = None) -> int:
 
         resolver.save_learned()
 
-    # ---- 4. 분석 ----------------------------------------------------------
+    # ---- 5. 분석 ----------------------------------------------------------
     report.matches = matches
     run_all(matches, settings)
 
@@ -204,7 +224,7 @@ def main(argv: list[str] | None = None) -> int:
         report.warnings.append(
             "배당률을 가져오지 못한 경기: " + ", ".join(f"{n}번" for n in missing_odds))
 
-    # ---- 5. 렌더링 --------------------------------------------------------
+    # ---- 6. 렌더링 --------------------------------------------------------
     html = render_report(report, settings)
 
     out = args.output

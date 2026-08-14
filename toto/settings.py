@@ -17,36 +17,43 @@ DEFAULT_LEAGUES: dict[str, dict] = {
         "ko": "프리미어리그", "aliases": ["프리미어", "EPL", "잉글랜드"],
         "pinnacle_url": "https://www.pinnacle.com/en/soccer/england-premier-league/matchups/#all",
         "pinnacle_name": "England - Premier League",
+        "fotmob_name": "Premier League",
         "whoscored": "/Regions/252/Tournaments/2/England-Premier-League",
     },
     "laliga": {
         "ko": "라리가", "aliases": ["라리가", "프리메라", "스페인"],
         "pinnacle_url": "https://www.pinnacle.com/en/soccer/spain-la-liga/matchups/#all",
         "pinnacle_name": "Spain - La Liga",
+        "fotmob_name": "LaLiga",
         "whoscored": "/Regions/206/Tournaments/4/Spain-LaLiga",
     },
     "bundesliga": {
         "ko": "분데스리가", "aliases": ["분데스", "독일"],
         "pinnacle_url": "https://www.pinnacle.com/en/soccer/germany-bundesliga/matchups/#all",
         "pinnacle_name": "Germany - Bundesliga",
+        "fotmob_name": "Bundesliga",
         "whoscored": "/Regions/81/Tournaments/3/Germany-Bundesliga",
     },
     "seriea": {
         "ko": "세리에A", "aliases": ["세리에", "이탈리아"],
         "pinnacle_url": "https://www.pinnacle.com/en/soccer/italy-serie-a/matchups/#all",
         "pinnacle_name": "Italy - Serie A",
+        "fotmob_name": "Serie A",
         "whoscored": "/Regions/108/Tournaments/5/Italy-Serie-A",
     },
     "ligue1": {
         "ko": "리그앙", "aliases": ["리그앙", "리그 1", "프랑스"],
         "pinnacle_url": "https://www.pinnacle.com/en/soccer/france-ligue-1/matchups/#all",
         "pinnacle_name": "France - Ligue 1",
+        "fotmob_name": "Ligue 1",
         "whoscored": "/Regions/74/Tournaments/22/France-Ligue-1",
     },
     "kleague1": {
         "ko": "K리그1", "aliases": ["K리그1", "K리그 1", "케이리그1"],
         "pinnacle_url": "https://www.pinnacle.com/en/soccer/korea-republic-k-league-1/matchups/#all",
         "pinnacle_name": "Korea Republic - K League 1",
+        "fotmob_name": "K League 1",
+        "fotmob_id": 9080,
         "whoscored": "/Regions/260/Tournaments/387/South-Korea-K-League-1",
         "whoscored_slug": ["south-korea", "k-league-1"],
     },
@@ -54,6 +61,7 @@ DEFAULT_LEAGUES: dict[str, dict] = {
         "ko": "K리그2", "aliases": ["K리그2", "K리그 2", "케이리그2"],
         "pinnacle_url": "https://www.pinnacle.com/en/soccer/korea-republic-k-league-2/matchups/#all",
         "pinnacle_name": "Korea Republic - K League 2",
+        "fotmob_name": "K League 2",
         "whoscored": "/Regions/260/Tournaments/418/South-Korea-K-League-2",
         "whoscored_slug": ["south-korea", "k-league-2"],
     },
@@ -61,6 +69,7 @@ DEFAULT_LEAGUES: dict[str, dict] = {
         "ko": "J리그", "aliases": ["J리그", "제이리그", "일본"],
         "pinnacle_url": "https://www.pinnacle.com/en/soccer/japan-j-league/matchups/#all",
         "pinnacle_name": "Japan - J League",
+        "fotmob_name": "J1 League",
         "whoscored": "/Regions/110/Tournaments/150/Japan-J-League",
         "whoscored_slug": ["japan", "j-league"],
     },
@@ -130,6 +139,7 @@ class Settings:
     betman: dict = field(default_factory=dict)
     pinnacle: dict = field(default_factory=dict)
     whoscored: dict = field(default_factory=dict)
+    fotmob: dict = field(default_factory=dict)
     leagues: dict = field(default_factory=lambda: dict(DEFAULT_LEAGUES))
     radar_metrics: list = field(default_factory=lambda: list(DEFAULT_RADAR_METRICS))
     compare_metrics: list = field(default_factory=lambda: list(DEFAULT_COMPARE_METRICS))
@@ -190,6 +200,13 @@ def load_settings(config_path: Path | None = None, env_path: Path | None = None)
         "persistent_profile": True,
         "recent_form_count": 5,
         "h2h_count": 10,
+    }
+    s.fotmob = cfg.get("fotmob") or {
+        "base": "https://www.fotmob.com",
+        "headless": True,
+        "delay_sec": 1.5,
+        "timeout_ms": 45000,
+        "persistent_profile": True,
     }
     if cfg.get("leagues"):
         s.leagues = cfg["leagues"]

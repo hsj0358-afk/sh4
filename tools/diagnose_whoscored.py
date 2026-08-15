@@ -74,6 +74,30 @@ def summarize(path: Path) -> None:
     for href, text in links[:6]:
         print(f"      {text[:28]:<30} {href[:70]}")
 
+    # 팀 링크가 0개면 강점/약점을 가져올 팀 페이지 주소를 못 만든다.
+    # 표기가 바뀐 건지(소문자·다른 경로) 아예 없는 건지 구분해야 고칠 수 있다.
+    if not links:
+        print("  ! 팀 링크가 없어 팀 페이지(강점/약점·스타일)를 열 수 없습니다.")
+        variants: dict[str, int] = {}
+        for m in re.finditer(r'href="([^"]{3,90})"', raw, re.I):
+            href = m.group(1)
+            if re.search(r"/teams?/\d+|/team/|player|squad", href, re.I):
+                key = re.sub(r"\d+", "{id}", href)[:60]
+                variants[key] = variants.get(key, 0) + 1
+        if variants:
+            print("  팀으로 보이는 링크 형태 (많은 순):")
+            for key, n in sorted(variants.items(), key=lambda x: -x[1])[:8]:
+                print(f"      {n:>4}회  {key}")
+        else:
+            print("  팀 비슷한 링크가 아예 없습니다 — 목록이 JS 로 그려지는 듯합니다.")
+
+    # 정성 데이터가 이 페이지에 실려 있는지 (팀 페이지를 못 열더라도 확인)
+    low = raw.lower()
+    marks = [(name, low.count(name.lower()))
+             for name in ("Strengths", "Weaknesses", "Style of play")]
+    print("  정성 데이터 문구: "
+          + ", ".join(f"{n}={c}회" for n, c in marks))
+
     # 표
     tables = soup.find_all("table")
     print(f"  <table>: {len(tables)}개")

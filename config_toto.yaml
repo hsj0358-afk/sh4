@@ -183,3 +183,17 @@ compare_metrics:
 output:
   dir: "reports"
   filename: "toto_{round}.html"
+
+  # 폰에서 보기 --------------------------------------------------------------
+  # 리포트는 외부 참조가 없는 자체 완결 HTML 이라 파일 하나만 폰으로 넘어가면
+  # 그대로 열린다. 아래 폴더에 사본을 두면 클라우드 앱이 알아서 폰까지 옮긴다.
+  #
+  # copy_to 를 비워 두면 OneDrive / 구글드라이브 / Dropbox 를 자동으로 찾아
+  # 그 안에 cloud_folder 이름의 폴더를 만든다. 직접 지정하려면 이렇게:
+  #   copy_to:
+  #     - "C:/Users/hsj03/OneDrive/축구토토"
+  copy_to: []
+  cloud_folder: "축구토토"
+  # 회차 파일과 별개로 항상 같은 이름의 사본을 하나 더 둔다.
+  # 폰에서 즐겨찾기를 한 번만 걸어두면 늘 최신 리포트가 열린다.
+  latest_name: "최신리포트.html"

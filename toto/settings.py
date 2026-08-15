@@ -212,5 +212,9 @@ def load_settings(config_path: Path | None = None, env_path: Path | None = None)
         s.radar_metrics = cfg["radar_metrics"]
     if cfg.get("compare_metrics"):
         s.compare_metrics = cfg["compare_metrics"]
-    s.output = cfg.get("output") or {"dir": "reports", "filename": "toto_{round}.html"}
+    s.output = cfg.get("output") or {
+        "dir": "reports", "filename": "toto_{round}.html",
+        "copy_to": [], "cloud_folder": "축구토토",
+        "latest_name": "최신리포트.html",
+    }
     return s

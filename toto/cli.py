@@ -239,6 +239,11 @@ def main(argv: list[str] | None = None) -> int:
     out.write_text(html, encoding="utf-8")
 
     log.info("리포트 생성 완료 → %s (%.1f KB)", out, len(html.encode("utf-8")) / 1024)
+
+    # 폰에서 보기 — 동기화 폴더에도 복사한다 (실패해도 실행은 성공으로 끝난다)
+    from .publish import publish
+    for dest in publish(out, settings):
+        log.info("폰에서 보기용 사본 → %s", dest)
     for key, value in report.source_status.items():
         log.info("  · %s: %s", key, value)
     if report.warnings:

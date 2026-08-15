@@ -70,7 +70,7 @@ def _looks_like_home(html: str) -> bool:
         return False
     m = re.search(r"<title[^>]*>(.*?)</title>", html, re.S | re.I)
     title = re.sub(r"\s+", " ", m.group(1)).strip().lower() if m else ""
-    return "live scores" in title and "/Teams/" not in html
+    return "live scores" in title and "/teams/" not in html.lower()
 
 
 def _same_path(a: str, b: str) -> str:
@@ -261,10 +261,13 @@ def read_league(browser: WhoScoredBrowser, settings: Settings,
     soup = _soup(html)
     out: dict[str, dict] = {}
 
-    # 1) 팀 페이지 링크 수집 (/Teams/{id}/Show/... 또는 /Teams/{id})
+    # 1) 팀 페이지 링크 수집
+    #    후스코어드가 경로를 소문자로 바꿨다(/Teams/... → /teams/{id}/show/...).
+    #    대소문자를 가려서 찾다가 링크를 0개로 세었고, 팀 페이지 주소가 없으니
+    #    강점/약점·스타일 수집이 통째로 건너뛰어졌다. 대소문자를 무시한다.
     for a in soup.find_all("a", href=True):
         href = a["href"]
-        if "/Teams/" not in href:
+        if "/teams/" not in href.lower():
             continue
         name = a.get_text(" ", strip=True)
         canon = resolver.resolve(name, learn=False) if name else None
@@ -293,6 +296,14 @@ def read_league(browser: WhoScoredBrowser, settings: Settings,
             "ga": _header_index(rows, "ga", "a", "goals against", hdr=hdr),
         }
         for row in rows[hdr + 1:]:
+            # 후스코어드 순위표는 머리글이 세 줄이다
+            # (['Team','P',...] / ['','Overall','Home','Away'] / ['Team','P',...]).
+            # 경기수가 숫자인 행만 실제 데이터다. 이 조건이 없으면 머리글 행을
+            # 팀으로 읽으려 들고(Overall·Home·Team), 뒤따르는 빈 표가 이미
+            # 채운 값을 None 으로 덮어썼다.
+            played = _int(row, i_pl)
+            if played is None:
+                continue
             canon = _row_team(row, resolver, i_team)
             if not canon:
                 continue
@@ -300,7 +311,7 @@ def read_league(browser: WhoScoredBrowser, settings: Settings,
             rank = _num(row[0])
             if rank is not None and st.rank is None:
                 st.rank = int(rank)
-            st.played = _int(row, i_pl)
+            st.played = played
             st.points = _int(row, i_pts)
             st.wins = _int(row, idx["w"])
             st.draws = _int(row, idx["d"])
@@ -382,7 +393,7 @@ def _row_team(row: list[str], resolver: TeamResolver, i_team: int | None) -> str
         cand = re.sub(r"^\d+\s*", "", cand or "").strip()
         if len(cand) < 2 or _NUM_RE.fullmatch(cand or ""):
             continue
-        canon = resolver.resolve(cand, learn=False)
+        canon = resolver.resolve(cand, learn=False, quiet=True)
         if canon:
             return canon
     return None

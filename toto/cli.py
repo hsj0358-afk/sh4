@@ -59,6 +59,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="캐시를 무시하고 새로 수집")
     p.add_argument("--open", action="store_true",
                    help="생성 후 기본 브라우저로 열기")
+    p.add_argument("--serve", action="store_true",
+                   help="리포트를 같은 와이파이에 공개해 폰에서 열기 (Ctrl+C 종료)")
+    p.add_argument("--serve-port", type=int, default=8899,
+                   help="--serve 가 쓸 포트 (기본 8899)")
     p.add_argument("-v", "--verbose", action="store_true", help="디버그 로그")
     p.add_argument("--menu", action="store_true",
                    help="대화형 메뉴 (바탕화면 바로가기용)")
@@ -119,6 +123,13 @@ def main(argv: list[str] | None = None) -> int:
     _setup_logging(args.verbose)
 
     settings = load_settings()
+
+    # --serve 만 주면 이미 만들어 둔 리포트를 그대로 공유한다.
+    # 폰에서 보려고 매번 다시 수집할 이유가 없다.
+    if args.serve and not any((args.demo, args.round_id, args.matches_file)):
+        from .publish import serve
+        return serve(settings, port=args.serve_port)
+
     resolver = TeamResolver()
     cache = Cache(enabled=not args.no_cache)
     report = Report(generated_at=datetime.now().strftime("%Y-%m-%d %H:%M"))
@@ -260,6 +271,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.open:
         webbrowser.open(out.resolve().as_uri())
+    if args.serve:
+        from .publish import serve
+        return serve(settings, port=args.serve_port, open_path=out.name)
     return 0
 
 

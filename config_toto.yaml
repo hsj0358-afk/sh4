@@ -193,6 +193,10 @@ output:
   #   copy_to:
   #     - "C:/Users/hsj03/OneDrive/축구토토"
   copy_to: []
+  # 자동 탐색에서 빼고 싶은 폴더 (경로에 이 문구가 들어가면 건너뛴다).
+  # 회사 계정 OneDrive 에 개인 파일을 쌓지 않으려고 기본으로 제외해 뒀다.
+  # 개인 OneDrive 를 쓰고 싶으면 이 줄을 비우면 된다.
+  copy_to_exclude: ["OneDrive"]
   cloud_folder: "축구토토"
   # 회차 파일과 별개로 항상 같은 이름의 사본을 하나 더 둔다.
   # 폰에서 즐겨찾기를 한 번만 걸어두면 늘 최신 리포트가 열린다.

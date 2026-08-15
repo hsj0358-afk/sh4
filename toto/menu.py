@@ -34,6 +34,9 @@ ITEMS = [
     ("8", "저장된 점검 응답 다시 분석",
      "접속하지 않고 [7]이 저장해 둔 응답에서 지표 위치를 찾습니다.",
      "probe-analyze"),
+    ("9", "폰에서 열기 (같은 와이파이)",
+     "이미 만든 리포트를 폰으로 볼 수 있게 주소를 띄웁니다. 클라우드 계정 불필요.",
+     ["--serve"]),
 ]
 
 
@@ -108,6 +111,10 @@ def run_menu() -> int | None:
             return 1
         args = ["--round", rnd]
 
+    if "--serve" in args:                  # 공유만 하는 항목 (리포트를 만들지 않음)
+        from .cli import main as cli_main
+        return ("serve", cli_main(list(args)))
+
     args = list(args) + ["--open"]         # 끝나면 브라우저로 열어준다
     print()
     print(f"▶ {title}")
@@ -135,6 +142,8 @@ def main() -> int:
         print(f"오류로 끝났습니다 (코드 {code}). 위 로그를 확인하세요.")
     elif kind == "diagnose":
         print("진단을 마쳤습니다. 위 출력을 복사해서 전달하세요.")
+    elif kind == "serve":
+        print("공유를 마쳤습니다.")
     else:
         print("완료했습니다. 리포트는 reports 폴더에 있습니다.")
     return code

@@ -9,6 +9,20 @@ import { applyEffects, formatClock, isDead, isBroken } from './state.js';
 import { interpret, hallucination } from './freeform.js';
 import { createRng } from './rng.js';
 import { getItem } from '../content/items.js';
+import { getEncounter } from '../content/encounters.js';
+import {
+  startCombat,
+  combatActions,
+  buildAction,
+  applyAction,
+  applyAlly,
+  survivable,
+  enemyTurn,
+  checkExit,
+  combatStatus,
+  actionNarration,
+  EXIT,
+} from './combat.js';
 
 /** 조건 확인. 콘텐츠의 requires 를 상태와 대조한다. */
 export function meets(state, req) {
@@ -66,6 +80,125 @@ export function createGM({ state, episode }) {
     return episode.scenes[state.scene] || episode.scenes[episode.start];
   }
 
+  // ── 전투 ──────────────────────────────────────────────────────
+
+  function encounter() {
+    return state.combat ? getEncounter(state.combat.id) : null;
+  }
+
+  function inCombat() {
+    return !!state.combat && !state.combat.exit;
+  }
+
+  function beginCombat(id, events) {
+    const enc = getEncounter(id);
+    if (!enc) return;
+    state.combat = startCombat(enc);
+    events.push({ type: 'combatStart', status: combatStatus(state.combat, enc) });
+    events.push({ type: 'narration', text: asArray(enc.intro, state), tone: 'combat' });
+  }
+
+  /** 전투를 끝내고 출구의 결과를 처리한다. */
+  function finishCombat(events) {
+    const enc = encounter();
+    const exit = state.combat.exit;
+    let result = enc.exits?.[exit];
+
+    // 제압당한 것은 진 것이지 죽은 것이 아니다. 그 출구의 피해로는 죽지 않는다.
+    if (exit === EXIT.OVERRUN && result?.effects) {
+      result = { ...result, effects: survivable(result.effects, state) };
+    }
+
+    events.push({ type: 'combatEnd', exit, status: combatStatus(state.combat, enc) });
+    state.combat = null;
+
+    applyResult(result, events);
+  }
+
+  /** 상대의 차례와 전투 종료 판단. 플레이어 행동 뒤에 항상 이어진다. */
+  function afterPlayerAction(events) {
+    const enc = encounter();
+    if (!enc) return;
+
+    if (checkExit(state.combat)) {
+      finishCombat(events);
+      return;
+    }
+
+    const turn = enemyTurn(state.combat, enc);
+    events.push({ type: 'narration', text: asArray(enc.enemyTurn[turn.tier], state), tone: 'enemy' });
+
+    const notes = applyEffects(state, turn.effects);
+    if (notes.length) events.push({ type: 'notes', notes });
+
+    events.push({ type: 'combatRound', status: combatStatus(state.combat, enc) });
+
+    if (checkVitals(events)) return;
+    if (checkExit(state.combat)) finishCombat(events);
+    sync();
+  }
+
+  /** 전투 행동 실행. */
+  function combatAct(actionId, events) {
+    const enc = encounter();
+    const key = actionId.replace(/^combat:/, '');
+
+    // 동료 지원 — 주사위를 굴리지 않는 유일한 행동.
+    if (key.startsWith('ally:')) {
+      const companionId = key.slice('ally:'.length);
+      const c = state.companions[companionId];
+      events.push({ type: 'player', text: `${c?.name || '동행'}에게 지원을 요청한다` });
+
+      const { effects, injured } = applyAlly(state.combat, state, companionId);
+      events.push({
+        type: 'narration',
+        text: injured
+          ? [
+              `${c.name}가 당신 앞으로 나선다. 말릴 틈이 없었다.`,
+              '한 사람 몫의 시간을 벌었고, 그 값은 그가 치렀다.',
+            ]
+          : [
+              `${c.name}가 옆으로 붙는다. 둘이 서면 통로가 좁아지는 쪽은 저쪽이다.`,
+              '숨을 고를 틈이 생긴다.',
+            ],
+        tone: 'combat',
+      });
+      const notes = applyEffects(state, effects);
+      if (notes.length) events.push({ type: 'notes', notes });
+
+      afterPlayerAction(events);
+      return events;
+    }
+
+    const spec = buildAction(state.combat, state, enc, key);
+    const label = combatActions(state.combat, state, enc).find((a) => a.action === key)?.label || key;
+    events.push({ type: 'player', text: label });
+
+    if (key === 'terrain' && enc.terrain?.prompt) {
+      events.push({ type: 'narration', text: asArray(enc.terrain.prompt, state) });
+    }
+
+    return requestCheck({ ...spec, combatAction: key }, events);
+  }
+
+  /** 전투 판정의 결과를 반영한다. */
+  function resolveCombatRoll(actionKey, result, events) {
+    const enc = encounter();
+    const { effects } = applyAction(state.combat, enc, actionKey, result.outcome);
+
+    events.push({
+      type: 'narration',
+      text: actionNarration(enc, actionKey, result.outcome),
+      tone: 'combat',
+    });
+
+    const notes = applyEffects(state, effects);
+    if (notes.length) events.push({ type: 'notes', notes });
+
+    if (checkVitals(events)) return;
+    afterPlayerAction(events);
+  }
+
   function usedKey(sceneId, choiceId) {
     return `used:${sceneId}:${choiceId}`;
   }
@@ -85,7 +218,10 @@ export function createGM({ state, episode }) {
 
   /** 사망 / 정신 붕괴를 검사해 종료 이벤트를 만든다. */
   function checkVitals(events) {
-    if (state.ended) return true;
+    if (state.ended) {
+      state.combat = null;
+      return true;
+    }
     if (isDead(state)) {
       state.ended = {
         type: 'death',
@@ -95,6 +231,7 @@ export function createGM({ state, episode }) {
           '탐사대는 당신을 찾지 못했다. 유적은 다시 조용해졌다.',
       };
       events.push({ type: 'end', end: state.ended });
+      state.combat = null; // 탐사가 끝났으면 전투도 끝났다
       return true;
     }
     if (isBroken(state)) {
@@ -107,6 +244,7 @@ export function createGM({ state, episode }) {
           '의사들은 그것을 섬망이라고 기록했다.',
       };
       events.push({ type: 'end', end: state.ended });
+      state.combat = null;
       return true;
     }
     return false;
@@ -156,6 +294,12 @@ export function createGM({ state, episode }) {
 
     if (enterNotes.length) events.push({ type: 'notes', notes: enterNotes });
 
+    // 장면이 조우를 걸고 있으면 바로 전투로 들어간다.
+    if (s.combat && !state.combat && !state.flags[`combatDone:${id}`]) {
+      state.flags[`combatDone:${id}`] = true;
+      beginCombat(s.combat, events);
+    }
+
     if (s.end) {
       state.ended = { type: s.end.type || 'chapter', title: s.end.title, text: s.end.text };
       events.push({ type: 'end', end: state.ended });
@@ -169,6 +313,10 @@ export function createGM({ state, episode }) {
   function choices() {
     if (pending) return [];
     if (state.ended) return [];
+
+    // 전투 중에는 장면의 선택지 대신 전투 행동만 내준다.
+    if (inCombat()) return combatActions(state.combat, state, encounter());
+
     const s = scene();
     const out = [];
     for (const c of s.choices || []) {
@@ -216,6 +364,7 @@ export function createGM({ state, episode }) {
       built,
       outcomes: source.outcomes,
       after: source.after,
+      combatAction: source.combatAction,
     };
     if (source.check.prompt) {
       events.push({ type: 'narration', text: asArray(source.check.prompt, state) });
@@ -271,6 +420,12 @@ export function createGM({ state, episode }) {
 
     pending = null;
 
+    if (p.combatAction && state.combat) {
+      resolveCombatRoll(p.combatAction, result, events);
+      sync();
+      return events;
+    }
+
     const branch = selectBranch(p.outcomes, result.outcome);
     applyResult(branch, events);
 
@@ -284,6 +439,11 @@ export function createGM({ state, episode }) {
   function act(choiceId) {
     const events = [];
     if (state.ended || pending) return events;
+
+    if (inCombat()) {
+      if (!String(choiceId).startsWith('combat:')) return events;
+      return combatAct(choiceId, events);
+    }
 
     const s = scene();
     const c = (s.choices || []).find((x) => x.id === choiceId);
@@ -314,6 +474,36 @@ export function createGM({ state, episode }) {
     if (state.ended || pending) return events;
 
     events.push({ type: 'player', text: input, free: true });
+
+    // 전투 중의 자유 입력은 소지품 사용만 받는다 (기획서 10절의 '아이템 사용').
+    // 그 외에는 지금 할 수 있는 일이 아니라고 세계관 안에서 말한다.
+    if (inCombat()) {
+      const action = interpret(input, {
+        state,
+        scene: scene(),
+        getItemDef: getItem,
+        clueTitles: episode.clueTitles || {},
+      });
+
+      if (action.effects?.spend || action.effects?.hp > 0 || action.effects?.san > 0) {
+        events.push({ type: 'narration', text: asArray(action.text, state), tone: 'combat' });
+        const notes = applyEffects(state, { ...action.effects, time: 0 });
+        if (notes.length) events.push({ type: 'notes', notes });
+        afterPlayerAction(events);
+        sync();
+        return events;
+      }
+
+      events.push({
+        type: 'narration',
+        text: [
+          '지금은 그럴 시간이 없다.',
+          '손에 쥔 것을 쓰거나, 몸으로 결정하거나. 둘 중 하나다.',
+        ],
+        tone: 'gm',
+      });
+      return events;
+    }
 
     const halluc = hallucination(state, rng);
     if (halluc) events.push({ type: 'narration', text: [halluc], tone: 'eerie' });
@@ -350,6 +540,9 @@ export function createGM({ state, episode }) {
   return {
     get pending() {
       return pending;
+    },
+    get combat() {
+      return inCombat() ? combatStatus(state.combat, encounter()) : null;
     },
     scene,
     choices,

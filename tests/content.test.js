@@ -221,8 +221,10 @@ test('마지막을 뺀 모든 에피소드가 다음 장을 가리킨다', () =>
   }
 });
 
-test('선택지는 장면마다 3개 이상 제시된다 (결말 장면 제외)', () => {
+test('선택지는 장면마다 3개 이상 제시된다 (결말·전투 장면 제외)', () => {
   for (const { id, scene } of allScenes()) {
+    // 전투 장면은 조우가 행동을 내준다. 아래 전투 검사가 따로 본다.
+    if (scene.combat) continue;
     if (scene.end || !(scene.choices || []).length) continue;
     assert.ok(scene.choices.length >= 3, `${id}: 선택지가 ${scene.choices.length}개뿐`);
     assert.ok(scene.choices.length <= 6, `${id}: 선택지가 너무 많다`);

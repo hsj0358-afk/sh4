@@ -100,6 +100,25 @@
         <main class="log" id="log" aria-live="polite"></main>
 
         <footer class="controls" id="controls">
+          <div class="combat-bar" id="combat-bar" hidden>
+            <div class="cb-head">
+              <span class="cb-name" id="cb-name">—</span>
+              <span class="cb-round" id="cb-round">—</span>
+            </div>
+            <div class="cb-meters">
+              <div class="cb-meter" id="cb-resolve">
+                <span class="cb-tag">적 전의</span>
+                <div class="bar"><i></i></div>
+                <span class="cb-val">—</span>
+              </div>
+              <div class="cb-meter" id="cb-pressure">
+                <span class="cb-tag">압박</span>
+                <div class="bar"><i></i></div>
+                <span class="cb-val">—</span>
+              </div>
+            </div>
+            <div class="cb-escape" id="cb-escape" hidden></div>
+          </div>
           <div class="dice-bar" id="dice-bar" hidden>
             <button class="btn btn-dice" id="btn-roll">
               <span class="d20" aria-hidden="true">20</span>

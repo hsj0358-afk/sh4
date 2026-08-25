@@ -76,6 +76,9 @@ test('장면이 소진되지 않는다', () => {
 
       // 나아가는 선택지: 지금 바로 장면을 옮기거나, 다시 시도할 수 있는 판정으로
       // 잠긴 문을 여는 플래그를 세운다. 되돌아가기만 되는 선택지는 진행이 아니다.
+      // 전투 장면은 조우의 출구가 길을 낸다 (combat.test.js 가 검사한다).
+      if (scene.combat) continue;
+
       const progressing = (scene.choices || []).some((c) => {
         if (!openIds.has(c.id)) return false;
         const branches = Object.values(c.outcomes || {});

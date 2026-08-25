@@ -30,7 +30,24 @@ const RESTFUL = /쉰다|숨을 고른|밤을|야영|기록을 남|셈을 치른|
 
 const retreated = new Set();
 
-function chooseCautious(state, options, rng) {
+/**
+ * 전투에서의 최소한의 판단.
+ * 압박이 차면 엄폐하고, 전의가 꺾이면 말을 걸고, 몸이 상하면 도망친다.
+ * 실제 플레이어가 하는 정도이지, 최적 플레이는 아니다.
+ */
+function chooseCombat(state, combat, options, rng) {
+  const pick = (action) => options.find((o) => o.action === action);
+
+  if (combat.pressure >= combat.maxPressure - 4 && pick('cover')) return pick('cover');
+  if (combat.round >= 2 && pick('terrain')) return pick('terrain');
+  if (state.hp / state.maxHp < 0.35 && pick('flee')) return pick('flee');
+  if (combat.resolve <= Math.ceil(combat.maxResolve * 0.35) && pick('parley')) return pick('parley');
+  if (pick('ally') && combat.pressure >= 4) return pick('ally');
+  return pick('attack') || rng.pick(options);
+}
+
+function chooseCautious(state, options, rng, combat) {
+  if (combat) return chooseCombat(state, combat, options, rng);
   const hurt = state.hp / state.maxHp < 0.5 || state.san / state.maxSan < 0.5;
   if (hurt) {
     const heal = options.find((c) => RESTFUL.test(c.label));
@@ -57,6 +74,8 @@ const tally = {
   reachedEpilogue: 0,
   clueCounts: [],
   chapters: [],
+  exits: {},
+  combatRounds: [],
   steps: [],
 };
 
@@ -86,11 +105,15 @@ for (let run = 0; run < RUNS; run++) {
         if (ev.type === 'roll') {
           tally.outcomes[ev.result.outcome] = (tally.outcomes[ev.result.outcome] || 0) + 1;
         }
+        if (ev.type === 'combatEnd') {
+          tally.exits[ev.exit] = (tally.exits[ev.exit] || 0) + 1;
+          tally.combatRounds.push(ev.status.round);
+        }
       }
       continue;
     }
     // 신중한 플레이어는 다치면 약을 쓴다. 소지품 사용은 자유 입력으로 간다.
-    if (CAUTIOUS && state.hp / state.maxHp < 0.45) {
+    if (CAUTIOUS && !gm.combat && state.hp / state.maxHp < 0.45) {
       const kit = state.inventory.find((i) => ITEMS[i.name]?.use);
       if (kit) {
         gm.freeAct(`${kit.name} 사용`);
@@ -109,7 +132,13 @@ for (let run = 0; run < RUNS; run++) {
       }
       continue;
     }
-    gm.act((CAUTIOUS ? chooseCautious(state, options, rng) : rng.pick(options)).id);
+    const choice = CAUTIOUS ? chooseCautious(state, options, rng, gm.combat) : rng.pick(options);
+    for (const ev of gm.act(choice.id)) {
+      if (ev.type === 'combatEnd') {
+        tally.exits[ev.exit] = (tally.exits[ev.exit] || 0) + 1;
+        tally.combatRounds.push(ev.status.round);
+      }
+    }
   }
 
   if (steps >= MAX_STEPS && !state.ended) {
@@ -158,7 +187,20 @@ console.log(`\n장 완주          ${((tally.reachedEpilogue / RUNS) * 100).toFi
 console.log(`평균 도달 장      ${avg(tally.chapters)} / ${Object.keys(EPISODES).length}`);
 console.log(`평균 단서 수      ${avg(tally.clueCounts)} / ${TOTAL_CLUES}`);
 console.log(`평균 행동 수      ${avg(tally.steps)}`);
-console.log(`막힌 세션         ${tally.stuck}`);
+const totalExits = Object.values(tally.exits).reduce((a, b) => a + b, 0);
+if (totalExits) {
+  console.log('\n전투 결말');
+  const label = { win: '물러남', parley: '협상', escape: '도주', overrun: '제압당함' };
+  for (const key of ['win', 'parley', 'escape', 'overrun']) {
+    const n = tally.exits[key] || 0;
+    console.log(
+      `  ${label[key].padEnd(6)} ${String(n).padStart(4)}  (${((n / totalExits) * 100).toFixed(1)}%)`,
+    );
+  }
+  console.log(`  평균 ${avg(tally.combatRounds)}라운드`);
+}
+
+console.log(`\n막힌 세션         ${tally.stuck}`);
 console.log(`상한 도달         ${tally.timedOut}  (봇이 제자리를 돈 횟수 — 게임의 결함은 아니다)`);
 
 if (tally.stuck > 0) {

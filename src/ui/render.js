@@ -4,6 +4,13 @@ import { CLUES } from '../content/clues.js';
 import { OUTCOME_LABEL } from '../engine/dice.js';
 import { dangerLabel } from '../engine/state.js';
 
+const EXIT_LABEL = {
+  win: '상대가 물러났다',
+  parley: '말이 통했다',
+  escape: '빠져나왔다',
+  overrun: '제압당했다',
+};
+
 const el = (tag, cls, text) => {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -168,6 +175,23 @@ function build(ev) {
       card.appendChild(el('p', null, c.text));
       return card;
     }
+
+    case 'combatStart': {
+      const wrap = el('div', 'combat-mark');
+      wrap.appendChild(el('span', 'cm-label', '조우'));
+      wrap.appendChild(el('div', 'cm-sub', `${ev.status.name} · ${ev.status.subtitle}`));
+      return wrap;
+    }
+
+    case 'combatEnd': {
+      const wrap = el('div', 'combat-mark end');
+      wrap.appendChild(el('span', 'cm-label', EXIT_LABEL[ev.exit] || '전투 종료'));
+      wrap.appendChild(el('div', 'cm-sub', `${ev.status.round}라운드 만에`));
+      return wrap;
+    }
+
+    case 'combatRound':
+      return null; // 상태는 하단 바가 보여준다. 로그에는 남기지 않는다.
 
     case 'end': {
       const card = el('div', 'end-card');

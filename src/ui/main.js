@@ -31,6 +31,7 @@ const dom = {
   log: $('log'),
   choices: $('choices'),
   diceBar: $('dice-bar'),
+  combatBar: $('combat-bar'),
   btnRoll: $('btn-roll'),
   inputbar: $('inputbar'),
   freeInput: $('free-input'),
@@ -144,6 +145,31 @@ function meter(node, value, max, invert = false) {
   node.classList.toggle('low', low);
 }
 
+/** 전투 상태 바. 전투 중에만 뜬다. */
+function updateCombatBar() {
+  const c = gm?.combat;
+  if (!c) {
+    dom.combatBar.hidden = true;
+    return;
+  }
+  dom.combatBar.hidden = false;
+  $('cb-name').textContent = c.name;
+  $('cb-round').textContent = `${c.round}라운드`;
+
+  const resolve = $('cb-resolve');
+  resolve.querySelector('.bar i').style.width = `${(c.resolve / c.maxResolve) * 100}%`;
+  resolve.querySelector('.cb-val').textContent = `${c.resolve}/${c.maxResolve}`;
+
+  const pressure = $('cb-pressure');
+  pressure.querySelector('.bar i').style.width = `${(c.pressure / c.maxPressure) * 100}%`;
+  pressure.querySelector('.cb-val').textContent = `${c.pressure}/${c.maxPressure}`;
+  pressure.classList.toggle('critical', c.pressure >= c.maxPressure - 3);
+
+  const escape = $('cb-escape');
+  escape.hidden = c.escape <= 0;
+  escape.textContent = `도주 ${c.escape}/${c.escapeNeeded} — 한 번 더 성공하면 벗어난다`;
+}
+
 function updateHud() {
   if (!state) return;
   const s = gm.scene();
@@ -154,6 +180,7 @@ function updateHud() {
   meter($('meter-hp'), state.hp, state.maxHp);
   meter($('meter-san'), state.san, state.maxSan);
   meter($('meter-danger'), state.danger, MAX_DANGER, true);
+  updateCombatBar();
 }
 
 // ── 선택지 ────────────────────────────────────────────────────
@@ -261,6 +288,7 @@ async function play(events) {
 
   for (const ev of events) {
     if (ev.type === 'pressure') sfx.danger();
+    if (ev.type === 'combatStart') sfx.danger();
     if (ev.type === 'notes' && ev.notes.some((n) => n.kind === 'clue')) sfx.clue();
 
     if (ev.type === 'scene') {
@@ -289,6 +317,9 @@ async function play(events) {
   busy = false;
   dom.diceBar.hidden = !gm.pending;
   dom.inputbar.style.display = gm.pending || state.ended ? 'none' : '';
+  dom.freeInput.placeholder = gm.combat
+    ? '소지품을 쓴다면 이름을 적는다…'
+    : '직접 행동을 적는다…';
   renderChoices();
   scrollLog();
   saveGame(state);

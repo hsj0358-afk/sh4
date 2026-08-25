@@ -898,6 +898,125 @@ input::placeholder {
   opacity: 0.45;
 }
 
+/* ── 전투 ──────────────────────────────────────────────────── */
+
+.combat-bar {
+  margin-bottom: 9px;
+  padding: 10px 13px;
+  border: 1px solid rgba(168, 64, 47, 0.45);
+  border-radius: 11px;
+  background: linear-gradient(180deg, rgba(168, 64, 47, 0.12), rgba(168, 64, 47, 0.03));
+}
+.cb-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.cb-name {
+  font-family: var(--serif);
+  font-size: 15px;
+  font-weight: 600;
+  color: #e8c3b6;
+}
+.cb-round {
+  flex: none;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--danger);
+}
+.cb-meters {
+  display: grid;
+  gap: 5px;
+}
+.cb-meter {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10.5px;
+  color: var(--ink-faint);
+}
+.cb-tag {
+  flex: none;
+  width: 38px;
+  letter-spacing: 0.04em;
+}
+.cb-meter .bar {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.cb-meter .bar i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s cubic-bezier(0.2, 0.8, 0.2, 1), background 0.3s;
+}
+#cb-resolve .bar i { background: var(--gold); }
+#cb-pressure .bar i { background: var(--blood); }
+#cb-pressure.critical .bar i {
+  background: #d4553c;
+  animation: pulse 1s ease-in-out infinite;
+}
+#cb-pressure.critical .cb-tag,
+#cb-pressure.critical .cb-val {
+  color: #e0806b;
+}
+.cb-val {
+  flex: none;
+  min-width: 34px;
+  text-align: right;
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+}
+.cb-escape {
+  margin-top: 7px;
+  font-size: 11.5px;
+  color: var(--verdigris);
+  letter-spacing: 0.04em;
+}
+
+/* 전투 서술은 호흡이 짧다. 문단 간격을 좁혀 급한 느낌을 준다. */
+.narration.combat p {
+  margin-bottom: 9px;
+  font-size: 16px;
+}
+.narration.enemy p {
+  margin-bottom: 9px;
+  font-size: 15.5px;
+  color: #cbb6ad;
+  padding-left: 12px;
+  border-left: 2px solid rgba(168, 64, 47, 0.4);
+}
+
+.combat-mark {
+  margin: 10px 0 16px;
+  text-align: center;
+}
+.combat-mark .cm-label {
+  display: inline-block;
+  padding: 5px 16px;
+  border-radius: 999px;
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  border: 1px solid rgba(168, 64, 47, 0.5);
+  background: rgba(168, 64, 47, 0.12);
+  color: #e3a091;
+}
+.combat-mark.end .cm-label {
+  border-color: var(--gold-soft);
+  background: rgba(200, 162, 74, 0.12);
+  color: var(--gold);
+}
+.combat-mark .cm-sub {
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--ink-faint);
+}
+
 .dice-bar {
   margin-bottom: 8px;
 }

@@ -2136,143 +2136,22 @@ const ep = {
     },
 
     // ── 8-b. 결렬 ──────────────────────────────────────────────
+    // crane_flooded 조우. 물이 차는 계단은 왕가의 계곡의 통로와 같은 규칙 위에서
+    // 다르게 읽힌다 — 압박이 빠르고, 협상이 쉽고, 도주가 어렵다.
     reckoning_break: {
       id: 'reckoning_break',
       location: '기단 아래 · 무너지는 계단',
       exits: ['위로'],
-      body: [
-        '좁은 계단에서 여덟 사람이 서로를 막고 서 있다. 물은 계속 올라온다.',
-        '여기서 총을 쏘면 모두가 죽는다. 그 사실을 모두가 알고 있고, 그래서 아무도 쏘지 않는다.',
-        '아직은.',
-      ],
-      revisitBody: ['계단의 물이 한 단 더 올라왔다.'],
+      combat: 'crane_flooded',
+      body: ['물이 한 단 더 올라온다.'],
+      revisitBody: ['계단은 비어 있다. 물만 계속 오른다.'],
       choices: [
         {
-          id: 'break_bricks',
-          label: '벽돌 층을 무너뜨려 물길을 돌린다',
-          keys: ['벽돌', '무너', '물길', '돌린다'],
-          check: {
-            stat: '체력',
-            tags: ['완력', '탈출'],
-            target: 14,
-            label: '완력 판정',
-            prompt: [
-              '계단 옆의 벽돌 한 단이 이미 물러 있다.',
-              '저것을 무너뜨리면 물은 이쪽이 아니라 저쪽으로 흐를 것이다. 아마도.',
-            ],
-          },
-          outcomes: {
-            crit: {
-              text: [
-                '어깨로 두 번. 세 번째에 벽돌 층이 통째로 밀려난다.',
-                '물이 방향을 바꾼다. 계단이 순식간에 무릎 아래로 내려간다.',
-                '"…고맙습니다." 크레인이 말한다. 총을 내리면서.',
-              ],
-              effects: { danger: -2, flags: { craneAlly: true }, goto: 'basra_finale' },
-            },
-            success: {
-              text: [
-                '벽돌이 무너지고 물이 옆으로 빠진다.',
-                '누구도 총을 쏘지 않았다. 그것만으로 성공이다.',
-              ],
-              effects: { hp: -2, danger: -1, goto: 'basra_finale' },
-            },
-            partial: {
-              text: [
-                '벽돌은 무너졌지만 계단 절반도 함께 무너진다.',
-                '당신은 위쪽에 있었고, 크레인의 사람 둘은 아래쪽에 있었다.',
-              ],
-              effects: { hp: -3, san: -2, goto: 'basra_finale' },
-            },
-            fail: {
-              text: [
-                '벽돌은 버틴다. 대신 어깨가 나갔다.',
-                '물이 허리에 닿는다. 누군가 뒤에서 당신을 밀치고 먼저 오른다.',
-              ],
-              effects: { hp: -5, danger: 1, goto: 'basra_finale' },
-            },
-            fumble: {
-              text: [
-                '벽돌 대신 천장이 내려앉는다.',
-                '어둠. 물. 그리고 누군가의 손이 당신의 옷깃을 잡아 위로 끌어당긴다.',
-                '숨이 돌아왔을 때 당신은 계단 위에 엎드려 있었고, 옆에 크레인이 앉아 있었다.',
-                '"…빚은 갚았습니다." 그가 숨을 몰아쉬며 말한다.',
-              ],
-              effects: { hp: -6, san: -2, flags: { craneAlly: true }, goto: 'basra_finale' },
-            },
-          },
-        },
-        {
-          id: 'give_everything',
-          label: '가진 것을 전부 내려놓는다',
-          keys: ['전부', '내려놓', '항복', '준다'],
-          text: (state) => {
-            const out = [
-              '당신은 각인판과 점토판을 물 위 벽돌에 하나씩 올려놓는다.',
-              '크레인이 그것들을 본다. 오래 본다.',
-            ];
-            if (state.clues.includes('first_civilization')) {
-              out.push(
-                '"이걸 가져가도," 그가 말한다. "당신 머릿속의 것은 못 가져가는군요."',
-                '"그게 제일 성가십니다."',
-              );
-            }
-            out.push('"길을 여시오." 그가 뒤에 대고 말한다.');
-            return out;
-          },
-          effects: {
-            removeItems: ['문의 각인', '왕 목록 사본'],
-            flags: { craneHasSeal: true },
-            goto: 'basra_finale',
-          },
-        },
-        {
-          id: 'run_stairs',
-          label: '먼저 계단을 오른다',
-          keys: ['달린다', '계단', '오른다', '도주'],
-          check: {
-            stat: '민첩',
-            tags: ['탈출'],
-            target: 14,
-            label: '도주 판정',
-            prompt: ['계단은 하나뿐이고, 물은 계속 올라온다. 먼저 오르는 쪽이 이긴다.'],
-          },
-          outcomes: {
-            crit: {
-              text: [
-                '당신은 두 단씩 오른다. 뒤에서 손이 옷자락을 스치고 놓친다.',
-                '기단 위로 나왔을 때 밤공기가 얼굴을 때린다. 살아 있다는 감각이 그렇게 왔다.',
-              ],
-              effects: { flags: { escapedClean2: true }, goto: 'basra_finale' },
-            },
-            success: {
-              text: ['한 번 붙잡히고 한 번 뿌리친다. 셔츠가 찢어졌다. 그뿐이다.'],
-              effects: { hp: -2, goto: 'basra_finale' },
-            },
-            partial: {
-              text: [
-                '중간에서 붙잡힌다. 몸싸움 끝에 각인판이 물에 떨어진다.',
-                '주울 시간은 없었다.',
-              ],
-              effects: { hp: -3, removeItems: ['문의 각인'], goto: 'basra_finale' },
-            },
-            fail: {
-              text: [
-                '누군가 발목을 잡는다. 계단에 턱을 찧는다.',
-                '끌려 내려가다가, 물이 그들의 허리에 닿는 순간 손이 풀린다.',
-                '모두가 위를 향해 달리기 시작한다.',
-              ],
-              effects: { hp: -5, san: -1, goto: 'basra_finale' },
-            },
-            fumble: {
-              text: [
-                '발이 미끄러진다. 계단 아래로 세 단을 구른다.',
-                '위에서 사람들이 당신을 밟고 지나간다. 악의는 없다. 물이 차고 있을 뿐이다.',
-                '마지막으로 올라온 사람이 손을 내밀었다. 그게 크레인이었다는 것은 나중에 알았다.',
-              ],
-              effects: { hp: -6, san: -2, flags: { craneAlly: true }, goto: 'basra_finale' },
-            },
-          },
+          id: 'break_leave',
+          label: '계단을 올라 밖으로 나간다',
+          keys: ['나간다', '위로', '오른다'],
+          text: ['젖은 계단을 한 단씩 오른다. 뒤에서 물소리가 따라온다.'],
+          effects: { goto: 'basra_finale' },
         },
       ],
     },

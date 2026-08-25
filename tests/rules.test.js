@@ -58,7 +58,7 @@ test('이탈한 동료는 보정을 주지 않는다', () => {
 test('위험도는 능력이 아니라 목표값을 올린다', () => {
   const s = scholar();
   const calm = buildCheck(s, { stat: '관찰', tags: [], target: 12 });
-  applyEffects(s, { danger: 9 });
+  applyEffects(s, { danger: 14 });
   const dire = buildCheck(s, { stat: '관찰', tags: [], target: 12 });
   assert.equal(calm.target, 12);
   assert.equal(dire.target, 14);

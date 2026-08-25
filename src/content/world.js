@@ -47,7 +47,8 @@ export const WORLD_SITES = [
   {
     id: 'angkor',
     short: '앙코르',
-    name: '앙코르 사원',
+    name: '앙코르 · 서편 회랑',
+    episode: 'angkor',
     x: 76,
     y: 53,
     rumor: true,

@@ -5,13 +5,15 @@
 
 import luxor from './luxor.js';
 import mesopotamia from './mesopotamia.js';
+import angkor from './angkor.js';
 
 export const EPISODES = {
   [luxor.id]: luxor,
   [mesopotamia.id]: mesopotamia,
+  [angkor.id]: angkor,
 };
 
-export const EPISODE_ORDER = [luxor.id, mesopotamia.id];
+export const EPISODE_ORDER = [luxor.id, mesopotamia.id, angkor.id];
 
 export const FIRST_EPISODE = EPISODE_ORDER[0];
 

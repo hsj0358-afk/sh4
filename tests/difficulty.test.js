@@ -39,7 +39,7 @@ test('난이도 보정은 목표값에만 걸리고 보정치는 건드리지 �
 
 test('난이도와 위험도 압박이 함께 적용된다', () => {
   const s = make('harsh');
-  applyEffects(s, { danger: 9 });
+  applyEffects(s, { danger: 14 });
   const built = buildCheck(s, { stat: '관찰', tags: [], target: 12 });
   assert.equal(built.pressure, 2);
   assert.equal(built.difficultyShift, 1);

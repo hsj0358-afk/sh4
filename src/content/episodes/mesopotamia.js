@@ -19,7 +19,7 @@ const ep = {
 
   // 이집트에서 여기까지. 홍해와 인도양을 돌아 3주가 걸린다.
   // 몸은 배 위에서 낫는다. 본 것은 낫지 않는다 — 그래서 체력은 크게, 정신력은 조금만.
-  arrival: { time: 24 * 2 * 21, hp: 9, san: 5 },
+  arrival: { time: 24 * 2 * 21, hp: 12, san: 10 },
 
   map: {
     groundY: 40,
@@ -57,7 +57,7 @@ const ep = {
   pressureEvents: [
     {
       id: 'mosquito',
-      minDanger: 3,
+      minDanger: 5,
       scenes: ['marsh_camp', 'zigg_base'],
       text: [
         '해가 지자 공기가 소리를 갖는다. 모기다. 벽처럼 두껍다.',
@@ -67,7 +67,7 @@ const ep = {
     },
     {
       id: 'water_rising',
-      minDanger: 4,
+      minDanger: 6,
       scenes: ['black_canal', 'gate_chamber', 'zigg_archive'],
       text: [
         '발목에 닿던 물이 정강이에 닿는다.',
@@ -77,7 +77,7 @@ const ep = {
     },
     {
       id: 'reed_boats',
-      minDanger: 5,
+      minDanger: 8,
       scenes: ['marsh_camp', 'zigg_base', 'basra_finale'],
       text: [
         '갈대 사이로 배 세 척이 미끄러진다. 노를 젓지 않는다. 장대로 민다.',
@@ -87,7 +87,7 @@ const ep = {
     },
     {
       id: 'counting',
-      minDanger: 6,
+      minDanger: 10,
       text: [
         '물속에서 무언가 규칙적인 소리가 난다. 세 번, 쉬고, 다시 세 번.',
         '숫자를 세는 소리 같다. 무엇이 무엇을 세는지는 알 수 없다.',
@@ -269,7 +269,7 @@ const ep = {
                 '정신을 차렸을 때 세라피나가 당신의 어깨를 붙들고 있다.',
                 '"…같은 문장을 여섯 번 반복하셨습니다." 그녀가 조심스럽게 말한다.',
               ],
-              effects: { san: -3, time: 2 },
+              effects: { san: -2, time: 2 },
             },
           },
         },
@@ -492,7 +492,7 @@ const ep = {
       location: '남부 습지 · 갈대의 바다',
       exits: ['바스라', '서쪽 언덕'],
       onEnter(state, visits) {
-        if (visits > 1) return {};
+        if (visits > 1) return { danger: -3 };
         return { danger: 1 };
       },
       body: (state) => {
@@ -1030,7 +1030,7 @@ const ep = {
               '당신은 무릎을 꿇고 진흙 속에서 조각을 건지려 한다. 건져지는 것은 없다.',
               '이 방에 있던 무언가가, 방금 영원히 사라졌다.',
             ],
-            effects: { san: -4, danger: 1, time: 3 },
+            effects: { san: -3, danger: 1, time: 3 },
           },
         },
       },
@@ -1087,7 +1087,7 @@ const ep = {
                 '사천 년을 견딘 것들이 물에 닿아 조용히 풀어진다. 소리도 나지 않는다.',
                 '이 방에 있던 무언가가, 방금 영원히 사라졌다.',
               ],
-              effects: { san: -3, danger: 1, time: 3 },
+              effects: { san: -2, danger: 1, time: 3 },
             },
           },
         },
@@ -1117,7 +1117,7 @@ const ep = {
                 '필사자는 이것을 신화로 적지 않았다. 장부를 적던 손 그대로 적었다.',
                 '그에게 이것은 기록이었다. 있었던 일의 기록.',
               ],
-              effects: { clues: ['flood_before', 'sumerian_list'], san: -3, time: 3 },
+              effects: { clues: ['flood_before', 'sumerian_list'], san: -2, time: 3 },
             },
             success: {
               text: [
@@ -1146,7 +1146,7 @@ const ep = {
                 '물이 발목에서 종아리로 올라온다. 어딘가에서 수문이 열렸다.',
                 '그리고 방 끝의 원반이, 아주 잠깐, 더 검어진다.',
               ],
-              effects: { san: -4, danger: 3, clues: ['flood_before'], time: 3 },
+              effects: { san: -3, danger: 3, clues: ['flood_before'], time: 3 },
             },
           },
         },
@@ -1182,7 +1182,7 @@ const ep = {
               ],
               effects: {
                 clues: ['first_civilization', 'flood_before'],
-                san: -3,
+                san: -2,
                 companion: { id: 'seraphina', trust: 2 },
                 flags: { deduced: true },
                 time: 3,
@@ -1222,7 +1222,7 @@ const ep = {
                 '아무도 보여주지 않았고 어디서도 읽지 않은 것을.',
                 '그것이 어떻게 머릿속에 있는지 설명할 수 없다는 사실이, 가장 무섭다.',
               ],
-              effects: { san: -5, clues: ['first_civilization'], flags: { deduced: true }, time: 3 },
+              effects: { san: -4, clues: ['first_civilization'], flags: { deduced: true }, time: 3 },
             },
           },
         },
@@ -1273,7 +1273,7 @@ const ep = {
                 '당신은 물러섰고, 서고의 절반이 물속으로 미끄러졌다.',
                 '사천 년이 3초 만에 끝난다.',
               ],
-              effects: { san: -4, danger: 2, time: 2 },
+              effects: { san: -3, danger: 2, time: 2 },
             },
           },
         },
@@ -1367,7 +1367,7 @@ const ep = {
               '차갑고, 부드럽고, 힘이 없다. 뿌리치자 쉽게 떨어진다.',
               '램프를 비춘다. 틈은 비어 있다.',
             ],
-            effects: { san: -4, danger: 1, time: 2 },
+            effects: { san: -3, danger: 1, time: 2 },
           },
         },
       },
@@ -1423,7 +1423,7 @@ const ep = {
                 '누군가 당신의 옷깃을 잡아 끌어올린다.',
                 '숨이 돌아왔을 때, 당신은 이미 트인 공간에 있었다. 누가 끌어올렸는지는 알 수 없다.',
               ],
-              effects: { hp: -6, san: -4, danger: 2, goto: 'gate_chamber' },
+              effects: { hp: -6, san: -3, danger: 2, goto: 'gate_chamber' },
             },
           },
         },
@@ -1481,7 +1481,7 @@ const ep = {
               ],
               effects: {
                 hp: -5,
-                san: -3,
+                san: -2,
                 danger: 1,
                 removeItems: ['등반 로프'],
                 goto: 'gate_chamber',
@@ -1612,7 +1612,7 @@ const ep = {
               '홈의 끝은 전부 문 아래로 사라진다.',
               '이 방은 무언가를 문에 먹이기 위해 만들어졌다.',
             ],
-            effects: { san: -3, clues: ['gate_pair'], time: 2 },
+            effects: { san: -2, clues: ['gate_pair'], time: 2 },
           },
           success: {
             text: [
@@ -1637,11 +1637,35 @@ const ep = {
               '방을 한 바퀴 돌던 중, 당신은 자신의 발자국을 발견한다.',
               '아직 그쪽으로 가지 않았는데.',
             ],
-            effects: { san: -5, time: 2 },
+            effects: { san: -4, time: 2 },
           },
         },
       },
       choices: [
+        {
+          id: 'gate_breathe',
+          label: '벽에 등을 대고 숨을 고른다',
+          keys: ['숨', '쉰다', '진정', '앉는다'],
+          once: true,
+          hint: '시간과 위험을 내주고 정신을 되찾는다',
+          text: (state) => {
+            const out = [
+              '물이 무릎 아래에서 멈춰 있다. 그 자리에 그대로 선다.',
+              '열까지 센다. 스물까지 센다. 손의 떨림이 조금 줄어든다.',
+            ];
+            const ally = Object.values(state.companions).find((c) => c.present);
+            if (ally) {
+              out.push(
+                `${ally.name}가 옆에서 같은 자세로 선다. 아무 말도 하지 않는다.`,
+                '그것이 지금 할 수 있는 가장 친절한 일이라는 것을, 둘 다 알고 있다.',
+              );
+            } else {
+              out.push('아무도 없다. 세는 소리도 당신 것뿐이다.');
+            }
+            return out;
+          },
+          effects: { san: 5, time: 2, danger: 1 },
+        },
         {
           id: 'examine_diver',
           label: '벽에 기댄 사람을 확인한다',
@@ -1663,7 +1687,7 @@ const ep = {
                 '"새로 새겨졌다는 것은, 지금도 누군가 세고 있다는 뜻이다."',
                 '그 아래에 좌표. 동쪽으로 더 멀리. 밀림.',
               ],
-              effects: { clues: ['gate_pair', 'angkor_lead'], san: -3, time: 2 },
+              effects: { clues: ['gate_pair', 'angkor_lead'], san: -2, time: 2 },
             },
             success: {
               text: [
@@ -1671,7 +1695,7 @@ const ep = {
                 '손에 쥔 방수 수첩의 마지막 줄 — "문은 하나가 아니다."',
                 '그 아래에 좌표가 하나. 동쪽.',
               ],
-              effects: { clues: ['angkor_lead'], san: -3, time: 2 },
+              effects: { clues: ['angkor_lead'], san: -2, time: 2 },
             },
             partial: {
               text: [
@@ -1685,7 +1709,7 @@ const ep = {
                 '당신은 그 얼굴을 보고, 아무것도 확인하지 못한 채 물러선다.',
                 '확인하지 못한 것과 보지 않은 것은 다르다.',
               ],
-              effects: { san: -3, time: 1 },
+              effects: { san: -2, time: 1 },
             },
             fumble: {
               text: [
@@ -1693,7 +1717,7 @@ const ep = {
                 '아니다. 안쪽은 닦을 수 없다. 그런데 당신의 손은 유리 안쪽에 있었다.',
                 '뒤로 물러서다 물에 주저앉는다. 헬멧은 그대로 벽에 기대어 있다. 비어 있다.',
               ],
-              effects: { san: -5, danger: 1, time: 2 },
+              effects: { san: -4, danger: 1, time: 2 },
             },
           },
         },
@@ -1722,7 +1746,7 @@ const ep = {
               effects: {
                 clues: ['gate_pair', 'door_opener', 'first_civilization'],
                 flags: { gateRead: true },
-                san: -3,
+                san: -2,
                 time: 2,
               },
             },
@@ -1744,9 +1768,9 @@ const ep = {
             fail: {
               text: [
                 '원반은 아무것도 내주지 않는다.',
-                '오래 보면 볼수록, 보고 있는 쪽이 당신이 아닌 것 같다.',
+                '오래 보면 볼수록, 보고 있는 쪽이 당신이 아닌 것 같다. 그래도 다시 볼 수는 있다.',
               ],
-              effects: { san: -2, time: 2 },
+              effects: { time: 2 },
             },
             fumble: {
               text: [
@@ -1755,7 +1779,7 @@ const ep = {
                 '문 안쪽에서 무언가가 자세를 바꾼다. 아주 크고, 아주 조용하게.',
                 '물이 문 쪽으로 빨려 들어가기 시작한다. 바닥의 홈을 따라서.',
               ],
-              effects: { san: -5, danger: 4, flags: { gateStirred: true }, time: 2 },
+              effects: { san: -4, danger: 4, flags: { gateStirred: true }, time: 2 },
             },
           },
         },
@@ -1826,7 +1850,7 @@ const ep = {
                 items: ['문의 각인'],
                 clues: ['angkor_lead'],
                 hp: -4,
-                san: -4,
+                san: -3,
                 danger: 4,
                 flags: { gateStirred: true },
                 time: 1,
@@ -1852,7 +1876,7 @@ const ep = {
           effects: {
             clues: ['first_civilization', 'gate_pair'],
             flags: { keyMatched: true },
-            san: -3,
+            san: -2,
             time: 2,
           },
         },
@@ -2315,6 +2339,7 @@ const ep = {
       },
       end: {
         type: 'chapter',
+        next: 'angkor',
         title: '에피소드 2 종료 — 두 강 사이의 문',
         text:
           '다음 목적지: 앙코르. 밀림이 삼킨 회랑.\n\n' +

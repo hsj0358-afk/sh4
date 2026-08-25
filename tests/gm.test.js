@@ -155,7 +155,7 @@ test('세이브 상태만으로 세션을 복원할 수 있다', () => {
 
 test('위험도가 높아도 목표값만 오르고 판정은 계속 가능하다', () => {
   const { state, gm } = session();
-  applyEffects(state, { danger: 10 });
+  applyEffects(state, { danger: 16 });
   const events = gm.act('inspect_dock');
   const req = events.find((e) => e.type === 'checkRequest');
   assert.equal(req.pressure, 2);

@@ -28,7 +28,7 @@ function freshFor(episodeId, professionId) {
 test('어느 장면에서도 선택지가 3개 미만으로 내려가지 않는다', () => {
   for (const ep of Object.values(EPISODES)) {
     for (const [id, scene] of Object.entries(ep.scenes)) {
-      if (scene.end) continue; // 결말 장면은 종료 버튼만 있으면 된다
+      if (scene.end || scene.ending) continue; // 결말 장면은 종료 버튼만 있으면 된다
 
       const state = freshFor(ep.id, 'archaeologist');
       const gm = createGM({ state, episode: ep });
@@ -46,7 +46,7 @@ test('어느 장면에서도 선택지가 3개 미만으로 내려가지 않는�
 test('어느 직업으로 들어와도 장면이 막히지 않는다', () => {
   for (const ep of Object.values(EPISODES)) {
     for (const [id, scene] of Object.entries(ep.scenes)) {
-      if (scene.end) continue;
+      if (scene.end || scene.ending) continue;
       for (const prof of PROFESSIONS) {
         const state = freshFor(ep.id, prof.id);
         const gm = createGM({ state, episode: ep });
@@ -67,7 +67,7 @@ test('장면이 소진되지 않는다', () => {
   // 한 번뿐인 선택지만 남은 장면은 전부 써버리면 갇힌다.
   for (const ep of Object.values(EPISODES)) {
     for (const [id, scene] of Object.entries(ep.scenes)) {
-      if (scene.end) continue;
+      if (scene.end || scene.ending) continue;
 
       const state = freshFor(ep.id, 'patron'); // 능력치가 가장 치우친 직업
       const gm = createGM({ state, episode: ep });

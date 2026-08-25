@@ -10,6 +10,13 @@ import { conditionPenalty, dangerPressure } from './state.js';
 const PERK_VALUE = 2;
 
 /**
+ * 상태 페널티와 위험도 압박을 합한 불이익의 상한.
+ * 이 값을 넘으면 판정이 사실상 잠기고, 잠긴 판정의 실패가 다시 상태를 악화시킨다.
+ * 4 는 능력치와 보정이 평범한 탐사자에게 대략 25~30% 의 성공률을 남긴다.
+ */
+export const MAX_PENALTY_STACK = 4;
+
+/**
  * @param {object} state
  * @param {object} check { stat, tags, target, bonus }
  * @returns {{ modifier:number, target:number, breakdown:Array<{label:string,value:number}> }}
@@ -58,14 +65,31 @@ export function buildCheck(state, check) {
     breakdown.push({ label: check.bonusLabel || '상황', value: situational });
   }
 
-  // 6. 상태 페널티
+  // 6. 상태 페널티와 위험도 압박 — 둘은 함께 한도를 갖는다.
+  //
+  // 중상 -2, 공황 -2, 위험도 +2 가 한꺼번에 걸리면 어떤 판정도 통하지 않고,
+  // 실패는 다시 상태와 위험도를 악화시킨다. 그 고리에 들어가면 나올 방법이 없다.
+  // 그래서 불이익의 합에 천장을 둔다. 바닥에서도 손은 남겨 둔다.
   const cond = conditionPenalty(state);
-  if (cond.value) breakdown.push({ label: cond.reasons.join('·'), value: cond.value });
+  let condValue = cond.value;
+  let pressure = dangerPressure(state.danger);
+
+  const stack = -condValue + pressure;
+  let relieved = 0;
+  if (stack > MAX_PENALTY_STACK) {
+    relieved = stack - MAX_PENALTY_STACK;
+    // 상황(위험도)부터 덜어낸다. 몸에 붙은 것은 마지막까지 남는다.
+    const fromPressure = Math.min(relieved, pressure);
+    pressure -= fromPressure;
+    condValue += relieved - fromPressure;
+  }
+
+  if (condValue) breakdown.push({ label: cond.reasons.join('·'), value: condValue });
+  if (relieved) breakdown.push({ label: '한계까지 몰린 사람의 집중', value: 0, relief: relieved });
 
   const modifier = breakdown.reduce((sum, b) => sum + b.value, 0);
 
   // 목표값에는 위험도 압박과 난이도가 더해진다.
-  const pressure = dangerPressure(state.danger);
   const shift = getDifficulty(state.difficulty).targetShift;
   const target = Math.max(5, (check.target ?? 12) + pressure + shift);
 

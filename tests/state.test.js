@@ -89,8 +89,10 @@ test('상태가 나쁘면 판정 페널티가 붙는다', () => {
 
 test('위험도가 높으면 목표값 압박이 생긴다', () => {
   assert.equal(dangerPressure(0), 0);
-  assert.equal(dangerPressure(5), 1);
-  assert.equal(dangerPressure(9), 2);
+  assert.equal(dangerPressure(8), 1);
+  assert.equal(dangerPressure(13), 2);
+  // 유적 하나를 도는 동안 상한에 닿지 않아야 한다.
+  assert.equal(dangerPressure(6), 0, '한 장의 중반에 이미 압박이 걸린다');
 });
 
 test('시계는 30분 단위로 흐르고 날짜를 넘긴다', () => {
@@ -98,6 +100,15 @@ test('시계는 30분 단위로 흐르고 날짜를 넘긴다', () => {
   assert.equal(formatClock(2).time, '오전 9시');
   const next = formatClock(2 * 24); // 24시간 뒤
   assert.equal(next.date, '1897년 11월 4일');
+});
+
+test('날짜는 달과 해를 넘긴다', () => {
+  // 캠페인이 세 장이 되면서 여정만 8주다. 한때 '11월 59일' 이라고 적혀 있었다.
+  const day = 2 * 24;
+  assert.equal(formatClock(day * 27).date, '1897년 11월 30일');
+  assert.equal(formatClock(day * 28).date, '1897년 12월 1일');
+  assert.equal(formatClock(day * 56).date, '1897년 12월 29일');
+  assert.equal(formatClock(day * 59).date, '1898년 1월 1일');
 });
 
 test('알림에는 변화의 방향이 담긴다', () => {

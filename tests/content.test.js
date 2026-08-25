@@ -10,6 +10,7 @@ import { CLUES } from '../src/content/clues.js';
 import { COMPANIONS } from '../src/content/companions.js';
 import { PROFESSIONS } from '../src/content/professions.js';
 import { STAT_IDS } from '../src/content/stats.js';
+import { ENCOUNTERS } from '../src/content/encounters.js';
 import { createState } from '../src/engine/state.js';
 
 const probe = createState({ professionId: 'archaeologist', seed: 1 });
@@ -73,6 +74,50 @@ test('효과에 등장하는 아이템은 전부 정의되어 있다', () => {
     ];
     for (const n of names) assert.ok(ITEMS[n], `${scene.id}: 없는 아이템 '${n}'`);
   }
+});
+
+test('조건으로 요구하는 물건은 어딘가에서 얻을 수 있다', () => {
+  // 정의만 되어 있고 아무도 주지 않는 아이템은, 그것을 요구하는 선택지를 영영 잠근다.
+  // 이 검사가 없어서 '검은 태양의 열쇠' 가 세 커밋 동안 못 얻는 물건이었다.
+  const obtainable = new Set();
+  for (const p of PROFESSIONS) for (const n of p.items) obtainable.add(n);
+  for (const { node } of results()) {
+    for (const n of node.effects?.items || []) obtainable.add(n);
+  }
+  for (const e of Object.values(ENCOUNTERS)) {
+    for (const x of Object.values(e.exits || {})) {
+      for (const n of x.effects?.items || []) obtainable.add(n);
+    }
+  }
+
+  const required = new Map();
+  for (const { scene, node } of results()) {
+    for (const n of node.requires?.items || []) required.set(n, scene.id);
+  }
+  for (const { scene } of allScenes()) {
+    for (const c of scene.choices || []) {
+      for (const n of c.requires?.items || []) required.set(n, scene.id);
+    }
+  }
+
+  for (const [name, where] of required) {
+    assert.ok(obtainable.has(name), `${where}: '${name}' 을 요구하는데 아무도 주지 않는다`);
+  }
+});
+
+test('정의된 아이템 중 아무도 주지 않는 것이 없다', () => {
+  const obtainable = new Set();
+  for (const p of PROFESSIONS) for (const n of p.items) obtainable.add(n);
+  for (const { node } of results()) {
+    for (const n of node.effects?.items || []) obtainable.add(n);
+  }
+  for (const e of Object.values(ENCOUNTERS)) {
+    for (const x of Object.values(e.exits || {})) {
+      for (const n of x.effects?.items || []) obtainable.add(n);
+    }
+  }
+  const orphans = Object.keys(ITEMS).filter((n) => !obtainable.has(n));
+  assert.deepEqual(orphans, [], `얻을 수 없는 아이템: ${orphans.join(', ')}`);
 });
 
 test('직업 시작 장비도 전부 정의되어 있다', () => {
@@ -180,7 +225,7 @@ test('모든 장면에 위치와 본문이 있다', () => {
 test('막다른 장면은 종료 처리를 갖는다', () => {
   for (const { id, scene } of allScenes()) {
     if ((scene.choices || []).length) continue;
-    assert.ok(scene.end, `${id}: 선택지도 결말도 없는 막다른 장면`);
+    assert.ok(scene.end || scene.ending, `${id}: 선택지도 결말도 없는 막다른 장면`);
   }
 });
 
@@ -205,7 +250,7 @@ test('각 에피소드는 시작부터 결말까지 도달 가능하다', () => 
     for (const id of Object.keys(scenes)) {
       assert.ok(seen.has(id), `${ep.id}/${id}: 어디에서도 도달할 수 없는 장면`);
     }
-    const ended = Object.values(scenes).some((s) => s.end && seen.has(s.id));
+    const ended = Object.values(scenes).some((s) => (s.end || s.ending) && seen.has(s.id));
     assert.ok(ended, `${ep.id}: 결말에 도달할 수 없다`);
   }
 });
@@ -225,7 +270,7 @@ test('선택지는 장면마다 3개 이상 제시된다 (결말·전투 장면 
   for (const { id, scene } of allScenes()) {
     // 전투 장면은 조우가 행동을 내준다. 아래 전투 검사가 따로 본다.
     if (scene.combat) continue;
-    if (scene.end || !(scene.choices || []).length) continue;
+    if (scene.end || scene.ending || !(scene.choices || []).length) continue;
     assert.ok(scene.choices.length >= 3, `${id}: 선택지가 ${scene.choices.length}개뿐`);
     assert.ok(scene.choices.length <= 6, `${id}: 선택지가 너무 많다`);
   }

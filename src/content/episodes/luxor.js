@@ -54,7 +54,7 @@ const ep = {
   pressureEvents: [
     {
       id: 'dust',
-      minDanger: 4,
+      minDanger: 6,
       scenes: ['corridor', 'shaft', 'hall'],
       text: [
         '천장에서 가는 모래가 흘러내린다.',
@@ -64,7 +64,7 @@ const ep = {
     },
     {
       id: 'lamps',
-      minDanger: 5,
+      minDanger: 8,
       scenes: ['camp', 'entrance'],
       text: [
         '능선 위로 등불 여러 개가 지나간다. 일정한 간격. 훈련된 걸음.',
@@ -74,7 +74,7 @@ const ep = {
     },
     {
       id: 'breath',
-      minDanger: 6,
+      minDanger: 10,
       scenes: ['corridor', 'shaft', 'hall'],
       text: [
         '공기가 한 번 밀려왔다가 빠져나간다.',
@@ -84,7 +84,7 @@ const ep = {
     },
     {
       id: 'watcher',
-      minDanger: 7,
+      minDanger: 11,
       text: [
         '뒤를 돌아본다. 아무도 없다.',
         '그러나 당신이 지나온 모래 위에는, 당신의 것이 아닌 발자국이 겹쳐 있다.',
@@ -480,7 +480,8 @@ const ep = {
       location: '왕가의 계곡 · 서쪽 지류',
       exits: ['사원 입구', '능선'],
       onEnter(state, visits) {
-        if (visits > 1) return {};
+        // 지상으로 나오면 추적이 끊긴다. 되돌아오는 것에 값이 생긴다.
+        if (visits > 1) return { danger: -3 };
         return { danger: 1 };
       },
       body: (state) => [
@@ -1258,6 +1259,30 @@ const ep = {
       },
       choices: [
         {
+          id: 'hall_breathe',
+          label: '벽에 등을 대고 숨을 고른다',
+          keys: ['숨', '쉰다', '진정', '앉는다'],
+          once: true,
+          hint: '시간과 위험을 내주고 정신을 되찾는다',
+          text: (state) => {
+            const out = [
+              '차가운 벽에 등을 붙인다. 돌이 체온을 가져간다.',
+              '열까지 센다. 스물까지 센다. 손의 떨림이 조금 줄어든다.',
+            ];
+            const ally = Object.values(state.companions).find((c) => c.present);
+            if (ally) {
+              out.push(
+                `${ally.name}가 옆에서 같은 자세로 선다. 아무 말도 하지 않는다.`,
+                '그것이 지금 할 수 있는 가장 친절한 일이라는 것을, 둘 다 알고 있다.',
+              );
+            } else {
+              out.push('아무도 없다. 세는 소리도 당신 것뿐이다.');
+            }
+            return out;
+          },
+          effects: { san: 5, time: 2, danger: 1 },
+        },
+        {
           id: 'examine_body',
           label: '덮개 아래를 확인한다',
           keys: ['덮개', '시신', '형태', '확인'],
@@ -1277,16 +1302,24 @@ const ep = {
                 '주머니에서 수첩이 나온다. 마지막 장 — "문이 안에서 열렸다. 우리는 두 번째가 아니다. ' +
                   '우리는 그것보다 나중이다."',
                 '그 아래에 좌표가 하나. 이집트가 아니다. 동쪽. 두 강 사이.',
+                '반대쪽 주먹은 쥐어져 있다. 펴 보니 청동 부적이 나온다. 녹청이 두껍다.',
+                '그는 이것을 쥐고 있었고, 이것은 그를 지켜주지 못했다.',
               ],
-              effects: { clues: ['door_opener', 'not_first', 'mesopotamia_lead'], san: -2, time: 2 },
+              effects: {
+                clues: ['door_opener', 'not_first', 'mesopotamia_lead'],
+                items: ['의식용 부적'],
+                san: -2,
+                time: 2,
+              },
             },
             success: {
               text: [
                 '크레인 원정대의 제복을 입은 남자다. 외상은 없다.',
                 '주머니의 수첩은 물에 젖어 대부분 읽을 수 없다. 마지막 문장만 남았다.',
                 '"문이 안에서 열렸다."',
+                '쥔 주먹을 펴자 청동 부적이 나온다. 녹청이 두껍고, 손끝이 차다.',
               ],
-              effects: { clues: ['door_opener'], san: -2, time: 2 },
+              effects: { clues: ['door_opener'], items: ['의식용 부적'], san: -2, time: 2 },
             },
             partial: {
               text: [
@@ -1358,9 +1391,9 @@ const ep = {
             fail: {
               text: [
                 '아무것도 읽히지 않는다. 배운 어떤 체계와도 맞지 않는다.',
-                '그저 오래 바라보았고, 오래 바라본 만큼 피로하다.',
+                '그저 오래 바라보았고, 오래 바라본 만큼 피로하다. 다시 볼 수는 있다.',
               ],
-              effects: { san: -1, time: 2 },
+              effects: { time: 2 },
             },
             fumble: {
               text: [
@@ -1472,24 +1505,46 @@ const ep = {
                 '벽의 문자는 이집트어가 아니고, 그 아래 층의 문자는 당신이 아는 어떤 것도 아니다.',
                 '당신은 세 번째 층에서 걸음을 멈춘다. 여기서 더 내려가면 돌아오지 못한다는 것을 안다.',
                 '수첩을 꺼내 한 문장을 적는다. — 인류는 처음이 아니었다.',
+                '돌아 나오는 길, 문턱 아래에 반쯤 묻힌 것이 발에 걸린다.',
+                '원반형 금속. 열쇠라기보다 자물쇠에 가까운 형태다. 어느 쪽이 여는 쪽인지 알 수 없다.',
               ],
-              effects: { clues: ['not_first'], san: -3, flags: { doorOpened: true }, goto: 'confrontation' },
+              effects: {
+                clues: ['not_first'],
+                items: ['검은 태양의 열쇠'],
+                san: -3,
+                flags: { doorOpened: true },
+                goto: 'confrontation',
+              },
             },
             success: {
               text: [
                 '문이 안쪽으로 물러난다. 경첩도 도르래도 없이.',
                 '그 너머에는 아래로 이어지는 계단이 있다. 끝이 보이지 않는다.',
                 '한 계단만 내려선다. 그것만으로 충분하다. — 이 유적은 무언가의 입구일 뿐이었다.',
+                '문턱 아래에 반쯤 묻힌 원반형 금속이 있다. 집어 든다. 손바닥이 차가워진다.',
               ],
-              effects: { clues: ['not_first'], san: -2, flags: { doorOpened: true }, goto: 'confrontation' },
+              effects: {
+                clues: ['not_first'],
+                items: ['검은 태양의 열쇠'],
+                san: -2,
+                flags: { doorOpened: true },
+                goto: 'confrontation',
+              },
             },
             partial: {
               text: [
                 '문이 손가락 두 마디쯤 열리다 멈춘다.',
                 '틈으로 공기가 빠져나간다. 아니, 빨려 들어간다.',
                 '당신은 손을 뗀다. 문은 그 상태로 남는다. 닫히지도 열리지도 않은 채.',
+                '벌어진 틈으로 무언가가 밀려 나와 있다. 원반형 금속. 반쯤 묻힌 채로.',
               ],
-              effects: { san: -3, danger: 2, flags: { doorAjar: true }, goto: 'confrontation' },
+              effects: {
+                items: ['검은 태양의 열쇠'],
+                san: -3,
+                danger: 2,
+                flags: { doorAjar: true },
+                goto: 'confrontation',
+              },
             },
             fail: {
               text: [

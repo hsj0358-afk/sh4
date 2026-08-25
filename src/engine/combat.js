@@ -309,9 +309,11 @@ export function actionNarration(encounter, actionKey, outcome) {
  * 그래서 제압 출구의 피해는 최소 1을 남긴다. 값은 체력이 아니라 잃은 물건으로 치른다.
  */
 export function survivable(effects, state) {
-  if (!effects?.hp || effects.hp >= 0) return effects;
-  const floor = -(state.hp - 1);
-  return { ...effects, hp: Math.max(effects.hp, Math.min(0, floor)) };
+  if (!effects) return effects;
+  const out = { ...effects };
+  if (out.hp < 0) out.hp = Math.max(out.hp, Math.min(0, -(state.hp - 1)));
+  if (out.san < 0) out.san = Math.max(out.san, Math.min(0, -(state.san - 1)));
+  return out;
 }
 
 /** 화면에 띄울 전투 상태. */

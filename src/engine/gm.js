@@ -10,6 +10,7 @@ import { interpret, hallucination } from './freeform.js';
 import { createRng } from './rng.js';
 import { getItem } from '../content/items.js';
 import { getEncounter } from '../content/encounters.js';
+import { resolveEnding, endingCoda } from '../content/endings.js';
 import {
   startCombat,
   combatActions,
@@ -284,7 +285,10 @@ export function createGM({ state, episode }) {
     // 변화 알림은 장면 서술 뒤에 붙인다. 알림이 서술보다 먼저 오면 흐름이 끊긴다.
     let enterNotes = [];
     if (s.onEnter) {
-      enterNotes = applyEffects(state, s.onEnter(state, state.visited[id]) || {});
+      let eff = s.onEnter(state, state.visited[id]) || {};
+      // 절정 장면은 들어서는 것만으로 사람을 죽이지 않는다.
+      if (s.nonLethal) eff = survivable(eff, state);
+      enterNotes = applyEffects(state, eff);
     }
 
     events.push(headerEvent());
@@ -300,7 +304,17 @@ export function createGM({ state, episode }) {
       beginCombat(s.combat, events);
     }
 
-    if (s.end) {
+    // 결말 장면은 고정된 문장을 갖지 않는다. 세 대륙을 지나온 상태가 결말을 고른다.
+    if (s.ending) {
+      const ending = resolveEnding(state);
+      state.ended = {
+        type: 'finale',
+        ending: ending.id,
+        title: ending.title,
+        text: `${ending.text}\n\n${endingCoda(state).join('\n')}`,
+      };
+      events.push({ type: 'end', end: state.ended });
+    } else if (s.end) {
       state.ended = { type: s.end.type || 'chapter', title: s.end.title, text: s.end.text };
       events.push({ type: 'end', end: state.ended });
     }
@@ -342,14 +356,25 @@ export function createGM({ state, episode }) {
     const text = asArray(res.text, state);
     if (text.length) events.push({ type: 'narration', text, tone: res.tone });
 
-    const notes = applyEffects(state, res.effects || {});
+    // 효과도 상태를 볼 수 있다. "곁에 남은 사람 수만큼" 같은 것이 여기 걸린다.
+    let effects =
+      typeof res.effects === 'function' ? res.effects(state) || {} : res.effects || {};
+
+    // 절정 장면은 사람을 죽이지 않는다.
+    //
+    // 세 대륙을 걸어 마지막 문 앞에 선 사람이 그 문을 만지는 순간 쓰러지면,
+    // 캠페인 내내 쌓아 온 결말 분기를 영영 못 본다. 대가는 결말의 문장이 치른다 —
+    // 정신이 바닥난 채 도착한 사람의 후일담은 이미 다르게 읽힌다.
+    if (scene().nonLethal) effects = survivable(effects, state);
+
+    const notes = applyEffects(state, effects);
     if (notes.length) events.push({ type: 'notes', notes });
 
     if (res.clueDetail) events.push({ type: 'clue', clue: res.clueDetail });
 
     if (checkVitals(events)) return;
 
-    const goto = res.goto || res.effects?.goto;
+    const goto = res.goto || effects.goto;
     if (goto) enterScene(goto, events);
     else pressureEvent(events);
   }

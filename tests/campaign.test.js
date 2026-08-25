@@ -15,9 +15,10 @@ function afterEpisodeOne() {
 }
 
 test('에피소드 순서와 다음 장 조회', () => {
-  assert.equal(EPISODE_ORDER[0], 'luxor');
+  assert.deepEqual(EPISODE_ORDER, ['luxor', 'mesopotamia', 'angkor']);
   assert.equal(nextEpisodeId('luxor'), 'mesopotamia');
-  assert.equal(nextEpisodeId('mesopotamia'), null);
+  assert.equal(nextEpisodeId('mesopotamia'), 'angkor');
+  assert.equal(nextEpisodeId('angkor'), null, '마지막 장 뒤에 또 장이 있다');
   assert.equal(getEpisode('없는거').id, 'luxor');
 });
 
@@ -35,9 +36,13 @@ test('다음 장으로 넘어가면 장면과 에피소드가 바뀐다', () => 
 
 test('마지막 장에서는 더 갈 곳이 없다', () => {
   const state = afterEpisodeOne();
-  advanceEpisode(state);
+  advanceEpisode(state); // → 메소포타미아
+  assert.equal(hasNextEpisode(state), true);
+  advanceEpisode(state); // → 앙코르
+  assert.equal(state.episode, 'angkor');
   assert.equal(hasNextEpisode(state), false);
   assert.equal(advanceEpisode(state).ok, false);
+  assert.deepEqual(state.visitedEpisodes, ['luxor', 'mesopotamia']);
 });
 
 test('단서 · 소지품 · 동료는 그대로 넘어간다', () => {

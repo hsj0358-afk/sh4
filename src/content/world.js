@@ -19,7 +19,8 @@ export const WORLD_SITES = [
   {
     id: 'mesopotamia',
     short: '메소포타미아',
-    name: '메소포타미아 유적지',
+    name: '메소포타미아 · 남부 습지',
+    episode: 'mesopotamia',
     x: 63,
     y: 40,
     revealedBy: 'mesopotamia_lead',
@@ -50,6 +51,7 @@ export const WORLD_SITES = [
     x: 76,
     y: 53,
     rumor: true,
+    revealedBy: 'angkor_lead',
     note: '밀림이 삼킨 회랑. 별자리 배치가 어긋나 있다.',
   },
   {

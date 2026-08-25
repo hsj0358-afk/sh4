@@ -51,8 +51,12 @@ export function buildCheck(state, check) {
   }
   if (bestAlly) breakdown.push({ label: `${bestAlly.name} 지원`, value: bestAllyValue, companion: bestAlly.id });
 
-  // 5. 상황 보정 (콘텐츠가 직접 지정)
-  if (check.bonus) breakdown.push({ label: check.bonusLabel || '상황', value: check.bonus });
+  // 5. 상황 보정 — 콘텐츠가 직접 지정한다.
+  //    함수를 주면 상태를 보고 정한다. "미리 살펴둔 사람이 유리하다" 같은 규칙이 여기 걸린다.
+  const situational = typeof check.bonus === 'function' ? check.bonus(state) : check.bonus;
+  if (situational) {
+    breakdown.push({ label: check.bonusLabel || '상황', value: situational });
+  }
 
   // 6. 상태 페널티
   const cond = conditionPenalty(state);

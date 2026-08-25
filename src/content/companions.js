@@ -43,6 +43,19 @@ export const COMPANIONS = {
     trust: 2,
     skill: '죽은 언어. 세라피나는 문장이 아니라 필체를 읽는다.',
   },
+  basim: {
+    id: 'basim',
+    name: '바심 알마단',
+    role: '습지 뱃사공',
+    desc:
+      '삼대째 갈대 사이에서 배를 민다. 물길을 길이 아니라 물 색으로 읽는다. ' +
+      '물 위에서는 무엇도 두려워하지 않고, 물 아래는 절대 내려가지 않는다.',
+    assist: { tags: ['이동', '방향', '탈출'], value: 2 },
+    hp: 9, maxHp: 9,
+    affinity: 1,
+    trust: 2,
+    skill: '갈대의 미로. 바심이 앞장서면 습지는 길이 된다.',
+  },
 };
 
 export function makeCompanion(id) {

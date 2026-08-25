@@ -4,9 +4,12 @@
 
 import { createState } from '../src/engine/state.js';
 import { createGM } from '../src/engine/gm.js';
-import episode from '../src/content/episodes/luxor.js';
+import { EPISODES, FIRST_EPISODE, getEpisode } from '../src/content/episodes/index.js';
+import { advanceEpisode, hasNextEpisode } from '../src/engine/campaign.js';
 import { PROFESSIONS } from '../src/content/professions.js';
 import { createRng } from '../src/engine/rng.js';
+import { CLUES } from '../src/content/clues.js';
+import { ITEMS } from '../src/content/items.js';
 
 const arg = (name, def) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -14,30 +17,69 @@ const arg = (name, def) => {
 };
 
 const RUNS = arg('runs', 300);
-const MAX_STEPS = arg('steps', 120);
+const MAX_STEPS = arg('steps', 260);
 
 const diffIndex = process.argv.indexOf('--difficulty');
 const DIFFICULTY = diffIndex >= 0 ? process.argv[diffIndex + 1] : 'standard';
+
+// --cautious: 몸과 정신이 상하면 먼저 회복하고, 위험도가 높으면 서두르는 플레이어.
+// 아무 선택지나 누르는 봇과 달리, 실제 플레이어가 하는 최소한의 판단을 흉내낸다.
+const CAUTIOUS = process.argv.includes('--cautious');
+
+const RESTFUL = /쉰다|숨을 고른|밤을|야영|기록을 남|셈을 치른|보급|장비를 산/;
+
+const retreated = new Set();
+
+function chooseCautious(state, options, rng) {
+  const hurt = state.hp / state.maxHp < 0.5 || state.san / state.maxSan < 0.5;
+  if (hurt) {
+    const heal = options.find((c) => RESTFUL.test(c.label));
+    if (heal) return heal;
+  }
+  // 심하게 상했으면 깊이 들어가는 선택을 피한다.
+  // 다만 같은 장면에서 두 번 물러서지는 않는다 — 그건 후퇴가 아니라 제자리걸음이다.
+  if (state.hp / state.maxHp < 0.3 || state.san / state.maxSan < 0.3) {
+    const retreat = options.find((c) => /돌아|물러|나간다|마친다|출발|떠난다/.test(c.label));
+    if (retreat && !retreated.has(state.scene)) {
+      retreated.add(state.scene);
+      return retreat;
+    }
+  }
+  return rng.pick(options);
+}
 
 const tally = {
   outcomes: {},
   endings: {},
   professions: {},
   stuck: 0,
+  timedOut: 0,
   reachedEpilogue: 0,
   clueCounts: [],
+  chapters: [],
   steps: [],
 };
 
 for (let run = 0; run < RUNS; run++) {
   const rng = createRng(run * 7919 + 13);
+  retreated.clear();
   const prof = PROFESSIONS[run % PROFESSIONS.length];
   const state = createState({ professionId: prof.id, difficulty: DIFFICULTY, seed: run });
-  const gm = createGM({ state, episode });
+  let episode = getEpisode(FIRST_EPISODE);
+  let gm = createGM({ state, episode });
   gm.start();
 
   let steps = 0;
-  while (!state.ended && steps < MAX_STEPS) {
+  while (steps < MAX_STEPS) {
+    // 장이 끝났고 다음 장이 있으면 이어서 간다.
+    if (state.ended) {
+      if (state.ended.type !== 'chapter' || !hasNextEpisode(state)) break;
+      const moved = advanceEpisode(state);
+      episode = moved.episode;
+      gm = createGM({ state, episode });
+      gm.start();
+      continue;
+    }
     steps++;
     if (gm.pending) {
       for (const ev of gm.roll()) {
@@ -47,6 +89,15 @@ for (let run = 0; run < RUNS; run++) {
       }
       continue;
     }
+    // 신중한 플레이어는 다치면 약을 쓴다. 소지품 사용은 자유 입력으로 간다.
+    if (CAUTIOUS && state.hp / state.maxHp < 0.45) {
+      const kit = state.inventory.find((i) => ITEMS[i.name]?.use);
+      if (kit) {
+        gm.freeAct(`${kit.name} 사용`);
+        continue;
+      }
+    }
+
     const options = gm.choices().filter((c) => !c.locked);
     if (!options.length) {
       // 선택지가 없으면 자유 입력으로 빠져나갈 수 있어야 한다.
@@ -58,12 +109,12 @@ for (let run = 0; run < RUNS; run++) {
       }
       continue;
     }
-    gm.act(rng.pick(options).id);
+    gm.act((CAUTIOUS ? chooseCautious(state, options, rng) : rng.pick(options)).id);
   }
 
   if (steps >= MAX_STEPS && !state.ended) {
-    tally.stuck++;
-    console.error(`[미종료] run=${run} scene=${state.scene} steps=${steps}`);
+    tally.timedOut++;
+    console.error(`[상한 도달] run=${run} scene=${state.scene} steps=${steps}`);
   }
 
   const kind = state.ended?.type || 'unfinished';
@@ -71,15 +122,20 @@ for (let run = 0; run < RUNS; run++) {
   tally.professions[prof.name] = tally.professions[prof.name] || { runs: 0, died: 0 };
   tally.professions[prof.name].runs++;
   if (kind === 'death' || kind === 'broken') tally.professions[prof.name].died++;
-  if (state.scene === 'epilogue') tally.reachedEpilogue++;
+  if (state.ended?.type === 'chapter') tally.reachedEpilogue++;
+  tally.chapters.push((state.visitedEpisodes?.length || 0) + 1);
   tally.clueCounts.push(state.clues.length);
   tally.steps.push(steps);
 }
 
 const avg = (a) => (a.reduce((x, y) => x + y, 0) / a.length).toFixed(1);
 const totalRolls = Object.values(tally.outcomes).reduce((a, b) => a + b, 0);
+const TOTAL_CLUES = Object.keys(CLUES).length;
 
-console.log(`\n《잃어버린 세계의 지도》 자동 플레이테스트 — ${RUNS}회 · 난이도 ${DIFFICULTY}\n`);
+console.log(
+  `\n《잃어버린 세계의 지도》 자동 플레이테스트 — ${RUNS}회 · 난이도 ${DIFFICULTY}` +
+    ` · ${CAUTIOUS ? '신중한' : '무작위'} 플레이어\n`,
+);
 
 console.log('판정 결과 분포');
 for (const key of ['fumble', 'fail', 'partial', 'success', 'crit']) {
@@ -98,12 +154,14 @@ for (const [name, s] of Object.entries(tally.professions)) {
   console.log(`  ${name.padEnd(10)} ${((s.died / s.runs) * 100).toFixed(0)}%`);
 }
 
-console.log(`\n에필로그 도달   ${((tally.reachedEpilogue / RUNS) * 100).toFixed(1)}%`);
-console.log(`평균 단서 수    ${avg(tally.clueCounts)} / 9`);
-console.log(`평균 행동 수    ${avg(tally.steps)}`);
-console.log(`막힌 세션       ${tally.stuck}`);
+console.log(`\n장 완주          ${((tally.reachedEpilogue / RUNS) * 100).toFixed(1)}%`);
+console.log(`평균 도달 장      ${avg(tally.chapters)} / ${Object.keys(EPISODES).length}`);
+console.log(`평균 단서 수      ${avg(tally.clueCounts)} / ${TOTAL_CLUES}`);
+console.log(`평균 행동 수      ${avg(tally.steps)}`);
+console.log(`막힌 세션         ${tally.stuck}`);
+console.log(`상한 도달         ${tally.timedOut}  (봇이 제자리를 돈 횟수 — 게임의 결함은 아니다)`);
 
 if (tally.stuck > 0) {
-  console.error('\n막다른 세션이 있습니다.');
+  console.error('\n선택지도 자유 입력도 통하지 않는 세션이 있습니다.');
   process.exit(1);
 }

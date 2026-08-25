@@ -73,6 +73,7 @@ export function createState({ name, professionId, difficulty, seed = Date.now() 
     flags: {},
     companions: {},
     episode: null,
+    visitedEpisodes: [],
     scene: null,
     visited: {},
     rolls: [],

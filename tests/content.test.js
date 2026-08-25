@@ -4,7 +4,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import episode from '../src/content/episodes/luxor.js';
+import { EPISODES, EPISODE_ORDER } from '../src/content/episodes/index.js';
 import { ITEMS } from '../src/content/items.js';
 import { CLUES } from '../src/content/clues.js';
 import { COMPANIONS } from '../src/content/companions.js';
@@ -12,12 +12,18 @@ import { PROFESSIONS } from '../src/content/professions.js';
 import { STAT_IDS } from '../src/content/stats.js';
 import { createState } from '../src/engine/state.js';
 
-const scenes = episode.scenes;
 const probe = createState({ professionId: 'archaeologist', seed: 1 });
+
+/** 모든 에피소드의 모든 장면. */
+function* allScenes() {
+  for (const ep of Object.values(EPISODES)) {
+    for (const [id, scene] of Object.entries(ep.scenes)) yield { ep, id, scene };
+  }
+}
 
 /** 장면 안의 모든 결과 노드(선택지·판정 분기·자유입력)를 훑는다. */
 function* results() {
-  for (const scene of Object.values(scenes)) {
+  for (const { scene } of allScenes()) {
     const sources = [
       ...(scene.choices || []),
       ...(scene.freeform || []),
@@ -30,16 +36,29 @@ function* results() {
       }
     }
   }
-  for (const ev of episode.pressureEvents || []) {
-    yield { scene: { id: `pressure:${ev.id}` }, node: ev };
+  for (const ep of Object.values(EPISODES)) {
+    for (const ev of ep.pressureEvents || []) {
+      yield { scene: { id: `${ep.id}/pressure:${ev.id}` }, node: ev };
+    }
   }
 }
 
 test('모든 장면 이동 대상이 존재한다', () => {
+  const allIds = new Set();
+  for (const { id } of allScenes()) allIds.add(id);
   for (const { scene, node } of results()) {
     const goto = node.goto || node.effects?.goto;
     if (!goto) continue;
-    assert.ok(scenes[goto], `${scene.id} → 없는 장면 '${goto}'`);
+    assert.ok(allIds.has(goto), `${scene.id} → 없는 장면 '${goto}'`);
+  }
+});
+
+test('장면 id 가 에피소드끼리 겹치지 않는다', () => {
+  // state.visited 는 장면 id 로만 키를 만든다. 겹치면 방문 기록이 섞인다.
+  const seen = new Map();
+  for (const { ep, id } of allScenes()) {
+    assert.ok(!seen.has(id), `'${id}' 가 ${seen.get(id)} 와 ${ep.id} 에서 중복`);
+    seen.set(id, ep.id);
   }
 });
 
@@ -99,7 +118,7 @@ test('판정은 실재하는 능력치를 쓰고 목표값을 갖는다', () => 
 });
 
 test('모든 판정에 최소한 성공과 실패 서술이 있다', () => {
-  for (const scene of Object.values(scenes)) {
+  for (const { scene } of allScenes()) {
     const sources = [
       ...(scene.choices || []),
       ...(scene.freeform || []),
@@ -122,7 +141,7 @@ test('실패 분기가 길을 완전히 막지 않는다', () => {
   // 실패해도 서술은 남고, 대부분은 다른 결과(대가·단서·이동)를 동반해야 한다.
   let failWithConsequence = 0;
   let failTotal = 0;
-  for (const scene of Object.values(scenes)) {
+  for (const { scene } of allScenes()) {
     for (const src of scene.choices || []) {
       if (!src.check) continue;
       for (const key of ['fail', 'fumble']) {
@@ -150,7 +169,7 @@ test('실패 분기가 길을 완전히 막지 않는다', () => {
 });
 
 test('모든 장면에 위치와 본문이 있다', () => {
-  for (const [id, scene] of Object.entries(scenes)) {
+  for (const { id, scene } of allScenes()) {
     assert.equal(scene.id, id, `장면 id 불일치: ${id}`);
     assert.ok(scene.location, `${id}: 위치 없음`);
     const body = typeof scene.body === 'function' ? scene.body(probe) : scene.body;
@@ -159,36 +178,51 @@ test('모든 장면에 위치와 본문이 있다', () => {
 });
 
 test('막다른 장면은 종료 처리를 갖는다', () => {
-  for (const [id, scene] of Object.entries(scenes)) {
+  for (const { id, scene } of allScenes()) {
     if ((scene.choices || []).length) continue;
     assert.ok(scene.end, `${id}: 선택지도 결말도 없는 막다른 장면`);
   }
 });
 
-test('시작 장면부터 결말까지 도달 가능하다', () => {
-  const seen = new Set();
-  const queue = [episode.start];
-  while (queue.length) {
-    const id = queue.shift();
-    if (seen.has(id) || !scenes[id]) continue;
-    seen.add(id);
-    for (const src of scenes[id].choices || []) {
-      const targets = [
-        src.goto,
-        src.effects?.goto,
-        ...Object.values(src.outcomes || {}).flatMap((b) => [b.goto, b.effects?.goto]),
-      ].filter(Boolean);
-      queue.push(...targets);
+test('각 에피소드는 시작부터 결말까지 도달 가능하다', () => {
+  for (const ep of Object.values(EPISODES)) {
+    const scenes = ep.scenes;
+    const seen = new Set();
+    const queue = [ep.start];
+    while (queue.length) {
+      const id = queue.shift();
+      if (seen.has(id) || !scenes[id]) continue;
+      seen.add(id);
+      for (const src of scenes[id].choices || []) {
+        const targets = [
+          src.goto,
+          src.effects?.goto,
+          ...Object.values(src.outcomes || {}).flatMap((b) => [b.goto, b.effects?.goto]),
+        ].filter(Boolean);
+        queue.push(...targets);
+      }
     }
+    for (const id of Object.keys(scenes)) {
+      assert.ok(seen.has(id), `${ep.id}/${id}: 어디에서도 도달할 수 없는 장면`);
+    }
+    const ended = Object.values(scenes).some((s) => s.end && seen.has(s.id));
+    assert.ok(ended, `${ep.id}: 결말에 도달할 수 없다`);
   }
-  for (const id of Object.keys(scenes)) {
-    assert.ok(seen.has(id), `${id}: 어디에서도 도달할 수 없는 장면`);
+});
+
+test('마지막을 뺀 모든 에피소드가 다음 장을 가리킨다', () => {
+  for (const id of EPISODE_ORDER.slice(0, -1)) {
+    const ep = EPISODES[id];
+    const nexts = Object.values(ep.scenes)
+      .map((s) => s.end?.next)
+      .filter(Boolean);
+    assert.ok(nexts.length, `${id}: 다음 장으로 가는 결말이 없다`);
+    for (const n of nexts) assert.ok(EPISODES[n], `${id}: 없는 다음 장 '${n}'`);
   }
-  assert.ok(seen.has('epilogue'), '결말에 도달할 수 없다');
 });
 
 test('선택지는 장면마다 3개 이상 제시된다 (결말 장면 제외)', () => {
-  for (const [id, scene] of Object.entries(scenes)) {
+  for (const { id, scene } of allScenes()) {
     if (scene.end || !(scene.choices || []).length) continue;
     assert.ok(scene.choices.length >= 3, `${id}: 선택지가 ${scene.choices.length}개뿐`);
     assert.ok(scene.choices.length <= 6, `${id}: 선택지가 너무 많다`);

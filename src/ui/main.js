@@ -3,9 +3,10 @@
 import { PROFESSIONS } from '../content/professions.js';
 import { STATS } from '../content/stats.js';
 import { DIFFICULTIES } from '../content/difficulty.js';
-import episode from '../content/episodes/luxor.js';
+import { getEpisode, FIRST_EPISODE } from '../content/episodes/index.js';
 import { createState, formatClock, dangerLabel, MAX_DANGER } from '../engine/state.js';
 import { createGM } from '../engine/gm.js';
+import { advanceEpisode, hasNextEpisode, chapterNumber } from '../engine/campaign.js';
 import { saveGame, loadGame, clearGame, loadSettings, saveSettings } from '../engine/save.js';
 import { renderEvent, createSceneBlock } from './render.js';
 import {
@@ -45,6 +46,7 @@ const dom = {
 
 let state = null;
 let gm = null;
+let episode = getEpisode(FIRST_EPISODE);
 let busy = false;
 // 로그는 장면 단위 블록으로 쌓인다. 지난 장면은 접어 두어 화면을 짧게 유지한다.
 let currentBlock = null;
@@ -189,6 +191,16 @@ function renderChoices() {
 function renderEndActions() {
   const wrap = document.createElement('div');
   wrap.className = 'end-actions';
+
+  // 장이 끝났을 뿐 탐사가 끝난 것이 아니라면, 다음 장으로 넘어갈 수 있다.
+  if (state.ended?.type === 'chapter' && hasNextEpisode(state)) {
+    const next = document.createElement('button');
+    next.className = 'btn btn-primary';
+    next.textContent = '다음 장으로';
+    next.addEventListener('click', () => nextChapter());
+    wrap.appendChild(next);
+  }
+
   const again = document.createElement('button');
   again.className = 'btn btn-primary';
   again.textContent = '새 탐사 시작';
@@ -283,6 +295,29 @@ async function play(events) {
 }
 
 // ── 행동 ──────────────────────────────────────────────────────
+
+/** 다음 에피소드로. 탐사자는 초기화되지 않는다. */
+async function nextChapter() {
+  if (busy) return;
+  const moved = advanceEpisode(state);
+  if (!moved.ok) return;
+
+  sfx.page();
+  episode = moved.episode;
+  gm = createGM({ state, episode });
+  resetLog();
+
+  const intro = [
+    {
+      type: 'narration',
+      text: [`제 ${chapterNumber(state)} 장 — ${episode.title.replace(/^에피소드 \d+ — /, '')}`],
+      tone: 'gm',
+    },
+  ];
+  if (moved.notes?.length) intro.push({ type: 'notes', notes: moved.notes });
+
+  await play(intro.concat(gm.start()));
+}
 
 async function act(choiceId) {
   if (busy || gm.pending) return;
@@ -430,6 +465,7 @@ async function useItem(name) {
 
 function boot(newState) {
   state = newState;
+  episode = getEpisode(FIRST_EPISODE);
   gm = createGM({ state, episode });
   resetLog();
   show('play');
@@ -441,6 +477,7 @@ function resume() {
   const data = loadGame();
   if (!data) return false;
   state = data.state;
+  episode = getEpisode(state.episode);
   gm = createGM({ state, episode });
   resetLog();
   show('play');

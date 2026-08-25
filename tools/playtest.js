@@ -16,6 +16,9 @@ const arg = (name, def) => {
 const RUNS = arg('runs', 300);
 const MAX_STEPS = arg('steps', 120);
 
+const diffIndex = process.argv.indexOf('--difficulty');
+const DIFFICULTY = diffIndex >= 0 ? process.argv[diffIndex + 1] : 'standard';
+
 const tally = {
   outcomes: {},
   endings: {},
@@ -29,7 +32,7 @@ const tally = {
 for (let run = 0; run < RUNS; run++) {
   const rng = createRng(run * 7919 + 13);
   const prof = PROFESSIONS[run % PROFESSIONS.length];
-  const state = createState({ professionId: prof.id, seed: run });
+  const state = createState({ professionId: prof.id, difficulty: DIFFICULTY, seed: run });
   const gm = createGM({ state, episode });
   gm.start();
 
@@ -76,7 +79,7 @@ for (let run = 0; run < RUNS; run++) {
 const avg = (a) => (a.reduce((x, y) => x + y, 0) / a.length).toFixed(1);
 const totalRolls = Object.values(tally.outcomes).reduce((a, b) => a + b, 0);
 
-console.log(`\n《잃어버린 세계의 지도》 자동 플레이테스트 — ${RUNS}회\n`);
+console.log(`\n《잃어버린 세계의 지도》 자동 플레이테스트 — ${RUNS}회 · 난이도 ${DIFFICULTY}\n`);
 
 console.log('판정 결과 분포');
 for (const key of ['fumble', 'fail', 'partial', 'success', 'crit']) {

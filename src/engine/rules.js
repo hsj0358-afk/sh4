@@ -3,6 +3,7 @@
 
 import { itemBonus } from '../content/items.js';
 import { companionAssist } from '../content/companions.js';
+import { getDifficulty } from '../content/difficulty.js';
 import { conditionPenalty, dangerPressure } from './state.js';
 
 /** 직업 고유 태그가 걸리면 +2. 기획서의 직업별 특전을 규칙으로 옮긴 것. */
@@ -59,15 +60,17 @@ export function buildCheck(state, check) {
 
   const modifier = breakdown.reduce((sum, b) => sum + b.value, 0);
 
-  // 목표값에는 위험도 압박이 더해진다.
+  // 목표값에는 위험도 압박과 난이도가 더해진다.
   const pressure = dangerPressure(state.danger);
-  const target = (check.target ?? 12) + pressure;
+  const shift = getDifficulty(state.difficulty).targetShift;
+  const target = Math.max(5, (check.target ?? 12) + pressure + shift);
 
   return {
     modifier,
     target,
     baseTarget: check.target ?? 12,
     pressure,
+    difficultyShift: shift,
     breakdown,
     usedItem: bestItem,
   };

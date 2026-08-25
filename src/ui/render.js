@@ -19,6 +19,52 @@ function paragraphs(container, lines, stagger = true) {
   });
 }
 
+function sceneMark(ev) {
+  const wrap = el('div', 'scene-mark');
+  const rule = el('div', 'rule');
+  rule.appendChild(el('span', 'place', ev.location));
+  wrap.appendChild(rule);
+  wrap.appendChild(
+    el('div', 'when', `${ev.date} · ${ev.time} · 위험 ${dangerLabel(ev.danger)}`),
+  );
+  return wrap;
+}
+
+/**
+ * 장면 하나를 접을 수 있는 블록으로 만든다 (기획서 15절 "로그는 접기 기능").
+ * 머리말을 누르면 그 장면의 기록이 통째로 접힌다.
+ */
+export function createSceneBlock(ev) {
+  const section = el('section', 'scene-block');
+  section.dataset.scene = ev.id;
+
+  const head = el('button', 'block-head');
+  head.type = 'button';
+  head.setAttribute('aria-expanded', 'true');
+  head.appendChild(sceneMark(ev));
+
+  const summary = el('span', 'block-summary');
+  head.appendChild(summary);
+  section.appendChild(head);
+
+  const body = el('div', 'block-body');
+  section.appendChild(body);
+
+  const setCollapsed = (collapsed) => {
+    section.dataset.collapsed = String(collapsed);
+    head.setAttribute('aria-expanded', String(!collapsed));
+    const count = body.childElementCount;
+    summary.textContent = collapsed ? `기록 ${count}개 — 눌러서 펼치기` : '';
+  };
+
+  head.addEventListener('click', () => {
+    setCollapsed(section.dataset.collapsed !== 'true');
+  });
+
+  setCollapsed(false);
+  return { section, body, setCollapsed };
+}
+
 export function renderEvent(log, ev) {
   const node = build(ev);
   if (!node) return null;
@@ -29,16 +75,8 @@ export function renderEvent(log, ev) {
 
 function build(ev) {
   switch (ev.type) {
-    case 'scene': {
-      const wrap = el('div', 'scene-mark');
-      const rule = el('div', 'rule');
-      rule.appendChild(el('span', 'place', ev.location));
-      wrap.appendChild(rule);
-      wrap.appendChild(
-        el('div', 'when', `${ev.date} · ${ev.time} · 위험 ${dangerLabel(ev.danger)}`),
-      );
-      return wrap;
-    }
+    case 'scene':
+      return sceneMark(ev);
 
     case 'narration': {
       const wrap = el('div', `narration${ev.tone ? ` ${ev.tone}` : ''}`);
@@ -82,8 +120,13 @@ function build(ev) {
       t.innerHTML = `1D20 ${mod} · 목표값 <b>${ev.target}</b>`;
       card.appendChild(t);
 
-      if (ev.pressure > 0) {
-        card.appendChild(el('div', 'ct-pressure', `위험도 압박으로 목표값 +${ev.pressure}`));
+      const adjust = [];
+      if (ev.pressure > 0) adjust.push(`위험도 압박 +${ev.pressure}`);
+      if (ev.difficultyShift) {
+        adjust.push(`난이도 ${ev.difficultyShift > 0 ? '+' : ''}${ev.difficultyShift}`);
+      }
+      if (adjust.length) {
+        card.appendChild(el('div', 'ct-pressure', `목표값 조정 — ${adjust.join(' · ')}`));
       }
       return card;
     }

@@ -6,6 +6,7 @@
 import { getProfession } from '../content/professions.js';
 import { getItem } from '../content/items.js';
 import { makeCompanion } from '../content/companions.js';
+import { getDifficulty, scaleDamage } from '../content/difficulty.js';
 import { createRng } from './rng.js';
 
 export const SAVE_VERSION = 1;
@@ -40,13 +41,18 @@ export function dangerLabel(d) {
   return '붕괴 직전';
 }
 
-export function createState({ name, professionId, seed = Date.now() } = {}) {
+export function createState({ name, professionId, difficulty, seed = Date.now() } = {}) {
   const prof = getProfession(professionId);
+  const diff = getDifficulty(difficulty);
   const rng = createRng(seed);
+
+  const maxHp = Math.max(5, 10 + prof.stats['체력'] + diff.hpBonus);
+  const maxSan = Math.max(5, 8 + prof.stats['의지'] + diff.sanBonus);
 
   return {
     version: SAVE_VERSION,
     seed,
+    difficulty: diff.id,
     rngState: rng.getState(),
     char: {
       name: (name || '이름 없는 탐사자').trim().slice(0, 20),
@@ -56,10 +62,10 @@ export function createState({ name, professionId, seed = Date.now() } = {}) {
       tags: [...prof.tags],
       perk: prof.perk,
     },
-    hp: 10 + prof.stats['체력'],
-    maxHp: 10 + prof.stats['체력'],
-    san: 8 + prof.stats['의지'],
-    maxSan: 8 + prof.stats['의지'],
+    hp: maxHp,
+    maxHp,
+    san: maxSan,
+    maxSan,
     danger: 0,
     tick: 0,
     inventory: prof.items.map((n) => ({ name: n, uses: getItem(n)?.uses ?? null })),
@@ -150,16 +156,17 @@ export function applyEffects(state, effect) {
   const notes = [];
   if (!effect) return notes;
 
+  // 피해에는 난이도 배율이 걸린다. 회복은 그대로 들어간다.
   if (effect.hp) {
     const before = state.hp;
-    state.hp = clamp(state.hp + effect.hp, 0, state.maxHp);
+    state.hp = clamp(state.hp + scaleDamage(effect.hp, state.difficulty), 0, state.maxHp);
     const d = state.hp - before;
     if (d) notes.push({ kind: d > 0 ? 'good' : 'bad', text: `체력 ${d > 0 ? '+' : ''}${d}` });
   }
 
   if (effect.san) {
     const before = state.san;
-    state.san = clamp(state.san + effect.san, 0, state.maxSan);
+    state.san = clamp(state.san + scaleDamage(effect.san, state.difficulty), 0, state.maxSan);
     const d = state.san - before;
     if (d) notes.push({ kind: d > 0 ? 'good' : 'bad', text: `정신력 ${d > 0 ? '+' : ''}${d}` });
   }

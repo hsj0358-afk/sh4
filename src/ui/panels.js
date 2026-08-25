@@ -5,6 +5,7 @@ import { STATS } from '../content/stats.js';
 import { ITEMS } from '../content/items.js';
 import { CLUES } from '../content/clues.js';
 import { COMPANIONS } from '../content/companions.js';
+import { getDifficulty } from '../content/difficulty.js';
 import { conditionPenalty, dangerLabel, formatClock } from '../engine/state.js';
 
 const el = (tag, cls, text) => {
@@ -35,6 +36,7 @@ export function statusPanel(state) {
   const frag = document.createDocumentFragment();
   const clock = formatClock(state.tick);
 
+  const diff = getDifficulty(state.difficulty);
   frag.appendChild(
     item(
       state.char.name,
@@ -43,6 +45,19 @@ export function statusPanel(state) {
       `${clock.date} ${clock.time} · 위험도 ${state.danger} (${dangerLabel(state.danger)})`,
     ),
   );
+
+  const diffLine = el('div', 'list-item');
+  diffLine.appendChild(el('p', 'li-desc', `난이도 — ${diff.name}`));
+  diffLine.appendChild(
+    el(
+      'p',
+      'li-bonus',
+      diff.targetShift === 0 && diff.damageScale === 1
+        ? '규칙 그대로.'
+        : `모든 판정 목표값 ${diff.targetShift >= 0 ? '+' : ''}${diff.targetShift} · 받는 피해 ×${diff.damageScale}`,
+    ),
+  );
+  frag.appendChild(diffLine);
 
   frag.appendChild(el('p', 'type-head', '능력치'));
   const grid = el('div', 'stat-grid');
@@ -181,5 +196,6 @@ export const PANEL_TITLES = {
   inventory: '소지품',
   codex: '수첩',
   party: '동행',
+  map: '지도',
   menu: '메뉴',
 };

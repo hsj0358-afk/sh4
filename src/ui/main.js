@@ -2,11 +2,12 @@
 
 import { PROFESSIONS } from '../content/professions.js';
 import { STATS } from '../content/stats.js';
+import { DIFFICULTIES } from '../content/difficulty.js';
 import episode from '../content/episodes/luxor.js';
 import { createState, formatClock, dangerLabel, MAX_DANGER } from '../engine/state.js';
 import { createGM } from '../engine/gm.js';
 import { saveGame, loadGame, clearGame, loadSettings, saveSettings } from '../engine/save.js';
-import { renderEvent } from './render.js';
+import { renderEvent, createSceneBlock } from './render.js';
 import {
   statusPanel,
   inventoryPanel,
@@ -14,6 +15,7 @@ import {
   partyPanel,
   PANEL_TITLES,
 } from './panels.js';
+import { mapPanel } from './map.js';
 import { sfx, setAudioEnabled, audioEnabled } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
@@ -44,6 +46,8 @@ const dom = {
 let state = null;
 let gm = null;
 let busy = false;
+// 로그는 장면 단위 블록으로 쌓인다. 지난 장면은 접어 두어 화면을 짧게 유지한다.
+let currentBlock = null;
 let settings = loadSettings();
 setAudioEnabled(settings.sound !== false);
 
@@ -58,6 +62,31 @@ function show(name) {
 // ── 캐릭터 생성 ───────────────────────────────────────────────
 
 let picked = null;
+let pickedDifficulty = 'standard';
+
+function buildDifficulty() {
+  const list = $('diff-list');
+  list.innerHTML = '';
+  for (const d of Object.values(DIFFICULTIES)) {
+    const btn = document.createElement('button');
+    btn.className = 'diff';
+    btn.type = 'button';
+    btn.dataset.id = d.id;
+    btn.setAttribute('aria-pressed', String(d.id === pickedDifficulty));
+    btn.innerHTML = `
+      <span class="diff-name">${d.name}</span>
+      <span class="diff-tagline">${d.tagline}</span>
+      <span class="diff-desc">${d.desc}</span>`;
+    btn.addEventListener('click', () => {
+      pickedDifficulty = d.id;
+      sfx.tap();
+      for (const n of list.querySelectorAll('.diff')) {
+        n.setAttribute('aria-pressed', String(n.dataset.id === d.id));
+      }
+    });
+    list.appendChild(btn);
+  }
+}
 
 function buildCreation() {
   const list = $('prof-list');
@@ -182,6 +211,25 @@ function scrollLog() {
   dom.log.scrollTo({ top: dom.log.scrollHeight, behavior: 'smooth' });
 }
 
+/** 새 장면이 시작되면 이전 장면을 접고 새 블록을 연다. */
+function openSceneBlock(ev) {
+  if (currentBlock) currentBlock.setCollapsed(true);
+  const block = createSceneBlock(ev);
+  dom.log.appendChild(block.section);
+  currentBlock = block;
+  return block;
+}
+
+/** 지금 기록이 들어갈 곳. 장면 블록이 없으면 로그에 바로 붙인다. */
+function logTarget() {
+  return currentBlock ? currentBlock.body : dom.log;
+}
+
+function resetLog() {
+  dom.log.innerHTML = '';
+  currentBlock = null;
+}
+
 const PACING = {
   scene: 260,
   narration: 340,
@@ -200,23 +248,25 @@ async function play(events) {
   dom.diceBar.hidden = true;
 
   for (const ev of events) {
-    if (ev.type === 'scene') sfx.page();
     if (ev.type === 'pressure') sfx.danger();
     if (ev.type === 'notes' && ev.notes.some((n) => n.kind === 'clue')) sfx.clue();
 
-    if (ev.type === 'notes') {
+    if (ev.type === 'scene') {
+      sfx.page();
+      openSceneBlock(ev);
+    } else if (ev.type === 'notes') {
       // 단서는 칩 대신 카드로 보여준다. 같은 말을 두 번 하지 않는다.
       const chips = ev.notes.filter((n) => n.kind !== 'clue');
-      if (chips.length) renderEvent(dom.log, { ...ev, notes: chips });
+      if (chips.length) renderEvent(logTarget(), { ...ev, notes: chips });
       for (const n of ev.notes) {
         if (n.kind === 'clue' && n.clue) {
           await wait(180);
-          renderEvent(dom.log, { type: 'clue', clue: n.clue });
+          renderEvent(logTarget(), { type: 'clue', clue: n.clue });
           scrollLog();
         }
       }
     } else {
-      renderEvent(dom.log, ev);
+      renderEvent(logTarget(), ev);
     }
 
     updateHud();
@@ -304,6 +354,7 @@ function openPanel(kind) {
   else if (kind === 'inventory') content = inventoryPanel(state, useItem);
   else if (kind === 'codex') content = codexPanel(state);
   else if (kind === 'party') content = partyPanel(state);
+  else if (kind === 'map') content = mapPanel(state, episode);
   else if (kind === 'menu') content = menuPanel();
 
   dom.sheetBody.appendChild(content);
@@ -380,7 +431,7 @@ async function useItem(name) {
 function boot(newState) {
   state = newState;
   gm = createGM({ state, episode });
-  dom.log.innerHTML = '';
+  resetLog();
   show('play');
   updateHud();
   return play(gm.start());
@@ -391,7 +442,7 @@ function resume() {
   if (!data) return false;
   state = data.state;
   gm = createGM({ state, episode });
-  dom.log.innerHTML = '';
+  resetLog();
   show('play');
 
   // 이어하기는 현재 장면을 다시 서술하며 시작한다. 어디였는지 상기시켜야 한다.
@@ -455,7 +506,14 @@ $('btn-begin').addEventListener('click', () => {
   if (!picked) return;
   const name = $('input-name').value.trim();
   sfx.page();
-  boot(createState({ name, professionId: picked.id, seed: Date.now() }));
+  boot(
+    createState({
+      name,
+      professionId: picked.id,
+      difficulty: pickedDifficulty,
+      seed: Date.now(),
+    }),
+  );
 });
 
 dom.btnRoll.addEventListener('click', rollDice);
@@ -498,5 +556,6 @@ window.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden' && state) saveGame(state);
 });
 
+buildDifficulty();
 buildCreation();
 refreshTitle();

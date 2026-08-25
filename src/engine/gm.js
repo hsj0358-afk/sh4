@@ -53,6 +53,9 @@ export function createGM({ state, episode }) {
   const rng = createRng(state.seed);
   if (state.rngState !== undefined) rng.setState(state.rngState);
 
+  // 지도가 "지금 어느 에피소드에 있는지"를 알아야 한다.
+  state.episode = episode.id;
+
   let pending = null; // { label, check, built, outcomes, choiceId }
 
   const sync = () => {
@@ -226,6 +229,7 @@ export function createGM({ state, episode }) {
       breakdown: built.breakdown,
       difficulty: difficultyLabel(built.target),
       pressure: built.pressure,
+      difficultyShift: built.difficultyShift,
     });
     sync();
     return events;

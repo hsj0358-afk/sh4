@@ -17,6 +17,39 @@ const ep = {
   clueTitles: CLUE_TITLES,
   start: 'arrival',
 
+  // 현장 지도. 좌표는 0~100 의 도면 위치이고, groundY 위쪽이 지상이다.
+  // 다녀온 곳만 밝혀지고, 다녀온 곳과 이어진 곳은 '미탐사'로 표시된다.
+  map: {
+    groundY: 32,
+    surfaceLabel: '지상',
+    depthLabel: '지하',
+    nodes: [
+      { scene: 'arrival', label: '나일 동안', x: 16, y: 17 },
+      { scene: 'market', label: '옛 시장', x: 47, y: 9 },
+      { scene: 'camp', label: '서쪽 지류', x: 80, y: 20 },
+      { scene: 'corridor', label: '경사 통로', x: 82, y: 45 },
+      { scene: 'shaft', label: '수직 갱도', x: 74, y: 62 },
+      { scene: 'hall', label: '원형의 방', x: 60, y: 80 },
+      { scene: 'confrontation', label: '조우', x: 40, y: 68 },
+      { scene: 'confrontation_fight', label: '좁은 통로', x: 22, y: 80 },
+      { scene: 'finale', label: '계곡 입구', x: 30, y: 24 },
+      { scene: 'epilogue', label: '나일 서안', x: 9, y: 9 },
+    ],
+    links: [
+      ['arrival', 'market'],
+      ['arrival', 'camp'],
+      ['market', 'camp'],
+      ['camp', 'corridor'],
+      ['corridor', 'shaft'],
+      ['shaft', 'hall'],
+      ['hall', 'confrontation'],
+      ['confrontation', 'confrontation_fight'],
+      ['confrontation', 'finale'],
+      ['confrontation_fight', 'finale'],
+      ['finale', 'epilogue'],
+    ],
+  },
+
   // 위험도가 높아지면 끼어드는 사건들. 각각 한 번씩만 터진다.
   pressureEvents: [
     {

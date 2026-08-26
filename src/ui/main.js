@@ -36,6 +36,7 @@ const dom = {
     play: $('screen-play'),
   },
   log: $('log'),
+  controls: $('controls'),
   choices: $('choices'),
   diceBar: $('dice-bar'),
   combatBar: $('combat-bar'),
@@ -117,31 +118,42 @@ function buildCreation() {
         <span class="prof-tagline">${p.tagline}</span>
       </span>
       <p class="prof-desc">${p.desc}</p>
-      <p class="prof-perk">특전 — ${p.perk}</p>`;
+      <p class="prof-perk">특전 — ${p.perk}</p>
+      <div class="prof-stats"></div>`;
     btn.addEventListener('click', () => {
       picked = p;
       sfx.tap();
       for (const n of list.querySelectorAll('.prof')) {
-        n.setAttribute('aria-pressed', String(n.dataset.id === p.id));
+        const on = n.dataset.id === p.id;
+        n.setAttribute('aria-pressed', String(on));
+        if (!on) n.querySelector('.prof-stats').innerHTML = '';
       }
-      renderStatPreview(p);
+      renderStatPreview(p, btn);
       $('btn-begin').disabled = false;
     });
     list.appendChild(btn);
   }
 }
 
-function renderStatPreview(p) {
-  const box = $('stat-preview');
+/**
+ * 능력치는 고른 직업 카드 안에서 펼쳐진다.
+ *
+ * 예전에는 목록 맨 아래 고정된 칸에 그렸다. 여덟 직업이 세로로 늘어선 화면에서
+ * 위쪽 직업을 고르면 능력치는 화면 밖에 있었고, 무엇을 고르는지 보려면
+ * 매번 끝까지 스크롤해야 했다. 고른 것 바로 아래에 있어야 비교가 된다.
+ */
+function renderStatPreview(p, btn) {
   const rows = STATS.map((s) => {
     const v = p.stats[s.id];
     const dots = Array.from({ length: 5 }, (_, i) => `<i class="pip${i < v ? ' on' : ''}"></i>`).join('');
     return `<div class="stat-row"><span class="name">${s.id}</span><span class="pips">${dots}</span></div>`;
   }).join('');
-  box.innerHTML = `
-    <p class="field-label">능력치</p>
+  btn.querySelector('.prof-stats').innerHTML = `
     <div class="stat-grid">${rows}</div>
     <p class="kit-line">시작 장비 — ${p.items.join(', ')}</p>`;
+
+  // 카드가 길어지면서 아래쪽이 잘릴 수 있다. 펼쳐진 부분까지 보이게 한다.
+  requestAnimationFrame(() => btn.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
 }
 
 // ── HUD ───────────────────────────────────────────────────────
@@ -290,13 +302,52 @@ async function beginInterlude() {
     btn.addEventListener('click', () => nextChapter(r.id));
     dom.choices.appendChild(btn);
   });
-  scrollLog(); // 선택지가 늘어난 만큼 로그가 위로 밀린다
+  attachControls();
+  scrollLog();
 }
 
-// ── 이벤트 재생 ───────────────────────────────────────────────
+// ── 스크롤 ────────────────────────────────────────────────────
+//
+// 이 게임에서 읽는 것이 곧 플레이다. 그래서 스크롤의 규칙은 하나다:
+// **이번에 새로 생긴 것의 첫 줄이 화면 맨 위에 온다.**
+//
+// 예전에는 무엇이 붙든 맨 아래로 내렸다. 장면이 바뀌어도 마찬가지여서,
+// 새 장면의 지문은 늘 이미 한참 읽다 만 위치에서 나타났다. 처음부터
+// 읽으려면 매번 손으로 올려야 했다.
+
+/** 로그 안에서 이 요소의 위치. */
+function offsetInLog(node) {
+  return node.getBoundingClientRect().top - dom.log.getBoundingClientRect().top + dom.log.scrollTop;
+}
+
+/** 이 요소의 첫 줄을 화면 맨 위로 올린다. */
+function scrollToTopOf(node, behavior = 'smooth') {
+  if (!node) return;
+  const top = Math.max(0, offsetInLog(node) - 6);
+  dom.log.scrollTo({ top, behavior });
+}
 
 function scrollLog() {
   dom.log.scrollTo({ top: dom.log.scrollHeight, behavior: 'smooth' });
+}
+
+/** 아래에 더 읽을 것이 있으면 하단에 결을 하나 남긴다. */
+function markOverflow() {
+  const more = dom.log.scrollTop + dom.log.clientHeight < dom.log.scrollHeight - 4;
+  dom.log.classList.toggle('more-below', more);
+}
+
+/**
+ * 이번 턴에 붙은 것을 기준으로 화면을 맞춘다.
+ *
+ * 새로 생긴 것이 화면보다 짧으면 전부 보이고, 길면 위에서부터 보인다.
+ * 아래로 밀어내지 않는 것이 핵심이다 — 밀어내면 첫 줄을 놓친다.
+ */
+function anchor(node) {
+  if (!node) return scrollLog();
+  const top = offsetInLog(node);
+  const grown = dom.log.scrollHeight - dom.log.clientHeight;
+  dom.log.scrollTo({ top: Math.min(Math.max(0, top - 6), Math.max(0, grown)), behavior: 'smooth' });
 }
 
 /** 새 장면이 시작되면 이전 장면을 접고 새 블록을 연다. */
@@ -314,6 +365,9 @@ function logTarget() {
 }
 
 function resetLog() {
+  // 선택지와 주사위는 로그 안에 얹혀 산다. 로그를 비우기 전에 꺼내 두지 않으면
+  // 같이 지워지고, 그 뒤로는 아무 버튼도 나타나지 않는다.
+  dom.controls.append(dom.diceBar, dom.choices);
   dom.log.innerHTML = '';
   currentBlock = null;
 }
@@ -337,6 +391,13 @@ async function play(events) {
   dom.choices.innerHTML = '';
   dom.diceBar.hidden = true;
 
+  // 이번 턴에 처음 붙은 것. 재생이 끝나면 이것의 첫 줄로 화면을 맞춘다.
+  let head = null;
+  const mark = (node) => {
+    if (node && !head) head = node;
+    return node;
+  };
+
   for (const ev of events) {
     if (ev.type === 'pressure') sfx.danger();
     if (ev.type === 'combatStart') sfx.danger();
@@ -345,24 +406,25 @@ async function play(events) {
 
     if (ev.type === 'scene') {
       sfx.page();
-      openSceneBlock(ev);
+      // 장면이 바뀌면 그 장면의 머리말이 기준이 된다. 앞의 것은 잊는다.
+      head = openSceneBlock(ev).section;
     } else if (ev.type === 'notes') {
       // 단서는 칩 대신 카드로 보여준다. 같은 말을 두 번 하지 않는다.
       const chips = ev.notes.filter((n) => n.kind !== 'clue');
-      if (chips.length) renderEvent(logTarget(), { ...ev, notes: chips });
+      if (chips.length) mark(renderEvent(logTarget(), { ...ev, notes: chips }));
       for (const n of ev.notes) {
         if (n.kind === 'clue' && n.clue) {
           await wait(180);
-          renderEvent(logTarget(), { type: 'clue', clue: n.clue });
-          scrollLog();
+          mark(renderEvent(logTarget(), { type: 'clue', clue: n.clue }));
+          anchor(head);
         }
       }
     } else {
-      renderEvent(logTarget(), ev);
+      mark(renderEvent(logTarget(), ev));
     }
 
     updateHud();
-    scrollLog();
+    anchor(head);
     await wait(PACING[ev.type] ?? 200);
   }
 
@@ -373,9 +435,29 @@ async function play(events) {
     ? '소지품을 쓴다면 이름을 적는다…'
     : '직접 행동을 적는다…';
   renderChoices();
-  scrollLog();
+
+  // 선택지와 주사위는 서술 뒤에 이어 붙는다. 화면 아래 고정된 판이 아니라
+  // 읽던 문장 다음 줄에 온다 — 그래야 읽고 나서 고르는 순서가 된다.
+  attachControls();
+  anchor(head);
+  setTimeout(markOverflow, 420); // 부드러운 스크롤이 멈춘 뒤에 잰다
   saveGame(state);
   syncArchive();
+}
+
+/**
+ * 선택지·주사위 버튼을 지금 장면의 기록 끝에 붙인다.
+ *
+ * 예전에는 화면 하단에 고정된 칸이었다. 선택지 넷이면 그 칸이 화면의 절반 가까이를
+ * 차지했고, 정작 읽어야 할 서술은 남은 3분의 1에서 스크롤됐다. 이 게임에서 읽는 것이
+ * 곧 플레이인데 읽을 자리가 가장 좁았다.
+ *
+ * DOM 을 옮기기만 한다 — 같은 노드라서 숫자키 단축키도 그대로 동작한다.
+ */
+function attachControls() {
+  const target = logTarget();
+  if (!dom.diceBar.hidden) target.appendChild(dom.diceBar);
+  target.appendChild(dom.choices);
 }
 
 // ── 도감 갱신 ─────────────────────────────────────────────────
@@ -716,6 +798,8 @@ $('btn-begin').addEventListener('click', () => {
     }),
   );
 });
+
+dom.log.addEventListener('scroll', markOverflow, { passive: true });
 
 dom.btnRoll.addEventListener('click', rollDice);
 

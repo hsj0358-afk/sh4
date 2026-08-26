@@ -9,6 +9,8 @@
 // coda 는 상태를 읽어 마지막 몇 줄을 덧붙인다. 같은 결말이라도 혼자 도착한 사람과
 // 셋이 도착한 사람이 같은 문장으로 끝나서는 안 된다.
 
+import { subj, and } from '../korean.js';
+
 const has = (state, clue) => state.clues.includes(clue);
 const holds = (state, item) => state.inventory.some((i) => i.name === item);
 const alive = (state, id) => !!state.companions[id]?.present;
@@ -97,9 +99,9 @@ export function endingCoda(state) {
       '이 탐사에서 가장 있을 법하지 않은 결과가 그것이다.',
     );
   } else if (survivors.length === 2) {
-    lines.push(`${survivors[0].name}과 ${survivors[1].name}가 함께 나왔다.`);
+    lines.push(`${and(survivors[0].name)} ${subj(survivors[1].name)} 함께 나왔다.`);
   } else if (survivors.length === 1) {
-    lines.push(`${survivors[0].name}가 끝까지 옆에 있었다.`);
+    lines.push(`${subj(survivors[0].name)} 끝까지 옆에 있었다.`);
   } else {
     lines.push('나올 때 당신은 혼자였다. 들어갈 때는 아니었다.');
   }

@@ -243,10 +243,16 @@ export function applyAlly(combat, state, companionId) {
   combat.resolve = clamp(combat.resolve - 2, 0, combat.maxResolve);
   combat.pressure = clamp(combat.pressure - 2, 0, combat.maxPressure);
 
-  const risk = exposure >= 6 ? -3 : -1;
+  // 부르는 때가 곧 판단이다.
+  //
+  // 압박이 낮을 때 부르면 둘이 서서 통로를 좁히는 일이고, 신뢰가 올라간다.
+  // 이미 무너지는 판에 부르면 그를 방패로 쓴 것이다. 그는 그것을 안다.
+  // (이 분기가 없으면 지원 요청은 다치게 하면서 신뢰를 버는 공짜 수단이 된다.)
+  const heavy = exposure >= 6;
+  const risk = heavy ? -3 : -1;
   return {
-    effects: { companion: { id: companionId, hp: risk, trust: 1 } },
-    injured: risk <= -3,
+    effects: { companion: { id: companionId, hp: risk, trust: heavy ? -1 : 1 } },
+    injured: heavy,
   };
 }
 

@@ -11,6 +11,13 @@ const EXIT_LABEL = {
   overrun: '제압당했다',
 };
 
+const BETRAYAL_LABEL = {
+  leave: '떠났다',
+  take: '떠났다',
+  sell: '새어 나갔다',
+  refuse: '거절당했다',
+};
+
 const el = (tag, cls, text) => {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -101,6 +108,19 @@ function build(ev) {
     case 'pressure': {
       const wrap = el('div', 'pressure');
       wrap.appendChild(el('span', 'tag', '상황 변화'));
+      paragraphs(wrap, ev.text);
+      return wrap;
+    }
+
+    case 'relation': {
+      const wrap = el('div', `relation ${ev.tone || ''}`);
+      paragraphs(wrap, ev.text, false);
+      return wrap;
+    }
+
+    case 'betrayal': {
+      const wrap = el('div', `betrayal ${ev.kind}`);
+      wrap.appendChild(el('span', 'tag', BETRAYAL_LABEL[ev.kind] || '관계'));
       paragraphs(wrap, ev.text);
       return wrap;
     }

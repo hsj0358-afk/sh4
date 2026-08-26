@@ -277,6 +277,15 @@ export function applyEffects(state, effect) {
       if (c.hp === 0) {
         c.present = false;
         notes.push({ kind: 'bad', text: `${c.name} 이탈` });
+
+        // 한 사람이 쓰러지면 남은 사람들은 다음이 자기 차례일 수 있다고 생각한다.
+        // 신뢰가 관리하는 수치가 되려면 이런 식으로도 깎여야 한다 —
+        // 대사 한 줄을 잘못 고르는 것 말고, 사람을 잃는 것으로도.
+        for (const other of Object.values(state.companions)) {
+          if (other.id === c.id || !other.present || other.trust <= 0) continue;
+          other.trust = clamp(other.trust - 1, 0, 5);
+          notes.push({ kind: 'bad', text: `${other.name} 신뢰도 -1` });
+        }
       }
     }
     if (ce.injured !== undefined) c.injured = ce.injured;

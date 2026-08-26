@@ -6,14 +6,21 @@ import { DIFFICULTIES } from '../content/difficulty.js';
 import { getEpisode, FIRST_EPISODE } from '../content/episodes/index.js';
 import { createState, formatClock, dangerLabel, MAX_DANGER } from '../engine/state.js';
 import { createGM } from '../engine/gm.js';
-import { advanceEpisode, hasNextEpisode, chapterNumber } from '../engine/campaign.js';
+import {
+  advanceEpisode,
+  hasNextEpisode,
+  chapterNumber,
+  interludeFor,
+} from '../engine/campaign.js';
 import { saveGame, loadGame, clearGame, loadSettings, saveSettings } from '../engine/save.js';
+import { loadArchive, saveArchive, countRun, record } from '../engine/archive.js';
 import { renderEvent, createSceneBlock } from './render.js';
 import {
   statusPanel,
   inventoryPanel,
   codexPanel,
   partyPanel,
+  archivePanel,
   PANEL_TITLES,
 } from './panels.js';
 import { mapPanel } from './map.js';
@@ -53,6 +60,10 @@ let busy = false;
 let currentBlock = null;
 let settings = loadSettings();
 setAudioEnabled(settings.sound !== false);
+// 회차를 가로지르는 기록. 한 판이 끝나도 도감에는 남는다.
+let archive = loadArchive();
+// 같은 판의 끝을 두 번 세지 않는다.
+let recordedRun = null;
 
 // ── 화면 전환 ─────────────────────────────────────────────────
 
@@ -224,8 +235,10 @@ function renderEndActions() {
     const next = document.createElement('button');
     next.className = 'btn btn-primary';
     next.textContent = '다음 장으로';
-    next.addEventListener('click', () => nextChapter());
+    next.addEventListener('click', () => beginInterlude());
     wrap.appendChild(next);
+    dom.choices.appendChild(wrap);
+    return;
   }
 
   const again = document.createElement('button');
@@ -239,9 +252,42 @@ function renderEndActions() {
   codex.className = 'btn';
   codex.textContent = '수첩을 다시 읽는다';
   codex.addEventListener('click', () => openPanel('codex'));
-  wrap.appendChild(again);
-  wrap.appendChild(codex);
+  const arc = document.createElement('button');
+  arc.className = 'btn';
+  arc.textContent = '도감을 연다';
+  arc.addEventListener('click', () => openPanel('archive'));
+  wrap.append(again, codex, arc);
   dom.choices.appendChild(wrap);
+}
+
+/**
+ * 막간 — 다음 장으로 가는 항로를 고른다 (기획서 18절 '분기형 캠페인').
+ * 고를 것이 하나뿐이면 막간을 건너뛴다. 선택지가 없는 선택은 선택이 아니다.
+ */
+async function beginInterlude() {
+  if (busy) return;
+  const inter = interludeFor(state);
+  if (!inter) return nextChapter();
+
+  sfx.page();
+  await play([
+    { type: 'narration', tone: 'gm', text: [inter.title] },
+    { type: 'narration', text: inter.intro },
+  ]);
+
+  dom.choices.innerHTML = '';
+  dom.inputbar.style.display = 'none';
+  inter.routes.forEach((r, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'choice';
+    btn.type = 'button';
+    btn.innerHTML =
+      `<span class="num">${i + 1}</span>${r.label}` +
+      `<span class="hint">${r.detail}</span>`;
+    btn.addEventListener('click', () => nextChapter(r.id));
+    dom.choices.appendChild(btn);
+  });
+  scrollLog(); // 선택지가 늘어난 만큼 로그가 위로 밀린다
 }
 
 // ── 이벤트 재생 ───────────────────────────────────────────────
@@ -274,6 +320,8 @@ const PACING = {
   narration: 340,
   player: 140,
   pressure: 320,
+  betrayal: 420,
+  relation: 260,
   checkRequest: 220,
   roll: 260,
   notes: 160,
@@ -289,6 +337,7 @@ async function play(events) {
   for (const ev of events) {
     if (ev.type === 'pressure') sfx.danger();
     if (ev.type === 'combatStart') sfx.danger();
+    if (ev.type === 'betrayal') sfx.danger();
     if (ev.type === 'notes' && ev.notes.some((n) => n.kind === 'clue')) sfx.clue();
 
     if (ev.type === 'scene') {
@@ -323,14 +372,73 @@ async function play(events) {
   renderChoices();
   scrollLog();
   saveGame(state);
+  syncArchive();
+}
+
+// ── 도감 갱신 ─────────────────────────────────────────────────
+//
+// 본 것은 판이 끝나기 전에, 한 턴마다 쌓아 둔다. 죽어서 끝난 회차도 본 것은 본 것이고,
+// 브라우저를 그냥 닫은 회차도 마찬가지다.
+//
+// 그래서 '이번에 처음 본 것'은 판이 끝나는 순간에는 이미 전부 아카이브에 들어가 있다.
+// 마지막에 물어보면 늘 빈손이 나온다. 매 턴 나온 것을 여기 모아 두었다가 끝에 한 번 읽는다.
+const runFirsts = { clues: [], items: [], companions: [], ending: null };
+
+function resetFirsts() {
+  runFirsts.clues = [];
+  runFirsts.items = [];
+  runFirsts.companions = [];
+  runFirsts.ending = null;
+}
+
+function syncArchive() {
+  if (!state) return;
+  const terminal = !!state.ended && state.ended.type !== 'chapter';
+  const fresh = terminal && recordedRun !== state.seed;
+
+  const { archive: next, firsts } = record(archive, state, {
+    ended: fresh,
+    completed: fresh && state.ended.type === 'finale',
+  });
+  archive = next;
+  saveArchive(archive);
+
+  for (const key of ['clues', 'items', 'companions']) {
+    runFirsts[key] = [...new Set([...runFirsts[key], ...firsts[key]])];
+  }
+  if (firsts.ending) runFirsts.ending = firsts.ending;
+
+  if (fresh) {
+    recordedRun = state.seed;
+    announceFirsts();
+  }
+}
+
+/** 이번 회차에 처음 본 것들을 도감 알림으로 띄운다. */
+function announceFirsts() {
+  const lines = [];
+  if (runFirsts.ending) lines.push('새로운 결말을 기록했다.');
+  if (runFirsts.clues.length) lines.push(`처음 보는 단서 ${runFirsts.clues.length}개.`);
+  if (runFirsts.items.length) lines.push(`처음 손에 넣은 물건 ${runFirsts.items.length}개.`);
+  if (runFirsts.companions.length) {
+    lines.push(`처음 만난 사람 ${runFirsts.companions.length}명.`);
+  }
+  if (!lines.length) return;
+
+  renderEvent(logTarget(), {
+    type: 'narration',
+    tone: 'gm',
+    text: ['도감에 새로 올라간 것이 있다.', ...lines],
+  });
+  scrollLog();
 }
 
 // ── 행동 ──────────────────────────────────────────────────────
 
 /** 다음 에피소드로. 탐사자는 초기화되지 않는다. */
-async function nextChapter() {
+async function nextChapter(routeId) {
   if (busy) return;
-  const moved = advanceEpisode(state);
+  const moved = advanceEpisode(state, { routeId });
   if (!moved.ok) return;
 
   sfx.page();
@@ -345,6 +453,16 @@ async function nextChapter() {
       tone: 'gm',
     },
   ];
+  // 고른 항로가 여정을 서술한다. 배 위에서 일어난 일도 여기서 드러난다.
+  if (moved.route) intro.push({ type: 'narration', text: moved.route.text });
+  if (moved.betrayal) {
+    intro.push({
+      type: 'betrayal',
+      kind: moved.betrayal.kind,
+      companion: moved.betrayal.companion.name,
+      text: moved.betrayal.text,
+    });
+  }
   if (moved.notes?.length) intro.push({ type: 'notes', notes: moved.notes });
 
   await play(intro.concat(gm.start()));
@@ -421,6 +539,7 @@ function openPanel(kind) {
   else if (kind === 'codex') content = codexPanel(state);
   else if (kind === 'party') content = partyPanel(state);
   else if (kind === 'map') content = mapPanel(state, episode);
+  else if (kind === 'archive') content = archivePanel(archive);
   else if (kind === 'menu') content = menuPanel();
 
   dom.sheetBody.appendChild(content);
@@ -450,6 +569,11 @@ function menuPanel() {
     saveSettings(settings);
     syncSound();
   });
+
+  const arcBtn = document.createElement('button');
+  arcBtn.className = 'btn';
+  arcBtn.textContent = '도감';
+  arcBtn.addEventListener('click', () => openPanel('archive'));
 
   const saveBtn = document.createElement('button');
   saveBtn.className = 'btn';
@@ -483,7 +607,7 @@ function menuPanel() {
     '목표값에서 3 이내로 모자라면 부분 성공 — 대가를 치르고 얻는다. ' +
     '실패해도 이야기는 멈추지 않는다.';
 
-  wrap.append(soundBtn, saveBtn, restart, about);
+  wrap.append(soundBtn, arcBtn, saveBtn, restart, about);
   return wrap;
 }
 
@@ -496,6 +620,10 @@ async function useItem(name) {
 
 function boot(newState) {
   state = newState;
+  recordedRun = null;
+  resetFirsts();
+  archive = countRun(archive);
+  saveArchive(archive);
   episode = getEpisode(FIRST_EPISODE);
   gm = createGM({ state, episode });
   resetLog();
@@ -550,6 +678,8 @@ $('btn-continue').addEventListener('click', () => {
   sfx.page();
   resume();
 });
+
+$('btn-archive').addEventListener('click', () => openPanel('archive'));
 
 $('btn-about').addEventListener('click', () => {
   dom.sheetTitle.textContent = '이 게임에 대하여';

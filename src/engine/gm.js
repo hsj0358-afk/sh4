@@ -3,6 +3,7 @@
 // 장면 진입 → 서술 → 선택/자유입력 → (필요시) 판정 → 결과 분기 → 다음 장면.
 // UI 는 이 엔진이 뱉는 이벤트 배열을 로그에 붙이기만 한다.
 
+import { subj } from '../korean.js';
 import { rollCheck, selectBranch, OUTCOME } from './dice.js';
 import { buildCheck, difficultyLabel } from './rules.js';
 import { applyEffects, formatClock, isDead, isBroken } from './state.js';
@@ -11,6 +12,15 @@ import { createRng } from './rng.js';
 import { getItem } from '../content/items.js';
 import { getEncounter } from '../content/encounters.js';
 import { resolveEnding, endingCoda } from '../content/endings.js';
+import {
+  checkBetrayal,
+  checkRefusal,
+  isShaky,
+  warningFor,
+  recoveryFor,
+  setItemTier,
+  MOMENT,
+} from './betrayal.js';
 import {
   startCombat,
   combatActions,
@@ -24,6 +34,12 @@ import {
   actionNarration,
   EXIT,
 } from './combat.js';
+
+// 배신 판정은 "가져갈 만한 것"을 알아야 하는데, 등급은 콘텐츠가 안다.
+// 엔진이 콘텐츠를 import 하면 방향이 거꾸로가 되므로 여기서 한 번 주입한다.
+setItemTier((name) => getItem(name)?.type || 'gear');
+
+const WORTH_TAKING = ['relic', 'special'];
 
 /** 조건 확인. 콘텐츠의 requires 를 상태와 대조한다. */
 export function meets(state, req) {
@@ -94,6 +110,7 @@ export function createGM({ state, episode }) {
   function beginCombat(id, events) {
     const enc = getEncounter(id);
     if (!enc) return;
+    state.flags[`encountered:${id}`] = true; // 도감이 이 플래그로 조우를 되짚는다
     state.combat = startCombat(enc);
     events.push({ type: 'combatStart', status: combatStatus(state.combat, enc) });
     events.push({ type: 'narration', text: asArray(enc.intro, state), tone: 'combat' });
@@ -134,6 +151,7 @@ export function createGM({ state, episode }) {
 
     events.push({ type: 'combatRound', status: combatStatus(state.combat, enc) });
 
+    noteRelations(events);
     if (checkVitals(events)) return;
     if (checkExit(state.combat)) finishCombat(events);
     sync();
@@ -150,16 +168,32 @@ export function createGM({ state, episode }) {
       const c = state.companions[companionId];
       events.push({ type: 'player', text: `${c?.name || '동행'}에게 지원을 요청한다` });
 
+      // 부르는 것과 오는 것은 다른 일이다.
+      const refusal = checkRefusal(c, rng);
+      if (refusal) {
+        events.push({
+          type: 'betrayal',
+          kind: refusal.kind,
+          companion: c.name,
+          text: refusal.text,
+        });
+        const refuseNotes = applyEffects(state, refusal.effects);
+        if (refuseNotes.length) events.push({ type: 'notes', notes: refuseNotes });
+        afterPlayerAction(events);
+        sync();
+        return events;
+      }
+
       const { effects, injured } = applyAlly(state.combat, state, companionId);
       events.push({
         type: 'narration',
         text: injured
           ? [
-              `${c.name}가 당신 앞으로 나선다. 말릴 틈이 없었다.`,
+              `${subj(c.name)} 당신 앞으로 나선다. 말릴 틈이 없었다.`,
               '한 사람 몫의 시간을 벌었고, 그 값은 그가 치렀다.',
             ]
           : [
-              `${c.name}가 옆으로 붙는다. 둘이 서면 통로가 좁아지는 쪽은 저쪽이다.`,
+              `${subj(c.name)} 옆으로 붙는다. 둘이 서면 통로가 좁아지는 쪽은 저쪽이다.`,
               '숨을 고를 틈이 생긴다.',
             ],
         tone: 'combat',
@@ -198,6 +232,45 @@ export function createGM({ state, episode }) {
 
     if (checkVitals(events)) return;
     afterPlayerAction(events);
+  }
+
+  // ── 배신 ──────────────────────────────────────────────────────
+
+  /**
+   * 관계가 문턱을 넘나들면 그때마다 한 줄 남긴다.
+   *
+   * 배신의 첫 번째 원칙은 '예고된다'이다. 동행 패널을 열어야만 알 수 있으면
+   * 예고가 아니라 열람이다. 흔들리기 시작한 순간과 다시 붙은 순간을 로그에 적는다.
+   */
+  function noteRelations(events) {
+    for (const c of Object.values(state.companions)) {
+      const key = `shakyWarned:${c.id}`;
+      if (isShaky(c)) {
+        if (state.flags[key]) continue;
+        state.flags[key] = true;
+        events.push({ type: 'relation', tone: 'warn', text: [warningFor(c)] });
+      } else if (state.flags[key]) {
+        delete state.flags[key];
+        if (c.present) events.push({ type: 'relation', tone: 'good', text: [recoveryFor(c)] });
+      }
+    }
+  }
+
+  /** 배신을 판정하고, 일어났으면 로그와 상태에 반영한다. */
+  function maybeBetrayal(moment, events) {
+    const b = checkBetrayal(state, rng, moment);
+    if (!b) return null;
+
+    events.push({
+      type: 'betrayal',
+      kind: b.kind,
+      companion: b.companion.name,
+      text: b.text,
+    });
+    const notes = applyEffects(state, b.effects);
+    if (notes.length) events.push({ type: 'notes', notes });
+    sync();
+    return b;
   }
 
   function usedKey(sceneId, choiceId) {
@@ -297,6 +370,7 @@ export function createGM({ state, episode }) {
     events.push({ type: 'narration', text: asArray(revisit ? s.revisitBody : s.body, state) });
 
     if (enterNotes.length) events.push({ type: 'notes', notes: enterNotes });
+    noteRelations(events);
 
     // 장면이 조우를 걸고 있으면 바로 전투로 들어간다.
     if (s.combat && !state.combat && !state.flags[`combatDone:${id}`]) {
@@ -372,7 +446,14 @@ export function createGM({ state, episode }) {
 
     if (res.clueDetail) events.push({ type: 'clue', clue: res.clueDetail });
 
+    noteRelations(events);
     if (checkVitals(events)) return;
+
+    // 값나가는 것이 가방에 들어온 직후는 흔들리는 사람에게 가장 선명한 순간이다.
+    const gained = (effects.items || []).filter((n) =>
+      WORTH_TAKING.includes(getItem(n)?.type),
+    );
+    if (gained.length) maybeBetrayal(MOMENT.RELIC, events);
 
     const goto = res.goto || effects.goto;
     if (goto) enterScene(goto, events);

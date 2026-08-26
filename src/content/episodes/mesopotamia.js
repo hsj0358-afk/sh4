@@ -8,6 +8,7 @@
 //
 // 그리고 이집트의 단서와 이곳의 단서가 만나야만 열리는 결론이 하나 있다.
 
+import { subj } from '../../korean.js';
 import { CLUE_TITLES } from '../clues.js';
 
 const ep = {
@@ -1516,7 +1517,7 @@ const ep = {
             const ally = Object.values(state.companions).find((c) => c.present);
             if (ally) {
               out.push(
-                `${ally.name}가 옆에서 같은 자세로 선다. 아무 말도 하지 않는다.`,
+                `${subj(ally.name)} 옆에서 같은 자세로 선다. 아무 말도 하지 않는다.`,
                 '그것이 지금 할 수 있는 가장 친절한 일이라는 것을, 둘 다 알고 있다.',
               );
             } else {
@@ -1656,7 +1657,7 @@ const ep = {
             const ally = Object.values(state.companions).find((c) => c.present);
             if (ally) {
               out.push(
-                `${ally.name}가 옆에서 같은 자세로 선다. 아무 말도 하지 않는다.`,
+                `${subj(ally.name)} 옆에서 같은 자세로 선다. 아무 말도 하지 않는다.`,
                 '그것이 지금 할 수 있는 가장 친절한 일이라는 것을, 둘 다 알고 있다.',
               );
             } else {

@@ -12,6 +12,8 @@
 //   3) 전역 행동 사전 (휴식, 대화, 조사, 소지품, 이동 …)
 //   4) 해석 실패 — 세계관 안에서 되묻는다
 
+import { subj, topic, obj } from '../korean.js';
+
 const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, '');
 
 function hit(text, keys) {
@@ -144,11 +146,11 @@ function companionTalk(text, state) {
       speaker: c.name,
       text: warm
         ? [
-            `${c.name}가 당신 쪽으로 몸을 돌린다.`,
+            `${subj(c.name)} 당신 쪽으로 몸을 돌린다.`,
             '"먼저 물어봐 주는 사람이 드물어요." 대답은 짧지만, 등이 조금 펴진다.',
           ]
         : [
-            `${c.name}는 당신의 말을 끝까지 듣고, 잠시 침묵한다.`,
+            `${topic(c.name)} 당신의 말을 끝까지 듣고, 잠시 침묵한다.`,
             '"그렇게 하죠." 그 이상은 말하지 않는다.',
           ],
       effects: { companion: { id: c.id, affinity: 1 }, time: 1 },
@@ -165,7 +167,7 @@ function itemUse(text, state, getItemDef) {
     if (def?.use) {
       return {
         kind: 'narration',
-        text: [`${inv.name}을(를) 쓴다.`, def.use.text],
+        text: [`${obj(inv.name)} 쓴다.`, def.use.text],
         effects: {
           hp: def.use.hp || 0,
           san: def.use.san || 0,
@@ -177,7 +179,7 @@ function itemUse(text, state, getItemDef) {
     return {
       kind: 'narration',
       text: [
-        `${inv.name}을(를) 손에 쥔다.`,
+        `${obj(inv.name)} 손에 쥔다.`,
         def?.desc || '익숙한 무게다.',
         '쓸 자리가 오면, 알아서 손이 먼저 움직일 것이다.',
       ],

@@ -647,6 +647,55 @@ input::placeholder {
   margin-bottom: 0;
 }
 
+/* 관계 경고 — 곁눈질 한 줄. 카드가 아니라 방주다. */
+.relation {
+  margin: 2px 0 16px;
+  padding-left: 12px;
+  border-left: 2px solid rgba(160, 160, 170, 0.4);
+}
+.relation p {
+  font-family: var(--serif);
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--ink-dim);
+  margin: 0;
+}
+.relation.warn {
+  border-left-color: rgba(194, 103, 58, 0.6);
+}
+.relation.good {
+  border-left-color: var(--verdigris);
+}
+
+/* 배신 — 압박보다 차갑게. 붉은색이 아니라 재색이다. */
+.betrayal {
+  margin: 6px 0 18px;
+  padding: 12px 14px;
+  border: 1px solid rgba(160, 160, 170, 0.28);
+  border-left: 3px solid rgba(160, 160, 170, 0.5);
+  border-radius: 10px;
+  background: rgba(120, 124, 134, 0.07);
+}
+.betrayal .tag {
+  display: block;
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  color: #a8a49c;
+  margin-bottom: 6px;
+}
+.betrayal p {
+  font-family: var(--serif);
+  font-size: 15.5px;
+  line-height: 1.9;
+  margin: 0 0 8px;
+}
+.betrayal p:last-child {
+  margin-bottom: 0;
+}
+.betrayal.sell {
+  border-left-color: var(--danger);
+}
+
 /* 판정 요청 카드 */
 .check-card {
   margin: 4px 0 18px;
@@ -1205,6 +1254,58 @@ input::placeholder {
   font-size: 12.5px;
   color: var(--verdigris);
 }
+.li-warn {
+  margin: 5px 0 0;
+  font-size: 12.5px;
+  color: var(--danger);
+}
+.list-item.warn {
+  padding-left: 10px;
+  border-left: 2px solid rgba(194, 103, 58, 0.5);
+}
+
+/* 도감 — 아직 못 본 것은 자리만 남는다 */
+.list-item.locked {
+  opacity: 0.45;
+}
+.list-item.locked .li-name {
+  letter-spacing: 0.3em;
+  color: var(--ink-faint);
+}
+.arc-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 0 4px;
+}
+.arc-row .arc-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 5px;
+}
+.arc-name {
+  font-size: 12.5px;
+  color: var(--ink-dim);
+}
+.arc-count {
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  color: var(--gold-soft);
+}
+.arc-row .bar {
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(200, 162, 74, 0.12);
+  overflow: hidden;
+}
+.arc-row .bar i {
+  display: block;
+  height: 100%;
+  background: var(--gold-soft);
+  transition: width 0.4s ease;
+}
+
 .empty {
   padding: 26px 0;
   text-align: center;

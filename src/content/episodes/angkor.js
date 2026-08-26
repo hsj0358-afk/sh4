@@ -8,6 +8,7 @@
 //   2. 결말이 갈린다. 마지막 선택 하나가 아니라, 세 대륙을 지나오며 무엇을 알아냈고
 //      누구를 잃지 않았는지가 함께 정한다. content/endings.js 를 참조.
 
+import { subj } from '../../korean.js';
 import { CLUE_TITLES } from '../clues.js';
 
 const ep = {
@@ -1051,7 +1052,7 @@ const ep = {
             const ally = Object.values(state.companions).find((c) => c.present);
             if (ally) {
               out.push(
-                `${ally.name}가 옆에서 같은 자세로 선다. 아무 말도 하지 않는다.`,
+                `${subj(ally.name)} 옆에서 같은 자세로 선다. 아무 말도 하지 않는다.`,
                 '그것이 지금 할 수 있는 가장 친절한 일이라는 것을, 둘 다 알고 있다.',
               );
             } else {
@@ -1251,7 +1252,7 @@ const ep = {
               } else if (c.id === 'seraphina') {
                 out.push('세라피나는 아무 말도 하지 않는다. 대신 수첩을 펴서 받아 적을 준비를 한다.');
               } else {
-                out.push(`${c.name}가 한 걸음 앞으로 나선다. 그것이 대답이다.`);
+                out.push(`${subj(c.name)} 한 걸음 앞으로 나선다. 그것이 대답이다.`);
               }
             }
             out.push('아무도 재촉하지 않고 아무도 말리지 않는다. 이 결정이 당신 것이라는 데 모두가 동의한 얼굴들이다.');

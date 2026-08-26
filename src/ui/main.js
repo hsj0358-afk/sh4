@@ -178,7 +178,10 @@ function updateCombatBar() {
 
   const escape = $('cb-escape');
   escape.hidden = c.escape <= 0;
-  escape.textContent = `도주 ${c.escape}/${c.escapeNeeded} — 한 번 더 성공하면 벗어난다`;
+  const left = Math.max(1, c.escapeNeeded - c.escape);
+  escape.textContent =
+    `도주 ${c.escape}/${c.escapeNeeded} — ` +
+    (left === 1 ? '한 번 더 성공하면 벗어난다' : `${left}번 더 성공하면 벗어난다`);
 }
 
 function updateHud() {

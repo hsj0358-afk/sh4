@@ -120,6 +120,27 @@ const GLOBAL_ACTIONS = [
     },
   },
   {
+    // 어두운 곳에서 가장 먼저 적게 되는 말이다. 장면마다 따로 받지 않고 여기서 받는다.
+    id: 'light',
+    keys: ['불을 켠다', '불을 밝', '등불을 켠', '램프를 켠', '횃불을 켠', '밝힌다', '비춘다'],
+    build({ state, getItemDef }) {
+      const lit = state.inventory.find(
+        (i) =>
+          getItemDef(i.name)?.bonus?.tags.includes('암흑') && (i.uses === null || i.uses > 0),
+      );
+      return {
+        kind: 'narration',
+        text: lit
+          ? [`${obj(lit.name)} 들어 앞을 비춘다.`, '빛이 닿는 데까지가 지금 당신의 세계다.']
+          : [
+              '불을 밝히고 싶지만, 태울 것이 없다.',
+              '성냥 한 개비가 손끝에서 타들어 간다. 3초. 그다음은 어둠이다.',
+            ],
+        effects: lit ? { time: 1 } : { san: -1, time: 1 },
+      };
+    },
+  },
+  {
     id: 'pray',
     keys: ['기도', '빈다', '성호'],
     build() {
@@ -302,7 +323,7 @@ export function interpret(input, ctx) {
   if (used) return used;
 
   for (const g of GLOBAL_ACTIONS) {
-    if (hit(text, g.keys)) return g.build({ state, clueTitles });
+    if (hit(text, g.keys)) return g.build({ state, clueTitles, getItemDef });
   }
 
   // 4) 동사만 잡히는 경우 — 장면의 기본 조사/이동으로 흘려보낸다.

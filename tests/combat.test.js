@@ -398,3 +398,32 @@ test('어떤 시드로도 전투는 반드시 끝난다', () => {
     assert.equal(state.combat, null, `seed ${seed}: 전투가 끝나지 않았다`);
   }
 });
+
+// ── 부르는 때가 곧 판단이다 ──────────────────────────────────────
+//
+// 지원 요청이 늘 신뢰 +1 이었을 때는, 동료를 다치게 하면서 신뢰를 버는
+// 공짜 수단이었다. 이제 언제 부르느냐가 그 사람이 당신을 어떻게 보는지를 정한다.
+
+test('압박이 낮을 때 부르면 신뢰가 오른다', () => {
+  const state = fresh();
+  applyEffects(state, { companions: ['finch'] });
+  const c = startCombat(enc);
+  c.pressure = 2;
+
+  const { effects, injured } = applyAlly(c, state, 'finch');
+  assert.equal(injured, false);
+  assert.equal(effects.companion.trust, 1);
+  assert.equal(effects.companion.hp, -1);
+});
+
+test('무너지는 판에 부르면 방패로 쓴 것이 된다', () => {
+  const state = fresh();
+  applyEffects(state, { companions: ['finch'] });
+  const c = startCombat(enc);
+  c.pressure = 8;
+
+  const { effects, injured } = applyAlly(c, state, 'finch');
+  assert.equal(injured, true);
+  assert.equal(effects.companion.trust, -1, '방패로 쓰고도 신뢰를 벌었다');
+  assert.ok(effects.companion.hp <= -3);
+});

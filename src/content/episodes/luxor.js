@@ -10,6 +10,7 @@
 
 import { subj, obj } from '../../korean.js';
 import { CLUE_TITLES } from '../clues.js';
+import { hasLight } from '../items.js';
 import { hoursSince, phaseOfDay, ticksUntil } from '../../clock.js';
 
 const ep = {
@@ -729,8 +730,8 @@ const ep = {
       body: (state) => [
         '통로는 아래로 기울어져 있다. 각도가 일정하다. 사람이 걷기 좋은 각도가 아니라, ' +
           '무언가를 굴려 내리기 좋은 각도다.',
-        state.inventory.some((i) => i.name === '횃불')
-          ? '횃불이 벽을 핥는다. 불꽃이 안쪽으로 눕는다 — 어딘가에서 공기가 빠져나가고 있다.'
+        hasLight(state)
+          ? '불꽃이 벽을 핥는다. 불꽃이 안쪽으로 눕는다 — 어딘가에서 공기가 빠져나가고 있다.'
           : '빛이 없다. 성냥 한 개비의 수명만큼만 앞이 보인다. 이건 좋지 않다.',
         '벽에는 부조가 이어진다. 처음에는 익숙한 것들이다. 배, 곡식, 왕관.',
         '그러다 어느 지점부터, 조각의 손이 바뀐다.',
@@ -859,7 +860,7 @@ const ep = {
             tags: ['해독', '조사'],
             target: 13,
             label: '지식 판정',
-            prompt: ['횃불을 벽에 가까이 댄다. 그림자의 각도에 따라 조각이 다르게 읽힌다.'],
+            prompt: ['불빛을 벽에 가까이 댄다. 그림자의 각도에 따라 조각이 다르게 읽힌다.'],
           },
           outcomes: {
             crit: {
@@ -971,7 +972,7 @@ const ep = {
         },
         {
           keys: ['횃불', '불을 켠다', '밝힌다'],
-          when: (s) => !s.inventory.some((i) => i.name === '횃불'),
+          when: (s) => !hasLight(s),
           text: [
             '불을 밝히고 싶지만, 태울 것이 없다.',
             '성냥 한 개비가 손끝에서 타들어 간다. 3초. 그다음은 어둠이다.',
@@ -1220,7 +1221,7 @@ const ep = {
       ],
       revisitBody: [
         '원형의 방은 당신이 두고 간 그대로다.',
-        '천장의 금속 별들이 횃불을 받아 아주 느리게 반짝인다.',
+        '천장의 금속 별들이 불빛을 받아 아주 느리게 반짝인다.',
       ],
       ambientCheck: {
         label: '천장의 별을 읽는다',

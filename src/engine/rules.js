@@ -1,7 +1,7 @@
 // 보정치 계산. 판정 하나가 어떤 근거로 그 숫자가 되었는지 전부 남긴다.
 // 플레이어가 "왜 이 숫자인가"를 항상 확인할 수 있어야 한다는 원칙(기획서 7-3).
 
-import { itemBonus, isLight } from '../content/items.js';
+import { itemBonus, hasLight } from '../content/items.js';
 import { companionAssist } from '../content/companions.js';
 import { getDifficulty } from '../content/difficulty.js';
 import { conditionPenalty, dangerPressure } from './state.js';
@@ -19,10 +19,8 @@ export const MAX_PENALTY_STACK = 4;
 /** 어두운 곳에서 빛 없이 하는 일의 대가. */
 export const DARK_PENALTY = 2;
 
-/** 지금 손에 켤 수 있는 것이 있는가. */
-export function hasLight(state) {
-  return state.inventory.some((i) => isLight(i.name) && (i.uses === null || i.uses > 0));
-}
+// 빛이 있는지는 소지품이 안다. 규칙은 그 답을 쓸 뿐이다.
+export { hasLight };
 
 /**
  * @param {object} state

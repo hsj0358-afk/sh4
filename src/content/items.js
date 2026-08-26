@@ -10,7 +10,7 @@ export const ITEMS = {
     type: 'gear', uses: 6,
     desc: '역청을 먹인 삼베. 지하에서는 이것이 시야 전부다.',
     bonus: { tags: ['암흑', '조사'], value: 2 },
-    note: '어두운 곳에서 자동으로 소모된다.',
+    note: '판정의 결과를 바꿨을 때만 한 번 닳는다.',
   },
   '동행의 등불': {
     type: 'gear', uses: 3,
@@ -244,6 +244,13 @@ export function getItem(name) {
  */
 export function isLight(name) {
   return !!ITEMS[name]?.bonus?.tags.includes('암흑');
+}
+
+/** 지금 손에 켤 수 있는 것이 있는가. */
+export function hasLight(state) {
+  return (state.inventory || []).some(
+    (i) => isLight(i.name) && (i.uses === null || i.uses > 0),
+  );
 }
 
 export function itemBonus(name, tags) {

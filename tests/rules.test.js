@@ -3,7 +3,7 @@ import { itemMattered } from '../src/engine/gm.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createState, applyEffects } from '../src/engine/state.js';
-import { buildCheck, difficultyLabel } from '../src/engine/rules.js';
+import { hasLight, buildCheck, difficultyLabel } from '../src/engine/rules.js';
 import { companionAssist } from '../src/content/companions.js';
 
 const scholar = () => createState({ name: '몰리', professionId: 'archaeologist', seed: 2 });
@@ -111,4 +111,43 @@ test('장비를 빼도 결과가 같으면 닳지 않는다 — 실패해도 마
 
 test('보정을 준 장비가 없으면 닳을 것도 없다', () => {
   assert.equal(itemMattered({ breakdown: [{ label: '설득', value: 4 }] }, resolve(10, 4, 12)), false);
+});
+
+// ── 빛 ──────────────────────────────────────────────────────────
+//
+// 유적 안의 서술은 전부 램프가 있다는 전제로 쓰여 있다. 그것이 맞다 —
+// 아무도 빛 없이 무덤에 들어가지 않는다. 규칙에 그 전제가 없어서
+// 성냥 한 개비로 쐐기문자를 읽는 사람이 나왔다.
+
+test('빛을 내는 물건을 알아본다', () => {
+  assert.equal(hasLight({ inventory: [{ name: '횃불', uses: 3 }] }), true);
+  assert.equal(hasLight({ inventory: [{ name: '역청 램프', uses: 8 }] }), true);
+  assert.equal(hasLight({ inventory: [{ name: '동행의 등불', uses: 1 }] }), true);
+  assert.equal(hasLight({ inventory: [{ name: '나침반', uses: null }] }), false);
+  assert.equal(hasLight({ inventory: [{ name: '횃불', uses: 0 }] }), false, '다 쓴 횃불');
+  assert.equal(hasLight({ inventory: [] }), false);
+});
+
+test('어두운 곳에서 빛이 없으면 판정이 어려워진다', () => {
+  const state = createState({ professionId: 'journalist', seed: 3 });
+  state.inventory = state.inventory.filter((i) => i.name !== '횃불');
+
+  const lit = buildCheck(state, { stat: '관찰', target: 12 }, { dark: false });
+  const dark = buildCheck(state, { stat: '관찰', target: 12 }, { dark: true });
+  assert.equal(dark.modifier, lit.modifier - 2);
+  assert.ok(dark.breakdown.some((b) => b.label === '빛이 없다'), '왜 어려운지 적히지 않았다');
+});
+
+test('빛을 들고 있으면 어두운 곳에서도 대가가 없다', () => {
+  const state = createState({ professionId: 'journalist', seed: 3 });
+  state.inventory.push({ name: '횃불', uses: 6 });
+  const dark = buildCheck(state, { stat: '관찰', target: 12 }, { dark: true });
+  assert.ok(!dark.breakdown.some((b) => b.label === '빛이 없다'));
+});
+
+test('밝은 곳에서는 빛을 따지지 않는다', () => {
+  const state = createState({ professionId: 'journalist', seed: 3 });
+  state.inventory = [];
+  const day = buildCheck(state, { stat: '관찰', target: 12 });
+  assert.ok(!day.breakdown.some((b) => b.label === '빛이 없다'));
 });

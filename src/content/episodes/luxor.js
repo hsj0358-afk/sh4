@@ -8,7 +8,7 @@
 // 판정은 전부 5구간(대실패/실패/부분성공/성공/대성공) 분기를 가진다.
 // 실패 분기는 길을 막지 않는다. 대가를 치르고 다른 문을 연다.
 
-import { subj } from '../../korean.js';
+import { subj, obj } from '../../korean.js';
 import { CLUE_TITLES } from '../clues.js';
 import { hoursSince, phaseOfDay, ticksUntil } from '../../clock.js';
 
@@ -720,6 +720,7 @@ const ep = {
     corridor: {
       id: 'corridor',
       location: '유적 내부 · 경사 통로',
+      dark: true, // 빛을 가져오지 않으면 판정이 어려워진다
       exits: ['입구로 돌아간다', '아래로'],
       onEnter(state, visits) {
         if (visits > 1) return {};
@@ -984,6 +985,7 @@ const ep = {
     shaft: {
       id: 'shaft',
       location: '유적 내부 · 수직 갱도',
+      dark: true, // 빛을 가져오지 않으면 판정이 어려워진다
       exits: ['통로', '아래의 방'],
       body: [
         '통로가 끊긴다. 발끝 앞에서 바닥이 사라지고, 어둠이 아래로 열린다.',
@@ -1202,6 +1204,7 @@ const ep = {
     hall: {
       id: 'hall',
       location: '유적 최하층 · 원형의 방',
+      dark: true, // 빛을 가져오지 않으면 판정이 어려워진다
       exits: ['갱도', '봉인된 문'],
       onEnter(state, visits) {
         if (visits > 1) return {};
@@ -1605,6 +1608,7 @@ const ep = {
     confrontation: {
       id: 'confrontation',
       location: '유적 내부 · 갱도 아래',
+      dark: true, // 빛을 가져오지 않으면 판정이 어려워진다
       exits: ['위로'],
       onEnter(state, visits) {
         if (visits > 1) return {};
@@ -1837,6 +1841,7 @@ const ep = {
     confrontation_fight: {
       id: 'confrontation_fight',
       location: '유적 내부 · 좁은 통로',
+      dark: true, // 빛을 가져오지 않으면 판정이 어려워진다
       exits: ['위로'],
       combat: 'crane_corridor',
       body: ['먼지가 아직 가라앉지 않았다.'],
@@ -1981,7 +1986,7 @@ const ep = {
       body: (state) => {
         const out = [
           '증기선이 카이로를 향해 강을 내려간다.',
-          '갑판 위에서 당신은 지난 이틀을 다시 센다. 무엇을 얻었고, 무엇을 두고 왔는지.',
+          `갑판 위에서 당신은 ${obj(spanWords(state.tick))} 다시 센다. 무엇을 얻었고, 무엇을 두고 왔는지.`,
         ];
         if (state.flags.craneAlly) {
           out.push('크레인의 전보가 알렉산드리아에서 기다리고 있을 것이다. 동맹은 아니지만, 적도 아니다.');
@@ -1991,7 +1996,9 @@ const ep = {
           out.push('크레인은 당신이 무엇을 들고 나왔는지 모른다. 아직은.');
         }
         out.push(
-          '강 너머 서쪽에서, 석회암 절벽이 아침 빛을 받아 붉어진다.',
+          phaseOfDay(state.tick) === 'night'
+            ? '강 너머 서쪽에서, 석회암 절벽이 어둠 속에 검은 덩어리로만 남아 있다.'
+            : '강 너머 서쪽에서, 석회암 절벽이 볕을 받아 붉어진다.',
           '그 아래 어딘가에서 문 하나가 반쯤 열린 채로 남아 있다.',
         );
         return out;
@@ -2008,5 +2015,14 @@ const ep = {
     },
   },
 };
+
+
+/** 이 탐사가 며칠짜리였는지를 말로 옮긴다. 하루 만에 끝낸 사람도 있다. */
+function spanWords(tick) {
+  const h = hoursSince(tick);
+  if (h < 20) return '지난 하루';
+  const days = Math.round(h / 24);
+  return days <= 1 ? '지난 하루' : `지난 ${days}일`;
+}
 
 export default ep;

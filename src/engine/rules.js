@@ -1,7 +1,7 @@
 // 보정치 계산. 판정 하나가 어떤 근거로 그 숫자가 되었는지 전부 남긴다.
 // 플레이어가 "왜 이 숫자인가"를 항상 확인할 수 있어야 한다는 원칙(기획서 7-3).
 
-import { itemBonus } from '../content/items.js';
+import { itemBonus, isLight } from '../content/items.js';
 import { companionAssist } from '../content/companions.js';
 import { getDifficulty } from '../content/difficulty.js';
 import { conditionPenalty, dangerPressure } from './state.js';
@@ -16,12 +16,21 @@ const PERK_VALUE = 2;
  */
 export const MAX_PENALTY_STACK = 4;
 
+/** 어두운 곳에서 빛 없이 하는 일의 대가. */
+export const DARK_PENALTY = 2;
+
+/** 지금 손에 켤 수 있는 것이 있는가. */
+export function hasLight(state) {
+  return state.inventory.some((i) => isLight(i.name) && (i.uses === null || i.uses > 0));
+}
+
 /**
  * @param {object} state
  * @param {object} check { stat, tags, target, bonus }
+ * @param {object} [opts] { dark } 장면의 사정. 콘텐츠가 아니라 GM 이 넘긴다.
  * @returns {{ modifier:number, target:number, breakdown:Array<{label:string,value:number}> }}
  */
-export function buildCheck(state, check) {
+export function buildCheck(state, check, opts = {}) {
   const tags = check.tags || [];
   const breakdown = [];
 
@@ -57,6 +66,18 @@ export function buildCheck(state, check) {
     }
   }
   if (bestAlly) breakdown.push({ label: `${bestAlly.name} 지원`, value: bestAllyValue, companion: bestAlly.id });
+
+  // 4.5 빛.
+  //
+  // 유적 안의 모든 서술은 램프가 있다는 전제로 쓰여 있다. 그것이 맞다 —
+  // 아무도 빛 없이 무덤에 들어가지 않는다. 그런데 규칙에는 그 전제가 없어서,
+  // 시장을 건너뛴 사람이 성냥 한 개비로 쐐기문자를 읽었다.
+  //
+  // 막지는 않는다. 어두운 곳에서 빛 없이 하는 일은 그냥 어려울 뿐이다.
+  // 그리고 그 사실이 판정마다 화면에 뜬다.
+  if (opts.dark && !hasLight(state)) {
+    breakdown.push({ label: '빛이 없다', value: -DARK_PENALTY });
+  }
 
   // 5. 상황 보정 — 콘텐츠가 직접 지정한다.
   //    함수를 주면 상태를 보고 정한다. "미리 살펴둔 사람이 유리하다" 같은 규칙이 여기 걸린다.

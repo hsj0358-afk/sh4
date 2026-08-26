@@ -113,7 +113,8 @@ const ep = {
       },
       body: (state) => {
         const out = [
-          '5주. 인도양을 건너 사이공에 닿고, 다시 강을 거슬러 호수까지 올라왔다.',
+          // 여정의 길이는 막간이 말한다 (mesopotamia.js 의 같은 자리 참고).
+          '사이공에서 강을 거슬러 올라 호수에 닿았다.',
           '톤레사프는 계절마다 크기가 변하는 호수다. 지금은 물이 빠지는 철이라 ' +
             '선착장이 뭍 한가운데 서 있다. 배를 대려면 진흙을 삼백 보 걸어야 한다.',
         ];
@@ -848,6 +849,7 @@ const ep = {
     naga_gallery: {
       id: 'naga_gallery',
       location: '앙코르 서편 · 나가 회랑',
+      dark: true, // 빛을 가져오지 않으면 판정이 어려워진다
       exits: ['참배로', '아래로'],
       combat: 'sealkeepers_gallery',
       onEnter(state, visits) {
@@ -879,6 +881,7 @@ const ep = {
     star_chamber: {
       id: 'star_chamber',
       location: '회랑 아래 · 별의 방',
+      dark: true, // 빛을 가져오지 않으면 판정이 어려워진다
       exits: ['회랑', '문'],
       onEnter(state, visits) {
         if (visits > 1) return {};
@@ -1192,6 +1195,7 @@ const ep = {
     the_door: {
       id: 'the_door',
       location: '회랑 아래 · 여덟 번째 문',
+      dark: true, // 빛을 가져오지 않으면 판정이 어려워진다
       exits: ['별의 방'],
       nonLethal: true, // 여기까지 온 사람은 자기 결말을 본다
       onEnter(state, visits) {

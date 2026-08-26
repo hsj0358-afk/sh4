@@ -5,7 +5,7 @@
 
 import { subj } from '../korean.js';
 import { rollCheck, resolve, selectBranch, compareOutcome, OUTCOME } from './dice.js';
-import { buildCheck, difficultyLabel } from './rules.js';
+import { buildCheck, difficultyLabel, hasLight } from './rules.js';
 import { applyEffects, formatClock, isDead, isBroken } from './state.js';
 import { interpret, hallucination } from './freeform.js';
 import { createRng } from './rng.js';
@@ -376,10 +376,37 @@ export function createGM({ state, episode }) {
       enterNotes = applyEffects(state, eff);
     }
 
+    // 빛 없이 어둠으로 들어서면, 곁에 있는 사람이 자기 것을 하나 내준다.
+    //
+    // 유적의 서술은 램프가 있다는 전제로 쓰여 있고 그것이 맞다. 다만 준비를
+    // 건너뛴 사람을 장 하나 내내 -2 로 묶어 두는 것은, 빛이 중요하다는 것을
+    // 알기 전에 내린 선택의 값으로 지나치다. 빌린 등불은 제 것보다 어둡고
+    // 오래 가지 않는다 — 그 차이가 시장에 들르는 이유로 남는다.
+    let lender = null;
+    if (s.dark && !hasLight(state) && !state.flags.lentLight) {
+      lender = Object.values(state.companions).find((c) => c.present) || null;
+      if (lender) {
+        state.flags.lentLight = true;
+        enterNotes.push(...applyEffects(state, { items: ['동행의 등불'] }));
+      }
+    }
+
     events.push(headerEvent());
 
     const revisit = state.visited[id] > 1 && s.revisitBody;
     events.push({ type: 'narration', text: asArray(revisit ? s.revisitBody : s.body, state) });
+
+    // 등불을 건네는 장면은 방을 서술한 뒤에 온다. 그 전에 오면 장면 표시보다 앞선다.
+    if (lender) {
+      events.push({
+        type: 'narration',
+        tone: 'gm',
+        text: [
+          `${subj(lender.name)} 말없이 자기 짐에서 등불을 꺼내 건넨다.`,
+          '"제 것도 얼마 안 남았습니다." 그 말만 하고 앞장선다.',
+        ],
+      });
+    }
 
     if (enterNotes.length) events.push({ type: 'notes', notes: enterNotes });
     noteRelations(events);
@@ -474,7 +501,7 @@ export function createGM({ state, episode }) {
 
   /** 판정을 준비한다. */
   function requestCheck(source, events) {
-    const built = buildCheck(state, source.check);
+    const built = buildCheck(state, source.check, { dark: scene()?.dark });
     pending = {
       label: source.check.label || source.label || '판정',
       stat: source.check.stat,

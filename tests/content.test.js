@@ -105,8 +105,11 @@ test('조건으로 요구하는 물건은 어딘가에서 얻을 수 있다', ()
   }
 });
 
+// 콘텐츠가 아니라 엔진이 쥐여 주는 것들. 여기 적힌 것만 예외로 둔다.
+const GRANTED_BY_ENGINE = ['동행의 등불'];
+
 test('정의된 아이템 중 아무도 주지 않는 것이 없다', () => {
-  const obtainable = new Set();
+  const obtainable = new Set(GRANTED_BY_ENGINE);
   for (const p of PROFESSIONS) for (const n of p.items) obtainable.add(n);
   for (const { node } of results()) {
     for (const n of node.effects?.items || []) obtainable.add(n);
@@ -273,5 +276,37 @@ test('선택지는 장면마다 3개 이상 제시된다 (결말·전투 장면 
     if (scene.end || scene.ending || !(scene.choices || []).length) continue;
     assert.ok(scene.choices.length >= 3, `${id}: 선택지가 ${scene.choices.length}개뿐`);
     assert.ok(scene.choices.length <= 6, `${id}: 선택지가 너무 많다`);
+  }
+});
+
+// ── 캠페인 층이 정하는 것을 장면이 다시 못 박지 않는다 ────────────
+//
+// 실제 플레이에서 걸린 것. 8주짜리 런던 경유를 고르고 도착했더니
+// 에피소드 2 의 첫 문장이 「3주. 홍해를 내려가…」였다. 여정의 길이는
+// 막간에서 고른 항로가 정하므로, 도착 장면이 그것을 다시 적으면 어긋난다.
+
+test('장 첫 장면은 여정의 길이를 못 박지 않는다', () => {
+  for (const ep of Object.values(EPISODES)) {
+    const scene = ep.scenes[ep.start];
+    const body = [].concat(
+      typeof scene.body === 'function' ? scene.body(probe) : scene.body || [],
+    ).join(' ');
+    assert.ok(
+      !/\d+\s*주[.\s]/.test(body),
+      `${ep.id} 의 도착 장면이 여정 기간을 직접 적는다 — 항로 선택과 어긋난다`,
+    );
+  }
+});
+
+// 시간을 말하는 문장은 시계를 봐야 한다. 고정 문구는 오후 열 시 반에 일출을 만든다.
+test('본문이 시각을 단정하지 않는다', () => {
+  const FIXED = [/해가 능선 위로 올라오고 있다\./, /아침 빛을 받아/, /밤을 하나 통째로/];
+  for (const { ep, id, scene } of allScenes()) {
+    const body = [].concat(
+      typeof scene.body === 'function' ? scene.body(probe) : scene.body || [],
+    ).join(' ');
+    for (const pat of FIXED) {
+      assert.ok(!pat.test(body), `${ep.id}/${id} 에 시각을 단정하는 문장이 남아 있다: ${pat}`);
+    }
   }
 });

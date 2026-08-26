@@ -10,7 +10,7 @@
 
 import { subj } from '../../korean.js';
 import { CLUE_TITLES } from '../clues.js';
-import { ticksUntil } from '../../clock.js';
+import { ticksUntil, phaseOfDay } from '../../clock.js';
 
 const ep = {
   id: 'mesopotamia',
@@ -118,7 +118,9 @@ const ep = {
       },
       body: (state) => {
         const out = [
-          '3주. 홍해를 내려가 인도양을 돌고, 다시 강을 거슬러 올라왔다.',
+          // 여정의 길이는 막간에서 고른 항로가 말한다. 여기서 다시 못 박으면
+          // 8주짜리 런던 경유를 고른 사람이 도착해서 「3주」를 읽는다.
+          '바스라. 두 강이 여기서 하나가 되고, 그 하나가 만으로 빠져나간다.',
           '바스라의 물은 나일과 다르다. 두 강이 여기서 섞이며 흙탕과 소금이 함께 흐른다. ' +
             '공기가 무겁고, 숨을 쉬면 물을 마시는 것 같다.',
         ];
@@ -500,7 +502,9 @@ const ep = {
       body: (state) => {
         const out = [
           '갈대가 사람 키의 두 배로 자란다. 물길은 갈대 사이로만 나 있고, 그 물길은 지도에 없다.',
-          '해가 어디 있는지 알 수 없다. 위를 봐도 갈대뿐이다.',
+          phaseOfDay(state.tick) === 'night'
+            ? '별도 안 보인다. 위를 봐도 갈대뿐이고, 갈대는 밤에 더 높아 보인다.'
+            : '해가 어디 있는지 알 수 없다. 위를 봐도 갈대뿐이다.',
         ];
         if (state.companions.basim?.present) {
           out.push(
@@ -972,6 +976,7 @@ const ep = {
     zigg_archive: {
       id: 'zigg_archive',
       location: '기단 아래 · 점토판 서고',
+      dark: true, // 빛을 가져오지 않으면 판정이 어려워진다
       exits: ['기단', '수로'],
       onEnter(state, visits) {
         if (visits > 1) return {};
@@ -1316,6 +1321,7 @@ const ep = {
     black_canal: {
       id: 'black_canal',
       location: '기단 아래 · 검은 수로',
+      dark: true, // 빛을 가져오지 않으면 판정이 어려워진다
       exits: ['서고', '더 아래로'],
       onEnter(state, visits) {
         if (visits > 1) return {};
@@ -1574,6 +1580,7 @@ const ep = {
     gate_chamber: {
       id: 'gate_chamber',
       location: '수면 아래 · 문의 방',
+      dark: true, // 빛을 가져오지 않으면 판정이 어려워진다
       exits: ['수로'],
       onEnter(state, visits) {
         if (visits > 1) return {};
@@ -1920,6 +1927,7 @@ const ep = {
     crane_reckoning: {
       id: 'crane_reckoning',
       location: '기단 아래 · 수로 입구',
+      dark: true, // 빛을 가져오지 않으면 판정이 어려워진다
       exits: ['위로'],
       onEnter(state, visits) {
         if (visits > 1) return {};
@@ -2167,6 +2175,7 @@ const ep = {
     reckoning_break: {
       id: 'reckoning_break',
       location: '기단 아래 · 무너지는 계단',
+      dark: true, // 빛을 가져오지 않으면 판정이 어려워진다
       exits: ['위로'],
       combat: 'crane_flooded',
       body: ['물이 한 단 더 올라온다.'],

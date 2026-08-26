@@ -12,6 +12,12 @@ export const ITEMS = {
     bonus: { tags: ['암흑', '조사'], value: 2 },
     note: '어두운 곳에서 자동으로 소모된다.',
   },
+  '동행의 등불': {
+    type: 'gear', uses: 3,
+    desc: '동행이 자기 짐에서 꺼내 준 것. 기름이 얼마 남지 않았다.',
+    bonus: { tags: ['암흑'], value: 1 },
+    note: '빌린 것이라 오래 가지 않는다. 제 것을 챙기는 편이 낫다.',
+  },
   '등반 로프': {
     type: 'gear', uses: 3,
     desc: '30피트. 매듭 자국이 손에 익었다.',
@@ -227,6 +233,17 @@ export const ITEMS = {
 
 export function getItem(name) {
   return ITEMS[name] || null;
+}
+
+/**
+ * 이것은 빛을 내는가.
+ *
+ * 유적 안의 서술은 전부 램프가 있다는 전제로 쓰여 있다 — 그것이 맞다.
+ * 아무도 빛 없이 무덤에 들어가지 않는다. 그런데 규칙에는 그 전제가 없어서,
+ * 성냥 한 개비로 사천 년 된 쐐기문자를 읽는 사람이 나왔다.
+ */
+export function isLight(name) {
+  return !!ITEMS[name]?.bonus?.tags.includes('암흑');
 }
 
 export function itemBonus(name, tags) {

@@ -10,11 +10,12 @@
 
 ```bash
 npm start        # http://localhost:5173 (같은 네트워크의 휴대폰에서도 열린다)
-npm test         # 규칙 · 콘텐츠 · 플레이 가능성 검사 227개
+npm test         # 규칙 · 콘텐츠 · 플레이 가능성 검사 234개
 npm run playtest # 무작위 플레이어 수백 회를 굴려 막다른 길과 난이도를 본다
 npm run playtest -- --runs 300 --cautious   # 신중한 플레이어로
 npm run playtest -- --runs 300 --golden     # 본줄기를 쫓는 플레이어로
 npm run combat-sim  # 전투 균형 — 전략별 결말 분포
+npm run bundle      # dist/lost-world-map.html — 파일 하나로 묶는다
 ```
 
 ---
@@ -85,6 +86,7 @@ src/
     main.js  render.js  panels.js  map.js  styles.css  audio.js
 tools/
   serve.js              의존성 없는 정적 서버
+  bundle.js             단일 파일 빌드 (배포용)
   playtest.js           자동 플레이테스트
   combat-sim.js         전투 균형 시뮬레이터
 tests/                  node:test
@@ -418,9 +420,29 @@ scenes: {
 
 ---
 
+## 8.5 배포
+
+개발 중에는 번들러가 없다 — 브라우저가 ES 모듈을 그대로 읽는다. 필요한 건 배포할 때뿐이다.
+
+```bash
+npm run bundle            # dist/lost-world-map.html — 열면 바로 돌아가는 파일 하나
+npm run bundle:artifact   # <body> 안쪽만 (문서 뼈대를 대신 써 주는 호스트용)
+```
+
+모든 모듈을 의존 순서대로 감싸 넣고 `index.html` 과 `styles.css` 를 합친다. 결과는
+정적 호스팅 아무 데나 올리거나, 파일로 건네주거나, 더블클릭해서 오프라인으로 열 수 있다.
+남는 외부 요청은 Google Fonts 하나뿐이고 — 스타일시트가 이름만 부르고 불러오지는 않던
+한글 글꼴이다 — 그것도 못 받으면 시스템 글꼴로 조용히 떨어진다.
+
+정규식으로 `import`/`export` 를 바꾸는 100줄짜리다. 일반적인 번들러라면 파서를 써야 하지만
+이 코드베이스가 쓰는 형태는 다섯 가지뿐이고, `tests/bundle.test.js` 가 그것을 고정한다 —
+빠진 모듈, 변환하지 못한 구문, 남아 있는 외부 참조를 전부 검사한다.
+
+---
+
 ## 9. 검증
 
-- **227개 테스트** — 주사위 분포, 보정 규칙, 난이도, 상태 클램프, 세션 흐름, 자유 입력,
+- **234개 테스트** — 주사위 분포, 보정 규칙, 난이도, 상태 클램프, 세션 흐름, 자유 입력,
   전투 규칙, 캠페인 이월, 막간 항로, 신뢰와 배신, 회차 계승, 조사 붙이기, 결말 분기,
   콘텐츠 무결성, 지도 데이터, 그리고 **플레이 가능성**
 - **자동 플레이테스트** — 세 장을 이어서 400회, 세 가지 플레이어로

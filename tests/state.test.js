@@ -1,3 +1,4 @@
+import { phaseOfDay, hoursSince, ticksUntil } from '../src/clock.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -117,4 +118,39 @@ test('알림에는 변화의 방향이 담긴다', () => {
   assert.ok(notes.some((n) => n.kind === 'bad' && n.text.includes('체력')));
   assert.ok(notes.some((n) => n.kind === 'bad' && n.text.includes('위험도')));
   assert.ok(notes.some((n) => n.kind === 'good' && n.text.includes('횃불')));
+});
+
+// ── 시계 ────────────────────────────────────────────────────────
+//
+// 실제 플레이에서 걸린 것. 오후 10시 반에 유적을 나왔는데 서술은 일출이었고,
+// 아침에 천막을 쳐도 「새벽 세 시」를 읽었다. 시간을 쓰는 문장은 시계를 봐야 한다.
+
+test('하루의 어느 때인지 알아본다', () => {
+  assert.equal(phaseOfDay(0), 'morning'); // 오전 8시 출발
+  assert.equal(phaseOfDay(8), 'day'); // 정오
+  assert.equal(phaseOfDay(18), 'evening'); // 오후 5시
+  assert.equal(phaseOfDay(29), 'night'); // 오후 10시 30분
+  assert.equal(phaseOfDay(2 * 21), 'dawn'); // 다음날 오전 5시
+});
+
+test('흐른 시간을 시간 단위로 센다', () => {
+  assert.equal(hoursSince(0), 0);
+  assert.equal(hoursSince(2), 1);
+  assert.equal(hoursSince(29), 14.5);
+});
+
+test('다음 아침까지 남은 시간은 언제 눕느냐에 달렸다', () => {
+  const wake = 6;
+  // 오후 10시에 누우면 8시간, 오전 10시에 누우면 20시간.
+  const night = ticksUntil(2 * 14, wake); // 오후 10시
+  const morning = ticksUntil(2 * 2, wake); // 오전 10시
+  assert.equal(hoursSince(night), 8);
+  assert.equal(hoursSince(morning), 20);
+  assert.ok(night < morning, '늦게 누운 쪽이 시간을 더 썼다');
+});
+
+test('아침에 도착하면 아침 서술이, 밤에 도착하면 밤 서술이 나온다', () => {
+  // 목표 시각에 이미 있으면 하루를 돈다 — 0틱을 돌려주면 시간이 멈춘다.
+  assert.ok(ticksUntil(2 * 22, 6) > 0);
+  assert.equal(hoursSince(ticksUntil(2 * 22, 6)), 24);
 });

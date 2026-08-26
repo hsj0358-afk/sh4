@@ -29,13 +29,31 @@ export const VERBS = {
   완력: ['민다', '밀어', '당긴다', '부순다', '깨', '들어올', '치운다', '연다', '열어'],
   은밀: ['숨는다', '몰래', '조용히', '잠입', '기다린다', '엿듣'],
   사용: ['사용', '쓴다', '켠다', '비춘다', '꺼낸다', '건넨다', '준다'],
+  // 명사가 아니라 동사만 넣는다. '사진'을 넣었더니 「휴대용 사진기」라는
+  // 물건 이름 자체가 동사로 읽혔다.
+  기록: ['찍는다', '찍어', '촬영한', '탁본을', '탁본한', '베낀다', '기록한다', '스케치한', '그린다', '적는다', '옮겨'],
   휴식: ['쉰다', '휴식', '잔다', '앉는다', '회복', '숨을 고른'],
   공격: ['공격', '쏜다', '때린다', '벤다', '싸운다', '죽인'],
 };
 
+/**
+ * 시도 보조용언(V-아/어 보다)을 걷어낸다.
+ *
+ * 「밀어본다」는 미는 것이지 보는 것이 아니다. 그런데 조사(調査) 사전에 '본다'가 있어서
+ * -어본다로 끝나는 모든 동사가 조사로 읽혔다. 「틈 위의 돌을 밀어본다」가 「계곡 바닥을
+ * 파헤친다」가 되어 엉뚱한 서술이 돌아왔다. 틀린 것보다 나쁜 것은, 틀렸다는 표시가
+ * 없다는 것이다.
+ *
+ * 보조용언을 떼면 앞의 본동사가 드러난다. 밀어본다 → 밀어(완력), 살펴본다 → 살펴(조사).
+ */
+export function stripAttempt(text) {
+  return String(text || '').replace(/([아어여])\s*(본다|봤다|보다|보았다|봐)/g, '$1');
+}
+
 export function detectVerb(text) {
+  const t = stripAttempt(text);
   for (const [verb, keys] of Object.entries(VERBS)) {
-    if (hit(text, keys)) return verb;
+    if (hit(t, keys)) return verb;
   }
   return null;
 }
@@ -133,12 +151,27 @@ const GLOBAL_ACTIONS = [
   },
 ];
 
-/** 동료에게 말을 거는 행동. */
-function companionTalk(text, state) {
+/**
+ * 사람을 부르는 말.
+ *
+ * 「올리버 핀치」를 부를 때 플레이어가 적는 것은 '올리버'일 수도 '핀치'일 수도 있다.
+ * 성과 이름 중 어느 쪽이 그 사람의 이름으로 굳는지는 사람마다 다르다 — 둘 다 받는다.
+ */
+function nameKeys(name) {
+  return [name, ...String(name).split(/\s+/).filter((p) => p.length >= 2)];
+}
+
+/**
+ * 동료에게 말을 거는 행동.
+ *
+ * 곁에 없는 사람의 이름을 불렀을 때도 대답해야 한다. 「핀치를 부른다」에
+ * "무엇을 건드릴 것인가?" 라고 되묻는 것은 대답이 아니다 — 플레이어는 핀치가
+ * 함께 있다고 믿고 있는데, 화면은 그 믿음이 틀렸다는 말을 하지 않는다.
+ */
+function companionTalk(text, state, roster = {}) {
   for (const c of Object.values(state.companions)) {
     if (!c.present) continue;
-    const first = c.name.split(' ')[0];
-    if (!hit(text, [c.name, first])) continue;
+    if (!hit(text, nameKeys(c.name))) continue;
 
     const warm = c.affinity >= 3;
     return {
@@ -156,10 +189,38 @@ function companionTalk(text, state) {
       effects: { companion: { id: c.id, affinity: 1 }, time: 1 },
     };
   }
+
+  // 이름은 아는데 곁에 없는 사람.
+  for (const base of Object.values(roster)) {
+    if (!hit(text, nameKeys(base.name))) continue;
+    const known = state.companions[base.id];
+    return {
+      kind: 'narration',
+      text: known
+        ? [
+            `${topic(base.name)} 여기 없다.`,
+            '어디서 갈라졌는지는 기억하고 있다. 부른다고 돌아오지는 않는다.',
+          ]
+        : [
+            `${base.name}. 그 이름을 소리 내어 불러 본다.`,
+            '아직 만난 적 없는 사람이다. 대답할 사람이 없다.',
+          ],
+      effects: {},
+    };
+  }
   return null;
 }
 
-/** 소지품을 쓰는 행동. */
+/**
+ * 소지품을 쓰는 행동.
+ *
+ * 소모품(의료 키트 같은 것)은 이름만 불러도 바로 쓴다.
+ *
+ * 그 밖의 장비는 「손에 쥔다」로 끝났었다. 그런데 「휴대용 사진기로 천장을 찍는다」는
+ * 무엇을 어디에 쓸지까지 다 적은 입력이다. 거기에 "쓸 자리가 오면 손이 먼저 움직일
+ * 것이다" 라고 답하는 것은 서술을 입은 거절이다. 행동하는 동사가 붙어 있으면
+ * 붙잡지 않고 뒷단계로 흘려보낸다 — 장비 보정은 어차피 판정에서 자동으로 붙는다.
+ */
 function itemUse(text, state, getItemDef) {
   for (const inv of state.inventory) {
     if (!hit(text, [inv.name])) continue;
@@ -176,6 +237,8 @@ function itemUse(text, state, getItemDef) {
         },
       };
     }
+    // 이름만 부른 것이 아니라 무엇을 할지까지 적었다면, 그 행동을 처리하게 둔다.
+    if (detectVerb(text)) return null;
     return {
       kind: 'narration',
       text: [
@@ -213,7 +276,7 @@ export function hallucination(state, rng) {
  *   { kind: 'unknown', text }                        — 해석 실패
  */
 export function interpret(input, ctx) {
-  const { state, scene, getItemDef, clueTitles = {} } = ctx;
+  const { state, scene, getItemDef, clueTitles = {}, roster = {} } = ctx;
   const text = String(input || '').trim();
   if (!text) return { kind: 'unknown', text: ['...'] };
 
@@ -232,7 +295,7 @@ export function interpret(input, ctx) {
   }
 
   // 3) 전역 사전
-  const talk = companionTalk(text, state);
+  const talk = companionTalk(text, state, roster);
   if (talk) return talk;
 
   const used = itemUse(text, state, getItemDef);
@@ -244,8 +307,28 @@ export function interpret(input, ctx) {
 
   // 4) 동사만 잡히는 경우 — 장면의 기본 조사/이동으로 흘려보낸다.
   const verb = detectVerb(text);
-  if (verb === '조사' && scene.ambientCheck) {
-    return { ...scene.ambientCheck, kind: 'check' };
+  if ((verb === '조사' || verb === '기록') && scene.ambientCheck) {
+    // 무엇을 하는 것으로 읽었는지 먼저 적는다.
+    //
+    // 이 갈래는 입력을 장면의 기본 조사로 흘려보낸다. 잘 읽었으면 문제가 없지만
+    // 잘못 읽었을 때 아무 표시가 없으면, 플레이어는 자기가 적은 것과 상관없는
+    // 서술을 읽으면서 그것이 대답이라고 믿게 된다. 한 줄이면 그 오해가 사라진다.
+    const amb = scene.ambientCheck;
+    return {
+      ...amb,
+      kind: 'check',
+      check: { ...amb.check, prompt: amb.check.prompt || (amb.label ? [`${amb.label}.`] : null) },
+    };
+  }
+  if (verb === '완력') {
+    return {
+      kind: 'narration',
+      text: [
+        '어깨를 대고 힘을 준다. 돌은 돌대로 있다.',
+        '여기서 힘으로 될 것이 있다면, 먼저 어디에 힘을 줄지부터 정해야 한다.',
+      ],
+      effects: { time: 1 },
+    };
   }
   if (verb === '공격') {
     return {

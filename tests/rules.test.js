@@ -1,3 +1,5 @@
+import { resolve } from '../src/engine/dice.js';
+import { itemMattered } from '../src/engine/gm.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createState, applyEffects } from '../src/engine/state.js';
@@ -78,4 +80,35 @@ test('난이도 표시', () => {
   assert.equal(difficultyLabel(12), '보통');
   assert.equal(difficultyLabel(15), '어려움');
   assert.equal(difficultyLabel(19), '지극히 어려움');
+});
+
+// ── 장비는 결과를 바꿨을 때만 닳는다 ─────────────────────────────
+//
+// 실제 플레이에서 걸린 것. 목표값 11 짜리 잡담 판정에 보정이 +12 였는데도
+// 한 장뿐인 「위조 소개장」이 통째로 소모됐다. 있으나 없으나 결과가 같았는데.
+
+test('없어도 성공했을 판정에서는 장비가 닳지 않는다', () => {
+  const built = {
+    breakdown: [{ label: '설득', value: 5 }, { label: '위조 소개장', value: 3, item: '위조 소개장' }],
+  };
+  const result = resolve(18, 8, 11); // 18+8=26, 3을 빼도 23 ≥ 11
+  assert.equal(itemMattered(built, result), false);
+});
+
+test('장비가 결과 구간을 올렸으면 닳는다', () => {
+  const built = { breakdown: [{ label: '확대경', value: 3, item: '확대경' }] };
+  // 10+3=13 성공 / 장비를 빼면 10, 목표 13 에 3 모자라 부분 성공
+  const result = resolve(10, 3, 13);
+  assert.equal(result.outcome, 'success');
+  assert.equal(itemMattered(built, result), true);
+});
+
+test('장비를 빼도 결과가 같으면 닳지 않는다 — 실패해도 마찬가지', () => {
+  const built = { breakdown: [{ label: '확대경', value: 2, item: '확대경' }] };
+  const result = resolve(2, 2, 18); // 4 든 2 든 실패
+  assert.equal(itemMattered(built, result), false);
+});
+
+test('보정을 준 장비가 없으면 닳을 것도 없다', () => {
+  assert.equal(itemMattered({ breakdown: [{ label: '설득', value: 4 }] }, resolve(10, 4, 12)), false);
 });

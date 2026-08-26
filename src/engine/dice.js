@@ -66,6 +66,11 @@ export function resolve(natural, modifier, target) {
   };
 }
 
+/** 두 결과 중 어느 쪽이 나은가. 같으면 0. */
+export function compareOutcome(a, b) {
+  return OUTCOME_ORDER.indexOf(a) - OUTCOME_ORDER.indexOf(b);
+}
+
 /** 주사위를 굴려 판정까지 수행한다. */
 export function rollCheck(rng, { modifier = 0, target = 12 } = {}) {
   return resolve(rng.int(1, 20), modifier, target);

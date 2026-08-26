@@ -10,6 +10,7 @@
 
 import { subj } from '../../korean.js';
 import { CLUE_TITLES } from '../clues.js';
+import { ticksUntil } from '../../clock.js';
 
 const ep = {
   id: 'mesopotamia',
@@ -643,17 +644,17 @@ const ep = {
             '밤새 물이 건물 아래를 지나간다. 건물 전체가 아주 천천히 흔들린다.',
             '새벽에 잠깐 깼을 때, 서쪽 갈대 위로 램프 불빛 여러 개가 지나갔다.',
           ],
-          effects: {
+          effects: (state) => ({
             hp: 4,
             san: 3,
-            time: 14,
+            time: ticksUntil(state.tick, 6),
             danger: 1,
             clues: ['crane_expedition'],
             companionChanges: [
               { id: 'seraphina', affinity: 1 },
               { id: 'basim', affinity: 1 },
             ],
-          },
+          }),
         },
         {
           id: 'basim_shortcut',

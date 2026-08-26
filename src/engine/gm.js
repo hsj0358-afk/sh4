@@ -4,13 +4,14 @@
 // UI 는 이 엔진이 뱉는 이벤트 배열을 로그에 붙이기만 한다.
 
 import { subj } from '../korean.js';
-import { rollCheck, selectBranch, OUTCOME } from './dice.js';
+import { rollCheck, resolve, selectBranch, compareOutcome, OUTCOME } from './dice.js';
 import { buildCheck, difficultyLabel } from './rules.js';
 import { applyEffects, formatClock, isDead, isBroken } from './state.js';
 import { interpret, hallucination } from './freeform.js';
 import { createRng } from './rng.js';
 import { getItem } from '../content/items.js';
 import { getEncounter } from '../content/encounters.js';
+import { COMPANIONS } from '../content/companions.js';
 import { resolveEnding, endingCoda } from '../content/endings.js';
 import {
   checkBetrayal,
@@ -40,6 +41,17 @@ import {
 setItemTier((name) => getItem(name)?.type || 'gear');
 
 const WORTH_TAKING = ['relic', 'special'];
+
+/**
+ * 이 판정에서 장비가 실제로 결과를 바꿨는가.
+ * 장비 보정을 빼고 다시 계산해 결과 구간이 내려가면 바꾼 것이다.
+ */
+export function itemMattered(built, result) {
+  const entry = built.breakdown.find((b) => b.item);
+  if (!entry || !entry.value) return false;
+  const without = resolve(result.natural, result.modifier - entry.value, result.target);
+  return compareOutcome(result.outcome, without.outcome) > 0;
+}
 
 /** 조건 확인. 콘텐츠의 requires 를 상태와 대조한다. */
 export function meets(state, req) {
@@ -515,10 +527,16 @@ export function createGM({ state, episode }) {
       breakdown: p.built.breakdown,
     });
 
-    // 판정에 동원한 장비가 닳는다.
+    // 판정에 동원한 장비가 닳는다 — 단, 그것이 결과를 바꿨을 때만.
+    //
+    // 처음에는 무조건 닳게 했다. 그랬더니 목표값 11 짜리 잡담 판정에서 보정이 +12 인데도
+    // 「위조 소개장」이 한 장뿐인 사용 횟수를 통째로 먹었다. 있으나 없으나 같은 결과였는데.
+    // 플레이어는 어느 장비가 자동으로 동원될지 고르지 않으므로, 값은 그 장비가
+    // 실제로 무언가를 바꿨을 때만 치르게 한다. 쓰지 않은 것을 쓴 것으로 세지 않는다.
     if (p.built.usedItem) {
       const def = getItem(p.built.usedItem);
-      if (def && def.uses !== null && def.uses !== undefined && !def.consumable) {
+      const wearable = def && def.uses !== null && def.uses !== undefined && !def.consumable;
+      if (wearable && itemMattered(p.built, result)) {
         const notes = applyEffects(state, { spend: { [p.built.usedItem]: 1 } });
         if (notes.length) events.push({ type: 'notes', notes });
       }
@@ -589,6 +607,7 @@ export function createGM({ state, episode }) {
         scene: scene(),
         getItemDef: getItem,
         clueTitles: episode.clueTitles || {},
+        roster: COMPANIONS,
       });
 
       if (action.effects?.spend || action.effects?.hp > 0 || action.effects?.san > 0) {
@@ -619,6 +638,7 @@ export function createGM({ state, episode }) {
       scene: scene(),
       getItemDef: getItem,
       clueTitles: episode.clueTitles || {},
+      roster: COMPANIONS,
     });
 
     if (action.kind === 'choice') {

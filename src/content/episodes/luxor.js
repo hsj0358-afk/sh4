@@ -10,6 +10,7 @@
 
 import { subj } from '../../korean.js';
 import { CLUE_TITLES } from '../clues.js';
+import { hoursSince, phaseOfDay, ticksUntil } from '../../clock.js';
 
 const ep = {
   id: 'luxor',
@@ -673,14 +674,15 @@ const ep = {
             '나디아가 불 반대편에 앉아 별을 본다. "여기서는 별이 너무 많아서, 오히려 아무 별도 못 찾겠어요."',
             '새벽 세 시, 서쪽 능선에 등불 행렬이 지나간다. 스무 개쯤. 그들은 자지 않는다.',
           ],
-          effects: {
+          // 자는 것은 정해진 시간만큼이 아니라 아침까지다.
+          effects: (state) => ({
             hp: 3,
             san: 3,
-            time: 12,
+            time: ticksUntil(state.tick, 6),
             danger: 1,
             clues: ['crane_expedition'],
             companion: { id: 'nadia', affinity: 1 },
-          },
+          }),
         },
         {
           id: 'enter_temple',
@@ -1861,14 +1863,23 @@ const ep = {
         return { flags: { nadiaWaited: kept } };
       },
       body: (state) => {
+        // 지하에서 얼마나 있었는지는 시계가 안다. 예전에는 이 문장이 고정이라
+        // 오후 열 시 반에 나온 사람도 일출을 봤다.
+        const hours = Math.max(1, Math.round(hoursSince(state.tick)));
         const out = [
           '바깥의 공기는 뜨겁고, 뜨거워서 반갑다.',
-          '해가 능선 위로 올라오고 있다. 당신은 밤을 하나 통째로 지하에서 보냈다.',
+          {
+            dawn: '해가 능선 위로 올라오고 있다. 아침이 오는 것을 아래에서는 몰랐다.',
+            morning: '볕이 이미 높다. 눈이 아파서 한참 손으로 가리고 서 있었다.',
+            day: '한낮이다. 그늘 밖으로 나서는 데 용기가 필요할 만큼 밝다.',
+            evening: '해가 능선 뒤로 넘어가는 중이다. 하루가 통째로 지나갔다.',
+            night: '바깥도 어둡다. 다만 이쪽 어둠에는 별이 있다.',
+          }[phaseOfDay(state.tick)],
         ];
         if (state.flags.nadiaWaited) {
           out.push(
             '나디아가 바위 그늘에 앉아 있다. 노새 두 마리의 고삐를 쥔 채로.',
-            '"세 시간이라고 했죠." 그녀가 일어선다. "일곱 시간 기다렸습니다. 청구할 겁니다."',
+            `"세 시간이라고 했죠." 그녀가 일어선다. "${hours}시간 기다렸습니다. 청구할 겁니다."`,
           );
         } else {
           out.push(

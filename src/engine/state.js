@@ -8,6 +8,7 @@ import { getItem } from '../content/items.js';
 import { makeCompanion } from '../content/companions.js';
 import { getDifficulty, scaleDamage } from '../content/difficulty.js';
 import { createRng } from './rng.js';
+import { formatClock } from '../clock.js';
 
 export const SAVE_VERSION = 1;
 
@@ -24,32 +25,8 @@ export const MAX_DANGER = 16;
 /** 조용히 흐른 시간이 이만큼 쌓이면 위험도가 1 내려간다. 1틱 = 30분. */
 export const CALM_TICKS = 6;
 
-const START_DAY = { year: 1897, month: 11, day: 3 };
-const START_MINUTES = 8 * 60; // 오전 8시 출발
-
-/**
- * 1틱 = 30분.
- *
- * 날짜는 달을 넘긴다. 캠페인이 세 장으로 늘면서 여정만 8주가 되었고,
- * 그때까지 "11월 59일" 이라고 적혀 있었다.
- */
-export function formatClock(tick) {
-  const total = START_MINUTES + tick * 30;
-  const dayOffset = Math.floor(total / (24 * 60));
-  const m = total % (24 * 60);
-  const hh = Math.floor(m / 60);
-  const mm = m % 60;
-
-  const d = new Date(Date.UTC(START_DAY.year, START_DAY.month - 1, START_DAY.day + dayOffset));
-  const ampm = hh < 12 ? '오전' : '오후';
-  const h12 = hh % 12 === 0 ? 12 : hh % 12;
-
-  return {
-    date: `${d.getUTCFullYear()}년 ${d.getUTCMonth() + 1}월 ${d.getUTCDate()}일`,
-    time: `${ampm} ${h12}시${mm ? ` ${mm}분` : ''}`,
-    night: hh >= 19 || hh < 5,
-  };
-}
+// 시계는 규칙이 아니라 계산이다. src/clock.js 로 옮겼고, 여기서는 다시 내보내기만 한다.
+export { formatClock };
 
 export function dangerLabel(d) {
   if (d <= 2) return '평온';

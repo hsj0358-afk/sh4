@@ -10,6 +10,7 @@
 
 import { subj } from '../../korean.js';
 import { CLUE_TITLES } from '../clues.js';
+import { ticksUntil } from '../../clock.js';
 
 const ep = {
   id: 'angkor',
@@ -602,16 +603,16 @@ const ep = {
             '밤의 밀림은 낮보다 시끄럽다. 시끄러운 동안은 오히려 안심이 된다.',
             '새벽 두 시, 소리가 한꺼번에 멎었다. 아무도 그 이야기를 꺼내지 않았다.',
           ],
-          effects: {
+          effects: (state) => ({
             hp: 4,
             san: 2,
-            time: 12,
+            time: ticksUntil(state.tick, 6),
             danger: 1,
             companionChanges: [
               { id: 'sokha', affinity: 1 },
               { id: 'crane', trust: 1 },
             ],
-          },
+          }),
         },
         {
           id: 'push_on',

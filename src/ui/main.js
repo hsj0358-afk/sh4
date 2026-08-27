@@ -6,6 +6,7 @@ import { DIFFICULTIES } from '../content/difficulty.js';
 import { getEpisode, FIRST_EPISODE } from '../content/episodes/index.js';
 import { createState, formatClock, dangerLabel, MAX_DANGER } from '../engine/state.js';
 import { createGM } from '../engine/gm.js';
+import { recap } from '../engine/recap.js';
 import {
   advanceEpisode,
   hasNextEpisode,
@@ -25,6 +26,7 @@ import {
 } from './panels.js';
 import { mapPanel } from './map.js';
 import { paint, kindFor } from './backdrop.js';
+import { setMood, moodFor, setMusicEnabled, musicEnabled, stopMusic, duck } from './music.js';
 import { sfx, setAudioEnabled, audioEnabled } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
@@ -62,6 +64,8 @@ let busy = false;
 let currentBlock = null;
 let settings = loadSettings();
 setAudioEnabled(settings.sound !== false);
+// 배경음은 기본으로 켠다. 소리 자체를 끄면 음악도 함께 꺼진다.
+setMusicEnabled(settings.sound !== false && settings.music !== false);
 // 회차를 가로지르는 기록. 한 판이 끝나도 도감에는 남는다.
 let archive = loadArchive();
 // 같은 판의 끝을 두 번 세지 않는다.
@@ -361,6 +365,8 @@ function anchor(node) {
  * 아무것도 깨지지 않는다.
  */
 function paintSceneArt(block, scene) {
+  // 그림과 소리는 같은 것에서 나온다 — 장면의 종류.
+  if (!gm.combat) setMood(moodFor(kindFor(scene)));
   const canvas = block.art.querySelector('canvas');
   requestAnimationFrame(() => {
     if (paint(canvas, kindFor(scene), scene.location || scene.id)) {
@@ -398,6 +404,7 @@ const PACING = {
   pressure: 320,
   betrayal: 420,
   relation: 260,
+  recap: 700,
   checkRequest: 220,
   roll: 260,
   notes: 160,
@@ -411,7 +418,12 @@ async function play(events) {
   dom.diceBar.hidden = true;
 
   // 이번 턴에 처음 붙은 것. 재생이 끝나면 이것의 첫 줄로 화면을 맞춘다.
+  //
+  // 보통은 장면이 바뀌면 기준을 그 장면으로 옮긴다 — 새 지문을 처음부터 읽어야 하니까.
+  // 다만 줄거리 요약은 예외다. 이어하기의 첫 화면은 요약이어야 하고, 그 뒤에 오는
+  // 장면 서술이 요약을 위로 밀어내면 정작 읽히지 않는다.
   let head = null;
+  let pinned = false;
   const mark = (node) => {
     if (node && !head) head = node;
     return node;
@@ -419,7 +431,11 @@ async function play(events) {
 
   for (const ev of events) {
     if (ev.type === 'pressure') sfx.danger();
-    if (ev.type === 'combatStart') sfx.danger();
+    if (ev.type === 'combatStart') {
+      sfx.danger();
+      setMood('combat');
+    }
+    if (ev.type === 'combatEnd') setMood(moodFor(kindFor(gm.scene())));
     if (ev.type === 'betrayal') sfx.danger();
     if (ev.type === 'notes' && ev.notes.some((n) => n.kind === 'clue')) sfx.clue();
 
@@ -427,7 +443,7 @@ async function play(events) {
       sfx.page();
       // 장면이 바뀌면 그 장면의 머리말이 기준이 된다. 앞의 것은 잊는다.
       const block = openSceneBlock(ev);
-      head = block.section;
+      if (!pinned) head = block.section;
       paintSceneArt(block, gm.scene());
     } else if (ev.type === 'notes') {
       // 단서는 칩 대신 카드로 보여준다. 같은 말을 두 번 하지 않는다.
@@ -441,7 +457,11 @@ async function play(events) {
         }
       }
     } else {
-      mark(renderEvent(logTarget(), ev));
+      const node = mark(renderEvent(logTarget(), ev));
+      if (ev.type === 'recap' && node) {
+        head = node;
+        pinned = true;
+      }
     }
 
     updateHud();
@@ -597,6 +617,7 @@ async function rollDice() {
   dom.die.className = 'die rolling';
   dom.die.removeAttribute('data-outcome');
   dom.diceOverlay.hidden = false;
+  duck(true);
   sfx.diceRoll();
 
   // 굴러가는 동안 숫자가 계속 바뀐다.
@@ -628,6 +649,7 @@ async function rollDice() {
 
   await wait(820);
   dom.diceOverlay.hidden = true;
+  duck(false);
   busy = false;
   await play(events);
 }
@@ -671,9 +693,27 @@ function menuPanel() {
   soundBtn.addEventListener('click', () => {
     const next = !audioEnabled();
     setAudioEnabled(next);
+    // 소리를 끄는 사람은 배경음도 끄려는 것이다. 켤 때는 각자 기억한 대로.
+    setMusicEnabled(next && settings.music !== false);
     settings = { ...settings, sound: next };
     saveSettings(settings);
     syncSound();
+    syncMusic();
+  });
+
+  const musicBtn = document.createElement('button');
+  musicBtn.className = 'btn';
+  const syncMusic = () => {
+    musicBtn.textContent = `배경음 ${musicEnabled() ? '켜짐' : '꺼짐'}`;
+  };
+  syncMusic();
+  musicBtn.addEventListener('click', () => {
+    const next = !musicEnabled();
+    setMusicEnabled(next);
+    settings = { ...settings, music: next };
+    saveSettings(settings);
+    syncMusic();
+    if (next && state) setMood(gm.combat ? 'combat' : moodFor(kindFor(gm.scene())));
   });
 
   const arcBtn = document.createElement('button');
@@ -701,6 +741,7 @@ function menuPanel() {
     }
     clearGame();
     closePanel();
+    stopMusic();
     show('title');
     refreshTitle();
   });
@@ -713,7 +754,7 @@ function menuPanel() {
     '목표값에서 3 이내로 모자라면 부분 성공 — 대가를 치르고 얻는다. ' +
     '실패해도 이야기는 멈추지 않는다.';
 
-  wrap.append(soundBtn, arcBtn, saveBtn, restart, about);
+  wrap.append(soundBtn, musicBtn, arcBtn, saveBtn, restart, about);
   return wrap;
 }
 
@@ -747,9 +788,13 @@ function resume() {
   resetLog();
   show('play');
 
-  // 이어하기는 현재 장면을 다시 서술하며 시작한다. 어디였는지 상기시켜야 한다.
+  // 이어하기는 줄거리 요약으로 시작한다.
+  //
+  // 며칠 만에 돌아온 사람에게 장면 서술만 다시 보여 주면 "지금 이 방"만 알게 된다.
+  // 왜 이 방에 있는지는 상태가 알고 있으므로 (engine/recap.js), 그것을 먼저 읽힌다.
   const scene = gm.scene();
   const intro = [
+    { type: 'recap', lines: recap(state, episode) },
     { type: 'scene', ...gm.header() },
     {
       type: 'narration',

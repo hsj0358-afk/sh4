@@ -117,6 +117,14 @@ function build(ev) {
       return wrap;
     }
 
+    case 'recap': {
+      if (!ev.lines?.length) return null;
+      const wrap = el('div', 'recap');
+      wrap.appendChild(el('span', 'tag', '지금까지'));
+      paragraphs(wrap, ev.lines, false);
+      return wrap;
+    }
+
     case 'relation': {
       const wrap = el('div', `relation ${ev.tone || ''}`);
       paragraphs(wrap, ev.text, false);

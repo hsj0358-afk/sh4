@@ -4,7 +4,12 @@
 let ctx = null;
 let enabled = true;
 
-function ac() {
+/**
+ * 오디오 컨텍스트 하나를 만들어 두고 돌려 쓴다.
+ * 배경음(music.js)도 이것을 쓴다 — 브라우저마다 만들 수 있는 개수에 한도가 있고,
+ * 둘로 나눠 봐야 얻는 것이 없다.
+ */
+export function ac() {
   if (!ctx) {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return null;

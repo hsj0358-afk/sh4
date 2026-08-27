@@ -705,6 +705,35 @@ input::placeholder {
   margin-bottom: 0;
 }
 
+/* 줄거리 요약 — 이어하기의 첫 화면. 수첩 앞장을 펴는 느낌으로. */
+.recap {
+  margin: 4px 0 22px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(200, 162, 74, 0.05), transparent);
+}
+.recap .tag {
+  display: block;
+  font-size: 10.5px;
+  letter-spacing: 0.22em;
+  color: var(--gold-soft);
+  margin-bottom: 10px;
+}
+.recap p {
+  font-family: var(--serif);
+  font-size: 14.5px;
+  line-height: 1.85;
+  color: var(--ink-dim);
+  margin: 0 0 4px;
+}
+.recap p:first-of-type {
+  color: #e8dcc4;
+}
+.recap p:last-child {
+  margin-bottom: 0;
+}
+
 /* 관계 경고 — 곁눈질 한 줄. 카드가 아니라 방주다. */
 .relation {
   margin: 2px 0 16px;

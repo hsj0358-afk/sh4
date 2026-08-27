@@ -13,18 +13,26 @@
 import { createRng } from '../engine/rng.js';
 
 /** 이 아래로는 그림이 종이색에 잠긴다 — 띠와 본문 사이의 이음매를 지운다. */
-const SINK = 0.72;
+const SINK = 0.78;
 
 /*
  * 실루엣은 종이색보다 밝다. 처음에는 더 어둡게 잡았는데, 그러면 어두운 바탕에
  * 어두운 그림이라 아무것도 보이지 않았다 — 배경이 있다는 것조차 몰랐다.
  * 먼 것일수록 밝다(대기 원근). 가까운 것은 거의 검다.
  */
+/*
+ * 실루엣은 종이색보다 밝다. 먼 것일수록 밝다(대기 원근). 가까운 것은 거의 검다.
+ *
+ * 두 번 올렸다. 처음에는 종이색과 거의 같게 잡아서 배경이 있다는 것조차 몰랐고,
+ * 한 번 올린 뒤에도 데스크톱 스크린샷에서만 보였다 — 휴대폰 화면에서는 여전히
+ * 옅었다. 어두운 색끼리의 차이는 큰 화면에서 훨씬 잘 보인다.
+ * 이 게임은 휴대폰에서 하는 게임이므로 그쪽에 맞춘다.
+ */
 const PALETTE = {
   paper: '#14110d',
-  far: '#302819',
-  mid: '#241d13',
-  near: '#100e0a',
+  far: '#59492c',
+  mid: '#3d3220',
+  near: '#1a160f',
   gold: 'rgba(200, 162, 74, ',
   haze: 'rgba(200, 162, 74, 0.05)',
 };
@@ -140,7 +148,7 @@ const SCENES = {
     // amp 를 크게 잡아야 언덕이 아니라 절벽으로 읽힌다.
     // 실루엣은 밝은 하늘을 배경으로 서야 읽힌다. 마루를 위쪽에 두고
     // 몸통이 아래 어둠으로 내려오게 한다 — 아래쪽에 그리면 어둠에 묻힌다.
-    glow(ctx, w * rng.range(0.15, 0.85), h * 0.36, h * 1.1, 0.2);
+    glow(ctx, w * rng.range(0.15, 0.85), h * 0.36, h * 1.1, 0.3);
     mesas(ctx, w, h, { count: 5, top: 0.14, spread: 0.2, color: PALETTE.far }, rng);
     mesas(ctx, w, h, { count: 4, top: 0.42, spread: 0.18, color: PALETTE.mid }, rng);
     ridge(ctx, w, h, { base: h * 0.78, amp: h * 0.06, step: w / 3, color: PALETTE.near, jag: 0.6 }, rng);
@@ -148,7 +156,7 @@ const SCENES = {
 
   // 강. 낮은 둔덕과 삼각돛, 그리고 물 위의 잔선.
   river(ctx, w, h, rng) {
-    glow(ctx, w * 0.5, h * 0.34, h * 0.95, 0.15);
+    glow(ctx, w * 0.5, h * 0.34, h * 0.95, 0.22);
     ridge(ctx, w, h, { base: h * 0.58, amp: h * 0.07, step: w / 5, color: PALETTE.far, jag: 0.4 }, rng);
 
     ctx.fillStyle = PALETTE.mid;
@@ -193,7 +201,7 @@ const SCENES = {
   underground(ctx, w, h, rng) {
     const cx = w * rng.range(0.42, 0.58);
     const cy = h * 0.52;
-    glow(ctx, cx, cy, h * 1.2, 0.2);
+    glow(ctx, cx, cy, h * 1.2, 0.3);
 
     ctx.strokeStyle = `${PALETTE.gold}0.1)`;
     ctx.lineWidth = 1;
@@ -250,7 +258,7 @@ const SCENES = {
 
   // 갈대. 사람 키의 두 배로 서서 화면을 세로로 가른다.
   marsh(ctx, w, h, rng) {
-    glow(ctx, w * rng.range(0.2, 0.8), h * 0.3, h * 0.9, 0.13);
+    glow(ctx, w * rng.range(0.2, 0.8), h * 0.3, h * 0.9, 0.2);
     ctx.fillStyle = `${PALETTE.gold}0.07)`;
     ctx.fillRect(0, h * 0.78, w, h * 0.04);
     verticals(ctx, w, h, { count: 34, top: -0.1, bottom: 0.86, width: w * 0.007, color: PALETTE.far, lean: 0.02 }, rng);
@@ -282,7 +290,7 @@ const SCENES = {
 
   // 항해. 수평선 하나와 멀리 배 한 척.
   sea(ctx, w, h, rng) {
-    glow(ctx, w * rng.range(0.25, 0.75), h * 0.36, h * 1.1, 0.17);
+    glow(ctx, w * rng.range(0.25, 0.75), h * 0.36, h * 1.1, 0.26);
     // 수평선 — 이 그림에서 가장 확실한 선 하나
     ctx.fillStyle = PALETTE.mid;
     ctx.fillRect(0, h * 0.6, w, h);
@@ -339,8 +347,8 @@ export function paint(canvas, kind, seed = '') {
 
   // 하늘 — 위가 조금 밝다
   const sky = ctx.createLinearGradient(0, 0, 0, h);
-  sky.addColorStop(0, '#241d14');
-  sky.addColorStop(0.72, PALETTE.paper);
+  sky.addColorStop(0, '#3a2f1e');
+  sky.addColorStop(0.78, PALETTE.paper);
   sky.addColorStop(1, PALETTE.paper);
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, w, h);
@@ -351,7 +359,7 @@ export function paint(canvas, kind, seed = '') {
   // 아래 끝만 종이색에 잠긴다. 띠와 본문 사이의 이음매를 없애는 정도.
   const sink = ctx.createLinearGradient(0, h * SINK, 0, h);
   sink.addColorStop(0, 'rgba(20,17,13,0)');
-  sink.addColorStop(1, 'rgba(20,17,13,0.8)');
+  sink.addColorStop(1, 'rgba(20,17,13,0.7)');
   ctx.fillStyle = sink;
   ctx.fillRect(0, 0, w, h);
 

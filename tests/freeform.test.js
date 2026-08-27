@@ -54,10 +54,11 @@ test('소지품을 쓰면 실제로 소모된다', () => {
   assert.equal(a.effects.spend['의료 키트'], 1);
 });
 
-test('가지고 있지 않은 물건은 쓸 수 없다', () => {
+test('가지고 있지 않은 물건은 쓰이지 않는다', () => {
+  // 없는 물건이 소모되어서는 안 된다. 다만 시도 자체는 막다른 길이 아니다.
   const a = interpret('의료 키트를 쓴다', ctx(fresh()));
-  assert.notEqual(a.kind, 'narration');
-  assert.equal(a.kind, 'unknown');
+  assert.equal(a.effects?.spend, undefined, '없는 물건이 소모됐다');
+  assert.ok(!(a.effects?.hp > 0), '없는 물건으로 회복했다');
 });
 
 test('휴식은 시간을 쓰고, 위험한 곳에서는 대가가 다르다', () => {
@@ -89,11 +90,30 @@ test('막연한 조사는 장면의 기본 판정으로 넘어간다', () => {
   assert.equal(a.check.stat, '관찰');
 });
 
-test('불가능한 행동은 거절이 아니라 서술로 처리된다', () => {
-  const a = interpret('전화를 건다', ctx(fresh()));
-  assert.equal(a.kind, 'unknown');
-  assert.ok(a.text.length >= 2);
-  assert.ok(!a.text.join(' ').includes('할 수 없습니다'));
+test('불가능한 행동도 거절로 끝나지 않는다', () => {
+  // 1897년에 전화를 걸 수는 없다. 그래도 화면이 "다시 고르세요" 로 끝나서는 안 된다.
+  const a = interpret('전화를 건다', ctx(fresh(), 'camp'));
+  assert.notEqual(a.kind, 'unknown', '자유 입력이 막다른 길이 됐다');
+  const shown = (a.check?.prompt || a.text || []).join(' ');
+  assert.ok(!shown.includes('할 수 없습니다'));
+});
+
+test('자유 입력은 어떤 문장이든 막다른 길로 끝나지 않는다', () => {
+  // 이 게임에서 입력창은 장식이 아니다. 무엇을 적든 무언가는 일어나야 한다.
+  const inputs = [
+    '돌의 모서리부터 정으로 깎는다',
+    '벽에 귀를 대고 소리를 듣는다',
+    '괜히 발끝으로 흙을 헤집는다',
+    '주머니를 뒤적인다',
+    '하늘을 향해 손을 뻗는다',
+    '아무 말이나 지껄인다',
+  ];
+  for (const sceneId of ['arrival', 'camp', 'corridor', 'hall']) {
+    for (const t of inputs) {
+      const a = interpret(t, ctx(fresh(), sceneId));
+      assert.notEqual(a.kind, 'unknown', `${sceneId} / "${t}" 가 막다른 길이다`);
+    }
+  }
 });
 
 test('빈 입력도 깨지지 않는다', () => {
@@ -129,11 +149,14 @@ test('시도 보조용언은 본동사를 가리지 않는다', () => {
   assert.equal(detectVerb('주변을 확인해본다'), '조사');
 });
 
-test('힘을 쓰겠다는 입력은 엉뚱한 판정으로 흘러가지 않는다', () => {
-  const state = fresh();
-  const a = interpret('틈 위의 돌을 손으로 밀어본다', ctx(state, 'camp'));
-  assert.equal(a.kind, 'narration');
-  assert.match(a.text.join(' '), /힘/);
+test('해석하지 못한 행동은 플레이어가 적은 문장을 그대로 되돌려 준다', () => {
+  // 엉뚱한 서술을 말없이 내주는 것이 가장 나쁘다. 판정으로 넘기더라도
+  // "무엇을 하는 것으로 읽었는지" 를 먼저 적으면 오해가 생기지 않는다.
+  const line = '틈 위의 돌을 손으로 밀어본다';
+  const a = interpret(line, ctx(fresh(), 'camp'));
+  assert.equal(a.kind, 'check');
+  assert.ok(a.check.prompt?.length, '무엇으로 읽었는지 남기지 않았다');
+  assert.match(a.check.prompt[0], /밀어본다/, '플레이어의 말이 사라졌다');
 });
 
 test('장면의 기본 판정으로 흘러갈 때 무엇으로 읽었는지 적는다', () => {

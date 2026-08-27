@@ -8,6 +8,7 @@ import { getItem } from '../content/items.js';
 import { makeCompanion } from '../content/companions.js';
 import { getDifficulty, scaleDamage } from '../content/difficulty.js';
 import { createRng } from './rng.js';
+import { tickRival } from './rival.js';
 import { formatClock } from '../clock.js';
 
 export const SAVE_VERSION = 1;
@@ -68,6 +69,8 @@ export function createState({ name, professionId, difficulty, seed = Date.now() 
     danger: 0,
     calm: 0,
     tick: 0,
+    // 경쟁자가 얼마나 앞섰는가 (engine/rival.js). 위험도와 달리 식지 않는다.
+    rival: 0,
     inventory: prof.items.map((n) => ({ name: n, uses: getItem(n)?.uses ?? null })),
     clues: [],
     flags: {},
@@ -182,6 +185,9 @@ export function applyEffects(state, effect) {
 
   if (effect.time) {
     state.tick += effect.time;
+
+    // 시간에는 값이 있다. 위험도는 조용히 있으면 식지만, 경쟁자는 식지 않는다.
+    tickRival(state, effect.time);
 
     // 위험도는 시간이 지나면 가라앉는다.
     //

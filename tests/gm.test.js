@@ -195,3 +195,58 @@ test('받침에 따라 조사가 갈린다', () => {
   assert.ok(!/[가-힣]{1,10}은은|는는/.test(say('하룬')));
   assert.ok(say('핀치').includes('핀치'));
 });
+
+// ── 실패의 값 ──────────────────────────────────────────────────
+//
+// 반복 가능한 판정 27개 전부에서 실패의 비용은 시간뿐이었고, 시간은 위험도를
+// 깎아 주므로 실패가 오히려 안전해지는 쪽이었다. 그러면 「대성공이 나올 때까지
+// 누르기」가 지배 전략이 된다.
+
+/** 결과가 나올 때까지 시드를 바꿔 가며 굴린다. */
+function rollUntil(outcome, choiceId, sceneId = 'camp') {
+  for (let seed = 0; seed < 400; seed++) {
+    const state = createState({ professionId: 'archaeologist', seed });
+    const gm = createGM({ state, episode });
+    gm.start();
+    state.scene = sceneId;
+    gm.act(choiceId);
+    if (!gm.pending) continue;
+    const before = { danger: state.danger, calm: state.calm };
+    const events = gm.roll();
+    const r = events.find((e) => e.type === 'roll')?.result;
+    if (r?.outcome === outcome) return { state, before, events, result: r };
+  }
+  throw new Error(`${outcome} 을(를) 400 시드 안에 못 만들었다`);
+}
+
+test('값이 안 적힌 실패에는 엔진이 위험도를 붙인다', () => {
+  // camp/dig_floor 의 실패 분기는 시간만 쓴다 — 콘텐츠 42곳이 그렇다.
+  const { state, before } = rollUntil('fail', 'dig_floor');
+  assert.ok(
+    state.danger > before.danger,
+    `실패했는데 위험도가 그대로다 (${before.danger} → ${state.danger})`,
+  );
+});
+
+test('실패로 흘린 시간이 위험도를 깎아 주지 않는다', () => {
+  // 위험도가 오르면 applyEffects 가 calm 을 0 으로 되돌린다.
+  // 이것이 없으면 실패의 시간이 오히려 추적을 식혀 준다.
+  const { state } = rollUntil('fail', 'dig_floor');
+  assert.equal(state.calm, 0, '실패한 턴의 시간이 평온으로 쌓였다');
+});
+
+test('성공에는 값을 붙이지 않는다', () => {
+  const { state, before } = rollUntil('success', 'dig_floor');
+  assert.equal(state.danger, before.danger, '성공했는데 위험도가 올랐다');
+});
+
+test('콘텐츠가 이미 값을 적어 둔 실패는 두 번 물리지 않는다', () => {
+  // camp/ambient 의 대실패는 체력 -2, 위험도 +1 을 직접 적어 두었다.
+  const { state, before } = rollUntil('fumble', 'dig_floor');
+  assert.equal(
+    state.danger - before.danger,
+    1,
+    '값이 적혀 있는 대실패에 위험도가 덧붙었다',
+  );
+  assert.ok(state.hp < state.maxHp, '대실패인데 다치지 않았다');
+});

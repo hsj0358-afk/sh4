@@ -526,6 +526,62 @@ input::placeholder {
   50% { opacity: 0.45; }
 }
 
+/* 경주 줄 — 크레인이 얼마나 앞섰는가 (engine/rival.js).
+   체력·정신·위험은 내 상태고 이건 남의 상태다. 줄을 나눠 그 차이를 먼저 보이게 한다. */
+.race {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+  font-size: 10.5px;
+  color: var(--ink-faint);
+}
+.race-tag {
+  flex: none;
+  letter-spacing: 0.08em;
+}
+.race .bar {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+.race .bar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 2px;
+  background: #7c8794;
+  transition: width 0.6s cubic-bezier(0.2, 0.8, 0.2, 1), background 0.4s;
+}
+.race-val {
+  flex: none;
+  min-width: 56px;
+  text-align: right;
+  color: var(--ink-dim);
+}
+.race[data-stage="near"] .bar i { background: #a8a49c; }
+.race[data-stage="near"] .race-val { color: #cfc4ae; }
+.race[data-stage="lost"] .bar i {
+  background: var(--danger);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+.race[data-stage="lost"] .race-tag,
+.race[data-stage="lost"] .race-val { color: var(--danger); }
+
+/* 앞서간 사람 — 유적이 나를 알아챈 것과는 다른 종류의 압박이다.
+   위험도가 주황이라면 이쪽은 재색이다. 뜨겁지 않고 그냥 차갑다. */
+.pressure.rival {
+  border-color: rgba(160, 160, 170, 0.3);
+  background: rgba(120, 124, 134, 0.07);
+}
+.pressure.rival .tag {
+  color: #a8a49c;
+}
+
 /* ── 장면 그림 ─────────────────────────────────────────────── */
 /*
  * 장면마다 머리말 아래에 그림 띠가 하나 붙는다 (ui/backdrop.js 가 그린다).

@@ -6,6 +6,7 @@ import { DIFFICULTIES } from '../content/difficulty.js';
 import { getEpisode, FIRST_EPISODE } from '../content/episodes/index.js';
 import { createState, formatClock, dangerLabel, MAX_DANGER } from '../engine/state.js';
 import { createGM } from '../engine/gm.js';
+import { racing, rivalLabel, rivalStage, RIVAL_MAX, RIVAL_VISIBLE } from '../engine/rival.js';
 import { recap } from '../engine/recap.js';
 import {
   advanceEpisode,
@@ -196,6 +197,24 @@ function meter(node, value, max, invert = false) {
   node.classList.toggle('low', low);
 }
 
+/**
+ * 경주 줄. 크레인과 갈라선 동안에만 뜬다.
+ *
+ * 세 미터와 같은 칸에 넣지 않는다. 390px 에서 넷을 나란히 놓으면 전부 좁아지고,
+ * 무엇보다 이것은 다른 종류의 수치다 — 체력·정신·위험은 내 상태이고,
+ * 이것은 남의 상태다. 줄을 나누면 그 차이가 눈에 먼저 온다.
+ */
+function updateRace() {
+  const row = $('race');
+  const v = state.rival || 0;
+  // 같은 편이 되면 경주가 끝난다. 협상 노선이 처음으로 값을 갖는 자리다.
+  row.hidden = !racing(state) || v < RIVAL_VISIBLE;
+  if (row.hidden) return;
+  row.dataset.stage = rivalStage(v);
+  row.querySelector('.bar i').style.width = `${Math.min(100, (v / RIVAL_MAX) * 100)}%`;
+  row.querySelector('.race-val').textContent = rivalLabel(v);
+}
+
 /** 전투 상태 바. 전투 중에만 뜬다. */
 function updateCombatBar() {
   const c = gm?.combat;
@@ -234,6 +253,7 @@ function updateHud() {
   meter($('meter-hp'), state.hp, state.maxHp);
   meter($('meter-san'), state.san, state.maxSan);
   meter($('meter-danger'), state.danger, MAX_DANGER, true);
+  updateRace();
   updateCombatBar();
 }
 
@@ -605,6 +625,9 @@ async function nextChapter(routeId) {
       tone: 'gm',
     },
   ];
+  // 앞선 채로 장을 마쳤으면 그가 먼저 손을 댄 것이 항로보다 먼저 온다.
+  // 지난 장의 결과이지 이번 장의 사건이 아니므로.
+  if (moved.toll) intro.push({ type: 'pressure', tone: 'rival', text: moved.toll.text });
   // 고른 항로가 여정을 서술한다. 배 위에서 일어난 일도 여기서 드러난다.
   if (moved.route) intro.push({ type: 'narration', text: moved.route.text });
   if (moved.betrayal) {

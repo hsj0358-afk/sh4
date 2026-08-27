@@ -9,6 +9,7 @@ import { buildCheck, difficultyLabel, hasLight } from './rules.js';
 import { applyEffects, formatClock, isDead, isBroken } from './state.js';
 import { interpret, hallucination } from './freeform.js';
 import { createRng } from './rng.js';
+import { rivalCrossing } from './rival.js';
 import { getItem } from '../content/items.js';
 import { getEncounter } from '../content/encounters.js';
 import { COMPANIONS } from '../content/companions.js';
@@ -100,6 +101,31 @@ const asArray = (v, state) => {
   if (!vars.이름) return list;
   return list.map((line) => fill(line, vars));
 };
+
+/**
+ * 값이 붙지 않은 실패에 값을 붙인다.
+ *
+ * 반복 가능한 판정 27개 전부에서 실패의 비용은 시간뿐이었고, 시간은 위험도를
+ * 깎아 주므로 실패가 오히려 안전해지는 쪽이었다. 그러면 최적 전략이
+ * 「대성공이 나올 때까지 누르기」가 되고, 판정은 긴장이 아니라 노동이 된다.
+ *
+ * 콘텐츠가 이미 값을 적어 둔 실패는 건드리지 않는다. 이것은 빈 자리를 메우는 것이지
+ * 벌을 두 번 주는 것이 아니다.
+ *
+ * 위험도가 오르면 applyEffects 가 calm 을 0 으로 되돌리므로, 실패로 흘려보낸
+ * 시간이 위험도를 깎아 주던 것도 함께 사라진다.
+ */
+const FAILURE_DANGER = 1;
+
+function withFailureToll(branch, outcome, state) {
+  if (!branch) return branch;
+  if (outcome !== OUTCOME.FAIL && outcome !== OUTCOME.FUMBLE) return branch;
+  const d =
+    typeof branch.effects === 'function' ? branch.effects(state) || {} : branch.effects || {};
+  const paid = d.hp || d.san || d.danger || (d.removeItems || []).length;
+  if (paid) return branch;
+  return { ...branch, effects: { ...d, danger: (d.danger || 0) + FAILURE_DANGER } };
+}
 
 export function createGM({ state, episode }) {
   const rng = createRng(state.seed);
@@ -277,6 +303,17 @@ export function createGM({ state, episode }) {
     }
   }
 
+  /**
+   * 경쟁자가 문턱을 넘으면 그때 알려 준다.
+   *
+   * 배신과 같은 원칙이다 — 예고된다. 장이 끝나고 나서야 "빼앗겼습니다"라고
+   * 말하면 그것은 결과가 아니라 함정이다.
+   */
+  function noteRival(events) {
+    const line = rivalCrossing(state);
+    if (line) events.push({ type: 'pressure', tone: 'rival', text: line });
+  }
+
   /** 배신을 판정하고, 일어났으면 로그와 상태에 반영한다. */
   function maybeBetrayal(moment, events) {
     const b = checkBetrayal(state, rng, moment);
@@ -419,6 +456,7 @@ export function createGM({ state, episode }) {
 
     if (enterNotes.length) events.push({ type: 'notes', notes: enterNotes });
     noteRelations(events);
+    noteRival(events);
 
     // 장면이 조우를 걸고 있으면 바로 전투로 들어간다.
     if (s.combat && !state.combat && !state.flags[`combatDone:${id}`]) {
@@ -495,6 +533,7 @@ export function createGM({ state, episode }) {
     if (res.clueDetail) events.push({ type: 'clue', clue: res.clueDetail });
 
     noteRelations(events);
+    noteRival(events);
     if (checkVitals(events)) return;
 
     // 값나가는 것이 가방에 들어온 직후는 흔들리는 사람에게 가장 선명한 순간이다.
@@ -587,7 +626,7 @@ export function createGM({ state, episode }) {
     }
 
     const branch = selectBranch(p.outcomes, result.outcome);
-    applyResult(branch, events);
+    applyResult(withFailureToll(branch, result.outcome, state), events);
 
     if (p.after) applyResult(p.after(state, result) || {}, events);
 

@@ -11,6 +11,7 @@ import { getInterlude, availableRoutes } from '../content/interludes.js';
 import { applyEffects } from './state.js';
 import { createRng } from './rng.js';
 import { checkBetrayal, MOMENT } from './betrayal.js';
+import { rivalStart, rivalToll } from './rival.js';
 
 /** 이 상태에서 다음 장으로 갈 수 있는가. */
 export function hasNextEpisode(state) {
@@ -57,6 +58,11 @@ export function advanceEpisode(state, opts = {}) {
   const rng = createRng(state.seed);
   if (state.rngState !== undefined) rng.setState(state.rngState);
 
+  // 떠나기 전에 경주부터 정산한다. 앞선 채로 장을 마쳤으면 그가 먼저 손을 댔다.
+  // 항로 효과보다 먼저다 — 정산 대상은 방금 끝난 장이지 다음 장이 아니다.
+  const toll = rivalToll(state);
+  const tollNotes = toll ? applyEffects(state, toll.effects) : [];
+
   if (!state.visitedEpisodes) state.visitedEpisodes = [];
   if (state.episode && !state.visitedEpisodes.includes(state.episode)) {
     state.visitedEpisodes.push(state.episode);
@@ -81,6 +87,21 @@ export function advanceEpisode(state, opts = {}) {
 
   const notes = applyEffects(state, route ? route.effects : next.arrival || {});
 
+  // 경주는 장마다 새로 시작한다. 같은 문을 향해 두 배가 다시 떠나는 것이므로.
+  //
+  // 항로 효과를 적용한 *뒤에* 자리를 잡는다. 여정은 몇 주짜리라 그대로 흘려보내면
+  // 시계가 첫 장면 전에 꽉 찬다. 여정이 벌린 거리는 틱이 아니라 rivalStart 가 말한다.
+  state.rival = rivalStart(getInterlude(nextId), route, state);
+  delete state.flags['rivalWarned:near'];
+  delete state.flags['rivalWarned:lost'];
+
   state.rngState = rng.getState();
-  return { ok: true, episode: next, notes: [...betrayalNotes, ...notes], route, betrayal };
+  return {
+    ok: true,
+    episode: next,
+    notes: [...tollNotes, ...betrayalNotes, ...notes],
+    route,
+    betrayal,
+    toll,
+  };
 }

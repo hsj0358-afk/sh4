@@ -111,8 +111,11 @@ function build(ev) {
     }
 
     case 'pressure': {
-      const wrap = el('div', 'pressure');
-      wrap.appendChild(el('span', 'tag', '상황 변화'));
+      // 유적이 나를 알아챈 것과, 저 사람이 나를 앞선 것은 다른 종류의 압박이다.
+      // 같은 카드로 그리면 둘 다 「무슨 일이 났다」로만 읽힌다.
+      const rival = ev.tone === 'rival';
+      const wrap = el('div', `pressure${rival ? ' rival' : ''}`);
+      wrap.appendChild(el('span', 'tag', rival ? '앞서간 사람' : '상황 변화'));
       paragraphs(wrap, ev.text);
       return wrap;
     }

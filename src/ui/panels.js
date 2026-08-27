@@ -12,6 +12,7 @@ import { EPISODES } from '../content/episodes/index.js';
 import { getDifficulty, DIFFICULTIES } from '../content/difficulty.js';
 import { conditionPenalty, dangerLabel, formatClock } from '../engine/state.js';
 import { progress } from '../engine/archive.js';
+import { portrait } from './sprites.js';
 import { isShaky, warnings } from '../engine/betrayal.js';
 
 const el = (tag, cls, text) => {
@@ -212,6 +213,9 @@ export function partyPanel(state) {
       base?.desc,
       base?.skill,
     );
+    // 이름 옆에 얼굴 하나. 떠난 사람은 흐리게.
+    node.classList.add('with-portrait');
+    node.prepend(portrait(c.id, { scale: 4, dim: !c.present }));
     const rel = el('div', 'rel-bars');
     const a = el('span', 'rel');
     a.appendChild(el('span', null, '호감도'));
@@ -273,7 +277,14 @@ function collectedList(entries, known, unseenText) {
   const frag = document.createDocumentFragment();
   const seen = entries.filter((e) => known.includes(e.id));
 
-  for (const e of seen) frag.appendChild(item(e.title, e.meta, e.text));
+  for (const e of seen) {
+    const node = item(e.title, e.meta, e.text);
+    if (e.face) {
+      node.classList.add('with-portrait');
+      node.prepend(portrait(e.face, { scale: 3 }));
+    }
+    frag.appendChild(node);
+  }
 
   const left = entries.length - seen.length;
   if (left) {
@@ -353,6 +364,7 @@ export function archivePanel(archive) {
         title: c.name,
         meta: c.role,
         text: c.desc,
+        face: c.id,
       })),
       archive.companions,
       '아직 만나지 않은 사람.',

@@ -705,6 +705,40 @@ input::placeholder {
   margin-bottom: 0;
 }
 
+/* 도트 초상 — 이름 옆의 얼굴 하나 (ui/sprites.js) */
+.portrait {
+  float: left;
+  margin: 2px 12px 6px 0;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.25);
+  line-height: 0;
+}
+.portrait canvas {
+  display: block;
+  image-rendering: pixelated;
+}
+/*
+ * 새 서식 문맥을 만들어 본문이 초상 아래로 흘러내리지 않게 한다.
+ * float 만 두면 문단이 초상 옆에서 시작했다가 아래에서 왼쪽 끝으로 돌아온다 —
+ * 한 문단 안에서 들여쓰기가 두 번 바뀌는 셈이라 읽는 눈이 걸린다.
+ */
+.list-item.with-portrait {
+  overflow: hidden;
+}
+/*
+ * 초상 옆의 글은 제 단(段) 안에 머물러야 한다.
+ *
+ * 부모에 overflow 를 주는 것만으로는 부족했다. 그건 float 를 가두기만 하고,
+ * 형제 블록은 여전히 float 아래로 흘러내린다 — 한 문단이 초상 옆에서 시작했다가
+ * 중간부터 왼쪽 끝으로 돌아오는 모양이 된다. 블록마다 서식 문맥을 따로 만들면
+ * 각자 초상을 피해 좁아진 단이 되고, 초상이 끝난 아래부터 자연히 넓어진다.
+ */
+.list-item.with-portrait > *:not(.portrait) {
+  overflow: hidden;
+}
+
 /* 줄거리 요약 — 이어하기의 첫 화면. 수첩 앞장을 펴는 느낌으로. */
 .recap {
   margin: 4px 0 22px;

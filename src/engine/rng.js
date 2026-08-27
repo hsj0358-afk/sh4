@@ -23,6 +23,10 @@ export function createRng(seed = Date.now()) {
       t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     },
+    /** [min, max) 실수 */
+    range(min, max) {
+      return min + rng.next() * (max - min);
+    },
     /** min 이상 max 이하 정수 */
     int(min, max) {
       return min + Math.floor(rng.next() * (max - min + 1));

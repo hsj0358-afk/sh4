@@ -24,6 +24,7 @@ import {
   PANEL_TITLES,
 } from './panels.js';
 import { mapPanel } from './map.js';
+import { paint, kindFor } from './backdrop.js';
 import { sfx, setAudioEnabled, audioEnabled } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
@@ -350,6 +351,24 @@ function anchor(node) {
   dom.log.scrollTo({ top: Math.min(Math.max(0, top - 6), Math.max(0, grown)), behavior: 'smooth' });
 }
 
+// ── 장면 그림 ─────────────────────────────────────────────────
+
+/**
+ * 장면 머리말 아래의 그림 띠를 그린다.
+ *
+ * 캔버스 크기는 레이아웃이 잡힌 뒤라야 알 수 있으므로 한 프레임 기다린다.
+ * 그리지 못하면(캔버스가 아직 0×0) 띠는 투명한 채로 남는다 — 빈 칸이 보일 뿐
+ * 아무것도 깨지지 않는다.
+ */
+function paintSceneArt(block, scene) {
+  const canvas = block.art.querySelector('canvas');
+  requestAnimationFrame(() => {
+    if (paint(canvas, kindFor(scene), scene.location || scene.id)) {
+      block.art.classList.add('on');
+    }
+  });
+}
+
 /** 새 장면이 시작되면 이전 장면을 접고 새 블록을 연다. */
 function openSceneBlock(ev) {
   if (currentBlock) currentBlock.setCollapsed(true);
@@ -407,7 +426,9 @@ async function play(events) {
     if (ev.type === 'scene') {
       sfx.page();
       // 장면이 바뀌면 그 장면의 머리말이 기준이 된다. 앞의 것은 잊는다.
-      head = openSceneBlock(ev).section;
+      const block = openSceneBlock(ev);
+      head = block.section;
+      paintSceneArt(block, gm.scene());
     } else if (ev.type === 'notes') {
       // 단서는 칩 대신 카드로 보여준다. 같은 말을 두 번 하지 않는다.
       const chips = ev.notes.filter((n) => n.kind !== 'clue');

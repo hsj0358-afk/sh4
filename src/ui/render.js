@@ -61,6 +61,11 @@ export function createSceneBlock(ev) {
   head.appendChild(summary);
   section.appendChild(head);
 
+  // 그림 띠. 캔버스는 비어 있고, main.js 가 장면에 맞는 그림을 그려 넣는다.
+  const art = el('div', 'scene-art');
+  art.appendChild(el('canvas'));
+  section.appendChild(art);
+
   const body = el('div', 'block-body');
   section.appendChild(body);
 
@@ -76,7 +81,7 @@ export function createSceneBlock(ev) {
   });
 
   setCollapsed(false);
-  return { section, body, setCollapsed };
+  return { section, body, art, setCollapsed };
 }
 
 export function renderEvent(log, ev) {

@@ -310,3 +310,37 @@ test('본문이 시각을 단정하지 않는다', () => {
     }
   }
 });
+
+// ── 이름 자리표 ────────────────────────────────────────────────
+//
+// 콘텐츠가 `{이름은}` 이라고 적으면 엔진(gm.js 의 asArray)이 채운다.
+// 오타가 나면 채워지지 않고 중괄호가 그대로 화면에 나온다 — 그 편이
+// 조용히 지워지는 것보다 눈에 띄지만, 애초에 나오지 않는 것이 낫다.
+
+const FILLABLE = new Set(['이름', '직업']);
+const PARTICLES = '(으로|로|은|는|이|가|을|를|과|와|아|야)';
+
+test('본문의 자리표는 엔진이 채울 수 있는 것뿐이다', () => {
+  const tail = new RegExp(`^(.+?)${PARTICLES}$`);
+  for (const { ep, id, scene } of allScenes()) {
+    const body = [].concat(
+      typeof scene.body === 'function' ? scene.body(probe) : scene.body || [],
+      typeof scene.revisitBody === 'function' ? scene.revisitBody(probe) : scene.revisitBody || [],
+    ).join(' ');
+    for (const [, token] of body.matchAll(/\{([^{}\s]+)\}/g)) {
+      const key = FILLABLE.has(token) ? token : (token.match(tail) || [])[1];
+      assert.ok(FILLABLE.has(key), `${ep.id}/${id} 에 채울 수 없는 자리표 {${token}}`);
+    }
+  }
+});
+
+test('탐사자 이름이 적어도 한 번은 서술에 나온다', () => {
+  // 이름을 짓게 해 놓고 어디에도 쓰지 않으면 짓지 않은 것과 같다.
+  for (const ep of Object.values(EPISODES)) {
+    const scene = ep.scenes[ep.start];
+    const body = [].concat(
+      typeof scene.body === 'function' ? scene.body(probe) : scene.body || [],
+    ).join(' ');
+    assert.ok(/\{이름/.test(body), `${ep.id} 의 도착 장면이 탐사자 이름을 부르지 않는다`);
+  }
+});

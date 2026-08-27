@@ -52,6 +52,10 @@ export function recap(state, episode) {
   const days = Math.max(1, Math.round(hoursSince(state.tick) / 24));
   const chapter = (state.visitedEpisodes?.length || 0) + 1;
   const here = placeName(state.episode || episode?.id);
+  // 며칠 만에 돌아온 사람은 자기가 어느 판을 열었는지도 헷갈린다.
+  // 슬롯이 셋이면 더 그렇다. 그래서 첫 줄에 이름과 직업을 적는다.
+  const who = state.char?.name;
+  if (who) lines.push(`${who}, ${state.char.profession}.`);
   lines.push(`제 ${chapter} 장 「${here}」. 런던을 떠난 지 ${days}일째.`);
 
   // 2. 어디를 지나왔나 — 두 번째 장부터만 의미가 있다

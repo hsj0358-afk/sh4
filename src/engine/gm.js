@@ -3,7 +3,7 @@
 // 장면 진입 → 서술 → 선택/자유입력 → (필요시) 판정 → 결과 분기 → 다음 장면.
 // UI 는 이 엔진이 뱉는 이벤트 배열을 로그에 붙이기만 한다.
 
-import { subj } from '../korean.js';
+import { subj, fill } from '../korean.js';
 import { rollCheck, resolve, selectBranch, compareOutcome, OUTCOME } from './dice.js';
 import { buildCheck, difficultyLabel, hasLight } from './rules.js';
 import { applyEffects, formatClock, isDead, isBroken } from './state.js';
@@ -86,10 +86,19 @@ export function meets(state, req) {
   return { ok: true };
 }
 
+/**
+ * 콘텐츠가 준 문장을 화면에 올릴 수 있는 배열로 만든다.
+ *
+ * 여기가 서술이 지나가는 유일한 길목이라, 자리표({이름은} 따위)도 여기서 채운다.
+ * 채우는 곳을 한 군데로 몰아 두면 콘텐츠 쪽에서 잊어버릴 일이 없다.
+ */
 const asArray = (v, state) => {
   const r = typeof v === 'function' ? v(state) : v;
   if (!r) return [];
-  return Array.isArray(r) ? r : [r];
+  const list = Array.isArray(r) ? r : [r];
+  const vars = { 이름: state?.char?.name, 직업: state?.char?.profession };
+  if (!vars.이름) return list;
+  return list.map((line) => fill(line, vars));
 };
 
 export function createGM({ state, episode }) {

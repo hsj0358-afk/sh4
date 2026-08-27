@@ -105,5 +105,14 @@ test('요약은 짧다 — 어떤 상태에서도 여덟 줄을 넘지 않는다
 test('날짜는 하루 미만이어도 1일째로 센다', () => {
   const s = fresh();
   s.tick = 4;
-  assert.match(recap(s, EPISODES.luxor)[0], /1일째/);
+  assert.match(recap(s, EPISODES.luxor).join('\n'), /1일째/);
+});
+
+test('첫 줄이 누구의 판인지 말한다', () => {
+  // 칸이 셋이라 「어디까지 왔나」보다 「어느 판인가」가 먼저 궁금하다.
+  const s = fresh();
+  s.char.name = '에드워드 몰리';
+  const lines = recap(s, EPISODES.luxor);
+  assert.match(lines[0], /에드워드 몰리/);
+  assert.match(lines[0], new RegExp(s.char.profession));
 });

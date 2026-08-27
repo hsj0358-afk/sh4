@@ -161,3 +161,37 @@ test('위험도가 높아도 목표값만 오르고 판정은 계속 가능하�
   assert.equal(req.pressure, 2);
   assert.ok(req.target > 12);
 });
+
+// ── 이름 ───────────────────────────────────────────────────────
+
+test('첫 서술에 탐사자가 지은 이름이 나온다', () => {
+  const state = createState({ name: '에드워드 몰리', professionId: 'archaeologist', seed: 3 });
+  const gm = createGM({ state, episode });
+  const text = gm.start()
+    .filter((e) => e.type === 'narration')
+    .flatMap((e) => e.text)
+    .join('\n');
+  assert.ok(text.includes('에드워드 몰리'), '서술 어디에도 이름이 없다');
+  assert.ok(!/\{[^{}\s]+\}/.test(text), `채우지 못한 자리표가 남았다: ${text}`);
+});
+
+test('이름을 안 적어도 문장이 깨지지 않는다', () => {
+  const state = createState({ professionId: 'archaeologist', seed: 3 });
+  const gm = createGM({ state, episode });
+  const text = gm.start()
+    .filter((e) => e.type === 'narration')
+    .flatMap((e) => e.text)
+    .join('\n');
+  assert.ok(text.includes('이름 없는 탐사자'));
+  assert.ok(!/\{[^{}\s]+\}/.test(text));
+});
+
+test('받침에 따라 조사가 갈린다', () => {
+  const say = (name) => {
+    const s = createState({ name, professionId: 'archaeologist', seed: 3 });
+    return createGM({ state: s, episode }).start()
+      .filter((e) => e.type === 'narration').flatMap((e) => e.text).join('\n');
+  };
+  assert.ok(!/[가-힣]{1,10}은은|는는/.test(say('하룬')));
+  assert.ok(say('핀치').includes('핀치'));
+});

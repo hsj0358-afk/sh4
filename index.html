@@ -48,13 +48,17 @@
         <div class="create-body" id="create-body">
           <label class="field">
             <span class="field-label">이름</span>
-            <input
-              id="input-name"
-              type="text"
-              maxlength="20"
-              placeholder="예: 에드워드 몰리"
-              autocomplete="off"
-            />
+            <div class="field-row">
+              <input
+                id="input-name"
+                type="text"
+                maxlength="20"
+                placeholder="예: 에드워드 몰리"
+                autocomplete="off"
+              />
+              <button class="icon-btn small" id="btn-reroll-name" type="button" aria-label="다른 이름">⟳</button>
+            </div>
+            <span class="field-hint">동료들이 이 이름으로 당신을 부릅니다.</span>
           </label>
 
           <p class="field-label section-label">난이도</p>

@@ -131,6 +131,12 @@ export function endingCoda(state) {
     );
   }
 
-  lines.push(`단서 ${state.clues.length}개. 세 대륙. 1897년 겨울.`);
+  // 마지막 줄에 이름을 적는다. 기록이란 결국 누가 다녀갔는지를 남기는 일이고,
+  // 이 판을 굴린 사람의 이름은 여기 말고 적힐 자리가 없다.
+  const who = state.char?.name;
+  lines.push(
+    `단서 ${state.clues.length}개. 세 대륙. 1897년 겨울.`,
+    who ? `기록자: ${who}, ${state.char.profession}.` : '기록자의 이름은 비어 있다.',
+  );
   return lines;
 }

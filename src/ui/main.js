@@ -13,7 +13,10 @@ import {
   chapterNumber,
   interludeFor,
 } from '../engine/campaign.js';
-import { saveGame, loadGame, clearGame, loadSettings, saveSettings } from '../engine/save.js';
+import {
+  saveGame, loadGame, clearGame, loadSettings, saveSettings,
+  slotList, firstEmptySlot, hasAnySave, migrateLegacy, SLOTS,
+} from '../engine/save.js';
 import { loadArchive, saveArchive, countRun, record } from '../engine/archive.js';
 import { renderEvent, createSceneBlock } from './render.js';
 import {
@@ -70,6 +73,9 @@ setMusicEnabled(settings.sound !== false && settings.music !== false);
 let archive = loadArchive();
 // 같은 판의 끝을 두 번 세지 않는다.
 let recordedRun = null;
+// 지금 굴리고 있는 판이 앉은 슬롯. 자동 저장이 여기로 간다.
+let slot = 0;
+migrateLegacy();
 
 // ── 화면 전환 ─────────────────────────────────────────────────
 
@@ -83,6 +89,23 @@ function show(name) {
 
 let picked = null;
 let pickedDifficulty = 'standard';
+
+// 이름 칸을 비워 두면 「이름 없는 탐사자」가 되고, 그 이름으로 나디아가
+// 당신을 부르게 된다. 그래서 칸을 비워 두지 않는다 — 열 때마다 하나 채워 놓고,
+// 마음에 안 들면 ⟳ 로 다시 뽑거나 그냥 지우고 쓰면 된다.
+// 1897년에 이런 배를 탈 만한 사람들의 이름이다.
+const NAME_SEEDS = [
+  '에드워드 몰리', '헨리 콜브룩', '엘리자 반스', '오거스터스 리드',
+  '마거릿 헤이스', '시어도어 팬쇼', '클라라 윈덤', '앰브로즈 켈러',
+  '이사도라 렌', '루퍼트 애슈비', '베아트리스 놀런', '조사이아 그레이브스',
+  '콘스턴스 페어리', '알로이시우스 하트', '실비아 머독', '너새니얼 퀸',
+];
+
+function suggestName() {
+  const cur = $('input-name').value.trim();
+  const pool = NAME_SEEDS.filter((n) => n !== cur);
+  $('input-name').value = pool[Math.floor(Math.random() * pool.length)];
+}
 
 function buildDifficulty() {
   const list = $('diff-list');
@@ -265,7 +288,10 @@ function renderEndActions() {
   again.className = 'btn btn-primary';
   again.textContent = '새 탐사 시작';
   again.addEventListener('click', () => {
-    clearGame();
+    // 끝난 판이 앉아 있던 칸은 비워 준다. 다음 판이 들어올 자리다.
+    clearGame(slot);
+    $('input-name').value = '';
+    suggestName();
     show('create');
   });
   const codex = document.createElement('button');
@@ -482,7 +508,7 @@ async function play(events) {
   attachControls();
   anchor(head);
   setTimeout(markOverflow, 420); // 부드러운 스크롤이 멈춘 뒤에 잰다
-  saveGame(state);
+  saveGame(state, slot);
   syncArchive();
 }
 
@@ -725,8 +751,8 @@ function menuPanel() {
   saveBtn.className = 'btn';
   saveBtn.textContent = '지금 저장';
   saveBtn.addEventListener('click', () => {
-    saveGame(state);
-    saveBtn.textContent = '저장했습니다';
+    saveGame(state, slot);
+    saveBtn.textContent = `${slot + 1}번 칸에 저장했습니다`;
     setTimeout(() => (saveBtn.textContent = '지금 저장'), 1400);
   });
 
@@ -739,7 +765,7 @@ function menuPanel() {
       restart.textContent = '정말 포기합니까? (한 번 더)';
       return;
     }
-    clearGame();
+    clearGame(slot);
     closePanel();
     stopMusic();
     show('title');
@@ -779,9 +805,10 @@ function boot(newState) {
   return play(gm.start());
 }
 
-function resume() {
-  const data = loadGame();
+function resume(n = 0) {
+  const data = loadGame(n);
   if (!data) return false;
+  slot = n;
   state = data.state;
   episode = getEpisode(state.episode);
   gm = createGM({ state, episode });
@@ -814,20 +841,120 @@ function resume() {
   return true;
 }
 
+// ── 저장 칸 ───────────────────────────────────────────────────
+//
+// 슬롯 셋. 하나로 두면 새 직업을 시험해 보려다 진행 중인 판을 지우게 되고,
+// 이 게임은 한 판이 한 시간짜리라 그 실수의 값이 크다.
+
+const AGO = [
+  [60, '분'],
+  [24, '시간'],
+  [Infinity, '일'],
+];
+
+/** 저장한 지 얼마나 됐는지. "3분 전" 정도면 충분하다. */
+function agoText(ts) {
+  let v = Math.max(0, (Date.now() - ts) / 1000 / 60);
+  for (const [step, unit] of AGO) {
+    if (v < step) return `${Math.floor(v) || 0}${unit} 전`;
+    v /= step;
+  }
+  return '오래전';
+}
+
+function slotRow(info, mode) {
+  const btn = document.createElement('button');
+  btn.className = `btn slot${info.empty ? ' slot-vacant' : ''}`;
+  btn.type = 'button';
+
+  if (info.empty) {
+    btn.innerHTML =
+      `<span class="slot-no">${info.index + 1}</span>` +
+      `<span class="slot-main"><b>빈 칸</b>` +
+      `<span class="slot-sub">${mode === 'save' ? '여기서 시작한다' : '아직 아무것도 없다'}</span></span>`;
+    btn.disabled = mode === 'load';
+    return btn;
+  }
+
+  const clock = formatClock(info.tick);
+  const where = getEpisode(info.episode)?.title.replace(/^에피소드\s*\d+\s*—\s*/, '') || '';
+  const done = info.ended && info.ended !== 'chapter' ? ' · 끝난 판' : '';
+  btn.innerHTML =
+    `<span class="slot-no">${info.index + 1}</span>` +
+    `<span class="slot-main"><b>${info.name}</b> <span class="slot-prof">${info.profession}</span>` +
+    `<span class="slot-sub">제 ${info.chapter} 장 「${where}」 · 단서 ${info.clues}${done}</span>` +
+    `<span class="slot-sub">${clock.date} · 체력 ${info.hp}/${info.maxHp} · 정신 ${info.san}/${info.maxSan}</span>` +
+    `<span class="slot-sub faint">${agoText(info.savedAt)}에 저장</span></span>`;
+  return btn;
+}
+
+/**
+ * 저장 칸 목록을 연다.
+ * @param {'load'|'save'} mode load 는 이어하기, save 는 새 판을 앉힐 칸 고르기
+ * @param {Function} [onPick] save 일 때 고른 칸 번호를 받는다
+ */
+function openSlots(mode, onPick) {
+  sfx.page();
+  dom.sheetTitle.textContent = mode === 'load' ? '기록 이어하기' : '어느 칸에 시작할까';
+  dom.sheetBody.innerHTML = '';
+
+  const wrap = document.createElement('div');
+  wrap.className = 'menu-list';
+
+  if (mode === 'save') {
+    wrap.appendChild(
+      Object.assign(document.createElement('p'), {
+        className: 'li-desc',
+        textContent: '칸이 전부 차 있습니다. 덮어쓸 칸을 고르세요 — 그 판은 사라집니다.',
+      }),
+    );
+  }
+
+  for (const info of slotList()) {
+    const row = slotRow(info, mode);
+    row.addEventListener('click', () => {
+      if (mode === 'load') {
+        closePanel();
+        resume(info.index);
+        return;
+      }
+      // 덮어쓰기는 한 번 더 묻는다. 한 시간짜리 판이 사라지는 일이다.
+      if (!info.empty && row.dataset.confirm !== '1') {
+        row.dataset.confirm = '1';
+        row.querySelector('.slot-sub').textContent = '정말 덮어씁니까? (한 번 더 누르면)';
+        return;
+      }
+      closePanel();
+      onPick(info.index);
+    });
+    wrap.appendChild(row);
+  }
+
+  dom.sheetBody.appendChild(wrap);
+  dom.sheet.hidden = false;
+  dom.sheetScrim.hidden = false;
+}
+
 function refreshTitle() {
-  $('btn-continue').hidden = !loadGame();
+  $('btn-continue').hidden = !hasAnySave();
 }
 
 // ── 이벤트 배선 ───────────────────────────────────────────────
 
 $('btn-new').addEventListener('click', () => {
   sfx.page();
+  if (!$('input-name').value.trim()) suggestName();
   show('create');
+});
+
+$('btn-reroll-name').addEventListener('click', () => {
+  sfx.tap();
+  suggestName();
 });
 
 $('btn-continue').addEventListener('click', () => {
   sfx.page();
-  resume();
+  openSlots('load');
 });
 
 $('btn-archive').addEventListener('click', () => openPanel('archive'));
@@ -854,15 +981,24 @@ $('create-back').addEventListener('click', () => {
 $('btn-begin').addEventListener('click', () => {
   if (!picked) return;
   const name = $('input-name').value.trim();
-  sfx.page();
-  boot(
-    createState({
-      name,
-      professionId: picked.id,
-      difficulty: pickedDifficulty,
-      seed: Date.now(),
-    }),
-  );
+
+  const start = (n) => {
+    slot = n;
+    sfx.page();
+    boot(
+      createState({
+        name,
+        professionId: picked.id,
+        difficulty: pickedDifficulty,
+        seed: Date.now(),
+      }),
+    );
+  };
+
+  // 빈 칸이 있으면 묻지 않는다. 전부 차 있을 때만 무엇을 덮어쓸지 고르게 한다.
+  const empty = firstEmptySlot();
+  if (empty >= 0) start(empty);
+  else openSlots('save', start);
 });
 
 dom.log.addEventListener('scroll', markOverflow, { passive: true });
@@ -904,7 +1040,7 @@ window.addEventListener('keydown', (e) => {
 
 // 앱을 벗어날 때 저장.
 window.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden' && state) saveGame(state);
+  if (document.visibilityState === 'hidden' && state) saveGame(state, slot);
 });
 
 buildDifficulty();

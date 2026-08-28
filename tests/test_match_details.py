@@ -18,6 +18,7 @@ pytest 없이도 돈다:  python tests/test_match_details.py
 """
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -371,6 +372,58 @@ def test_per_recent_needs_sample_size():
     assert s.npxg_recent_pg is None, "0 으로 나누면 안 된다"
     s.recent_matches = 4
     assert s.npxg_recent_pg == 1.5
+
+
+def test_per_recent_divides_by_that_metric_own_sample():
+    """지표마다 표본이 다르다 — 빠진 경기를 0 으로 치면 안 된다.
+
+    Phase 1-B 검증에서 실제로 걸린 결함이다. 6경기를 받았지만 npxG 가
+    3경기에만 있으면, 합계 3.0 을 6 으로 나눠 0.5 가 됐다. 참값은 1.0 이다.
+    """
+    s = TeamStats(recent_matches=6, npxg_recent=3.0, shots_recent=60.0,
+                  recent_counts={"npxg_recent": 3})
+    assert s.npxg_recent_pg == 1.0, "빠진 경기를 0 으로 쳤다"
+    assert s.shots_recent_pg == 10.0, "표본 정보가 없는 지표는 경기 수로 나눈다"
+
+    # 정보가 없으면(옛 캐시) recent_matches 로 되돌아간다 — 죽지 않는다
+    assert TeamStats(recent_matches=6, npxg_recent=3.0).npxg_recent_pg == 0.5
+
+
+def test_attach_records_per_metric_sample_size():
+    """일부 경기에만 있는 지표는 그 경기 수만 센다."""
+    full = _match_details()
+    partial = _match_details()
+    # 두 번째 경기에서 expected_goals 그룹을 통째로 뺀다 (npxG·xGOT 없음)
+    partial["content"]["stats"]["Periods"]["All"]["stats"] = [
+        g for g in partial["content"]["stats"]["Periods"]["All"]["stats"]
+        if g["key"] != "expected_goals"]
+
+    teams = _teams("Arsenal", "Chelsea")
+    matches = [_m("111", "Arsenal", "Chelsea", utc="2026-08-08T10:00:00Z"),
+               _m("222", "Arsenal", "Chelsea", utc="2026-08-01T10:00:00Z")]
+    fotmob.attach_match_details(FakeBrowser({"111": full, "222": partial}),
+                                teams, matches, count=6, league_key="epl")
+
+    st = teams["Arsenal"]["stats"]
+    assert st.recent_matches == 2
+    assert st.recent_counts["npxg_recent"] == 1, "없는 경기까지 셌다"
+    assert st.recent_counts["shots_recent"] == 2
+    assert st.npxg_recent == 1.08
+    assert st.npxg_recent_pg == 1.08, "1경기치를 2로 나눴다"
+    assert st.shots_recent_pg == 16.0
+
+
+def test_recent_counts_survives_cache_roundtrip():
+    """캐시(JSON)를 거쳐도 표본 정보가 살아 있어야 한다."""
+    from dataclasses import asdict
+    st = TeamStats(recent_matches=6, npxg_recent=3.0,
+                   recent_counts={"npxg_recent": 3})
+    back = TeamStats(**json.loads(json.dumps(asdict(st))))
+    assert back.npxg_recent_pg == 1.0
+    # 표본 정보가 없던 옛 캐시도 되살아나야 한다 (죽지 않는 게 우선)
+    old = asdict(st)
+    del old["recent_counts"]
+    assert TeamStats(**old).npxg_recent_pg == 0.5
 
 
 def test_inside_box_share_and_xgot_delta():

@@ -136,7 +136,14 @@ class TeamStats:
     # 시즌 누계가 아니라 **최근 N경기 표본의 합계**다. 시즌 지표와 의미가
     # 다르므로 이름에 _recent 를 붙여 섞이지 않게 한다. 경기당 값이 필요하면
     # 아래 _recent_pg 속성을 쓴다 (recent_matches 로 나눈 값).
-    recent_matches: int | None = None               # 표본 크기
+    recent_matches: int | None = None               # 받아 온 경기 수
+    # 지표마다 표본이 다를 수 있다 — 어떤 경기에는 npxG 가 없고 슈팅만 있다.
+    # 그런 지표를 recent_matches 로 나누면 빠진 경기를 0 으로 친 것과 같아져
+    # 값이 조용히 낮아진다. 그래서 {필드 이름: 그 지표가 실제로 있던 경기 수}
+    # 를 따로 들고 다니며 그것으로 나눈다. None 이면 정보가 없다는 뜻이라
+    # recent_matches 로 되돌아간다 (fill_stats 가 다른 필드와 똑같이 다루도록
+    # 기본값을 빈 dict 가 아니라 None 으로 뒀다).
+    recent_counts: dict | None = None
     npxg_recent: float | None = None
     npxga_recent: float | None = None
     xgot_recent: float | None = None
@@ -263,9 +270,12 @@ class TeamStats:
     # 0 으로 채우면 '0개를 기록했다'는 실제 값과 구분되지 않는다.
     def _per_recent(self, name: str) -> float | None:
         total = getattr(self, name)
-        if total is None or not self.recent_matches:
+        if total is None:
             return None
-        return total / self.recent_matches
+        n = (self.recent_counts or {}).get(name) or self.recent_matches
+        if not n:
+            return None
+        return total / n
 
     @property
     def npxg_recent_pg(self) -> float | None:

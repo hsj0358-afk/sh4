@@ -90,7 +90,13 @@ FotMob 안에 **경로가 두 개** 있고, 각각 주는 것이 다르다. Phas
 **두 표본을 한 표에 섞지 않는다.** 이름 규칙과 리포트 블록으로 분리한다.
 
 - 필드 이름 끝의 `_recent` = 최근 N경기 **합계**. `_recent_pg` 속성이
-  `recent_matches` 로 나눈 경기당 값이다 (`toto/models.py` `_per_recent()`).
+  경기당 값이다 (`toto/models.py` `_per_recent()`).
+- **지표마다 표본이 다를 수 있다.** 어떤 경기에는 npxG 가 없고 슈팅만 있다.
+  그래서 `recent_counts` 가 `{필드: 그 지표가 실제로 있던 경기 수}` 를 들고
+  다니고, `_per_recent()` 는 그 수로 나눈다. `recent_matches`(받아 온 경기
+  수)로 일괄해서 나누면 **빠진 경기를 0 으로 친 것과 같아져 값이 조용히
+  낮아진다** — Phase 1-B 검증에서 실제로 이 상태였다(3경기치 합계를 6으로
+  나눠 절반이 됐다). 표본이 모자란 지표는 실행 로그에 이름과 경기 수를 적는다.
 - 이름 끝의 `_pg` = 그 소스가 이미 경기당으로 주는 값. 접미사가 없으면 누계다.
   누계를 비교표에 그대로 넣지 않는다 — 팀마다 소화 경기수가 달라 왜곡된다
   (`_per_played()` 로 나눈다).
@@ -205,7 +211,7 @@ toto/render.py:536
 옛 캐시를 읽어 수정이 반영되지 않는다 — 실제로 이것 때문에 두 번 헛돌았다.
 
 ```
-toto/sources/fotmob.py:56     _CACHE_VERSION = 3   (Phase 1-B 에서 2 → 3)
+toto/sources/fotmob.py:56     _CACHE_VERSION = 4   (Phase 1-B 에서 2 → 3 → 4)
 toto/sources/whoscored.py:415 _LEAGUE_CACHE_VERSION = 2
 ```
 

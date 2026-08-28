@@ -53,7 +53,7 @@ LEAGUE_PATH = "/api/data/leagues?id={id}"
 ALL_LEAGUES_PATH = "/api/data/allLeagues"
 
 # 캐시 형식이나 파싱 로직이 바뀌면 올린다. 옛 캐시는 자동으로 버려진다.
-_CACHE_VERSION = 3
+_CACHE_VERSION = 4
 
 _SCORE_RE = re.compile(r"(\d+)\s*[-:]\s*(\d+)")
 
@@ -891,6 +891,10 @@ def attach_match_details(browser: FotMobBrowser, teams: dict[str, dict],
     for canon, entry in teams.items():
         stats, sampled = entry["stats"], 0
         acc: dict[str, float] = {}
+        # 지표별로 '실제로 값이 있던 경기 수' 를 따로 센다. 어떤 경기에 npxG 가
+        # 빠져 있으면 그 지표만 표본이 작아지는데, 전부 sampled 로 나누면
+        # 빠진 경기를 0 으로 친 셈이 돼 값이 조용히 낮아진다.
+        seen: dict[str, int] = {}
         for match in wanted.get(canon, []):
             payload = details.get(match["id"])
             if payload is None:
@@ -902,6 +906,7 @@ def attach_match_details(browser: FotMobBrowser, teams: dict[str, dict],
             sampled += 1
             for name, value in values.items():
                 acc[name] = acc.get(name, 0.0) + value
+                seen[name] = seen.get(name, 0) + 1
             # 슛맵 합산과 경기 스탯의 차이를 기록 (맞추지 않는다)
             check = _check_for(payload.get("check"), entry.get("fotmob_id"))
             if check and values.get("npxg") is not None:
@@ -909,9 +914,16 @@ def attach_match_details(browser: FotMobBrowser, teams: dict[str, dict],
         if not sampled:
             continue
         stats.recent_matches = sampled
+        stats.recent_counts = {f"{n}_recent": c for n, c in seen.items()}
         for name, total in acc.items():
             setattr(stats, f"{name}_recent", total)
         filled += 1
+        short = {n: c for n, c in seen.items() if c < sampled}
+        if short:
+            log.info("[%s] %s: 일부 지표가 경기 수보다 적은 표본입니다 "
+                     "(경기 %d개 중 %s) — 그 지표는 있는 경기 수로만 나눕니다.",
+                     league_key, canon, sampled,
+                     ", ".join(f"{n} {c}" for n, c in sorted(short.items())))
 
     if diffs:
         worst = max(diffs)

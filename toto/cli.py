@@ -53,6 +53,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="후스코어드 수집 생략 (배당률·순위 위주, 빠름)")
     p.add_argument("--skip-fotmob", action="store_true",
                    help="FotMob 수집 생략 (순위·홈원정 승점·폼·맞대결)")
+    p.add_argument("--skip-match-details", action="store_true",
+                   help="경기 상세 생략 (npxG·xGOT·총슈팅·피슈팅). 몇 분 빨라진다")
     p.add_argument("--skip-odds", action="store_true",
                    help="피나클 배당률 수집 생략")
     p.add_argument("--no-cache", action="store_true",
@@ -177,6 +179,9 @@ def main(argv: list[str] | None = None) -> int:
             report.source_status["순위·폼"] = "생략"
         else:
             from .sources import fotmob
+            if args.skip_match_details:
+                # 설정을 직접 바꾸지 않고 이번 실행에만 끈다
+                settings.fotmob = dict(settings.fotmob, match_detail_matches=0)
             try:
                 report.source_status["순위·폼"] = fotmob.enrich(
                     matches, settings, resolver, cache=cache)

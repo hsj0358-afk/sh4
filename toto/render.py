@@ -385,6 +385,7 @@ def _match_card(match: Match, settings: Settings) -> str:
             f'{charts.radar((match.radar or {}).get("axes") or [], match.home.display, match.away.display)}'
             f'{_compare_inner(match, settings)}'
             f'</div></div>'
+            f'{_recent_block(match, settings)}'
             f'{_form_block(match)}'
             f'{_h2h_block(match)}'
             f'{_traits_block(match)}'
@@ -407,6 +408,39 @@ def _compare_inner(match: Match, settings: Settings) -> str:
     if not rows:
         return '<p class="nodata">비교할 지표가 없습니다.</p>'
     return charts.diverging_bar(rows, match.home.display, match.away.display, width=480)
+
+
+def _recent_block(match: Match, settings: Settings) -> str:
+    """최근 N경기 표본에서만 나오는 지표 (npxG·xGOT·슈팅·박스 안팎).
+
+    시즌 지표와 **표본이 다르므로** 위 비교표에 섞지 않고 블록을 따로 둔다.
+    두 팀의 표본 크기가 다를 수 있어(연기·컵대회) 각 팀의 경기 수를 적는다.
+    경기 상세를 건너뛴 실행에서는 값이 없어 블록 전체가 빠진다.
+    """
+    hp, ap = match.home_profile, match.away_profile
+    if hp is None or ap is None:
+        return ""
+    rows = []
+    for metric in settings.recent_metrics:
+        hv = getattr(hp.stats, metric["key"], None)
+        av = getattr(ap.stats, metric["key"], None)
+        if hv is None and av is None:
+            continue
+        rows.append({"label": metric["label"], "home": hv, "away": av,
+                     "fmt": metric.get("fmt", "{:.2f}")})
+    if not rows:
+        return ""
+
+    hn, an = hp.stats.recent_matches, ap.stats.recent_matches
+    if hn and an and hn == an:
+        note = f"최근 {hn}경기 평균"
+    else:
+        note = (f"최근 {hn or 0}경기(홈팀) · {an or 0}경기(원정팀) 평균 "
+                f"— 표본 크기가 달라 그대로 비교할 때 주의")
+    return (f'<div class="block"><h4>최근 경기 슈팅·xG 프로필</h4>'
+            f'<p class="meta">{esc(note)} · 시즌 누계가 아닙니다</p>'
+            f'{charts.diverging_bar(rows, match.home.display, match.away.display, width=480)}'
+            f'</div>')
 
 
 def _verdict_box(report: Report) -> str:

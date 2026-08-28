@@ -121,6 +121,35 @@ class TeamStats:
     xg_pg_raw: float | None = None
     xga_pg_raw: float | None = None
 
+    # ---- 시즌 통계 피드 (FotMob stats.teams[]) ----------------------------
+    # 전부 그 소스가 주는 단위 그대로다. 이름 끝의 _pg 는 '경기당', 없으면 누계.
+    set_piece_goals: float | None = None            # 누계
+    set_piece_goals_conceded: float | None = None   # 누계
+    penalties_won: float | None = None              # 누계
+    penalties_conceded: float | None = None         # 누계
+    yellow_cards: float | None = None               # 누계
+    red_cards: float | None = None                  # 누계
+    accurate_crosses_pg: float | None = None
+    accurate_long_balls_pg: float | None = None
+
+    # ---- 경기 상세 집계 (최근 N경기) --------------------------------------
+    # 시즌 누계가 아니라 **최근 N경기 표본의 합계**다. 시즌 지표와 의미가
+    # 다르므로 이름에 _recent 를 붙여 섞이지 않게 한다. 경기당 값이 필요하면
+    # 아래 _recent_pg 속성을 쓴다 (recent_matches 로 나눈 값).
+    recent_matches: int | None = None               # 표본 크기
+    npxg_recent: float | None = None
+    npxga_recent: float | None = None
+    xgot_recent: float | None = None
+    xgot_against_recent: float | None = None
+    xg_open_play_recent: float | None = None
+    xg_set_play_recent: float | None = None
+    shots_recent: float | None = None
+    shots_against_recent: float | None = None
+    shots_on_target_recent: float | None = None
+    shots_on_target_against_recent: float | None = None
+    shots_inside_box_recent: float | None = None
+    shots_outside_box_recent: float | None = None
+
     # ---- 파생 지표 ----
     @property
     def goals_for_pg(self) -> float | None:
@@ -227,6 +256,120 @@ class TeamStats:
         if self.goals_against is None or self.xga_total is None:
             return None
         return self.goals_against - self.xga_total
+
+    # ---- 최근 N경기 표본의 경기당 값 --------------------------------------
+    # 전부 `_recent` 합계를 `recent_matches` 로 나눈 파생값이다. 시즌 지표
+    # (xg_pg 등)와 표본이 다르므로 이름으로 구분해 둔다. 표본이 없으면 None —
+    # 0 으로 채우면 '0개를 기록했다'는 실제 값과 구분되지 않는다.
+    def _per_recent(self, name: str) -> float | None:
+        total = getattr(self, name)
+        if total is None or not self.recent_matches:
+            return None
+        return total / self.recent_matches
+
+    @property
+    def npxg_recent_pg(self) -> float | None:
+        return self._per_recent("npxg_recent")
+
+    @property
+    def npxga_recent_pg(self) -> float | None:
+        return self._per_recent("npxga_recent")
+
+    @property
+    def xgot_recent_pg(self) -> float | None:
+        return self._per_recent("xgot_recent")
+
+    @property
+    def xgot_against_recent_pg(self) -> float | None:
+        return self._per_recent("xgot_against_recent")
+
+    @property
+    def xg_open_play_recent_pg(self) -> float | None:
+        return self._per_recent("xg_open_play_recent")
+
+    @property
+    def xg_set_play_recent_pg(self) -> float | None:
+        return self._per_recent("xg_set_play_recent")
+
+    @property
+    def shots_recent_pg(self) -> float | None:
+        return self._per_recent("shots_recent")
+
+    @property
+    def shots_against_recent_pg(self) -> float | None:
+        return self._per_recent("shots_against_recent")
+
+    @property
+    def shots_on_target_recent_pg(self) -> float | None:
+        return self._per_recent("shots_on_target_recent")
+
+    @property
+    def shots_on_target_against_recent_pg(self) -> float | None:
+        return self._per_recent("shots_on_target_against_recent")
+
+    @property
+    def shots_inside_box_recent_pg(self) -> float | None:
+        return self._per_recent("shots_inside_box_recent")
+
+    @property
+    def shots_outside_box_recent_pg(self) -> float | None:
+        return self._per_recent("shots_outside_box_recent")
+
+    @property
+    def inside_box_shot_share(self) -> float | None:
+        """박스 안 슈팅 비율(%). 슈팅의 '질' 을 거칠게 가늠한다."""
+        inside, outside = self.shots_inside_box_recent, self.shots_outside_box_recent
+        if inside is None or outside is None:
+            return None
+        total = inside + outside
+        return None if total <= 0 else inside / total * 100.0
+
+    @property
+    def xgot_delta_recent(self) -> float | None:
+        """xGOT − npxG. 양수면 기대보다 좋은 코스로 때리고 있다는 뜻."""
+        if self.xgot_recent is None or self.npxg_recent is None:
+            return None
+        return self.xgot_recent - self.npxg_recent
+
+    # ---- 시즌 누계를 경기당으로 -------------------------------------------
+    # 피드가 누계로 주는 항목들. 리그 안에서도 팀마다 소화 경기수가 달라서
+    # (연기·스플릿) 누계를 그대로 나란히 두면 경기를 더 치른 팀이 부풀려진다.
+    def _per_played(self, name: str) -> float | None:
+        total = getattr(self, name)
+        if total is None or not self.played:
+            return None
+        return total / self.played
+
+    @property
+    def set_piece_goals_pg(self) -> float | None:
+        return self._per_played("set_piece_goals")
+
+    @property
+    def set_piece_goals_conceded_pg(self) -> float | None:
+        return self._per_played("set_piece_goals_conceded")
+
+    @property
+    def penalties_won_pg(self) -> float | None:
+        return self._per_played("penalties_won")
+
+    @property
+    def penalties_conceded_pg(self) -> float | None:
+        return self._per_played("penalties_conceded")
+
+    @property
+    def yellow_cards_pg(self) -> float | None:
+        return self._per_played("yellow_cards")
+
+    @property
+    def red_cards_pg(self) -> float | None:
+        return self._per_played("red_cards")
+
+    @property
+    def set_piece_goal_share(self) -> float | None:
+        """득점 중 세트피스 비중(%). 어떻게 넣는 팀인지 가늠한다."""
+        if self.set_piece_goals is None or not self.goals_for:
+            return None
+        return self.set_piece_goals / self.goals_for * 100.0
 
     @property
     def defensive_solidity(self) -> float | None:

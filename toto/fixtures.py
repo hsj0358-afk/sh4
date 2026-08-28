@@ -57,6 +57,13 @@ def _stats(rng: random.Random, strong: bool) -> TeamStats:
     ga_pg = rng.uniform(0.6, 1.1) if strong else rng.uniform(1.3, 2.1)
     home_played = played // 2
     away_played = played - home_played
+    # 최근 N경기 표본 — 실제 수집에서는 경기 상세를 합산한 값이 들어온다.
+    # 여기서는 렌더링 경로를 확인하려고 같은 모양의 난수를 만든다.
+    recent = 6
+    npxg_pg = gf_pg * rng.uniform(0.8, 1.1)
+    npxga_pg = ga_pg * rng.uniform(0.8, 1.1)
+    shots_pg = rng.uniform(14, 19) if strong else rng.uniform(8, 12.5)
+    sot_pg = rng.uniform(5.5, 7.5) if strong else rng.uniform(2.6, 4.2)
     return TeamStats(
         rank=rng.randint(1, 6) if strong else rng.randint(10, 20),
         played=played, wins=wins, draws=draws, losses=losses,
@@ -66,8 +73,8 @@ def _stats(rng: random.Random, strong: bool) -> TeamStats:
         home_points=int(ppg * home_played * rng.uniform(1.05, 1.25)),
         away_played=away_played,
         away_points=int(ppg * away_played * rng.uniform(0.7, 0.95)),
-        shots_pg=rng.uniform(14, 19) if strong else rng.uniform(8, 12.5),
-        shots_on_target_pg=rng.uniform(5.5, 7.5) if strong else rng.uniform(2.6, 4.2),
+        shots_pg=shots_pg,
+        shots_on_target_pg=sot_pg,
         possession=rng.uniform(56, 66) if strong else rng.uniform(38, 50),
         pass_success=rng.uniform(84, 90) if strong else rng.uniform(72, 80),
         aerials_won_pg=rng.uniform(9, 16),
@@ -78,6 +85,29 @@ def _stats(rng: random.Random, strong: bool) -> TeamStats:
         rating=rng.uniform(6.9, 7.3) if strong else rng.uniform(6.4, 6.75),
         xg_pg_raw=gf_pg * rng.uniform(0.85, 1.15),
         xga_pg_raw=ga_pg * rng.uniform(0.85, 1.15),
+        # 시즌 통계 피드 (누계)
+        set_piece_goals=round(gf_pg * played * rng.uniform(0.15, 0.35)),
+        set_piece_goals_conceded=round(ga_pg * played * rng.uniform(0.15, 0.35)),
+        penalties_won=rng.randint(1, 7),
+        penalties_conceded=rng.randint(1, 7),
+        yellow_cards=rng.randint(30, 70),
+        red_cards=rng.randint(0, 4),
+        accurate_crosses_pg=rng.uniform(2.5, 6.5),
+        accurate_long_balls_pg=rng.uniform(4.0, 9.0),
+        # 경기 상세 집계 (최근 N경기 합계)
+        recent_matches=recent,
+        npxg_recent=npxg_pg * recent,
+        npxga_recent=npxga_pg * recent,
+        xgot_recent=npxg_pg * recent * rng.uniform(0.9, 1.25),
+        xgot_against_recent=npxga_pg * recent * rng.uniform(0.9, 1.25),
+        xg_open_play_recent=npxg_pg * recent * rng.uniform(0.6, 0.8),
+        xg_set_play_recent=npxg_pg * recent * rng.uniform(0.15, 0.3),
+        shots_recent=shots_pg * recent,
+        shots_against_recent=rng.uniform(9, 16) * recent,
+        shots_on_target_recent=sot_pg * recent,
+        shots_on_target_against_recent=rng.uniform(3, 6) * recent,
+        shots_inside_box_recent=shots_pg * recent * rng.uniform(0.55, 0.75),
+        shots_outside_box_recent=shots_pg * recent * rng.uniform(0.25, 0.45),
     )
 
 

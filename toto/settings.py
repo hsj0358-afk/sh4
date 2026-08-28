@@ -108,6 +108,30 @@ DEFAULT_COMPARE_METRICS = [
     {"key": "shots_on_target_pg", "label": "유효슈팅", "fmt": "{:.1f}"},
     {"key": "big_chances_pg", "label": "결정적 기회", "fmt": "{:.1f}"},
     {"key": "rating", "label": "평점", "fmt": "{:.2f}"},
+    {"key": "set_piece_goals_pg", "label": "세트피스 득점", "fmt": "{:.2f}"},
+    {"key": "set_piece_goals_conceded_pg", "label": "세트피스 실점", "fmt": "{:.2f}"},
+    {"key": "yellow_cards_pg", "label": "경고", "fmt": "{:.2f}"},
+    {"key": "accurate_crosses_pg", "label": "정확한 크로스", "fmt": "{:.1f}"},
+    {"key": "accurate_long_balls_pg", "label": "정확한 롱볼", "fmt": "{:.1f}"},
+]
+
+# 최근 N경기 표본(경기 상세)에서만 나오는 지표. 시즌 지표와 표본이 다르므로
+# compare_metrics 와 섞지 않고 리포트에서도 블록을 따로 둔다.
+DEFAULT_RECENT_METRICS = [
+    {"key": "npxg_recent_pg", "label": "npxG(PK 제외)", "fmt": "{:.2f}"},
+    {"key": "npxga_recent_pg", "label": "피npxG", "fmt": "{:.2f}"},
+    {"key": "xgot_recent_pg", "label": "xGOT", "fmt": "{:.2f}"},
+    {"key": "xgot_against_recent_pg", "label": "피xGOT", "fmt": "{:.2f}"},
+    {"key": "xgot_delta_recent", "label": "xGOT−npxG(합계)", "fmt": "{:+.2f}"},
+    {"key": "xg_open_play_recent_pg", "label": "오픈플레이 xG", "fmt": "{:.2f}"},
+    {"key": "xg_set_play_recent_pg", "label": "세트피스 xG", "fmt": "{:.2f}"},
+    {"key": "shots_recent_pg", "label": "슈팅", "fmt": "{:.1f}"},
+    {"key": "shots_against_recent_pg", "label": "피슈팅", "fmt": "{:.1f}"},
+    {"key": "shots_on_target_recent_pg", "label": "유효슈팅", "fmt": "{:.1f}"},
+    {"key": "shots_on_target_against_recent_pg", "label": "피유효슈팅",
+     "fmt": "{:.1f}"},
+    {"key": "inside_box_shot_share", "label": "박스 안 슈팅 비율(%)",
+     "fmt": "{:.0f}"},
 ]
 
 
@@ -152,6 +176,7 @@ class Settings:
     leagues: dict = field(default_factory=lambda: dict(DEFAULT_LEAGUES))
     radar_metrics: list = field(default_factory=lambda: list(DEFAULT_RADAR_METRICS))
     compare_metrics: list = field(default_factory=lambda: list(DEFAULT_COMPARE_METRICS))
+    recent_metrics: list = field(default_factory=lambda: list(DEFAULT_RECENT_METRICS))
     output: dict = field(default_factory=dict)
 
     root: Path = ROOT
@@ -216,6 +241,7 @@ def load_settings(config_path: Path | None = None, env_path: Path | None = None)
         "delay_sec": 1.5,
         "timeout_ms": 45000,
         "persistent_profile": True,
+        "match_detail_matches": 6,
     }
     if cfg.get("leagues"):
         s.leagues = cfg["leagues"]
@@ -223,6 +249,8 @@ def load_settings(config_path: Path | None = None, env_path: Path | None = None)
         s.radar_metrics = cfg["radar_metrics"]
     if cfg.get("compare_metrics"):
         s.compare_metrics = cfg["compare_metrics"]
+    if cfg.get("recent_metrics"):
+        s.recent_metrics = cfg["recent_metrics"]
     s.output = cfg.get("output") or {
         "dir": "reports", "filename": "toto_{round}.html",
         "copy_to": [], "copy_to_exclude": ["OneDrive"],

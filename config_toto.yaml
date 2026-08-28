@@ -69,6 +69,25 @@ fotmob:
     - {feed: "clean_sheet_team",           field: "clean_sheets"}
     - {feed: "fk_foul_lost_team",          field: "fouls_pg"}
     - {feed: "rating_team",                field: "rating"}
+    # --- Phase 1-B: 세트피스 · PK · 카드 · 전개 --------------------------
+    # 전부 시즌 통계 피드에 실재하는 항목이다(29종 카탈로그에서 확인).
+    - {feed: "_set_piece_goals_team",           field: "set_piece_goals"}
+    - {feed: "_set_piece_goals_conceded_team",  field: "set_piece_goals_conceded"}
+    - {feed: "penalty_won_team",                field: "penalties_won"}
+    - {feed: "penalty_conceded_team",           field: "penalties_conceded"}
+    - {feed: "total_yel_card_team",             field: "yellow_cards"}
+    - {feed: "total_red_card_team",             field: "red_cards"}
+    - {feed: "accurate_cross_team",             field: "accurate_crosses_pg"}
+    - {feed: "accurate_long_balls_team",        field: "accurate_long_balls_pg"}
+
+  # 경기 상세 (matchDetails) ------------------------------------------------
+  # npxG · xGOT · 총슈팅 · 피슈팅 · 박스 안팎 슈팅은 **시즌 통계 29종에 없고
+  # 경기 상세에만 있다**. 팀당 최근 N경기를 받아 합산한다.
+  #   0 이면 이 단계를 건너뛴다. 경기당 요청 1회가 들지만 같은 경기를 두 팀이
+  #   공유하므로 실제 요청 수는 (팀수 x N / 2) 안팎이다.
+  #   20팀 리그 x 6경기 = 약 60요청 = 1.5초 간격으로 1분 30초.
+  # 빠른 수집(메뉴 [2])은 --skip-match-details 로 이 단계를 건너뛴다.
+  match_detail_matches: 6
 
 # 리그 정의 ----------------------------------------------------------------
 # key: 내부 식별자
@@ -197,6 +216,35 @@ compare_metrics:
   - {key: "shots_on_target_pg", label: "유효슈팅",       fmt: "{:.1f}"}
   - {key: "big_chances_pg",     label: "결정적 기회",    fmt: "{:.1f}"}
   - {key: "rating",             label: "평점",           fmt: "{:.2f}"}
+  # 시즌 통계 피드에서 오는 항목. 누계로 오므로 경기당으로 나눠 비교한다
+  # (팀마다 소화 경기수가 다르면 누계는 그대로 비교할 수 없다).
+  - {key: "set_piece_goals_pg", label: "세트피스 득점",  fmt: "{:.2f}"}
+  - {key: "set_piece_goals_conceded_pg", label: "세트피스 실점", fmt: "{:.2f}"}
+  - {key: "yellow_cards_pg",    label: "경고",           fmt: "{:.2f}"}
+  - {key: "accurate_crosses_pg", label: "정확한 크로스",  fmt: "{:.1f}"}
+  - {key: "accurate_long_balls_pg", label: "정확한 롱볼", fmt: "{:.1f}"}
+
+# 최근 N경기 프로필(다이버징 바) 항목 ---------------------------------------
+# 위 compare_metrics 와 **표본이 다르다.** 여기 값은 시즌 누계가 아니라
+# `fotmob.match_detail_matches` 로 정한 최근 N경기의 경기당 평균이다.
+# 섞이면 안 되므로 리포트에서도 블록을 따로 두고 표본 크기를 함께 적는다.
+#
+# 이 지표들은 FotMob 시즌 통계 29종에 **없다.** 경기 상세
+# (api/data/matchDetails)에만 있어서 여기서만 나온다.
+# `--skip-match-details` 로 돌리면 값이 없어 블록 전체가 빠진다.
+recent_metrics:
+  - {key: "npxg_recent_pg",     label: "npxG(PK 제외)",  fmt: "{:.2f}"}
+  - {key: "npxga_recent_pg",    label: "피npxG",         fmt: "{:.2f}"}
+  - {key: "xgot_recent_pg",     label: "xGOT",           fmt: "{:.2f}"}
+  - {key: "xgot_against_recent_pg", label: "피xGOT",     fmt: "{:.2f}"}
+  - {key: "xgot_delta_recent",  label: "xGOT−npxG(합계)", fmt: "{:+.2f}"}
+  - {key: "xg_open_play_recent_pg", label: "오픈플레이 xG", fmt: "{:.2f}"}
+  - {key: "xg_set_play_recent_pg",  label: "세트피스 xG",   fmt: "{:.2f}"}
+  - {key: "shots_recent_pg",    label: "슈팅",           fmt: "{:.1f}"}
+  - {key: "shots_against_recent_pg", label: "피슈팅",    fmt: "{:.1f}"}
+  - {key: "shots_on_target_recent_pg", label: "유효슈팅", fmt: "{:.1f}"}
+  - {key: "shots_on_target_against_recent_pg", label: "피유효슈팅", fmt: "{:.1f}"}
+  - {key: "inside_box_shot_share", label: "박스 안 슈팅 비율(%)", fmt: "{:.0f}"}
 
 # 출력 ---------------------------------------------------------------------
 output:

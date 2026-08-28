@@ -65,9 +65,49 @@ toto/cli.py:199   # ---- 4. 후스코어드 (강점/약점·스타일·팀 통�
 | 소스 | 담당 |
 |---|---|
 | 베트맨 | 회차 14경기 목록 (`toto/sources/betman.py`) |
-| **FotMob** | 순위표(홈/원정 분리)·xG·시즌 팀통계 29종·최근 폼·맞대결 |
+| **FotMob** | 순위표(홈/원정 분리)·xG·시즌 팀통계 23종·최근 폼·맞대결 |
+| **FotMob 경기 상세** | npxG·xGOT·오픈플레이/세트피스 xG·슈팅/피슈팅·박스 안팎 |
 | **Pinnacle** | 승/무/패 배당률 (Arcadia guest API) |
 | WhoScored | 강점/약점·플레이 스타일 (정성 데이터) |
+
+### 1-1-2. 시즌 통계와 경기 상세는 표본이 다르다 — 섞지 않는다
+
+FotMob 안에 **경로가 두 개** 있고, 각각 주는 것이 다르다. Phase 0 에서
+저장본을 뜯어 확인한 사실이다.
+
+| 경로 | 요청 | 주는 것 | 표본 |
+|---|---|---|---|
+| `api/data/leagues?id=` + `stats.teams[]` 피드 | 리그당 1 + 지표당 1 | 결정적 기회·점유율·세트피스 득점·PK·카드·크로스·롱볼 … | **시즌 전체** |
+| `api/data/matchDetails?matchId=` | 최근 경기당 1 | **npxG·xGOT·오픈플레이/세트피스 xG·총슈팅·피슈팅·유효슈팅·박스 안팎** | **최근 N경기** |
+
+아래 지표들은 **시즌 통계 29종 카탈로그에 없다.** 경기 상세에만 있다.
+시즌 피드에서 찾으려다 시간을 버리지 않도록 적어 둔다.
+
+  · npxG / npxGA          · xGOT / 피xGOT
+  · 오픈플레이 xG · 세트피스 xG
+  · 총슈팅 / 피슈팅        · 박스 안 슈팅 / 박스 밖 슈팅
+
+**두 표본을 한 표에 섞지 않는다.** 이름 규칙과 리포트 블록으로 분리한다.
+
+- 필드 이름 끝의 `_recent` = 최근 N경기 **합계**. `_recent_pg` 속성이
+  `recent_matches` 로 나눈 경기당 값이다 (`toto/models.py` `_per_recent()`).
+- 이름 끝의 `_pg` = 그 소스가 이미 경기당으로 주는 값. 접미사가 없으면 누계다.
+  누계를 비교표에 그대로 넣지 않는다 — 팀마다 소화 경기수가 달라 왜곡된다
+  (`_per_played()` 로 나눈다).
+- 리포트도 블록을 나눈다. 시즌 지표는 `compare_metrics`, 최근 N경기는
+  `recent_metrics` → `toto/render.py` `_recent_block()`. 이 블록은 표본
+  크기를 함께 적고, 두 팀의 표본이 다르면 그렇다고 밝힌다.
+
+수집량 조절: `config_toto.yaml` 의 `fotmob.match_detail_matches` (기본 6).
+`0` 이거나 `--skip-match-details` 면 이 단계를 통째로 건너뛰고, 값이 없으니
+블록도 통째로 빠진다. 같은 경기를 두 팀이 공유하므로 캐시로 요청을 반씩 줄인다.
+
+**npxG 는 PK 를 상수로 빼서 만들지 않는다.** 슛맵의 `situation ==
+"Penalty"` 분류를 쓴다 (`_shot_totals()`). 다만 값 자체는 경기 스탯의
+`expected_goals_non_penalty` 를 그대로 쓰고, 슛맵 합산은 **대조용**으로만
+남겨 차이를 로그에 적는다 — 둘을 억지로 맞추지 않는다.
+
+회귀 테스트: `python tests/test_match_details.py` (30개).
 
 ### 1-1-1. 리그 ID 를 이름만으로 정하지 않는다
 
@@ -165,7 +205,7 @@ toto/render.py:536
 옛 캐시를 읽어 수정이 반영되지 않는다 — 실제로 이것 때문에 두 번 헛돌았다.
 
 ```
-toto/sources/fotmob.py:56     _CACHE_VERSION = 2
+toto/sources/fotmob.py:56     _CACHE_VERSION = 3   (Phase 1-B 에서 2 → 3)
 toto/sources/whoscored.py:415 _LEAGUE_CACHE_VERSION = 2
 ```
 
@@ -290,6 +330,27 @@ toto/sources/whoscored.py:415 _LEAGUE_CACHE_VERSION = 2
 → 필드를 추가하려면 `[7]` 점검의 `②-3 FotMob 팀 통계 피드` 로 실물을
 먼저 본다.
 
+### 3-2-1. Phase 1-B 에서 새로 붙인 것들 — 실물 실행 결과가 아직 없다
+
+원격 세션은 fotmob.com 이 차단돼 있어 **픽스처로만 검증했다.** 아래 둘은
+사용자 PC 실행 로그를 받기 전까지 "된다"고 단정하지 않는다.
+
+- **시즌 피드 8종 추가** (15 → 23): `_set_piece_goals_team`,
+  `_set_piece_goals_conceded_team`, `penalty_won_team`,
+  `penalty_conceded_team`, `total_yel_card_team`, `total_red_card_team`,
+  `accurate_cross_team`, `accurate_long_balls_team`.
+  피드 **이름**은 Phase 0 [8] 의 29종 카탈로그에서 그대로 옮겼지만, 각
+  피드의 응답을 실제로 받아 본 적은 없다. 구조 기반 파서라 이름이 맞으면
+  통과할 것으로 보지만 확인 전이다. 실패해도 그 지표만 비고 나머지는 돈다.
+- **경기 상세 파서**: 8개 스탯 키와 슛맵 필드는 Phase 0 저장본에서 실물로
+  확인했다. 확인하지 못한 것은 **리그·경기마다 스탯 그룹 구성이 같은지**다
+  (관찰 표본이 EPL 경기 몇 건뿐이었다). 특정 지표가 빠진 경기가 있으면 그
+  칸만 비고 합산은 계속된다.
+
+→ 실행 로그에서 `[리그] 경기 상세 N경기 수집` 과 `npxG 대조: … 최대 차이`
+줄을 먼저 본다. 대조 차이가 크면 슛맵과 경기 스탯 중 무엇이 어긋나는지부터
+확인한다 (값을 맞추지 말고 원인을 찾는다).
+
 ### 3-3. FotMob 결장자(injury) 값의 모양
 
 `squad[].members[].injury` 필드와 `rating` 이 존재하는 것은 확인했으나,
@@ -334,6 +395,9 @@ toto/sources/whoscored.py:415 _LEAGUE_CACHE_VERSION = 2
 python -m toto --demo              # 네트워크 없이 렌더링 확인
 python -m toto --round 260044      # 회차 지정 수집
 python -m toto --skip-whoscored    # 배당 + 순위·폼만 (빠름)
+python -m toto --skip-match-details        # 경기 상세(npxG·xGOT…) 생략
+python tests/test_league_matching.py       # 리그·팀 매칭 회귀 (15개)
+python tests/test_match_details.py         # 경기 상세 파싱 회귀 (30개)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_sources.py --browser    # 소스 구조 점검
 python tools/probe_sources.py --analyze    # 저장본 재분석 (접속 없음)

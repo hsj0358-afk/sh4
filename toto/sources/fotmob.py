@@ -53,7 +53,7 @@ LEAGUE_PATH = "/api/data/leagues?id={id}"
 ALL_LEAGUES_PATH = "/api/data/allLeagues"
 
 # 캐시 형식이나 파싱 로직이 바뀌면 올린다. 옛 캐시는 자동으로 버려진다.
-_CACHE_VERSION = 2
+_CACHE_VERSION = 3
 
 _SCORE_RE = re.compile(r"(\d+)\s*[-:]\s*(\d+)")
 
@@ -369,6 +369,13 @@ def read_league(browser: FotMobBrowser, settings: Settings, league_key: str,
     if teams and feeds:
         read_team_stats(browser, data, teams, resolver, feeds, league_key)
 
+    # 시즌 통계에 없는 지표(npxG·xGOT·총슈팅·피슈팅·박스 안팎)는 경기 상세에만
+    # 있다. 0 으로 두면 이 단계를 통째로 건너뛴다.
+    detail_count = int(settings.fotmob.get("match_detail_matches", 0) or 0)
+    if teams and detail_count > 0:
+        attach_match_details(browser, teams, matches, detail_count,
+                             league_key, cache=cache)
+
     if not teams:
         log.error("[%s] FotMob 순위표를 해석하지 못했습니다 (id=%d). "
                   "응답에 표 블록이 %d개 있었습니다.", league_key, league_id,
@@ -528,6 +535,15 @@ DEFAULT_TEAM_STAT_FEEDS = [
     {"feed": "clean_sheet_team", "field": "clean_sheets"},
     {"feed": "fk_foul_lost_team", "field": "fouls_pg"},
     {"feed": "rating_team", "field": "rating"},
+    # --- Phase 1-B: 세트피스 · PK · 카드 · 전개 (전부 시즌 누계/경기당) ---
+    {"feed": "_set_piece_goals_team", "field": "set_piece_goals"},
+    {"feed": "_set_piece_goals_conceded_team", "field": "set_piece_goals_conceded"},
+    {"feed": "penalty_won_team", "field": "penalties_won"},
+    {"feed": "penalty_conceded_team", "field": "penalties_conceded"},
+    {"feed": "total_yel_card_team", "field": "yellow_cards"},
+    {"feed": "total_red_card_team", "field": "red_cards"},
+    {"feed": "accurate_cross_team", "field": "accurate_crosses_pg"},
+    {"feed": "accurate_long_balls_team", "field": "accurate_long_balls_pg"},
 ]
 
 # 값으로 쓸 숫자 필드 이름 (앞에 있을수록 우선)
@@ -656,6 +672,8 @@ def _parse_matches(data: Any, resolver: TeamResolver) -> list[dict]:
             continue
         hg, ag = _goals(raw)
         out.append({
+            # 경기 ID 는 경기 상세(matchDetails)를 부를 때 쓴다
+            "id": raw.get("id"),
             "date": _utc_time(raw)[:10],
             "utc": _utc_time(raw),
             "home": home,
@@ -666,6 +684,241 @@ def _parse_matches(data: Any, resolver: TeamResolver) -> list[dict]:
         })
     out.sort(key=lambda m: m["utc"], reverse=True)
     return out
+
+
+# --------------------------------------------------------------------------
+# 경기 상세 (matchDetails) — 시즌 통계에 없는 지표는 여기에만 있다
+# --------------------------------------------------------------------------
+MATCH_PATH = "/api/data/matchDetails?matchId={id}"
+
+# FotMob 경기 스탯 키 → (우리 필드 접미사, 상대편 값도 쓰는가)
+# Phase 0 [8] 출력에서 실물로 확인한 키만 적는다. 값은 [홈, 원정] 2원소다.
+_MATCH_STAT_KEYS = {
+    "expected_goals_non_penalty": ("npxg", True),      # npxG / npxGA
+    "expected_goals_on_target": ("xgot", True),        # xGOT / xGOT against
+    "expected_goals_open_play": ("xg_open_play", False),
+    "expected_goals_set_play": ("xg_set_play", False),
+    "total_shots": ("shots", True),                    # 슈팅 / 피슈팅
+    "ShotsOnTarget": ("shots_on_target", True),
+    "shots_inside_box": ("shots_inside_box", False),
+    "shots_outside_box": ("shots_outside_box", False),
+}
+# 상대편 값을 담는 필드 이름 (…_against_recent)
+_AGAINST_FIELD = {"npxg": "npxga", "xgot": "xgot_against",
+                  "shots": "shots_against",
+                  "shots_on_target": "shots_on_target_against"}
+
+_PCT_RE = re.compile(r"-?\d+(?:\.\d+)?")
+
+
+def _stat_number(value: Any) -> float | None:
+    """경기 스탯 한 칸을 숫자로. '57%' · '12 (30%)' 같은 표기도 받는다."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    m = _PCT_RE.search(str(value))
+    return float(m.group()) if m else None
+
+
+def _match_stat_pairs(data: Any) -> dict[str, tuple[float | None, float | None]]:
+    """{FotMob 키: (홈 값, 원정 값)}.
+
+    경로가 아니라 모양으로 찾는다 — `key` 가 문자열이고 `stats` 가 **스칼라
+    2개**인 dict 가 지표 한 줄이다. 그룹 dict 도 `key`/`stats` 를 갖지만
+    그쪽 `stats` 는 dict 목록이라 걸러진다.
+    """
+    out: dict[str, tuple[float | None, float | None]] = {}
+    for node in _walk(data):
+        key, vals = node.get("key"), node.get("stats")
+        if not isinstance(key, str) or not isinstance(vals, list) or len(vals) != 2:
+            continue
+        if any(isinstance(v, (dict, list)) for v in vals):
+            continue                                   # 그룹 dict
+        home, away = _stat_number(vals[0]), _stat_number(vals[1])
+        if home is None and away is None:
+            continue
+        out.setdefault(key, (home, away))
+    return out
+
+
+def _shot_totals(data: Any) -> dict[int, dict[str, float]]:
+    """슛맵을 팀 ID 별로 합산한다 (경기 스탯과 대조할 검증용).
+
+    `situation == "Penalty"` 를 빼면 npxG 가 된다 — PK 를 상수(0.76)로
+    빼는 추정이 아니라 실제 슛 단위 분류를 쓴다.
+    """
+    # 후보가 여럿일 수 있고 _walk 는 순서를 보장하지 않는다(스택). 경기 전체
+    # 슛맵이 가장 길다는 점을 이용해 가장 긴 목록 하나만 쓴다 — 선수별로
+    # 쪼개진 부분 목록을 잡아 합계가 조용히 모자라는 일을 막는다.
+    best: list = []
+    for node in _walk(data):
+        shots = node.get("shots")
+        if not isinstance(shots, list) or len(shots) <= len(best):
+            continue
+        if not (isinstance(shots[0], dict) and "teamId" in shots[0]):
+            continue
+        best = shots
+
+    out: dict[int, dict[str, float]] = {}
+    for shot in best:
+        if not isinstance(shot, dict):
+            continue
+        tid = shot.get("teamId")
+        if not isinstance(tid, int):
+            continue
+        acc = out.setdefault(tid, {"shots": 0.0, "on_target": 0.0,
+                                   "xg": 0.0, "npxg": 0.0, "xgot": 0.0})
+        acc["shots"] += 1
+        if shot.get("isOnTarget"):
+            acc["on_target"] += 1
+        xg = _float(shot.get("expectedGoals")) or 0.0
+        acc["xg"] += xg
+        if str(shot.get("situation") or "").lower() != "penalty":
+            acc["npxg"] += xg
+        acc["xgot"] += _float(shot.get("expectedGoalsOnTarget")) or 0.0
+    return out
+
+
+def read_match_details(browser: FotMobBrowser, match: dict, cache=None) -> dict | None:
+    """경기 1건의 팀별 지표. {"home": {...}, "away": {...}, "check": {...}}
+
+    `check` 는 슛맵 합산값이다. 경기 스탯과 다를 수 있으므로 **억지로 맞추지
+    않고** 차이를 기록만 한다.
+    """
+    mid = match.get("id")
+    if not mid:
+        return None
+    cached = cache.get("fotmob", f"match_{mid}") if cache else None
+    if cached is not None:
+        return cached or None
+
+    data = browser.get_json(browser.abs_url(MATCH_PATH.format(id=mid)))
+    if data is None:
+        return None
+
+    pairs = _match_stat_pairs(data)
+    if not pairs:
+        log.debug("경기 %s: 스탯 표를 찾지 못했습니다.", mid)
+        if cache:
+            cache.set("fotmob", f"match_{mid}", {})    # 재요청 방지
+        return None
+
+    sides: dict[str, dict[str, float]] = {"home": {}, "away": {}}
+    for key, (suffix, has_against) in _MATCH_STAT_KEYS.items():
+        pair = pairs.get(key)
+        if pair is None:
+            continue
+        home, away = pair
+        if home is not None:
+            sides["home"][suffix] = home
+        if away is not None:
+            sides["away"][suffix] = away
+        if has_against:
+            against = _AGAINST_FIELD[suffix]
+            if away is not None:
+                sides["home"][against] = away          # 홈의 피지표 = 원정 값
+            if home is not None:
+                sides["away"][against] = home
+
+    payload = {"home": sides["home"], "away": sides["away"],
+               "check": _shot_totals(data)}
+    if cache:
+        cache.set("fotmob", f"match_{mid}", payload)
+    return payload
+
+
+def _check_for(check: Any, fotmob_id: Any) -> dict | None:
+    """슛맵 합산에서 이 팀의 칸을 꺼낸다.
+
+    `_shot_totals` 는 teamId 를 **int** 키로 담지만, 캐시를 거치면 JSON 이
+    키를 문자열로 바꿔 놓는다. 둘 다 받는다.
+    """
+    if not isinstance(check, dict) or fotmob_id in (None, ""):
+        return None
+    found = check.get(str(fotmob_id))
+    if found is None:
+        try:
+            found = check.get(int(fotmob_id))
+        except (TypeError, ValueError):
+            return None
+    return found if isinstance(found, dict) else None
+
+
+def _recent_finished(matches: list[dict], canon: str, count: int) -> list[dict]:
+    """이 팀의 최근 종료 경기 N건 (최신순). id 가 있는 것만."""
+    out = []
+    for m in matches:
+        if not m.get("finished") or not m.get("id"):
+            continue
+        if canon not in (m["home"], m["away"]):
+            continue
+        out.append(m)
+        if len(out) >= count:
+            break
+    return out
+
+
+def attach_match_details(browser: FotMobBrowser, teams: dict[str, dict],
+                         matches: list[dict], count: int,
+                         league_key: str, cache=None) -> tuple[int, int]:
+    """최근 N경기 상세를 받아 팀별로 합산한다. (채운 팀 수, 받은 경기 수).
+
+    시즌 통계 29종에 없는 지표(npxG·xGOT·총슈팅·피슈팅·박스 안팎)는 경기
+    상세에만 있다. 경기당 요청 1회가 들지만 같은 경기를 두 팀이 공유하므로
+    캐시로 중복을 없앤다.
+    """
+    if count <= 0 or not teams:
+        return 0, 0
+
+    wanted: dict[str, list[dict]] = {
+        canon: _recent_finished(matches, canon, count) for canon in teams}
+    unique = {m["id"]: m for ms in wanted.values() for m in ms}
+    if not unique:
+        log.info("[%s] 종료된 경기가 없어 경기 상세를 건너뜁니다.", league_key)
+        return 0, 0
+
+    log.info("[%s] 경기 상세 %d경기 수집 (팀당 최근 %d경기)",
+             league_key, len(unique), count)
+    details: dict[Any, dict] = {}
+    for mid, match in unique.items():
+        payload = read_match_details(browser, match, cache=cache)
+        if payload is not None:
+            details[mid] = payload
+
+    filled = 0
+    diffs: list[float] = []
+    for canon, entry in teams.items():
+        stats, sampled = entry["stats"], 0
+        acc: dict[str, float] = {}
+        for match in wanted.get(canon, []):
+            payload = details.get(match["id"])
+            if payload is None:
+                continue
+            side = "home" if match["home"] == canon else "away"
+            values = payload.get(side) or {}
+            if not values:
+                continue
+            sampled += 1
+            for name, value in values.items():
+                acc[name] = acc.get(name, 0.0) + value
+            # 슛맵 합산과 경기 스탯의 차이를 기록 (맞추지 않는다)
+            check = _check_for(payload.get("check"), entry.get("fotmob_id"))
+            if check and values.get("npxg") is not None:
+                diffs.append(abs(check.get("npxg", 0.0) - values["npxg"]))
+        if not sampled:
+            continue
+        stats.recent_matches = sampled
+        for name, total in acc.items():
+            setattr(stats, f"{name}_recent", total)
+        filled += 1
+
+    if diffs:
+        worst = max(diffs)
+        log.info("[%s] npxG 대조: 경기스탯 vs 슛맵 합산 최대 차이 %.2f "
+                 "(표본 %d) — 값은 경기스탯을 그대로 씁니다.",
+                 league_key, worst, len(diffs))
+    return filled, len(details)
 
 
 def _attach_form(teams: dict[str, dict], matches: list[dict], count: int) -> None:

@@ -917,7 +917,10 @@ def attach_match_details(browser: FotMobBrowser, teams: dict[str, dict],
             details[mid] = payload
 
     filled = 0
-    diffs: list[float] = []
+    # (차이, 팀, 경기id). 슛맵 합산과 경기 스탯을 대조하는 진단용이며 저장하는
+    # 값에는 영향을 주지 않는다.
+    diffs: list[tuple[float, str, Any]] = []
+    xgot_diffs: list[tuple[float, str, Any]] = []
     for canon, entry in teams.items():
         stats, sampled = entry["stats"], 0
         acc: dict[str, float] = {}
@@ -939,11 +942,14 @@ def attach_match_details(browser: FotMobBrowser, teams: dict[str, dict],
                 seen[name] = seen.get(name, 0) + 1
             # 슛맵 합산과 경기 스탯의 차이를 기록 (맞추지 않는다)
             check = _check_for(payload.get("check"), entry.get("fotmob_id"))
-            if check and values.get("npxg") is not None:
+            if check:
                 # 부호를 살려 둔다. 전부 한쪽으로 쏠리면 계통 오차(예: 하프
                 # 표를 읽음)이고, 부호가 섞이면 개별 경기 편차다.
-                diffs.append((check.get("npxg", 0.0) - values["npxg"],
-                              canon, match["id"]))
+                for metric, store in (("npxg", diffs), ("xgot", xgot_diffs)):
+                    if values.get(metric) is None:
+                        continue
+                    store.append((check.get(metric, 0.0) - values[metric],
+                                  canon, match["id"]))
         if not sampled:
             continue
         stats.recent_matches = sampled
@@ -958,26 +964,37 @@ def attach_match_details(browser: FotMobBrowser, teams: dict[str, dict],
                      league_key, canon, sampled,
                      ", ".join(f"{n} {c}" for n, c in sorted(short.items())))
 
-    if diffs:
-        # 최대값만 적으면 '한 경기가 튀는 것'과 '전부 어긋나는 것'을 구분할 수
-        # 없다. 260048 실행에서 최대 3.03 만 보고는 원인을 좁히지 못했다.
-        vals = sorted(d for d, _, _ in diffs)
-        n = len(vals)
-        mean = sum(vals) / n
-        median = vals[n // 2] if n % 2 else (vals[n // 2 - 1] + vals[n // 2]) / 2
-        worst = max(diffs, key=lambda x: abs(x[0]))
-        positive = sum(1 for d in vals if d > 0.05)
-        log.info("[%s] npxG 대조 (슛맵 합산 − 경기스탯, 표본 %d): "
-                 "평균 %+.2f · 중앙값 %+.2f · 최대 %+.2f (%s, 경기 %s) · "
-                 "슛맵이 더 큰 경우 %d/%d — 값은 경기스탯을 그대로 씁니다.",
-                 league_key, n, mean, median, worst[0], worst[1], worst[2],
-                 positive, n)
-        if abs(mean) > 0.30:
-            log.warning("[%s] 대조 차이가 한쪽으로 쏠려 있습니다 (평균 %+.2f). "
-                        "개별 경기 편차가 아니라 계통 오차일 수 있습니다 — "
-                        "경기 스탯에서 전체(All) 표가 아니라 하프 표를 읽고 "
-                        "있는지부터 확인하세요.", league_key, mean)
+    _log_reconciliation(league_key, "npxG", diffs)
+    _log_reconciliation(league_key, "xGOT", xgot_diffs)
     return filled, len(details)
+
+
+def _log_reconciliation(league_key: str, label: str,
+                        diffs: list[tuple[float, str, Any]]) -> None:
+    """슛맵 합산과 경기 스탯의 차이를 요약해 남긴다 (진단용).
+
+    최대값만 적으면 '한 경기가 튀는 것'과 '전부 어긋나는 것'을 구분할 수
+    없다. 260048 실행에서 최대 3.03 만 보고는 원인을 좁히지 못했다. 부호를
+    살린 평균·중앙값이 있어야 계통 오차인지 개별 편차인지 갈린다.
+    """
+    if not diffs:
+        return
+    vals = sorted(d for d, _, _ in diffs)
+    n = len(vals)
+    mean = sum(vals) / n
+    median = vals[n // 2] if n % 2 else (vals[n // 2 - 1] + vals[n // 2]) / 2
+    worst = max(diffs, key=lambda x: abs(x[0]))
+    positive = sum(1 for d in vals if d > 0.05)
+    log.info("[%s] %s 대조 (슛맵 합산 − 경기스탯, 표본 %d): "
+             "평균 %+.2f · 중앙값 %+.2f · 최대 %+.2f (%s, 경기 %s) · "
+             "슛맵이 더 큰 경우 %d/%d — 값은 경기스탯을 그대로 씁니다.",
+             league_key, label, n, mean, median, worst[0], worst[1], worst[2],
+             positive, n)
+    if abs(mean) > 0.30:
+        log.warning("[%s] %s 대조 차이가 한쪽으로 쏠려 있습니다 (평균 %+.2f). "
+                    "개별 경기 편차가 아니라 계통 오차일 수 있습니다 — "
+                    "경기 스탯에서 전체(All) 표가 아니라 하프 표를 읽고 "
+                    "있는지부터 확인하세요.", league_key, label, mean)
 
 
 def _attach_form(teams: dict[str, dict], matches: list[dict], count: int) -> None:

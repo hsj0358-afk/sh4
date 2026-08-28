@@ -108,12 +108,20 @@ FotMob 안에 **경로가 두 개** 있고, 각각 주는 것이 다르다. Phas
 `0` 이거나 `--skip-match-details` 면 이 단계를 통째로 건너뛰고, 값이 없으니
 블록도 통째로 빠진다. 같은 경기를 두 팀이 공유하므로 캐시로 요청을 반씩 줄인다.
 
+**경기 스탯은 '전체(All)' 표만 읽는다.** 경로가
+`content.stats.Periods.All` 인데 **Periods 는 복수형**이라 전·후반 표가 함께
+온다. `_walk` 는 스택(LIFO)이라 순회 순서가 문서 순서와 다르고 `setdefault`
+가 먼저 만난 것을 채택하므로, 전체를 훑으면 하프 값이 이겨 지표가 조용히
+절반이 된다. 260048 실행의 `npxG 대조 최대 차이 3.03` 이 이 증상이었다.
+`_all_period()` 가 'All' 을 먼저 골라내고 그 안에서만 지표를 찾는다.
+기간 구분이 없는 응답에서는 전체를 훑는 기존 동작으로 돌아간다.
+
 **npxG 는 PK 를 상수로 빼서 만들지 않는다.** 슛맵의 `situation ==
 "Penalty"` 분류를 쓴다 (`_shot_totals()`). 다만 값 자체는 경기 스탯의
 `expected_goals_non_penalty` 를 그대로 쓰고, 슛맵 합산은 **대조용**으로만
 남겨 차이를 로그에 적는다 — 둘을 억지로 맞추지 않는다.
 
-회귀 테스트: `python tests/test_match_details.py` (30개).
+회귀 테스트: `python tests/test_match_details.py` (36개).
 
 ### 1-1-1. 리그 ID 를 이름만으로 정하지 않는다
 
@@ -211,7 +219,7 @@ toto/render.py:536
 옛 캐시를 읽어 수정이 반영되지 않는다 — 실제로 이것 때문에 두 번 헛돌았다.
 
 ```
-toto/sources/fotmob.py:56     _CACHE_VERSION = 4   (Phase 1-B 에서 2 → 3 → 4)
+toto/sources/fotmob.py:56     _CACHE_VERSION = 5   (Phase 1-B 에서 2 → 3 → 4 → 5)
 toto/sources/whoscored.py:415 _LEAGUE_CACHE_VERSION = 2
 ```
 

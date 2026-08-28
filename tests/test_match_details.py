@@ -167,6 +167,50 @@ def test_match_stat_pairs_ignores_group_nodes():
     assert "var_checks" not in pairs
 
 
+def _periods_fixture() -> dict:
+    """전·후반 표가 함께 오는 응답. 경로 이름이 'Periods' 인 이유다."""
+    def g(npxg_h, npxg_a, shots_h, shots_a):
+        return {"stats": [{"key": "g", "stats": [
+            _row("expected_goals_non_penalty", npxg_h, npxg_a),
+            _row("total_shots", shots_h, shots_a)]}]}
+    return {"content": {"stats": {"Periods": {
+        "All": g(2.40, 1.10, 18, 9),
+        "FirstHalf": g(0.35, 0.20, 6, 3),
+        "SecondHalf": g(2.05, 0.90, 12, 6),
+    }}}}
+
+
+def test_match_stat_pairs_reads_whole_match_not_a_half():
+    """전체(All) 표를 읽어야 한다 — 하프 표를 읽으면 값이 조용히 절반이 된다.
+
+    260048 실행에서 'npxG 대조 최대 차이 3.03' 으로 드러난 결함이다.
+    `_walk` 가 스택(LIFO)이라 순회 순서가 문서 순서와 다르고, `setdefault`
+    가 먼저 만난 것을 채택해서 후반 표가 이겼다.
+    """
+    pairs = fotmob._match_stat_pairs(_periods_fixture())
+    assert pairs["expected_goals_non_penalty"] == (2.40, 1.10), "하프 표를 읽었다"
+    assert pairs["total_shots"] == (18.0, 9.0)
+
+
+def test_all_period_is_stable_across_runs():
+    """스택 순회는 순서를 보장하지 않는다. 여러 번 돌려도 같아야 한다."""
+    data = _periods_fixture()
+    got = {fotmob._match_stat_pairs(data)["expected_goals_non_penalty"]
+           for _ in range(20)}
+    assert got == {(2.40, 1.10)}, f"실행마다 값이 달라진다: {got}"
+
+
+def test_period_selection_falls_back_when_absent():
+    """기간 구분이 없는 응답도 그대로 읽는다 (All 을 못 찾아도 죽지 않는다)."""
+    assert fotmob._all_period({"content": {"stats": {}}}) is None
+    pairs = fotmob._match_stat_pairs(_match_details())   # Periods.All 하나뿐
+    assert pairs["expected_goals_non_penalty"] == (1.08, 0.92)
+    # 기간 dict 가 하나뿐이면 이름이 달라도 그것을 쓴다
+    odd = {"Periods": {"FullTime": {"stats": [{"key": "g", "stats": [
+        _row("total_shots", 11, 4)]}]}}}
+    assert fotmob._match_stat_pairs(odd)["total_shots"] == (11.0, 4.0)
+
+
 def test_match_stat_pairs_survives_split_shape():
     """그룹 계층이 없어도(평평해도) 같은 줄을 찾아낸다 — 경로를 박지 않았다는 뜻."""
     flat = {"whatever": {"rows": [_row("total_shots", 16, 9)]}}

@@ -53,7 +53,7 @@ LEAGUE_PATH = "/api/data/leagues?id={id}"
 ALL_LEAGUES_PATH = "/api/data/allLeagues"
 
 # 캐시 형식이나 파싱 로직이 바뀌면 올린다. 옛 캐시는 자동으로 버려진다.
-_CACHE_VERSION = 4
+_CACHE_VERSION = 5
 
 _SCORE_RE = re.compile(r"(\d+)\s*[-:]\s*(\d+)")
 
@@ -721,15 +721,45 @@ def _stat_number(value: Any) -> float | None:
     return float(m.group()) if m else None
 
 
+def _all_period(data: Any) -> Any:
+    """기간별 표가 여럿이면 '전체 경기' 표만 돌려준다.
+
+    경로 이름이 `content.stats.Periods.All` — **Periods 는 복수형이고**
+    전·후반 표가 함께 온다. 전체를 훑으면 `_walk` 가 스택(LIFO)이라 순회
+    순서가 문서 순서와 달라, `setdefault` 가 하프 값을 먼저 잡을 수 있다.
+    그러면 npxG·슈팅이 한 하프치만 담겨 조용히 절반이 된다 — 260048 실행에서
+    'npxG 대조 최대 차이 3.03' 으로 드러난 증상이 이것이다.
+
+    'All' 을 찾지 못하면 None 을 돌려주고 호출부가 전체를 훑는다. 기간 구분이
+    없는 응답에서도 그대로 동작해야 하기 때문이다.
+    """
+    for node in _walk(data):
+        periods = node.get("Periods")
+        if not isinstance(periods, dict) or not periods:
+            continue
+        whole = periods.get("All")
+        if isinstance(whole, dict):
+            return whole
+        if len(periods) == 1:                       # 이름이 달라도 하나뿐이면 그것
+            only = next(iter(periods.values()))
+            if isinstance(only, dict):
+                return only
+    return None
+
+
 def _match_stat_pairs(data: Any) -> dict[str, tuple[float | None, float | None]]:
     """{FotMob 키: (홈 값, 원정 값)}.
 
     경로가 아니라 모양으로 찾는다 — `key` 가 문자열이고 `stats` 가 **스칼라
     2개**인 dict 가 지표 한 줄이다. 그룹 dict 도 `key`/`stats` 를 갖지만
     그쪽 `stats` 는 dict 목록이라 걸러진다.
+
+    단, 기간(Periods)만은 모양으로 가리지 못한다 — 전반 표와 전체 표가
+    똑같이 생겼기 때문이다. 그래서 '전체' 표를 먼저 골라내고 그 안에서만 찾는다.
     """
     out: dict[str, tuple[float | None, float | None]] = {}
-    for node in _walk(data):
+    scope = _all_period(data)
+    for node in _walk(data if scope is None else scope):
         key, vals = node.get("key"), node.get("stats")
         if not isinstance(key, str) or not isinstance(vals, list) or len(vals) != 2:
             continue
@@ -910,7 +940,10 @@ def attach_match_details(browser: FotMobBrowser, teams: dict[str, dict],
             # 슛맵 합산과 경기 스탯의 차이를 기록 (맞추지 않는다)
             check = _check_for(payload.get("check"), entry.get("fotmob_id"))
             if check and values.get("npxg") is not None:
-                diffs.append(abs(check.get("npxg", 0.0) - values["npxg"]))
+                # 부호를 살려 둔다. 전부 한쪽으로 쏠리면 계통 오차(예: 하프
+                # 표를 읽음)이고, 부호가 섞이면 개별 경기 편차다.
+                diffs.append((check.get("npxg", 0.0) - values["npxg"],
+                              canon, match["id"]))
         if not sampled:
             continue
         stats.recent_matches = sampled
@@ -926,10 +959,24 @@ def attach_match_details(browser: FotMobBrowser, teams: dict[str, dict],
                      ", ".join(f"{n} {c}" for n, c in sorted(short.items())))
 
     if diffs:
-        worst = max(diffs)
-        log.info("[%s] npxG 대조: 경기스탯 vs 슛맵 합산 최대 차이 %.2f "
-                 "(표본 %d) — 값은 경기스탯을 그대로 씁니다.",
-                 league_key, worst, len(diffs))
+        # 최대값만 적으면 '한 경기가 튀는 것'과 '전부 어긋나는 것'을 구분할 수
+        # 없다. 260048 실행에서 최대 3.03 만 보고는 원인을 좁히지 못했다.
+        vals = sorted(d for d, _, _ in diffs)
+        n = len(vals)
+        mean = sum(vals) / n
+        median = vals[n // 2] if n % 2 else (vals[n // 2 - 1] + vals[n // 2]) / 2
+        worst = max(diffs, key=lambda x: abs(x[0]))
+        positive = sum(1 for d in vals if d > 0.05)
+        log.info("[%s] npxG 대조 (슛맵 합산 − 경기스탯, 표본 %d): "
+                 "평균 %+.2f · 중앙값 %+.2f · 최대 %+.2f (%s, 경기 %s) · "
+                 "슛맵이 더 큰 경우 %d/%d — 값은 경기스탯을 그대로 씁니다.",
+                 league_key, n, mean, median, worst[0], worst[1], worst[2],
+                 positive, n)
+        if abs(mean) > 0.30:
+            log.warning("[%s] 대조 차이가 한쪽으로 쏠려 있습니다 (평균 %+.2f). "
+                        "개별 경기 편차가 아니라 계통 오차일 수 있습니다 — "
+                        "경기 스탯에서 전체(All) 표가 아니라 하프 표를 읽고 "
+                        "있는지부터 확인하세요.", league_key, mean)
     return filled, len(details)
 
 

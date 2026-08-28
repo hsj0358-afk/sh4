@@ -19,6 +19,7 @@ DEFAULT_LEAGUES: dict[str, dict] = {
         "pinnacle_name": "England - Premier League",
         "country": "England",
         "fotmob_name": "Premier League",
+        "fotmob_id": 47,
         "whoscored": "/Regions/252/Tournaments/2/England-Premier-League",
     },
     "laliga": {

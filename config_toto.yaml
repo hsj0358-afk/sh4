@@ -93,6 +93,7 @@ leagues:
     pinnacle_name: "England - Premier League"
     country: "England"
     fotmob_name: "Premier League"
+    fotmob_id: 47            # 실행 로그 확인: 이 ID 로 EPL 20팀 일치
     whoscored: "/Regions/252/Tournaments/2/England-Premier-League"
     whoscored_slug: ["england", "premier-league"]
   laliga:

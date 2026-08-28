@@ -69,6 +69,32 @@ toto/cli.py:199   # ---- 4. 후스코어드 (강점/약점·스타일·팀 통�
 | **Pinnacle** | 승/무/패 배당률 (Arcadia guest API) |
 | WhoScored | 강점/약점·플레이 스타일 (정성 데이터) |
 
+### 1-1-1. 리그 ID 를 이름만으로 정하지 않는다
+
+이름 매칭은 두 소스 모두에서 엉뚱한 리그를 골랐다. 실측 기록이다.
+
+| 소스 | 사고 | 원인 |
+|---|---|---|
+| FotMob | EPL 요청에 `id=441` 채택, 순위표 해석 전체 실패 | `allLeagues` 에 **`Premier League` 라는 이름의 리그가 16개**. 첫 후보에서 `break` |
+| Pinnacle | EPL 요청이 `England - Premier League 2 U21` 에 매칭, 배당 0/14 | 정답이 오답의 **접두사**인데 부분일치를 씀 |
+
+지금 규칙 (`toto/sources/fotmob.py` `resolve_league_id()`,
+`toto/sources/pinnacle.py` `league_id()`):
+
+- **설정의 `fotmob_id` 가 최우선.** 실행으로 확인된 값만 적는다
+  (`epl: 47`, `seriea: 55`, `kleague1: 9080`, `kleague2: 9116`).
+- 탐색할 때는 **동명 후보를 전부 모은다.** 하나만 보고 멈추지 않는다.
+- 후보가 여럿이면 `country` 로 좁히고, 그래도 남으면 **순위표의 팀 구성**
+  으로 가린다 — `data/teams.yaml` 이 그 리그 소속으로 아는 팀이 몇 개
+  들어 있는지 센다. `allLeagues` 내부 구조는 아직 실물로 확인하지 못해서
+  경로를 단정하지 않고, 상위 dict 의 문자열 필드를 힌트로 쓴다.
+- **가리지 못하면 임의로 고르지 않고 실패한다.** 엉뚱한 리그의 데이터를
+  쓰는 것보다 비어 있는 편이 낫다.
+- Pinnacle 은 **정규화 완전일치 → `pinnacle_aliases` → 실패** 뿐이다.
+  부분일치를 다시 넣지 않는다.
+
+회귀 테스트: `python tests/test_league_matching.py` (15개).
+
 ### 1-2. 배당률 로직 — 지침 v3.2, 등가(가산) 마진 제거
 
 `toto/predict.py:1` — *"보정 확률 · argmax 픽 · 회차 승산

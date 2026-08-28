@@ -39,6 +39,7 @@ DEFAULT_LEAGUES: dict[str, dict] = {
         "pinnacle_url": "https://www.pinnacle.com/en/soccer/italy-serie-a/matchups/#all",
         "pinnacle_name": "Italy - Serie A",
         "fotmob_name": "Serie A",
+        "fotmob_id": 55,
         "whoscored": "/Regions/108/Tournaments/5/Italy-Serie-A",
     },
     "ligue1": {
@@ -62,6 +63,7 @@ DEFAULT_LEAGUES: dict[str, dict] = {
         "pinnacle_url": "https://www.pinnacle.com/en/soccer/korea-republic-k-league-2/matchups/#all",
         "pinnacle_name": "Korea Republic - K League 2",
         "fotmob_name": "K League 2",
+        "fotmob_id": 9116,
         "whoscored": "/Regions/260/Tournaments/418/South-Korea-K-League-2",
         "whoscored_slug": ["south-korea", "k-league-2"],
     },

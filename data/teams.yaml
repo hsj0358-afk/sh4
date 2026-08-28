@@ -16,7 +16,7 @@ Arsenal:
   en: [Arsenal FC]
   league: epl
 Aston Villa:
-  ko: [아스톤빌라, 아스톤 빌라, 애스턴빌라]
+  ko: [아스톤빌라, 아스톤 빌라, 애스턴빌라, A빌라]
   en: [Aston Villa FC]
   league: epl
 Bournemouth:
@@ -24,7 +24,7 @@ Bournemouth:
   en: [AFC Bournemouth]
   league: epl
 Brentford:
-  ko: [브렌트포드]
+  ko: [브렌트포드, 브렌트퍼]
   en: [Brentford FC]
   league: epl
 Brighton:
@@ -52,7 +52,7 @@ Fulham:
   en: [Fulham FC]
   league: epl
 Leeds:
-  ko: [리즈, 리즈유나이티드]
+  ko: [리즈, 리즈유나이티드, 리즈U]
   en: [Leeds United]
   league: epl
 Liverpool:
@@ -60,7 +60,7 @@ Liverpool:
   en: [Liverpool FC]
   league: epl
 Manchester City:
-  ko: [맨체스터시티, 맨체스터 시티, 맨시티]
+  ko: [맨체스터시티, 맨체스터 시티, 맨시티, 맨체스C]
   en: [Man City, Manchester City FC]
   league: epl
 Manchester United:
@@ -262,7 +262,7 @@ Cagliari:
   en: [Cagliari Calcio]
   league: seriea
 Como:
-  ko: [코모]
+  ko: [코모, 코모1907]
   en: [Como 1907]
   league: seriea
 Cremonese:
@@ -294,7 +294,7 @@ Lazio:
   en: [SS Lazio]
   league: seriea
 Lecce:
-  ko: [레체]
+  ko: [레체, US레체]
   en: [US Lecce]
   league: seriea
 AC Milan:
@@ -608,3 +608,16 @@ V-Varen Nagasaki:
   ko: [V바렌나, V바렌나가사키, 브이바렌나가사키, 나가사키]
   en: [V Varen Nagasaki, VVaren Nagasaki, Nagasaki]
   league: jleague
+
+# --- 2026 회차에서 베트맨 표기로 등장했으나 표에 없던 팀 -----------------
+# league: 를 비워 둔다. 이 팀들의 소속 리그를 실측으로 확인하지 못했고,
+# 순위표를 권위로 삼아 normalize.set_league() 가 채우도록 남긴다.
+Ipswich:
+  ko: [입스위치, 입스위치타운]
+  en: [Ipswich Town, Ipswich Town FC]
+Frosinone:
+  ko: [프로시노, 프로시노네]
+  en: [Frosinone Calcio]
+Venezia:
+  ko: [베네치아]
+  en: [Venezia FC]

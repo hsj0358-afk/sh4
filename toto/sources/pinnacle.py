@@ -16,12 +16,23 @@ guest API 가 막히면 Playwright 로 리그 페이지를 열어 XHR 응답을 
 from __future__ import annotations
 
 import logging
+import re
 import time
 from datetime import datetime, timedelta, timezone
 
 from ..models import Odds
 from ..normalize import TeamResolver
 from ..settings import Settings
+
+
+def _norm_league(text: str) -> str:
+    """리그명 비교용 정규화. 공백·하이픈·구두점을 지우고 소문자로.
+
+    비교는 이 값의 **완전일치**로만 한다. 부분일치를 쓰면
+    "England - Premier League" 가 "England - Premier League 2 U21" 에
+    걸린다(실측 확인).
+    """
+    return re.sub(r"[^a-z0-9]+", "", str(text or "").lower())
 
 log = logging.getLogger(__name__)
 
@@ -117,7 +128,8 @@ class PinnacleClient:
         if league_key in self._league_ids:
             return self._league_ids[league_key]
 
-        want = (self.settings.leagues.get(league_key) or {}).get("pinnacle_name", "")
+        cfg = self.settings.leagues.get(league_key) or {}
+        want = cfg.get("pinnacle_name", "")
         if not want:
             return None
 
@@ -125,17 +137,34 @@ class PinnacleClient:
         if payload is None:
             return None
 
-        target = want.replace(" ", "").replace("-", "").lower()
+        # 부분일치는 쓰지 않는다. 피나클 리그명은 국가를 포함하는데
+        # ("England - Premier League"), 정답 이름이 다른 리그명의 **접두사**라
+        # 부분일치가 성립해 버린다 — 실측에서 EPL 요청이
+        # "England - Premier League 2 U21" 에 걸려 배당이 통째로 어긋났다.
+        # 완전일치 → 설정 별칭 → 실패 순으로만 간다.
+        targets = {_norm_league(w)
+                   for w in [want, *(cfg.get("pinnacle_aliases") or [])] if w}
+
         for item in payload or []:
             name = str(item.get("name", ""))
-            full = f"{item.get('sport', {}).get('name', '')}{name}"
-            for cand in (name, full):
-                if cand.replace(" ", "").replace("-", "").lower().endswith(target) \
-                        or target in cand.replace(" ", "").replace("-", "").lower():
-                    self._league_ids[league_key] = int(item["id"])
-                    log.info("피나클 리그 매칭: %s → id=%s (%s)", league_key, item["id"], name)
-                    return self._league_ids[league_key]
-        log.warning("피나클에서 리그를 찾지 못함: %s (%s)", league_key, want)
+            full = f"{item.get('sport', {}).get('name', '')} {name}"
+            if _norm_league(name) in targets or _norm_league(full) in targets:
+                self._league_ids[league_key] = int(item["id"])
+                log.info("피나클 리그 매칭: %s → id=%s (%s)",
+                         league_key, item["id"], name)
+                return self._league_ids[league_key]
+
+        # 실패 — 이름이 비슷한 후보를 남겨 둔다. 사람이 보고
+        # pinnacle_aliases 에 정확한 이름을 넣으면 다음 실행부터 해결된다.
+        near = [str(i.get("name", "")) for i in payload or []
+                if any(t in _norm_league(i.get("name", "")) for t in targets)]
+        if near:
+            log.warning("피나클에서 리그명이 정확히 일치하지 않습니다: %s (%s). "
+                        "비슷한 후보 %s — 맞는 이름을 config_toto.yaml 의 "
+                        "leagues.%s.pinnacle_aliases 에 넣어 주세요.",
+                        league_key, want, near[:5], league_key)
+        else:
+            log.warning("피나클에서 리그를 찾지 못함: %s (%s)", league_key, want)
         return None
 
     # ---- 경기 + 마켓 ----

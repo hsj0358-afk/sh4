@@ -75,7 +75,13 @@ fotmob:
 #   ko           : 리포트 표시명
 #   aliases      : 베트맨 리그 표기 변형 (부분일치로 매칭)
 #   pinnacle_url : 사용자가 지정한 매치업 페이지 (브라우저 폴백 시 사용)
-#   pinnacle_name: guest API 의 리그명과 매칭할 문자열
+#   pinnacle_name: guest API 의 리그명 — **완전일치**로만 비교한다.
+#                  부분일치를 쓰면 "England - Premier League" 가
+#                  "England - Premier League 2 U21" 에 걸린다(실측).
+#   pinnacle_aliases: 이름이 바뀌었을 때 쓰는 추가 후보 (선택, 완전일치)
+#   fotmob_name  : FotMob 리그명. 같은 이름이 여러 나라에 있으므로
+#                  후보가 여럿이면 순위표의 팀 구성으로 가린다.
+#   fotmob_id    : 확인된 ID 가 있으면 여기에. 탐색보다 우선한다.
 #   whoscored    : 리그 메인 페이지 경로 (순위표/일정)
 leagues:
   epl:
@@ -108,6 +114,7 @@ leagues:
     pinnacle_url: "https://www.pinnacle.com/en/soccer/italy-serie-a/matchups/#all"
     pinnacle_name: "Italy - Serie A"
     fotmob_name: "Serie A"
+    fotmob_id: 55            # 실행 로그 확인: 이 ID 로 세리에A 17팀 일치
     whoscored: "/Regions/108/Tournaments/5/Italy-Serie-A"
     whoscored_slug: ["italy", "serie-a"]
   ligue1:
@@ -133,6 +140,7 @@ leagues:
     pinnacle_url: "https://www.pinnacle.com/en/soccer/korea-republic-k-league-2/matchups/#all"
     pinnacle_name: "Korea Republic - K League 2"
     fotmob_name: "K League 2"
+    fotmob_id: 9116          # 실행 로그 확인: 이 ID 로 K리그2 16팀 일치
     whoscored: "/Regions/260/Tournaments/418/South-Korea-K-League-2"
     whoscored_slug: ["south-korea", "k-league-2"]
   jleague:

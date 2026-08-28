@@ -152,12 +152,79 @@ def _goals(match: dict) -> tuple[int | None, int | None]:
 # --------------------------------------------------------------------------
 # 리그 ID
 # --------------------------------------------------------------------------
-def resolve_league_id(browser: FotMobBrowser, settings: Settings,
-                      league_key: str, cache=None) -> int | None:
-    """설정의 fotmob_id 를 쓰되, 없으면 전체 리그 목록에서 이름으로 찾는다.
+# 동명 후보가 여럿일 때 순위표를 받아 확인할 최대 개수. 응답이 크므로
+# 무한정 받지 않는다.
+_MAX_VERIFY_CANDIDATES = 4
+# 순위표에서 '우리가 그 리그 소속으로 아는 팀'이 이만큼은 나와야 채택한다.
+_MIN_ROSTER_HITS = 3
 
-    ID 를 설정에 박아두면 시즌이 바뀔 때 조용히 어긋난다. 그래서 못 찾은
-    리그는 allLeagues 에서 이름으로 탐색하고, 알아낸 값은 캐시에 남긴다.
+
+def _name_candidates(data: Any, want: str) -> list[tuple[int, int, str]]:
+    """(점수, id, 이름) 후보 목록. 점수가 높을수록 이름이 잘 맞는다.
+
+    이름이 정확히 같은 리그가 **여러 나라에 존재**한다. FotMob allLeagues 는
+    94개국을 담고 있고 'Premier League' 는 잉글랜드 말고도 여럿이다. 그래서
+    처음 만난 하나에서 멈추면 안 되고, 동점 후보를 전부 남겨 뒤에서 가린다.
+    """
+    tokens = [t for t in re.split(r"[^a-z0-9]+", want) if t]
+    if not tokens:
+        return []
+    # "K League 2" 의 'k'·'2' 같은 한 글자 토큰은 아무 이름에나 걸린다.
+    # 긴 토큰이 반드시 들어 있을 것을 통과 조건으로 두고, 짧은 토큰은
+    # 1 · 2부를 가르는 가점으로만 쓴다.
+    anchor = max(tokens, key=len)
+
+    out: dict[int, tuple[int, int, str]] = {}
+    for node in _walk(data):
+        name, lid = node.get("name"), node.get("id")
+        if not isinstance(name, str) or not isinstance(lid, int) or lid in out:
+            continue
+        low = name.strip().lower()
+        if low == want:
+            out[lid] = (len(tokens) + 1, lid, name)      # 완전일치
+            continue
+        if len(anchor) > 2 and anchor not in low:
+            continue
+        hits = sum(1 for t in tokens if t in low)
+        if hits:
+            out[lid] = (hits, lid, name)
+    return sorted(out.values(), key=lambda x: -x[0])
+
+
+def _roster_hits(browser: FotMobBrowser, league_id: int, league_key: str,
+                 resolver: TeamResolver) -> int:
+    """이 리그 순위표에 '우리가 그 리그 소속으로 아는 팀'이 몇 팀 있는지.
+
+    동명 리그를 가르는 기준으로 국가 코드를 쓰려면 allLeagues 의 내부 구조를
+    알아야 하는데 그건 아직 실물로 확인하지 못했다. 반면 순위표의
+    `table.all[].name` 은 이미 확인된 구조이고, 소속 리그는 data/teams.yaml
+    이 들고 있다. 그래서 '아는 팀이 실제로 들어 있는가'로 판별한다.
+    """
+    data = browser.get_json(browser.abs_url(LEAGUE_PATH.format(id=league_id)))
+    if data is None:
+        return -1
+    for block in _standings_blocks(data):
+        hits = 0
+        for row in block.get("all") or []:
+            canon = resolver.resolve(str(row.get("name")), learn=False, quiet=True)
+            if canon and resolver.league_of(canon) == league_key:
+                hits += 1
+        return hits
+    return 0
+
+
+def resolve_league_id(browser: FotMobBrowser, settings: Settings,
+                      league_key: str, cache=None,
+                      resolver: TeamResolver | None = None) -> int | None:
+    """설정의 fotmob_id 를 쓰되, 없으면 전체 리그 목록에서 찾는다.
+
+    ID 를 설정에 박아두면 시즌이 바뀔 때 조용히 어긋나므로 탐색도 남겨 둔다.
+    다만 **이름만으로는 리그를 특정할 수 없다** — 같은 이름의 리그가 여러
+    나라에 있어서, 처음 만난 후보를 채택하면 엉뚱한 리그를 잡는다(실측:
+    EPL 요청에 id=441 이 선택돼 순위표 해석이 통째로 실패했다).
+
+    그래서 동명 후보가 여럿이면 임의로 고르지 않고 순위표의 팀 구성으로
+    가린다. 그래도 못 가리면 **실패로 끝내고** 설정에 ID 를 넣도록 안내한다.
     """
     cfg = settings.leagues.get(league_key) or {}
     fixed = cfg.get("fotmob_id")
@@ -169,45 +236,61 @@ def resolve_league_id(browser: FotMobBrowser, settings: Settings,
         return cached
 
     want = str(cfg.get("fotmob_name") or "").strip().lower()
-    tokens = [t for t in re.split(r"[^a-z0-9]+", want) if t]
-    if not tokens:
+    if not want:
         log.warning("[%s] FotMob 리그명이 설정에 없어 ID 를 찾을 수 없습니다 "
                     "(config_toto.yaml 의 leagues.%s.fotmob_name)",
                     league_key, league_key)
         return None
-    # "K League 2" 의 'k'·'2' 같은 한 글자 토큰은 아무 이름에나 걸린다.
-    # 그래서 '긴 토큰이 반드시 들어 있을 것'을 통과 조건으로 두고,
-    # 짧은 토큰은 1 · 2부 리그를 가르는 가점으로만 쓴다.
-    anchor = max(tokens, key=len)
 
     data = browser.get_json(browser.abs_url(ALL_LEAGUES_PATH))
     if data is None:
         log.warning("[%s] FotMob 리그 목록을 받지 못했습니다.", league_key)
         return None
 
-    best: tuple[int, int, str] | None = None      # (일치 토큰 수, id, 이름)
-    for node in _walk(data):
-        name, lid = node.get("name"), node.get("id")
-        if not isinstance(name, str) or not isinstance(lid, int):
-            continue
-        low = name.strip().lower()
-        if low == want:
-            best = (len(tokens) + 1, lid, name)
-            break
-        if len(anchor) > 2 and anchor not in low:
-            continue
-        hits = sum(1 for t in tokens if t in low)
-        if best is None or hits > best[0]:
-            best = (hits, lid, name)
-
-    if best is None:
+    cands = _name_candidates(data, want)
+    if not cands:
         log.warning("[%s] FotMob 리그 목록에서 '%s' 를 찾지 못했습니다.",
                     league_key, want)
         return None
-    log.info("[%s] FotMob 리그 탐색: '%s' → id=%d", league_key, best[2], best[1])
+
+    top = [c for c in cands if c[0] == cands[0][0]]
+    if len(top) == 1:
+        chosen = top[0]
+        log.info("[%s] FotMob 리그 탐색: '%s' → id=%d",
+                 league_key, chosen[2], chosen[1])
+        if cache:
+            cache.set("fotmob", f"leagueid_{league_key}", chosen[1])
+        return chosen[1]
+
+    # 동명 후보가 여럿 — 순위표의 팀 구성으로 가린다
+    log.info("[%s] 이름이 같은 리그가 %d개입니다. 순위표로 확인합니다: %s",
+             league_key, len(top), ", ".join(f"{c[2]}(id={c[1]})" for c in top[:6]))
+    if resolver is None:
+        log.warning("[%s] 후보를 가릴 수단이 없어 중단합니다. "
+                    "config_toto.yaml 의 leagues.%s.fotmob_id 에 ID 를 적어 주세요.",
+                    league_key, league_key)
+        return None
+
+    best_id, best_hits, best_name = None, 0, ""
+    for _, lid, name in top[:_MAX_VERIFY_CANDIDATES]:
+        hits = _roster_hits(browser, lid, league_key, resolver)
+        log.info("[%s]   id=%d '%s' → 아는 팀 %d개", league_key, lid, name, hits)
+        if hits > best_hits:
+            best_id, best_hits, best_name = lid, hits, name
+
+    if best_id is None or best_hits < _MIN_ROSTER_HITS:
+        log.error("[%s] 동명 리그 %d개 중 어느 것인지 가리지 못했습니다 "
+                  "(최다 일치 %d팀 < 기준 %d팀). 엉뚱한 리그를 쓰지 않도록 "
+                  "건너뜁니다 — config_toto.yaml 의 leagues.%s.fotmob_id 에 "
+                  "ID 를 적어 주세요.",
+                  league_key, len(top), best_hits, _MIN_ROSTER_HITS, league_key)
+        return None
+
+    log.info("[%s] FotMob 리그 확정: '%s' → id=%d (아는 팀 %d개)",
+             league_key, best_name, best_id, best_hits)
     if cache:
-        cache.set("fotmob", f"leagueid_{league_key}", best[1])
-    return best[1]
+        cache.set("fotmob", f"leagueid_{league_key}", best_id)
+    return best_id
 
 
 # --------------------------------------------------------------------------
@@ -223,7 +306,8 @@ def read_league(browser: FotMobBrowser, settings: Settings, league_key: str,
                  league_key, len(revived["teams"]))
         return revived
 
-    league_id = resolve_league_id(browser, settings, league_key, cache=cache)
+    league_id = resolve_league_id(browser, settings, league_key,
+                                  cache=cache, resolver=resolver)
     if league_id is None:
         return {"teams": {}, "matches": []}
 

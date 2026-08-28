@@ -31,6 +31,20 @@ ALL_LEAGUES = {"countries": [
     {"name": "Egypt", "leagues": [{"id": _EGYPT, "name": "Premier League"}]},
 ]}
 
+# 실측 재현: 'Premier League' 동명 리그가 16개였고, 확인 상한(당시 4개) 안에
+# 잉글랜드가 들어오지 않아 판별에 실패했다. 국가 힌트가 없으면 같은 일이 난다.
+MANY = {"countries": (
+    [{"name": f"Country{i}", "leagues": [{"id": 8000 + i, "name": "Premier League"}]}
+     for i in range(15)]
+    + [{"name": "England", "leagues": [{"id": _ENGLAND, "name": "Premier League"}]}]
+)}
+
+# 국가 정보가 없는 평평한 구조. 국가로 좁힐 수 없으므로 순위표 확인 단계까지
+# 내려간다 — '가릴 수단이 없으면 임의로 고르지 않는다' 를 검사할 때 쓴다.
+FLAT = {"leagues": [{"id": _ENGLAND, "name": "Premier League"},
+                    {"id": _RUSSIA, "name": "Premier League"},
+                    {"id": _EGYPT, "name": "Premier League"}]}
+
 
 def _standings(names: list[str]) -> dict:
     """확인된 구조(table[].data.table.all)로 순위표를 만든다."""
@@ -97,16 +111,65 @@ def test_fotmob_lists_all_candidates_not_just_first():
 
 
 def test_fotmob_refuses_when_it_cannot_tell():
-    """가릴 수단이 없거나 아는 팀이 없으면 임의로 고르지 않고 실패한다."""
+    """가릴 수단이 없거나 아는 팀이 없으면 임의로 고르지 않고 실패한다.
+
+    국가 정보가 없는 응답(FLAT)을 써서 국가 단계로는 좁히지 못하게 한다.
+    """
     s, r = _settings_without_epl_id(), TeamResolver()
 
+    class FlatBrowser(FakeBrowser):
+        def get_json(self, url):
+            self.calls.append(url)
+            if "allLeagues" in url:
+                return FLAT
+            for lid, payload in self.standings.items():
+                if f"id={lid}" in url:
+                    return payload
+            return None
+
     # (a) resolver 없이 호출 → 판별 불가 → None
-    assert fotmob.resolve_league_id(FakeBrowser(), s, "epl", resolver=None) is None
+    assert fotmob.resolve_league_id(FlatBrowser(), s, "epl", resolver=None) is None
 
     # (b) 어느 후보에도 우리가 아는 EPL 팀이 없음 → None (엉뚱한 리그 채택 금지)
     blind = {lid: _standings(["Unknown A", "Unknown B"]) for lid in STANDINGS}
-    got = fotmob.resolve_league_id(FakeBrowser(blind), s, "epl", resolver=r)
+    got = fotmob.resolve_league_id(FlatBrowser(blind), s, "epl", resolver=r)
     assert got is None, f"가리지 못했는데 {got} 를 골랐다"
+
+    # (c) 국가로는 못 가려도 순위표로는 가려낸다
+    got = fotmob.resolve_league_id(FlatBrowser(), s, "epl", resolver=r)
+    assert got == _ENGLAND, f"순위표로 가렸어야 하는데 {got}"
+
+
+def test_fotmob_country_narrows_many_same_name_leagues():
+    """동명 리그가 16개여도 국가 힌트로 좁혀 잉글랜드를 고른다 (실측 재현)."""
+    s, r = _settings_without_epl_id(), TeamResolver()
+    assert s.leagues["epl"].get("country"), "설정에 country 가 있어야 한다"
+
+    # 잉글랜드 외에는 순위표를 받을 수 없게 둔다. 국가로 좁히지 못하면
+    # 확인 상한에 걸려 실패했을 상황이다.
+    browser = FakeBrowser({_ENGLAND: STANDINGS[_ENGLAND]})
+    browser.get_json_all = ALL_LEAGUES
+
+    class ManyBrowser(FakeBrowser):
+        def get_json(self, url):
+            self.calls.append(url)
+            if "allLeagues" in url:
+                return MANY
+            return STANDINGS.get(_ENGLAND) if f"id={_ENGLAND}" in url else None
+
+    mb = ManyBrowser()
+    assert fotmob.resolve_league_id(mb, s, "epl", resolver=r) == _ENGLAND
+    # 국가로 좁혔으니 순위표는 한 번만 받는다 (16번 받지 않는다)
+    standings_calls = [c for c in mb.calls if "allLeagues" not in c]
+    assert len(standings_calls) <= 2, f"순위표를 {len(standings_calls)}번 받았다"
+
+
+def test_country_hints_are_structure_agnostic():
+    """allLeagues 경로를 단정하지 않고 상위 dict 의 문자열을 힌트로 쓴다."""
+    hints = fotmob._country_hints(ALL_LEAGUES)
+    assert "england" in hints[_ENGLAND]
+    assert "russia" in hints[_RUSSIA]
+    assert "england" not in hints[_EGYPT]
 
 
 def test_fotmob_config_id_wins_and_skips_network():
@@ -191,6 +254,11 @@ EUROPEAN = {
     "프로시노": "Frosinone",
     "베네치아": "Venezia",
     "US레체": "Lecce",
+    # 260048 회차에서 새로 드러난 것들
+    "코번트리": "Coventry City",
+    "헐시티": "Hull City",
+    "AC몬차": "Monza",
+    "맨체스U": "Manchester United",
 }
 
 
@@ -207,7 +275,9 @@ def test_new_aliases_do_not_hijack_other_teams():
     for ko, want in (("아스톤빌라", "Aston Villa"), ("맨체스터시티", "Manchester City"),
                      ("맨시티", "Manchester City"), ("레체", "Lecce"),
                      ("코모", "Como"), ("브렌트포드", "Brentford"),
-                     ("비야레알", "Villarreal"), ("세비야", "Sevilla")):
+                     ("비야레알", "Villarreal"), ("세비야", "Sevilla"),
+                     ("맨유", "Manchester United"),
+                     ("맨체스터유나이티드", "Manchester United")):
         got = r.resolve(ko, learn=False, quiet=True)
         assert got == want, f"{ko} → {got} (기대 {want})"
 

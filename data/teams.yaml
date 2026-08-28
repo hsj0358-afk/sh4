@@ -64,7 +64,7 @@ Manchester City:
   en: [Man City, Manchester City FC]
   league: epl
 Manchester United:
-  ko: [맨체스터유나이티드, 맨체스터 유나이티드, 맨유]
+  ko: [맨체스터유나이티드, 맨체스터 유나이티드, 맨유, 맨체스U]
   en: [Man Utd, Man United, Manchester Utd]
   league: epl
 Newcastle:
@@ -621,3 +621,12 @@ Frosinone:
 Venezia:
   ko: [베네치아]
   en: [Venezia FC]
+Coventry City:
+  ko: [코번트리, 코번트리시티]
+  en: [Coventry, Coventry City FC]
+Hull City:
+  ko: [헐시티, 헐]
+  en: [Hull, Hull City AFC]
+Monza:
+  ko: [AC몬차, 몬차]
+  en: [AC Monza, Monza 1912]

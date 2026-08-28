@@ -153,10 +153,38 @@ def _goals(match: dict) -> tuple[int | None, int | None]:
 # 리그 ID
 # --------------------------------------------------------------------------
 # 동명 후보가 여럿일 때 순위표를 받아 확인할 최대 개수. 응답이 크므로
-# 무한정 받지 않는다.
-_MAX_VERIFY_CANDIDATES = 4
+# 무한정 받지 않는다. 실측에서 'Premier League' 동명 리그가 16개였고 4개만
+# 확인해서는 잉글랜드가 걸리지 않았다 — 국가 힌트로 순서를 잡은 뒤 이만큼 본다.
+_MAX_VERIFY_CANDIDATES = 8
 # 순위표에서 '우리가 그 리그 소속으로 아는 팀'이 이만큼은 나와야 채택한다.
 _MIN_ROSTER_HITS = 3
+
+
+def _country_hints(data: Any) -> dict[int, set[str]]:
+    """리그 id → 그 리그를 감싼 dict 의 문자열 값들 (국가명·코드 등).
+
+    allLeagues 의 내부 구조는 아직 실물로 확인하지 못했다. 그래서
+    `countries[].name` 같은 경로를 단정하지 않고, **'리그 목록을 들고 있는
+    dict' 의 문자열 필드를 그대로 힌트로 쓴다.** 그 dict 가 국가든 대륙이든
+    이름이 무엇이든, 담긴 리그를 가리키는 상위 정보인 건 분명하다.
+    """
+    hints: dict[int, set[str]] = {}
+    for node in _walk(data):
+        words: set[str] | None = None
+        for value in node.values():
+            if not isinstance(value, list):
+                continue
+            ids = [v["id"] for v in value
+                   if isinstance(v, dict) and isinstance(v.get("id"), int)
+                   and isinstance(v.get("name"), str)]
+            if not ids:
+                continue
+            if words is None:
+                words = {v.strip().lower() for v in node.values()
+                         if isinstance(v, str) and v.strip()}
+            for lid in ids:
+                hints.setdefault(lid, set()).update(words)
+    return hints
 
 
 def _name_candidates(data: Any, want: str) -> list[tuple[int, int, str]]:
@@ -254,6 +282,21 @@ def resolve_league_id(browser: FotMobBrowser, settings: Settings,
         return None
 
     top = [c for c in cands if c[0] == cands[0][0]]
+
+    # 국가로 후보를 좁힌다. 이름만으로는 못 가른다 — 실측에서
+    # 'Premier League' 동명 리그가 16개였다.
+    country = str(cfg.get("country") or "").strip().lower()
+    if country and len(top) > 1:
+        hints = _country_hints(data)
+        same = [c for c in top if country in hints.get(c[1], set())]
+        if same:
+            log.info("[%s] 국가 '%s' 로 후보를 %d개 → %d개로 좁혔습니다.",
+                     league_key, cfg.get("country"), len(top), len(same))
+            top = same
+        else:
+            # 국가 힌트가 하나도 안 맞으면 순서만 뒤로 미룬다(버리지 않는다).
+            log.debug("[%s] 국가 '%s' 로 좁히지 못했습니다.", league_key, country)
+
     if len(top) == 1:
         chosen = top[0]
         log.info("[%s] FotMob 리그 탐색: '%s' → id=%d",

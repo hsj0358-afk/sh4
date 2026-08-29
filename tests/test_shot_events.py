@@ -475,6 +475,57 @@ def test_situation_breakdown_kept_verbatim():
 
 
 # --------------------------------------------------------------------------
+# 실물(260048)에서 드러난 정의 — 막힌 슛은 유효슈팅이 아니다
+# --------------------------------------------------------------------------
+def test_blocked_shot_is_not_on_target():
+    """FotMob 의 isOnTarget 은 **블록된 슛에도 true** 로 온다.
+
+    260048 실물 3경기 6개 팀-경기 전부에서, 블록을 빼야 경기 스탯의
+    ShotsOnTarget 과 정확히 일치했다 (빼기 전 최대 +8 차이 → 뺀 뒤 0).
+    막힌 슛은 유효슈팅도 오프타깃도 아닌 제3의 분류다.
+    """
+    raw = [
+        shot(id=1, isOnTarget=True, isBlocked=False),   # 진짜 유효
+        shot(id=2, isOnTarget=True, isBlocked=True),    # 막힘 → 유효 아님
+        shot(id=3, isOnTarget=True, isBlocked=True),
+        shot(id=4, isOnTarget=False, isBlocked=False),  # 오프타깃
+    ]
+    a = shots.aggregate_match(shots.parse_shot_events(raw, "M1"))[HOME]
+    assert a.shots == 4
+    assert a.shots_on_target == 1, "막힌 슛을 유효슈팅으로 셌다"
+    assert a.shots_blocked == 2
+    assert a.shots_off_target == 1
+    # 세 분류가 총슛을 정확히 나눈다 (실물 6쌍에서 확인된 관계)
+    assert a.shots_on_target + a.shots_off_target + a.shots_blocked == a.shots
+    assert shots.validate(a) == []
+
+
+def test_blocked_definition_matches_real_260048_numbers():
+    """실물 경기 5795364 원정팀(21슛) 수치를 그대로 재현한다.
+
+    isOnTarget=true 13개 중 8개가 블록 → 유효슈팅 5개.
+    경기 스탯 ShotsOnTarget 도 5.0 이었다.
+    """
+    raw = ([shot(id=i, isOnTarget=True, isBlocked=False) for i in range(5)]
+           + [shot(id=100 + i, isOnTarget=True, isBlocked=True) for i in range(8)]
+           + [shot(id=200 + i, isOnTarget=False, isBlocked=False) for i in range(8)])
+    a = shots.aggregate_match(shots.parse_shot_events(raw, "5795364"))[HOME]
+    assert a.shots == 21
+    assert a.shots_on_target == 5, "경기 스탯(5.0)과 어긋난다"
+    assert a.shots_blocked == 8 and a.shots_off_target == 8
+
+
+def test_unknown_situation_from_real_data_is_kept():
+    """실물에서 새로 나온 ThrowInSetPiece · IndividualPlay 가 살아남는가."""
+    raw = [shot(id=1, situation="ThrowInSetPiece", expectedGoals=0.08),
+           shot(id=2, situation="IndividualPlay", expectedGoals=0.05)]
+    a = shots.aggregate_match(shots.parse_shot_events(raw, "M1"))[HOME]
+    assert a.situations["ThrowInSetPiece"]["count"] == 1
+    assert a.situations["IndividualPlay"]["count"] == 1
+    assert round(a.xg, 4) == 0.13, "새 분류의 xG 가 빠지면 안 된다"
+
+
+# --------------------------------------------------------------------------
 def main() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0

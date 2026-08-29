@@ -824,7 +824,10 @@ def _shot_totals(data: Any) -> dict[int, dict[str, float]]:
         acc = out.setdefault(tid, {"shots": 0.0, "on_target": 0.0,
                                    "xg": 0.0, "npxg": 0.0, "xgot": 0.0})
         acc["shots"] += 1
-        if shot.get("isOnTarget"):
+        # 블록된 슛은 유효슈팅에서 뺀다. FotMob 의 isOnTarget 은 블록에도
+        # true 로 오는데, 경기 스탯의 ShotsOnTarget 은 블록을 제외한다
+        # (260048 실물 6쌍에서 확인 — 빼야 정확히 일치).
+        if shot.get("isOnTarget") and not shot.get("isBlocked"):
             acc["on_target"] += 1
         xg = _float(shot.get("expectedGoals")) or 0.0
         acc["xg"] += xg

@@ -40,9 +40,11 @@ METRICS = ("shots", "shots_on_target", "shots_off_target", "shots_blocked",
            "xg", "npxg", "xgot", "goals", "own_goals")
 
 # 실물에서 관찰된 situation 값. 목록에 없는 값이 와도 버리지 않고 그대로
-# 집계한다 — 새 분류가 생겼을 때 조용히 사라지면 안 된다.
+# 집계한다 — 새 분류가 생겼을 때 조용히 사라지면 안 된다. 실제로 260048
+# 실물에서 ThrowInSetPiece · IndividualPlay 두 개가 새로 나왔고, 그대로
+# 집계됐다(목록은 참고용이지 필터가 아니다).
 KNOWN_SITUATIONS = ("RegularPlay", "SetPiece", "FastBreak", "FromCorner",
-                    "FreeKick", "Penalty")
+                    "FreeKick", "Penalty", "ThrowInSetPiece", "IndividualPlay")
 
 
 def _f(value: Any) -> float | None:
@@ -254,12 +256,19 @@ def aggregate_match(events: Iterable[ShotEvent],
             seen[e.team_id] = set()
 
         agg.shots += 1
-        if e.is_on_target is True:
+        # **막힌 슛은 유효슈팅이 아니다.** FotMob 의 `isOnTarget` 은 블록된
+        # 슛에도 true 로 온다 — 골문으로 가던 슛이었다는 뜻이라 그 자체로
+        # 틀린 값은 아니지만, 통상적인 '유효슈팅'(과 FotMob 자신의 경기 스탯
+        # `ShotsOnTarget`)은 블록을 제외한다.
+        # 260048 실물 6개 팀-경기 전부에서, 블록을 빼야 경기 스탯과 정확히
+        # 일치했다 (빼기 전 차이 최대 +8, 뺀 뒤 0).
+        blocked = e.is_blocked is True
+        if blocked:
+            agg.shots_blocked += 1
+        elif e.is_on_target is True:
             agg.shots_on_target += 1
         elif e.is_on_target is False:
             agg.shots_off_target += 1
-        if e.is_blocked is True:
-            agg.shots_blocked += 1
         if e.is_inside_box is True:
             agg.shots_inside_box += 1
         elif e.is_inside_box is False:

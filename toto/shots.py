@@ -212,6 +212,11 @@ class MatchShotAggregate:
     match_id: str
     team_id: int
     is_home: bool | None = None          # teamId 로 판정. 모르면 None
+    # 이 경기에서 맞붙은 상대 팀 ID. `team_id` 와 같은 **FotMob 숫자 teamId**
+    # 이며 팀명 문자열이 아니다. 이게 있어야 상대의 같은 경기 집계를 찾아
+    # 피지표(피슛·npxGA·피xGOT)를 만들 수 있다 (Phase 2 의 수비 분석).
+    # 해석할 수 없으면 None — 짐작해서 채우지 않는다.
+    opponent_id: int | None = None
     shots: int = 0
     shots_on_target: int = 0
     shots_off_target: int = 0
@@ -301,7 +306,39 @@ def aggregate_match(events: Iterable[ShotEvent],
         slot["count"] += 1
         if xg is not None:
             slot["xg"] = (slot["xg"] or 0.0) + xg
+
+    _resolve_opponents(out, home_id, away_id)
     return out
+
+
+def _resolve_opponents(out: dict[int, MatchShotAggregate],
+                       home_id: int | None, away_id: int | None) -> None:
+    """각 집계에 상대 팀 ID 를 붙인다 (집계가 다 만들어진 뒤 2차 패스).
+
+    둘 다 짐작이 아니라 사실이다:
+
+    1. **home_id·away_id 를 둘 다 알면** 반대편이 상대다. 이 경로가 있어야
+       상대가 그 경기에서 **한 슛도 안 쳤을 때**(슛맵에 안 나타날 때)도
+       상대를 붙일 수 있다.
+    2. 아니면, 슛맵에 팀이 **정확히 2개**일 때 나머지 하나가 상대다 —
+       한 경기 슛맵에 나온 두 팀은 서로 상대일 수밖에 없다.
+
+    어느 쪽도 성립하지 않으면(팀이 1개뿐인데 경기 ID 도 모름, 3개 이상 등)
+    None 으로 둔다. 팀명 문자열로는 절대 찾지 않는다.
+    """
+    ids = set(out)
+    pair_known = (home_id is not None and away_id is not None
+                  and home_id != away_id)
+    for tid, agg in out.items():
+        opponent = None
+        if pair_known:
+            if tid == home_id:
+                opponent = away_id
+            elif tid == away_id:
+                opponent = home_id
+        if opponent is None and len(ids) == 2:
+            opponent = next(i for i in ids if i != tid)
+        agg.opponent_id = opponent
 
 
 # --------------------------------------------------------------------------
@@ -413,6 +450,8 @@ def validate(agg: MatchShotAggregate) -> list[str]:
         bad.append(f"npxG {agg.npxg:.3f} > xG {agg.xg:.3f}")
     if agg.goals > agg.shots:
         bad.append(f"득점 {agg.goals} > 총슈팅 {agg.shots}")
+    if agg.opponent_id is not None and agg.opponent_id == agg.team_id:
+        bad.append(f"상대가 자기 자신이다 (team_id={agg.team_id})")
     return bad
 
 

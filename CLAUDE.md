@@ -155,6 +155,11 @@ Raw JSON → parse_shot_events() → ShotEvent
   않고, 기존 지표 계산에 끼어들면 안 된다.
 - 중복은 `(경기, event id)` 로 거른다. **id 가 유일하다고 가정하지 않는다** —
   없으면 팀·선수·시간·좌표·xG 를 묶어 판정한다.
+- **상대 팀은 `opponent_id`(숫자 teamId)로 잇는다.** 팀명 문자열로 찾지
+  않는다. 해석 순서는 (1) 경기의 home/away 팀 ID 를 둘 다 알면 반대편 —
+  상대가 **0슛이어도** 붙는다, (2) 슛맵에 팀이 정확히 2개면 나머지 하나,
+  (3) 둘 다 아니면 None. 이게 있어야 상대의 같은 경기 집계에서 피슛·npxGA·
+  피xGOT 을 만들 수 있다 (Phase 2 수비 분석).
 
 **막힌 슛은 유효슈팅이 아니다.** FotMob 의 `isOnTarget` 은 **블록된 슛에도
 true** 로 온다(골문으로 가던 슛이라는 뜻). 통상적인 유효슈팅과 FotMob 자신의
@@ -174,7 +179,7 @@ true** 로 온다(골문으로 가던 슛이라는 뜻). 통상적인 유효슈�
 `situation` 은 6종이라고 단정하지 않는다 — 실물에서 `ThrowInSetPiece`·
 `IndividualPlay` 가 추가로 나왔다. 목록은 참고용이고 필터가 아니다.
 
-회귀 테스트: `python tests/test_shot_events.py` (39개).
+회귀 테스트: `python tests/test_shot_events.py` (46개).
 
 ### 1-1-1. 리그 ID 를 이름만으로 정하지 않는다
 
@@ -272,7 +277,7 @@ toto/render.py:536
 옛 캐시를 읽어 수정이 반영되지 않는다 — 실제로 이것 때문에 두 번 헛돌았다.
 
 ```
-toto/sources/fotmob.py:57     _CACHE_VERSION = 6   (1-B 에서 2→3→4→5, 1-C 에서 6)
+toto/sources/fotmob.py:57     _CACHE_VERSION = 7   (1-B 2→3→4→5, 1-C 6, Phase 2 P0-1 에서 7)
 toto/sources/whoscored.py:415 _LEAGUE_CACHE_VERSION = 2
 ```
 

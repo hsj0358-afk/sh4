@@ -54,7 +54,7 @@ LEAGUE_PATH = "/api/data/leagues?id={id}"
 ALL_LEAGUES_PATH = "/api/data/allLeagues"
 
 # 캐시 형식이나 파싱 로직이 바뀌면 올린다. 옛 캐시는 자동으로 버려진다.
-_CACHE_VERSION = 6
+_CACHE_VERSION = 7
 
 _SCORE_RE = re.compile(r"(\d+)\s*[-:]\s*(\d+)")
 

@@ -526,6 +526,86 @@ def test_unknown_situation_from_real_data_is_kept():
 
 
 # --------------------------------------------------------------------------
+# P0-1 — opponent_id (Phase 2 선행)
+# --------------------------------------------------------------------------
+def test_opponent_id_home_points_to_away():
+    """홈 팀 집계의 상대는 원정 팀이다."""
+    a = shots.aggregate_match(events(), HOME, AWAY)
+    assert a[HOME].opponent_id == AWAY
+    assert a[HOME].is_home is True
+
+
+def test_opponent_id_away_points_to_home():
+    """원정 팀 집계의 상대는 홈 팀이다 (양방향)."""
+    a = shots.aggregate_match(events(), HOME, AWAY)
+    assert a[AWAY].opponent_id == HOME
+    assert a[AWAY].is_home is False
+    # 홈/원정을 뒤바꿔 넘겨도 상대 관계 자체는 그대로다
+    f = shots.aggregate_match(events(), AWAY, HOME)
+    assert f[HOME].opponent_id == AWAY and f[AWAY].opponent_id == HOME
+
+
+def test_opponent_id_when_team_ids_do_not_match():
+    """넘긴 home_id/away_id 가 슛맵의 팀과 다를 때.
+
+    두 팀이 정확히 2개면 서로가 상대인 것은 사실이므로 그대로 잇는다.
+    다만 홈/원정은 알 수 없으므로 is_home 은 None 으로 남는다 —
+    사실(상대)과 추측(홈/원정)을 구분한다.
+    """
+    a = shots.aggregate_match(events(), 99991, 99992)   # 둘 다 불일치
+    assert a[HOME].opponent_id == AWAY
+    assert a[AWAY].opponent_id == HOME
+    assert a[HOME].is_home is None and a[AWAY].is_home is None
+
+
+def test_opponent_id_none_when_unresolvable():
+    """한 팀만 슛을 쳤고 경기 팀 ID 도 모르면 상대를 만들지 않는다."""
+    only = shots.parse_shot_events([shot(id=1)], "M1")   # HOME 만
+    a = shots.aggregate_match(only)                       # id 안 넘김
+    assert a[HOME].opponent_id is None, "짐작해서 채우면 안 된다"
+
+    # 상대가 0슛이어도 경기 팀 ID 를 알면 붙는다 (이 경로가 있어야 하는 이유)
+    b = shots.aggregate_match(only, HOME, AWAY)
+    assert b[HOME].opponent_id == AWAY
+    assert AWAY not in b, "슛이 없는 팀의 집계를 만들어내지 않는다"
+
+
+def test_opponent_id_survives_cache_roundtrip():
+    a = shots.aggregate_match(events(), HOME, AWAY)[HOME]
+    back = shots.MatchShotAggregate(**json.loads(json.dumps(asdict(a))))
+    assert back.opponent_id == AWAY
+    # opponent_id 가 없던 옛 캐시도 되살아난다 (기본값 None)
+    old = asdict(a); del old["opponent_id"]
+    assert shots.MatchShotAggregate(**old).opponent_id is None
+
+
+def test_opponent_id_self_reference_is_a_violation():
+    a = shots.aggregate_match(events(), HOME, AWAY)[HOME]
+    assert shots.validate(a) == []
+    a.opponent_id = a.team_id
+    assert any("자기 자신" in m for m in shots.validate(a))
+
+
+def test_opponent_id_does_not_change_existing_aggregate_values():
+    """P0-1 완료 조건: 기존 집계 값 변경 0건."""
+    a = shots.aggregate_match(events(), HOME, AWAY)[HOME]
+    before = {k: v for k, v in asdict(a).items() if k != "opponent_id"}
+    expected = {
+        "match_id": "M1", "team_id": HOME, "is_home": True,
+        "shots": 5, "shots_on_target": 3, "shots_off_target": 1,
+        "shots_blocked": 1, "shots_inside_box": 4, "shots_outside_box": 1,
+        "xg": 1.90, "npxg": 1.10, "xgot": 2.00,
+        "goals": 2, "own_goals": 0, "penalties": 1,
+    }
+    for k, want in expected.items():
+        got = before[k]
+        if isinstance(want, float):
+            assert round(got, 4) == want, f"{k}: {got} != {want}"
+        else:
+            assert got == want, f"{k}: {got} != {want}"
+
+
+# --------------------------------------------------------------------------
 def main() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0

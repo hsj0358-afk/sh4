@@ -333,6 +333,7 @@ observed)이고 이쪽은 경기내용에서 만든 모델값이다. 두 확률�
   뿐이고, 문턱은 `config_toto.yaml` 의 `analysis.trend_thresholds` 에 있다 —
   그 자리에 **"운영용 기준이며 통계적으로 검증된 기준이 아님"** 이라고
   적어 두었다. 밴드를 점수로 바꾸거나 여러 지표를 합산하지 않는다.
+  **빼기 전에 뺄 수 있는지 먼저 본다 — §1-1-9.**
 - **최근 값이 높다고 "상승세"·"전력 상승"·"강팀" 이라고 적지 않는다.**
   "최근 6경기 xG 가 시즌보다 +0.22" 까지가 전부다.
 - `Metric.direction` 은 표시용 메타데이터다 (`higher_better`/`lower_better`,
@@ -420,6 +421,65 @@ xG·npxG·슛당 xG 처럼 같은 이야기를 세 번 세지 않으려는 메�
 만들지 않는다. 이 함수는 `kickoff` 을 직접 비교하지 않는다(테스트로 고정).
 
 회귀 테스트: `python tests/test_chance_quality.py` (41개).
+
+### 1-1-9. 트렌드를 만들기 전에 뺄 수 있는지 본다 (2-B 교정)
+
+실물 260048 에서 풀럼의 값이 이랬다.
+
+```
+시즌 xG   1.33   ← 경기 스탯 값        (season_xg_table / match_stat)
+최근 xG   1.39   ← 슛맵 이벤트 합산     (shotmap / shot_events)
+트렌드    +0.06
+```
+
+**같은 한 경기다.** +0.06 은 경기력 변화가 아니라 두 측정 방식의 차이였다 —
+슛맵은 슛마다 xG 를 반올림해 주므로 합치면 누적된다(§3-2-1 실측 최대 +0.09).
+이런 숫자를 추세로 적으면 안 된다.
+
+그래서 `Metric` 에 두 가지를 싣는다.
+
+  · `source`            어느 피드에서 왔나 (`standings` · `shotmap` · …)
+  · `measurement_basis` 어떻게 만들어졌나 (`final_score` · `match_stat` ·
+                        `shot_events`)
+
+표는 `_SEASON_ORIGIN` / `_RECENT_ORIGIN` 에 있다. **시즌과 최근이 다른
+피드에서 온다는 사실 자체가 거기 적혀 있다.**
+
+`trend_allowed()` 가 빼기 전에 여섯 가지를 본다.
+
+| # | 조건 | 어긋나면 |
+|---|---|---|
+| 1 | 같은 지표 | `metric_mismatch` |
+| 2 | 직접 비교 가능한 원천 | `source` |
+| 3 | 같은 산출 방식 | `basis` |
+| 4 | 경기당 값일 것 (누계가 아님) | `count_unit` |
+| 5 | 서로 다른 경기 집합 | `same_match_set` |
+| 6 | 표본이 최소 기준 이상·유효 | `sample` |
+
+어긋나면 **값을 `None` 으로 두고 사유를 함께 남긴다** — 지우면 왜 없는지
+알 수 없고, 숫자를 남기면 추세로 읽힌다. `Metric.note` 가
+`not_meaningful <사유>` 로 시작하고 `parse_trend_band()` 가 되읽는다.
+
+- **원천 비교는 명시적으로 등록한 쌍만 허용한다** (`COMPARABLE_SOURCES`).
+  지금 등록된 것은 `{standings, season_match_index}` 하나뿐이다 — 순위표의
+  득점·승점 누계는 정의상 최종 스코어의 합이고 260048 실물에서도 두 경로가
+  정확히 같았다(첼시 3.00 = 3.00). **"아마 비슷할 것" 으로 늘리지 않는다.**
+- 그 결과 **xG·슈팅·유효슈팅은 트렌드가 없다** (시즌은 피드, 최근은 슛맵).
+  득점·실점·승점·득실차만 트렌드가 나온다.
+- **승/무/패는 누계라 트렌드를 만들지 않는다.** "시즌 5승(10경기)" 과
+  "최근 3승(3경기)" 을 빼면 −2 가 나오는데 이건 경기 수 차이일 뿐이다.
+  경기당 승점(`points`)이 이미 같은 이야기를 한다.
+- 시즌 초처럼 **최근 구간이 시즌 전체와 같은 경기**면 만들지 않는다
+  (`available >= played`). 260048 이 정확히 이 경우다.
+- 최소 표본은 `config_toto.yaml` 의 `analysis.trend_min_sample`(기본 3).
+- notes 는 창과 무관한 사유(원천·방식·단위)를 **한 번만** 적는다
+  (`STRUCTURAL_BLOCKS`). 창마다 반복하면 팀당 16줄이 된다.
+
+**교정 범위는 트렌드뿐이다.** observed·derived 원값은 한 줄도 바뀌지 않았다 —
+실물 두 팀의 `chance_quality` 136개, `time_context` 비-트렌드 138개가 교정
+전후로 완전히 같다는 것을 대조로 확인했다.
+
+회귀 테스트: `python tests/test_trend_validity.py` (25개).
 
 ### 1-1-1. 리그 ID 를 이름만으로 정하지 않는다
 
@@ -737,6 +797,7 @@ python tests/test_analysis_model.py        # Phase 2 분석 모델 (22개)
 python tests/test_xpts.py                  # 독립 포아송 기대승점 (36개)
 python tests/test_time_context.py          # 시간축 분석 2-A (43개)
 python tests/test_chance_quality.py        # 기회의 질 2-B (41개)
+python tests/test_trend_validity.py        # 트렌드 유효성 2-B 교정 (25개)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_sources.py --browser    # 소스 구조 점검
 python tools/probe_sources.py --analyze    # 저장본 재분석 (접속 없음)

@@ -231,11 +231,15 @@ def test_missing_shot_layer_leaves_a_reason():
 # --------------------------------------------------------------------------
 # 10~12. 트렌드
 # --------------------------------------------------------------------------
+# 트렌드는 **원천과 산출 방식이 같은 지표에서만** 만들어진다. 득점은 시즌
+# (순위표)과 최근(시즌 경기 색인) 모두 최종 스코어를 센 값이라 비교할 수
+# 있다. xG 는 시즌이 경기 스탯, 최근이 슛맵 합산이라 비교할 수 없다 —
+# 그쪽은 tests/test_trend_validity.py 가 다룬다.
 def test_10_recent_higher_than_season():
-    aggs = {"all6": window(111, 6, 6, {"xg": 15.0}, {"xg": 6})}   # 2.50 vs 1.40
-    axis = build(profile(aggregates=aggs), history(HOME_TEAM, 6), kick(30))
-    trend = axis.get("trend6.xg")
-    assert abs(trend.value - 1.1) < 1e-9
+    stats = season_stats(goals_for=15, played=10)          # 1.50
+    axis = build(profile(stats), history(HOME_TEAM, 10), kick(30))
+    trend = axis.get("trend6.goals")                       # 최근 2.00
+    assert abs(trend.value - 0.5) < 1e-9
     assert analysis.parse_trend_band(trend) == analysis.HIGHER
     assert trend.provenance == DERIVED
     for word in ("상승세", "전력", "강팀", "추천"):
@@ -243,18 +247,19 @@ def test_10_recent_higher_than_season():
 
 
 def test_11_recent_lower_than_season():
-    aggs = {"all6": window(111, 6, 6, {"xg": 3.0}, {"xg": 6})}     # 0.50
-    axis = build(profile(aggregates=aggs), history(HOME_TEAM, 6), kick(30))
-    trend = axis.get("trend6.xg")
-    assert abs(trend.value + 0.9) < 1e-9
+    stats = season_stats(goals_for=25, played=10)          # 2.50
+    axis = build(profile(stats), history(HOME_TEAM, 10, goals=(1, 0)),
+                 kick(30))
+    trend = axis.get("trend6.goals")                       # 최근 1.00
+    assert abs(trend.value + 1.5) < 1e-9
     assert analysis.parse_trend_band(trend) == analysis.LOWER
 
 
 def test_12_recent_similar_to_season():
-    aggs = {"all6": window(111, 6, 6, {"xg": 8.7}, {"xg": 6})}     # 1.45 vs 1.40
-    axis = build(profile(aggregates=aggs), history(HOME_TEAM, 6), kick(30))
-    trend = axis.get("trend6.xg")
-    assert abs(trend.value - 0.05) < 1e-9
+    stats = season_stats(goals_for=20, played=10)          # 2.00
+    axis = build(profile(stats), history(HOME_TEAM, 10), kick(30))
+    trend = axis.get("trend6.goals")                       # 최근 2.00
+    assert trend.value == 0.0
     assert analysis.parse_trend_band(trend) == analysis.SIMILAR
 
 

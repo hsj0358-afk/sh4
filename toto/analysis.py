@@ -98,6 +98,111 @@ KST = timezone(timedelta(hours=9))
 # 트렌드 밴드. 값이 아니라 라벨이다 — 점수로 바꾸지 않는다.
 HIGHER, LOWER, SIMILAR = "higher", "lower", "similar"
 TREND_BANDS = (HIGHER, LOWER, SIMILAR)
+# 두 값을 뺄 수 없어 추세로 읽으면 안 되는 경우. 값은 None 이고 사유가 붙는다.
+NOT_MEANINGFUL = "not_meaningful"
+TREND_STATES = TREND_BANDS + (NOT_MEANINGFUL,)
+
+
+# --------------------------------------------------------------------------
+# 0. 값의 출처와 산출 방식 (2-B 교정)
+# --------------------------------------------------------------------------
+# 실물에서 겪은 사고: 풀럼의 시즌 xG 는 1.33(경기 스탯), 최근 xG 는 1.39
+# (슛맵 합산)이었다. **같은 한 경기**인데 0.06 이 달랐다. 슛맵은 슛마다 xG 를
+# 반올림해 주므로 합치면 누적되기 때문이다(§1-1-3, 실측 최대 +0.09).
+# 그 차이를 빼서 "+0.06" 이라고 적으면 측정 방식의 차이가 경기력 변화로
+# 둔갑한다. 그래서 빼기 전에 **원천(source)과 산출 방식(basis)** 을 본다.
+#
+# source — 어느 피드에서 왔나
+STANDINGS = "standings"                  # 리그 순위표
+SEASON_STATS_FEED = "season_stats_feed"  # FotMob 시즌 통계 피드 (stats.teams[])
+SEASON_XG_TABLE = "season_xg_table"      # FotMob 시즌 xG 표
+SEASON_MATCH_INDEX = "season_match_index"  # 시즌 경기 색인 (SeasonMatch)
+SHOTMAP = "shotmap"                      # matchDetails 의 슛맵 이벤트
+MATCH_STATS = "match_stats"              # matchDetails 의 경기 스탯 표
+DERIVED_SOURCE = "derived"               # 위 값들에서 계산한 파생값
+
+# measurement_basis — 그 피드에서 어떻게 만들어졌나
+FINAL_SCORE = "final_score"    # 최종 스코어를 센 값 (득점·승점·승무패…)
+MATCH_STAT = "match_stat"      # 소스가 계산해 준 경기 스탯 값
+SHOT_EVENTS = "shot_events"    # 슛 이벤트를 하나씩 합산한 값
+MIXED_BASIS = "mixed"          # 서로 다른 방식이 섞였다
+
+# **직접 비교 가능한 원천 묶음.** 서로 다른 피드지만 같은 것을 세고 있어
+# 값이 일치하는 쌍만 넣는다. 순위표의 득점·승점 누계는 정의상 최종 스코어의
+# 합이고, 260048 실물에서도 두 경로가 정확히 같았다(첼시 3.00 = 3.00).
+# **추측으로 늘리지 않는다.**
+COMPARABLE_SOURCES: tuple[frozenset[str], ...] = (
+    frozenset({STANDINGS, SEASON_MATCH_INDEX}),
+)
+
+# (기간 종류, 지표) → (source, basis).
+# 시즌과 최근이 **다른 피드에서 온다는 사실 자체**가 여기 적혀 있다.
+_SEASON_ORIGIN: dict[str, tuple[str, str]] = {
+    "goals": (STANDINGS, FINAL_SCORE),
+    "goals_against": (STANDINGS, FINAL_SCORE),
+    "points": (STANDINGS, FINAL_SCORE),
+    "goal_diff": (STANDINGS, FINAL_SCORE),
+    "wins": (STANDINGS, FINAL_SCORE),
+    "draws": (STANDINGS, FINAL_SCORE),
+    "losses": (STANDINGS, FINAL_SCORE),
+    "xg": (SEASON_XG_TABLE, MATCH_STAT),
+    "xgd": (SEASON_XG_TABLE, MATCH_STAT),
+    "shots": (SEASON_STATS_FEED, MATCH_STAT),
+    "shots_on_target": (SEASON_STATS_FEED, MATCH_STAT),
+    "shots_against": (SEASON_STATS_FEED, MATCH_STAT),
+    "shots_on_target_against": (SEASON_STATS_FEED, MATCH_STAT),
+    "big_chances": (SEASON_STATS_FEED, MATCH_STAT),
+    "xg_per_shot": (DERIVED_SOURCE, MATCH_STAT),
+    "on_target_rate": (DERIVED_SOURCE, MATCH_STAT),
+    "goals_minus_xg": (DERIVED_SOURCE, MIXED_BASIS),
+}
+_RECENT_ORIGIN: dict[str, tuple[str, str]] = {
+    "goals": (SEASON_MATCH_INDEX, FINAL_SCORE),
+    "goals_against": (SEASON_MATCH_INDEX, FINAL_SCORE),
+    "points": (SEASON_MATCH_INDEX, FINAL_SCORE),
+    "goal_diff": (SEASON_MATCH_INDEX, FINAL_SCORE),
+    "wins": (SEASON_MATCH_INDEX, FINAL_SCORE),
+    "draws": (SEASON_MATCH_INDEX, FINAL_SCORE),
+    "losses": (SEASON_MATCH_INDEX, FINAL_SCORE),
+    "xg": (SHOTMAP, SHOT_EVENTS),
+    "npxg": (SHOTMAP, SHOT_EVENTS),
+    "xgot": (SHOTMAP, SHOT_EVENTS),
+    "shots": (SHOTMAP, SHOT_EVENTS),
+    "shots_on_target": (SHOTMAP, SHOT_EVENTS),
+    "shots_inside_box": (SHOTMAP, SHOT_EVENTS),
+    "shots_outside_box": (SHOTMAP, SHOT_EVENTS),
+    "npxga": (MATCH_STATS, MATCH_STAT),
+    "xgot_against": (MATCH_STATS, MATCH_STAT),
+    "shots_against": (MATCH_STATS, MATCH_STAT),
+    "shots_on_target_against": (MATCH_STATS, MATCH_STAT),
+    "npxgd": (DERIVED_SOURCE, MIXED_BASIS),
+    "xg_per_shot": (DERIVED_SOURCE, SHOT_EVENTS),
+    "npxg_per_shot": (DERIVED_SOURCE, SHOT_EVENTS),
+    "box_shot_share": (DERIVED_SOURCE, SHOT_EVENTS),
+    "on_target_rate": (DERIVED_SOURCE, SHOT_EVENTS),
+    "goals_minus_xg": (DERIVED_SOURCE, MIXED_BASIS),
+    "goals_minus_npxg": (DERIVED_SOURCE, MIXED_BASIS),
+    "goals_minus_xgot": (DERIVED_SOURCE, MIXED_BASIS),
+}
+
+
+def metric_origin(period: str, name: str) -> tuple[str, str]:
+    """(source, measurement_basis). 모르면 빈 문자열 — 지어내지 않는다."""
+    table = _SEASON_ORIGIN if period == SEASON else _RECENT_ORIGIN
+    return table.get(name, ("", ""))
+
+
+def sources_comparable(a: str, b: str) -> bool:
+    """두 원천의 값을 직접 빼도 되나.
+
+    같은 원천이면 당연히 되고, 아니면 **명시적으로 등록된 쌍**만 된다.
+    "아마 비슷할 것" 으로 통과시키지 않는다.
+    """
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    return any({a, b} <= group for group in COMPARABLE_SOURCES)
 
 
 # --------------------------------------------------------------------------
@@ -230,6 +335,8 @@ DEFAULT_TREND_THRESHOLDS: dict[str, float] = {
     "wins": 1.0, "draws": 1.0, "losses": 1.0,
     "big_chances": 0.8,
 }
+# 트렌드를 만들 최소 표본. 양쪽 기간 모두 이 수를 넘어야 한다.
+DEFAULT_TREND_MIN_SAMPLE = 3
 
 
 def period_name(window: int) -> str:
@@ -509,11 +616,75 @@ def trend_band(name: str, delta: float,
 
 
 def parse_trend_band(metric: Metric | None) -> str:
-    """트렌드 지표의 밴드를 되읽는다 (note 앞에 토큰으로 적어 둔다)."""
+    """트렌드 지표의 상태를 되읽는다 (note 앞에 토큰으로 적어 둔다).
+
+    `higher`/`lower`/`similar` 또는 `not_meaningful` 을 돌려준다.
+    """
     if metric is None or not metric.note:
         return ""
     head = metric.note.split(" ", 1)[0]
-    return head if head in TREND_BANDS else ""
+    return head if head in TREND_STATES else ""
+
+
+# 트렌드를 만들지 못한 사유 코드.
+BLOCK_MISSING = "missing"
+BLOCK_METRIC = "metric_mismatch"
+BLOCK_SOURCE = "source"
+BLOCK_BASIS = "basis"
+BLOCK_COUNT_UNIT = "count_unit"
+BLOCK_SAME_SET = "same_match_set"
+BLOCK_SAMPLE = "sample"
+# 창 길이와 무관한 사유 — 지표의 성질에서 온다. 창마다 반복해 적지 않는다.
+STRUCTURAL_BLOCKS = frozenset({BLOCK_METRIC, BLOCK_SOURCE, BLOCK_BASIS,
+                               BLOCK_COUNT_UNIT})
+
+
+def trend_allowed(name: str, season_metric: Metric | None,
+                  recent_metric: Metric | None, *, same_match_set: bool,
+                  min_sample: int) -> tuple[bool, str, str]:
+    """시즌 값과 최근 값을 빼도 되나. `(가능한가, 사유 코드, 사유 문구)`.
+
+    하나라도 어긋나면 트렌드를 **만들지 않는다** — 값의 차이는 있어도 그것을
+    추세로 읽을 수 없기 때문이다. 검사 순서는 '더 근본적인 이유' 순이다.
+    """
+    if season_metric is None or recent_metric is None:
+        return False, BLOCK_MISSING, "한쪽 기간에 값이 없음"
+    if season_metric.name != recent_metric.name:
+        return False, BLOCK_METRIC, "서로 다른 지표"
+    if not sources_comparable(season_metric.source, recent_metric.source):
+        return False, BLOCK_SOURCE, (
+            f"측정 원천이 다름 (시즌 {season_metric.source or '미상'}"
+            f" ↔ 최근 {recent_metric.source or '미상'})")
+    if (not season_metric.measurement_basis
+            or season_metric.measurement_basis
+            != recent_metric.measurement_basis):
+        return False, BLOCK_BASIS, (
+            f"산출 방식이 다름 (시즌 "
+            f"{season_metric.measurement_basis or '미상'} ↔ 최근 "
+            f"{recent_metric.measurement_basis or '미상'})")
+    if season_metric.unit == "count":
+        # 승/무/패는 **누계**다. "시즌 5승" 과 "최근 3경기 3승" 을 빼면 −2 가
+        # 나오는데 이건 경기 수가 달라서 생긴 숫자이지 추세가 아니다.
+        # 경기당으로 환산한 승점(points)이 이미 같은 이야기를 하고 있다.
+        return False, BLOCK_COUNT_UNIT, "누적 개수라 기간 길이가 다르면 뺄 수 없음"
+    if same_match_set:
+        return False, BLOCK_SAME_SET, "동일 경기 표본 (최근 구간이 시즌 전체와 같음)"
+    s_n, r_n = season_metric.sample_count, recent_metric.sample_count
+    if not isinstance(s_n, int) or not isinstance(r_n, int) \
+            or s_n <= 0 or r_n <= 0:
+        return False, BLOCK_SAMPLE, "표본 수를 알 수 없음"
+    if s_n < min_sample or r_n < min_sample:
+        return False, BLOCK_SAMPLE, (
+            f"표본 부족 (시즌 {s_n} · 최근 {r_n}, 최소 {min_sample})")
+    return True, "", ""
+
+
+def trend_min_sample(settings: Settings) -> int:
+    cfg = (getattr(settings, "analysis", None) or {}).get("trend_min_sample")
+    try:
+        return max(1, int(cfg))
+    except (TypeError, ValueError):
+        return DEFAULT_TREND_MIN_SAMPLE
 
 
 # --------------------------------------------------------------------------
@@ -522,9 +693,11 @@ def parse_trend_band(metric: Metric | None) -> str:
 def _metric(name: str, period: str, value: float, sample: int | None,
             provenance: str = OBSERVED, note: str = "") -> Metric:
     label, unit, direction, _family = SPECS[name]
+    source, basis = metric_origin(period, name)
     return Metric(name=name, label=label, value=value, provenance=provenance,
                   period=period, sample_count=sample, unit=unit, note=note,
-                  direction=direction, group=GROUPS.get(name, ""))
+                  direction=direction, group=GROUPS.get(name, ""),
+                  source=source, measurement_basis=basis)
 
 
 def _window_time_check(agg, allowed_ids: set[str], known_ids: set[str]
@@ -547,11 +720,17 @@ def build_time_context(profile: TeamProfile | None, team: str,
                        windows: list[int],
                        thresholds: dict[str, float],
                        detail_window: int = 6,
-                       quality: DataQuality | None = None) -> AnalysisAxis:
+                       quality: DataQuality | None = None,
+                       min_sample: int = DEFAULT_TREND_MIN_SAMPLE
+                       ) -> AnalysisAxis:
     """시즌 · 최근 N경기 · 그 차이를 한 축에 담는다.
 
     키는 `기간.지표` 다 (`season.xg`, `recent6.xg`, `trend6.xg`). 기간을
     키에 넣어 두면 시즌 값과 최근 값이 **구조적으로 섞일 수 없다.**
+
+    트렌드는 **뺄 수 있을 때만** 만든다 (`trend_allowed`). 못 만들면 값이
+    None 인 지표를 사유와 함께 남긴다 — 지우면 왜 없는지 알 수 없고,
+    숫자를 남기면 측정 방식의 차이가 추세로 읽힌다.
     """
     axis = AnalysisAxis(name="time_context")
     stats = getattr(profile, "stats", None) if profile else None
@@ -593,6 +772,8 @@ def build_time_context(profile: TeamProfile | None, team: str,
             f"기준시각 이전 {len(history)}경기. 기준시각으로 잘리지 않습니다")
 
     # ---- 최근 N경기 ---------------------------------------------------------
+    blocked: dict[str, set[str]] = {}     # 창마다 다른 사유 (표본·경기집합)
+    structural: dict[str, set[str]] = {}  # 창과 무관한 사유 (원천·방식·단위)
     for window in windows:
         period = period_name(window)
         values: dict[str, tuple[float, int | None, str]] = {}
@@ -639,20 +820,55 @@ def build_time_context(profile: TeamProfile | None, team: str,
                          reason="" if values else "표본 없음")
 
         # ---- 트렌드 (시즌 대비) --------------------------------------------
+        # **빼기 전에 뺄 수 있는지 먼저 본다.** 원천이나 산출 방식이 다르면
+        # 두 값의 차이는 경기력 변화가 아니라 측정 방식의 차이다.
+        # 최근 구간이 시즌 전체와 같은 경기면 비교 자체가 성립하지 않는다.
+        same_set = (played is not None and available >= played)
         for name, (value, sample, _note) in values.items():
             base = season_values.get(name)
             if base is None:
                 continue
+            season_metric = axis.get(metric_key(SEASON, name))
+            recent_metric = axis.get(metric_key(period, name))
+            ok, code, reason = trend_allowed(
+                name, season_metric, recent_metric,
+                same_match_set=same_set, min_sample=min_sample)
+            key = metric_key(f"trend{window}", name)
+            label = f"{SPECS[name][0]} (시즌 대비)"
+            if not ok:
+                # 값을 None 으로 두고 **사유를 함께 남긴다.** 지워 버리면
+                # 왜 없는지 알 수 없고, 숫자를 남기면 추세로 읽힌다.
+                axis.metrics[key] = Metric(
+                    name=name, label=label, value=None, provenance=DERIVED,
+                    period=f"trend{window}", sample_count=sample,
+                    unit=SPECS[name][1], direction=SPECS[name][2],
+                    group=GROUPS.get(name, ""), source=DERIVED_SOURCE,
+                    measurement_basis=MIXED_BASIS,
+                    note=f"{NOT_MEANINGFUL} {reason}")
+                target = structural if code in STRUCTURAL_BLOCKS else blocked
+                target.setdefault(reason, set()).add(name)
+                continue
             delta = value - base[0]
             band, limit = trend_band(name, delta, thresholds)
-            key = metric_key(f"trend{window}", name)
             axis.metrics[key] = Metric(
-                name=name, label=f"{SPECS[name][0]} (시즌 대비)", value=delta,
+                name=name, label=label, value=delta,
                 provenance=DERIVED, period=f"trend{window}",
                 sample_count=sample, unit=SPECS[name][1],
                 direction=SPECS[name][2], group=GROUPS.get(name, ""),
+                source=DERIVED_SOURCE,
+                measurement_basis=season_metric.measurement_basis,
                 note=f"{band} 시즌 {base[0]:.2f} → 최근 {window}경기 "
                      f"{value:.2f} (차이 {delta:+.2f}, 표시 기준 {limit:g})")
+        for reason, names in sorted(blocked.items()):
+            axis.notes.append(
+                f"{period_label(period)} trend 미생성: {reason} — "
+                + ", ".join(SPECS[n][0] for n in sorted(names)))
+        blocked.clear()
+
+    # 창 길이와 무관한 사유는 창마다 반복하지 않고 한 번만 적는다.
+    for reason, names in sorted(structural.items()):
+        axis.notes.append("trend 미생성(모든 기간): " + reason + " — "
+                          + ", ".join(SPECS[n][0] for n in sorted(names)))
 
     if not aggregates:
         axis.notes.append(
@@ -1104,7 +1320,8 @@ def build_team_analysis(profile: TeamProfile | None, team: str,
     out.time_context = build_time_context(
         profile, team, season_matches, as_of,
         windows=windows, thresholds=thresholds_from(settings),
-        detail_window=detail_window_of(settings), quality=quality)
+        detail_window=detail_window_of(settings), quality=quality,
+        min_sample=trend_min_sample(settings))
     out.chance_quality = build_chance_quality(
         profile, team, season_matches, as_of, windows=windows,
         config=chance_quality_config(settings), quality=quality)

@@ -212,6 +212,51 @@ Phase 2 의 시점별 분석(상대 강도)이 "그 경기 **이전에** 무슨 
 덧붙여도 과거 조회가 한 건도 안 바뀌는지 보는 테스트가 Phase 2-F 누수
 검사의 기반이다.
 
+**시즌 경기별 xG 는 여기에 없다.** 경기 상세는 팀당 최근 N경기만 받으므로
+시즌 전체 경기의 xG 는 확보돼 있지 않다. Phase 2-F(상대 강도)를 설계할 때
+"모든 과거 경기의 당시 상대 xGD" 를 전제하면 안 된다.
+
+### 1-1-5. Phase 2 분석 모델 (P0-3) — `Match.analysis`
+
+Phase 2 결과를 담는 그릇. **계산은 P1 이후이고 여기서는 구조만 만든다.**
+
+```
+Match.analysis : MatchAnalysis | None
+  ├ home / away : TeamAnalysis      팀별 6축 + data_quality
+  │    time_context · chance_quality · defensive_quality
+  │    sustainability · venue_context · schedule_strength
+  ├ matchup   : [MatchupPair]   공격 지표 ↔ 상대 수비 지표 (곱하지 않는다)
+  ├ conflicts : [Signal]        방향 라벨만. 합산하지 않는다
+  ├ evidence  : [EvidenceItem]  side + counter 로 세 방향 × 반박
+  └ data_quality : DataQuality  축별 available / degraded_reason
+```
+
+- **축이 None = 아직 계산 안 했거나 표본 부족.** 빈 축 객체를 넣어 분석이
+  끝난 것처럼 보이게 하지 않는다.
+- **축마다 전용 dataclass 를 만들지 않는다.** 축은 '이름 붙은 지표 묶음'이라
+  `AnalysisAxis` 하나로 둔다 — 각 축의 최종 필드 구성이 확정되기 전에
+  모양을 박으면 P2~P6 에서 매번 뜯어야 한다.
+- **모든 숫자를 `Metric` 으로 감싸지 않는다.** 리포트에 근거로 나가거나
+  출처·표본을 밝혀야 하는 값에만 쓰고, 중간 계산은 평범한 float 로 둔다.
+- 출처는 모듈 상수 `OBSERVED / DERIVED / MODEL` (Enum 을 새로 들이지 않는다).
+  xPTS 같은 모델 산출값은 반드시 `MODEL` 로 표시한다.
+- 표본은 **세 수가 다른 개념**이다 — `requested_matches`(요청한 창),
+  `available_matches`(실제 쓸 수 있었던 경기), `Metric.sample_count`(그
+  지표에 값이 있던 경기). 하나로 뭉뚱그리지 않는다.
+- **최종 승무패를 담는 필드를 두지 않는다.** `final_pick`·`recommendation`
+  같은 이름이 어느 dataclass 에도 없어야 하고, 신호는 개수만 세고
+  `winner`·`decide` 같은 메서드를 만들지 않는다 (§1-3).
+- `MatchAnalysis` 는 `Match.probs` 와 **별개 객체**다. 확률을 다시 계산하거나
+  배당 확률과 합치지 않는다.
+- `generated_at` 을 두지 않는다 — `Report.generated_at` 이 이미 있다.
+  `as_of`(시점 기준)만 둔다. 개념이 다르다.
+
+**캐시에 넣지 않는다.** `Match`·`Report` 는 디스크에 캐시되지 않고
+(캐시는 fotmob·pinnacle 응답뿐), 분석은 이미 캐시된 데이터로 매 실행
+다시 만드는 편이 싸고 낡을 위험도 없다. 캐시 버전도 올리지 않았다.
+
+회귀 테스트: `python tests/test_analysis_model.py` (22개).
+
 ### 1-1-1. 리그 ID 를 이름만으로 정하지 않는다
 
 이름 매칭은 두 소스 모두에서 엉뚱한 리그를 골랐다. 실측 기록이다.

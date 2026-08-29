@@ -123,6 +123,41 @@ FotMob 안에 **경로가 두 개** 있고, 각각 주는 것이 다르다. Phas
 
 회귀 테스트: `python tests/test_match_details.py` (36개).
 
+### 1-1-3. 슛 이벤트 계층 (Phase 1-C) — `toto/shots.py`
+
+`matchDetails` 의 `content.shotmap.shots[]` 를 슛 1개도 잃지 않는 계층으로
+만들어 둔다. Phase 2 의 경기력 분석과 Phase 3 의 슈팅맵이 이 위에 올라간다.
+
+```
+Raw JSON → parse_shot_events() → ShotEvent
+         → aggregate_match()   → MatchShotAggregate   (경기 × 팀)
+         → aggregate_recent()  → RecentShotAggregate  (최근 N / 홈 / 원정)
+```
+
+- **홈/원정은 teamId 로만 정한다.** 경기 스탯의 `[0]/[1]` 배열 순서를 믿는
+  구조를 여기에 만들지 않는다. `_home_away_ids()` 가 응답에서 모양으로 찾고,
+  없으면 순위표의 팀ID 로 넘어가고, 그래도 없으면 `is_home=None` 이다.
+  모르는 경기는 홈/원정 분리 집계에서 빠지고 전체 집계에는 남는다.
+- **합계·표본 수·평균을 분리한다.** `sums` / `counts` / `avg()`. 평균은
+  **그 지표의 표본 수**로 나눈다 (§1-1-2 와 같은 이유).
+- **개수는 0 이 실제 0, xG 계열은 없으면 None.** 한 슛도 xG 를 갖지 않은
+  경기의 xG 는 `0.0` 이 아니라 `None` 이다.
+- **npxG 는 `situation == "Penalty"` 를 뺀 xG 다.** 상수 차감이 아니다.
+  경기 스탯의 `expected_goals_non_penalty` 는 그대로 두고, 슛맵 합산은
+  **대조용**으로만 쓴다 (`reconcile()`). 차이를 로그에 적고 맞추지 않는다.
+- **`xGOT − npxG` 를 결정력이라고 부르지 않는다.** xGOT 은 PK 를 포함하고
+  npxG 는 제외하므로 기준이 다르다. 두 원값을 따로 들고 있는다.
+- 집계 창은 `config_toto.yaml` 의 `fotmob.shot_recent_windows` (기본
+  `[3, 5, 6, 10]`). 6 을 코드에 박지 않는다. 창이 받아 온 경기 수보다 크면
+  `available_matches` 에 실제 수가 남는다 — 모자란 것을 감추지 않는다.
+- 결과는 `TeamProfile.shot_aggregates` 에 붙는다. **TeamStats 는 건드리지
+  않는다** — 구조가 있는 값이라 `fill_stats` 의 스칼라 병합 규칙에 맞지
+  않고, 기존 지표 계산에 끼어들면 안 된다.
+- 중복은 `(경기, event id)` 로 거른다. **id 가 유일하다고 가정하지 않는다** —
+  없으면 팀·선수·시간·좌표·xG 를 묶어 판정한다.
+
+회귀 테스트: `python tests/test_shot_events.py` (36개).
+
 ### 1-1-1. 리그 ID 를 이름만으로 정하지 않는다
 
 이름 매칭은 두 소스 모두에서 엉뚱한 리그를 골랐다. 실측 기록이다.
@@ -219,7 +254,7 @@ toto/render.py:536
 옛 캐시를 읽어 수정이 반영되지 않는다 — 실제로 이것 때문에 두 번 헛돌았다.
 
 ```
-toto/sources/fotmob.py:56     _CACHE_VERSION = 5   (Phase 1-B 에서 2 → 3 → 4 → 5)
+toto/sources/fotmob.py:57     _CACHE_VERSION = 6   (1-B 에서 2→3→4→5, 1-C 에서 6)
 toto/sources/whoscored.py:415 _LEAGUE_CACHE_VERSION = 2
 ```
 

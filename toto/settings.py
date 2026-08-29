@@ -242,6 +242,7 @@ def load_settings(config_path: Path | None = None, env_path: Path | None = None)
         "timeout_ms": 45000,
         "persistent_profile": True,
         "match_detail_matches": 6,
+        "shot_recent_windows": [3, 5, 6, 10],
     }
     if cfg.get("leagues"):
         s.leagues = cfg["leagues"]

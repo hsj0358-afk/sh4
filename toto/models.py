@@ -424,6 +424,10 @@ class TeamProfile:
     missing_players: list[dict] = field(default_factory=list)
     rest_days: int | None = None
     source_ok: bool = False       # 후스코어드 수집 성공 여부
+    # Phase 1-C 슛 이벤트 계층. {"all6": RecentShotAggregate, "home3": ...}
+    # TeamStats 가 아니라 여기 둔다 — 구조가 있는 값이라 fill_stats 의
+    # 스칼라 병합 규칙에 맞지 않고, 기존 지표 계산에 끼어들면 안 된다.
+    shot_aggregates: dict = field(default_factory=dict)
 
     @property
     def form_points(self) -> int:

@@ -43,6 +43,7 @@ from typing import Any, Iterator
 from ..models import FormEntry, H2H, H2HEntry, TeamProfile, TeamRef, TeamStats
 from ..models import fill_stats
 from ..normalize import TeamResolver
+from .. import shots
 from ..settings import Settings
 from .browser import StealthBrowser
 
@@ -53,7 +54,7 @@ LEAGUE_PATH = "/api/data/leagues?id={id}"
 ALL_LEAGUES_PATH = "/api/data/allLeagues"
 
 # 캐시 형식이나 파싱 로직이 바뀌면 올린다. 옛 캐시는 자동으로 버려진다.
-_CACHE_VERSION = 5
+_CACHE_VERSION = 6
 
 _SCORE_RE = re.compile(r"(\d+)\s*[-:]\s*(\d+)")
 
@@ -374,7 +375,8 @@ def read_league(browser: FotMobBrowser, settings: Settings, league_key: str,
     detail_count = int(settings.fotmob.get("match_detail_matches", 0) or 0)
     if teams and detail_count > 0:
         attach_match_details(browser, teams, matches, detail_count,
-                             league_key, cache=cache)
+                             league_key, cache=cache,
+                             windows=_shot_windows(settings))
 
     if not teams:
         log.error("[%s] FotMob 순위표를 해석하지 못했습니다 (id=%d). "
@@ -772,15 +774,12 @@ def _match_stat_pairs(data: Any) -> dict[str, tuple[float | None, float | None]]
     return out
 
 
-def _shot_totals(data: Any) -> dict[int, dict[str, float]]:
-    """슛맵을 팀 ID 별로 합산한다 (경기 스탯과 대조할 검증용).
+def _shotmap(data: Any) -> list:
+    """경기 전체 슛맵 배열. 후보가 여럿이면 가장 긴 것.
 
-    `situation == "Penalty"` 를 빼면 npxG 가 된다 — PK 를 상수(0.76)로
-    빼는 추정이 아니라 실제 슛 단위 분류를 쓴다.
+    `_walk` 는 스택이라 순서를 보장하지 않는다. 선수별로 쪼개진 부분 목록을
+    먼저 잡으면 합계가 조용히 모자라므로, 가장 긴 목록 하나만 쓴다.
     """
-    # 후보가 여럿일 수 있고 _walk 는 순서를 보장하지 않는다(스택). 경기 전체
-    # 슛맵이 가장 길다는 점을 이용해 가장 긴 목록 하나만 쓴다 — 선수별로
-    # 쪼개진 부분 목록을 잡아 합계가 조용히 모자라는 일을 막는다.
     best: list = []
     for node in _walk(data):
         shots = node.get("shots")
@@ -789,9 +788,34 @@ def _shot_totals(data: Any) -> dict[int, dict[str, float]]:
         if not (isinstance(shots[0], dict) and "teamId" in shots[0]):
             continue
         best = shots
+    return best
 
+
+def _home_away_ids(data: Any) -> tuple[int | None, int | None]:
+    """응답 안에서 홈·원정 팀 ID 를 찾는다. 없으면 (None, None).
+
+    경로를 박지 않고 모양으로 찾는다 — `homeTeam`/`awayTeam` 을 **둘 다**
+    dict 로 갖고 각각 `id` 가 있는 노드. 못 찾으면 호출부가 순위표 쪽
+    매핑으로 넘어간다. 배열 순서([0]/[1])는 여기서 쓰지 않는다.
+    """
+    for node in _walk(data):
+        home, away = node.get("homeTeam"), node.get("awayTeam")
+        if not (isinstance(home, dict) and isinstance(away, dict)):
+            continue
+        hid, aid = _int(home.get("id")), _int(away.get("id"))
+        if hid is not None and aid is not None and hid != aid:
+            return hid, aid
+    return None, None
+
+
+def _shot_totals(data: Any) -> dict[int, dict[str, float]]:
+    """슛맵을 팀 ID 별로 합산한다 (경기 스탯과 대조할 검증용).
+
+    `situation == "Penalty"` 를 빼면 npxG 가 된다 — PK 를 상수(0.76)로
+    빼는 추정이 아니라 실제 슛 단위 분류를 쓴다.
+    """
     out: dict[int, dict[str, float]] = {}
-    for shot in best:
+    for shot in _shotmap(data):
         if not isinstance(shot, dict):
             continue
         tid = shot.get("teamId")
@@ -828,8 +852,9 @@ def read_match_details(browser: FotMobBrowser, match: dict, cache=None) -> dict 
         return None
 
     pairs = _match_stat_pairs(data)
-    if not pairs:
-        log.debug("경기 %s: 스탯 표를 찾지 못했습니다.", mid)
+    events = shots.parse_shot_events(_shotmap(data), str(mid))
+    if not pairs and not events:
+        log.debug("경기 %s: 스탯 표도 슛맵도 찾지 못했습니다.", mid)
         if cache:
             cache.set("fotmob", f"match_{mid}", {})    # 재요청 방지
         return None
@@ -851,8 +876,22 @@ def read_match_details(browser: FotMobBrowser, match: dict, cache=None) -> dict 
             if home is not None:
                 sides["away"][against] = home
 
-    payload = {"home": sides["home"], "away": sides["away"],
-               "check": _shot_totals(data)}
+    deduped, dropped = shots.dedupe(events)
+    if dropped:
+        log.debug("경기 %s: 중복 슛 %d개를 걸렀습니다.", mid, dropped)
+    hid, aid = _home_away_ids(data)
+    payload = {
+        "home": sides["home"], "away": sides["away"],
+        "check": _shot_totals(data),
+        # Phase 1-C: 슛 이벤트 원본을 정규화해 그대로 보관한다. 집계는 뒤에서
+        # 하고, 여기서는 잃지 않는 것이 목적이다 (Phase 2·3 이 이걸 쓴다).
+        "shots": [asdict(e) for e in deduped],
+        "team_ids": {"home": hid, "away": aid},
+        "stat_values": {m: pairs[k][0] if k in pairs else None
+                        for m, k in shots.RECONCILE.items()},
+        "stat_values_away": {m: pairs[k][1] if k in pairs else None
+                             for m, k in shots.RECONCILE.items()},
+    }
     if cache:
         cache.set("fotmob", f"match_{mid}", payload)
     return payload
@@ -891,7 +930,8 @@ def _recent_finished(matches: list[dict], canon: str, count: int) -> list[dict]:
 
 def attach_match_details(browser: FotMobBrowser, teams: dict[str, dict],
                          matches: list[dict], count: int,
-                         league_key: str, cache=None) -> tuple[int, int]:
+                         league_key: str, cache=None,
+                         windows: list[int] | None = None) -> tuple[int, int]:
     """최근 N경기 상세를 받아 팀별로 합산한다. (채운 팀 수, 받은 경기 수).
 
     시즌 통계 29종에 없는 지표(npxG·xGOT·총슈팅·피슈팅·박스 안팎)는 경기
@@ -966,7 +1006,108 @@ def attach_match_details(browser: FotMobBrowser, teams: dict[str, dict],
 
     _log_reconciliation(league_key, "npxG", diffs)
     _log_reconciliation(league_key, "xGOT", xgot_diffs)
+    _attach_shot_aggregates(details, teams, wanted, league_key,
+                            windows or [3, 5, 6, 10])
     return filled, len(details)
+
+
+def _shot_windows(settings: Settings) -> list[int]:
+    """집계할 최근 N 목록. 하드코딩하지 않고 설정에서 읽는다."""
+    raw = (settings.fotmob or {}).get("shot_recent_windows") or [3, 5, 6, 10]
+    out = sorted({int(w) for w in raw if int(w) > 0})
+    return out or [6]
+
+
+def _resolve_sides(payload: dict, match: dict,
+                   teams: dict[str, dict]) -> tuple[int | None, int | None]:
+    """(홈 팀ID, 원정 팀ID). 배열 순서는 쓰지 않는다.
+
+    1) 경기 상세 응답이 직접 알려 준 값 (`homeTeam`/`awayTeam` 의 id)
+    2) 없으면 순위표에서 얻은 팀ID 를 경기 목록의 홈/원정 이름으로 찾는다
+
+    둘 다 없으면 (None, None) — 그 경기는 홈/원정 분리 집계에서 빠지고,
+    전체 집계에는 그대로 들어간다.
+    """
+    ids = payload.get("team_ids") or {}
+    hid, aid = _int(ids.get("home")), _int(ids.get("away"))
+    if hid is not None and aid is not None:
+        return hid, aid
+    hid = _int((teams.get(match.get("home")) or {}).get("fotmob_id"))
+    aid = _int((teams.get(match.get("away")) or {}).get("fotmob_id"))
+    return hid, aid
+
+
+def _attach_shot_aggregates(details: dict, teams: dict[str, dict],
+                            wanted: dict[str, list[dict]], league_key: str,
+                            windows: list[int]) -> None:
+    """슛 이벤트를 경기별 → 팀별 → 최근 N경기로 집계해 팀에 붙인다 (Phase 1-C).
+
+    결과는 `entry["shot_aggregates"]` 에 들어간다. 리포트는 아직 쓰지 않고,
+    Phase 2·3 이 쓸 데이터 기반이다. 여기서 TeamStats 를 건드리지 않으므로
+    기존 지표와 리포트에는 영향이 없다.
+    """
+    # 1) 경기별 × 팀별 집계
+    per_match: dict[Any, dict[int, shots.MatchShotAggregate]] = {}
+    broken: list[str] = []
+    recon: dict[str, list[float]] = {}
+    for canon, ms in wanted.items():
+        for match in ms:
+            mid = match["id"]
+            if mid in per_match:
+                continue                          # 같은 경기를 두 번 집계하지 않는다
+            payload = details.get(mid)
+            if not payload or not payload.get("shots"):
+                continue
+            events = [shots.ShotEvent(**d) for d in payload["shots"]]
+            hid, aid = _resolve_sides(payload, match, teams)
+            aggs = shots.aggregate_match(events, hid, aid)
+            per_match[mid] = aggs
+            for tid, agg in aggs.items():
+                bad = shots.validate(agg)
+                if bad:
+                    broken.append(f"경기 {mid} 팀 {tid}: {'; '.join(bad)}")
+                side = ("stat_values" if agg.is_home is True
+                        else "stat_values_away" if agg.is_home is False else None)
+                if side:
+                    vals = {k: v for k, v in (payload.get(side) or {}).items()
+                            if v is not None}
+                    for metric, diff in shots.reconcile(agg, vals).items():
+                        recon.setdefault(metric, []).append(diff)
+    if not per_match:
+        return
+
+    # 2) 팀별 최근 N경기 (전체 / 홈 / 원정)
+    filled = 0
+    for canon, entry in teams.items():
+        tid = _int(entry.get("fotmob_id"))
+        if tid is None:
+            continue
+        ordered = [per_match[m["id"]][tid]
+                   for m in wanted.get(canon, [])
+                   if m["id"] in per_match and tid in per_match[m["id"]]]
+        if not ordered:
+            continue
+        entry["shot_aggregates"] = shots.aggregate_windows(ordered, tid, windows)
+        entry["shot_matches"] = ordered
+        filled += 1
+
+    log.info("[%s] 슛 이벤트 계층: 경기 %d개 · 팀 %d개 · 창 %s",
+             league_key, len(per_match), filled,
+             "/".join(str(w) for w in windows))
+    if broken:
+        log.warning("[%s] 슛 집계 불변조건 위반 %d건: %s", league_key,
+                    len(broken), " | ".join(broken[:3]))
+    # 3) 경기 스탯과의 대조 — 위의 npxG·xGOT 줄이 다루지 않는 지표만
+    extra = [m for m in ("xg", "shots", "shots_on_target",
+                         "shots_inside_box", "shots_outside_box") if m in recon]
+    if extra:
+        parts = []
+        for m in extra:
+            v = recon[m]
+            parts.append(f"{m} 평균 {sum(v)/len(v):+.2f}/최대 "
+                         f"{max(v, key=abs):+.2f}")
+        log.info("[%s] 슛맵−경기스탯 대조 (표본 %d): %s — 값은 맞추지 않습니다.",
+                 league_key, len(recon[extra[0]]), " · ".join(parts))
 
 
 def _log_reconciliation(league_key: str, label: str,
@@ -1064,6 +1205,12 @@ def _freeze(result: dict) -> dict:
                 "form": [asdict(f) for f in entry.get("form") or []],
                 "fotmob_id": entry.get("fotmob_id", ""),
                 "page_url": entry.get("page_url", ""),
+                # Phase 1-C 슛 계층. 캐시에 남기지 않으면 같은 날 재실행에서
+                # 통째로 사라진다 (경기 상세를 다시 받지 않으므로).
+                "shot_aggregates": {k: asdict(v) for k, v
+                                    in (entry.get("shot_aggregates") or {}).items()},
+                "shot_matches": [asdict(m) for m
+                                 in (entry.get("shot_matches") or [])],
             }
             for canon, entry in result["teams"].items()
         },
@@ -1080,6 +1227,11 @@ def _revive(data: Any) -> dict | None:
                 "form": [FormEntry(**f) for f in entry.get("form") or []],
                 "fotmob_id": entry.get("fotmob_id", ""),
                 "page_url": entry.get("page_url", ""),
+                "shot_aggregates": {
+                    k: shots.RecentShotAggregate(**v)
+                    for k, v in (entry.get("shot_aggregates") or {}).items()},
+                "shot_matches": [shots.MatchShotAggregate(**m)
+                                 for m in (entry.get("shot_matches") or [])],
             }
             for canon, entry in (data.get("teams") or {}).items()
         }
@@ -1174,6 +1326,8 @@ def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None) -> s
                     form_done += 1
                 if entry.get("fotmob_id"):
                     ref.fotmob_id = entry["fotmob_id"]
+                if entry.get("shot_aggregates") and not profile.shot_aggregates:
+                    profile.shot_aggregates = entry["shot_aggregates"]
             setattr(match, f"{side}_profile", profile)
 
         if match.home.canonical and match.away.canonical and not match.h2h.entries:

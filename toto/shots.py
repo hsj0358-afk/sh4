@@ -311,6 +311,26 @@ def aggregate_match(events: Iterable[ShotEvent],
     return out
 
 
+def empty_aggregate(match_id: str, team_id: int, is_home: bool | None = None,
+                    opponent_id: int | None = None) -> MatchShotAggregate:
+    """**한 슛도 치지 않은 팀**의 집계 (Phase 2-C).
+
+    `aggregate_match` 는 슛 이벤트에서 팀을 만들기 때문에, 0슛 팀은 결과
+    dict 에 아예 나타나지 않는다. 그 경기가 통째로 빠지면 상대의 수비
+    분석에서 **가장 잘 막은 경기가 표본에서 사라진다** — 피슛 평균이 위로
+    치우친다.
+
+    개수는 0 이고 xG 계열도 **0.0 이다 (None 이 아니다).** 슛맵이 비어 있는
+    게 아니라 상대 팀 슛은 들어 있는데 이 팀만 없는 상황에서 부르는 함수라,
+    "슛이 0개였다" 는 관측이지 결측이 아니다. 0슛이면 xG 합계는 0.0 이 맞다.
+    호출부가 그 조건(상대 슛이 있어 슛맵이 실렸음 + 팀 ID 를 앎)을 확인한
+    뒤에만 부른다.
+    """
+    return MatchShotAggregate(
+        match_id=str(match_id), team_id=int(team_id), is_home=is_home,
+        opponent_id=opponent_id, xg=0.0, npxg=0.0, xgot=0.0)
+
+
 def _resolve_opponents(out: dict[int, MatchShotAggregate],
                        home_id: int | None, away_id: int | None) -> None:
     """각 집계에 상대 팀 ID 를 붙인다 (집계가 다 만들어진 뒤 2차 패스).

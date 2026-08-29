@@ -481,6 +481,69 @@ xG·npxG·슛당 xG 처럼 같은 이야기를 세 번 세지 않으려는 메�
 
 회귀 테스트: `python tests/test_trend_validity.py` (25개).
 
+### 1-1-10. 수비의 질 (Phase 2-C) — `build_defensive_quality()`
+
+2-B 를 거울에 비춘 것이다.
+
+```
+피슈팅  →  npxGA  →  피xGOT  →  실점
+(양)     (허용한 기회의 질) (실행)  (결과)
+```
+
+**값은 상대 팀의 같은 경기 슛 집계에서 온다.** 상대가 친 슛이 우리 피슛이고
+상대의 npxG 가 우리 npxGA 다. 연결은 `opponent_id`(숫자 teamId, P0-1)로만
+한다 — 팀명 문자열로 찾지 않는다.
+
+**그 원재료를 이번에 저장하기 시작했다.** `_attach_shot_aggregates` 의
+`per_match[mid]` 는 원래부터 양 팀을 다 갖고 있었는데 자기 팀 것만 꺼내
+쓰고 버렸다. 이제 `entry["opponent_matches"]` → `TeamProfile.opponent_matches`
+로 함께 싣는다. **캐시 버전 8 → 9** (형식이 바뀌어 옛 캐시를 읽으면 수비
+지표가 통째로 빈다).
+
+**상대가 0슛인 경기를 버리지 않는다.** `aggregate_match` 는 슛 이벤트에서
+팀을 만들기 때문에 0슛 팀은 결과에 아예 없다. 그대로 두면 **가장 잘 막은
+경기가 표본에서 사라져** 피슛 평균이 위로 치우친다. `shots.empty_aggregate()`
+가 개수 0 · xG 계열 0.0 으로 채운다 — 상대 슛이 슛맵에 있어 응답이 실렸음이
+확인된 경우에만 부르므로 이건 결측이 아니라 관측이다.
+
+**`TeamStats.*_against_recent` 와 다른 값이다.** 이름이 비슷해 헷갈린다.
+
+| | 원천 | 산출 방식 | 창 |
+|---|---|---|---|
+| `TeamStats.npxga_recent` (2-A) | `match_stats` | `match_stat` | `match_detail_matches` 하나 |
+| `defensive_quality` 의 `npxga` (2-C) | `shotmap` | `opponent_shot_events` | 창마다 |
+
+둘을 억지로 맞추지 않는다. 실물 260048 에서 슛맵 합산과 경기 스탯 피지표를
+대조하니 **피슈팅·피유효슈팅은 정확히 일치**했고 npxGA 는 최대 0.0636,
+피xGOT 은 0.0038 차이였다(슛별 반올림 누적, §1-1-9 와 같은 크기).
+
+`measurement_basis` 에 `opponent_shot_events` 를 새로 넣은 이유가 이것이다 —
+같은 슛맵이라도 **우리 슛을 센 것과 상대 슛을 센 것은 다른 양**이고,
+`trend_allowed()` 가 자동으로 섞이지 않게 막는다. 같은 이름(`npxga`)이 축마다
+다른 피드에서 오므로 이름만으로 원천을 정할 수 없어, 축이
+`_metric(..., origin=...)` 로 직접 지정한다.
+
+- **실점은 슛맵이 아니라 최종 스코어**에서 온다 (자책골 표기를 실물로
+  확인하지 못했다 — §1-1-3). `provenance=OBSERVED`, 나머지 피지표는 전부
+  **상대의 관측값을 우리 관점으로 옮긴 것**이라 `DERIVED` 다.
+- **시즌에는 npxGA·피xGOT·피박스 안 슈팅이 없다.** 시즌 통계 피드에 없고
+  상대 슛맵은 최근 N경기만 받는다. 시즌 수비 값은 실점과 **xGA** 뿐이다
+  (xGA 는 PK 를 포함하므로 npxGA 와 다른 지표다 — 같은 칸에 넣지 않는다).
+- 피슛당 npxGA 는 2-B 와 같은 규칙이다 — 분자·분모가 **둘 다 있는 경기만**,
+  합계끼리 나눈다.
+- **실점−npxGA · 실점−피xGOT 를 골키퍼 능력이라 부르지 않는다.** 방향을
+  정하지 않고(`direction=""`), 둘을 합쳐 수비 점수로 만들지 않는다.
+  `goalkeeper_score`·`defense_score` 같은 이름이 코드에 없어야 한다(테스트).
+- `Metric.group` 은 공격과 따로 둔다 — `defense_volume` · `defense_quality` ·
+  `defense_execution` · `defense_gap` · `defense_outcome`. 2-I 가 "우리 슈팅이
+  많다" 와 "상대 슈팅을 많이 허용한다" 를 같은 근거로 세면 안 된다.
+- 홈/원정은 **해석하지 않고 보존만** 한다 (2-E 소관). `build_defensive_quality`
+  는 `is_home` 을 읽지 않는다(테스트로 고정).
+- 시점·트렌드는 2-A/2-B 교정의 장치를 그대로 쓴다 — 자체 비교 로직을
+  만들지 않는다(테스트로 고정).
+
+회귀 테스트: `python tests/test_defensive_quality.py` (52개).
+
 ### 1-1-1. 리그 ID 를 이름만으로 정하지 않는다
 
 이름 매칭은 두 소스 모두에서 엉뚱한 리그를 골랐다. 실측 기록이다.
@@ -577,7 +640,7 @@ toto/render.py:536
 옛 캐시를 읽어 수정이 반영되지 않는다 — 실제로 이것 때문에 두 번 헛돌았다.
 
 ```
-toto/sources/fotmob.py:59     _CACHE_VERSION = 8   (1-B 2→3→4→5, 1-C 6, Phase 2 P0-1 7 · P0-2 8)
+toto/sources/fotmob.py:59     _CACHE_VERSION = 9   (1-B 2→3→4→5, 1-C 6, Phase 2 P0-1 7 · P0-2 8 · 2-C 9)
 toto/sources/whoscored.py:415 _LEAGUE_CACHE_VERSION = 2
 ```
 
@@ -798,6 +861,7 @@ python tests/test_xpts.py                  # 독립 포아송 기대승점 (36�
 python tests/test_time_context.py          # 시간축 분석 2-A (43개)
 python tests/test_chance_quality.py        # 기회의 질 2-B (41개)
 python tests/test_trend_validity.py        # 트렌드 유효성 2-B 교정 (25개)
+python tests/test_defensive_quality.py     # 수비의 질 2-C (52개)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_sources.py --browser    # 소스 구조 점검
 python tools/probe_sources.py --analyze    # 저장본 재분석 (접속 없음)

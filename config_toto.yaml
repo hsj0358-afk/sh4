@@ -333,6 +333,29 @@ analysis:
       xgot_high: 1.40           # 경기당 xGOT
       goals_gap_low: -0.30      # 득점 − xG 가 이보다 낮으면 '득점이 적다'
 
+  # 수비의 질 (Phase 2-C) ---------------------------------------------------
+  #
+  #   피슈팅 → npxGA → 피xGOT → 실점
+  #
+  # 위와 같은 성격의 표시용 문턱이다.
+  #
+  #   ⚠ 운영용 기준이며 통계적으로 검증된 기준이 아님.
+  #
+  #   · 패턴은 상태 설명이지 "좋은 수비" 점수가 아니다.
+  #   · 실점 − npxGA 를 골키퍼 능력으로 읽지 않는다.
+  #   · 패턴을 세어 점수로 만들거나 픽에 쓰지 않는다.
+  defensive_quality:
+    min_sample: 3
+    thresholds:
+      shots_against_high: 14.0    # 경기당 허용 슈팅이 이보다 많으면 '많다'
+      shots_against_low: 9.0
+      npxga_per_shot_high: 0.12   # 피슛당 npxGA
+      npxga_per_shot_low: 0.08
+      npxga_high: 1.50            # 경기당 npxGA
+      npxga_low: 0.90
+      xgot_against_high: 1.30     # 경기당 피xGOT
+      goals_against_gap_high: 0.30  # 실점 − npxGA 가 이보다 크면 '실점이 많다'
+
 # 출력 ---------------------------------------------------------------------
 output:
   dir: "reports"

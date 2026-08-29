@@ -125,6 +125,11 @@ DERIVED_SOURCE = "derived"               # 위 값들에서 계산한 파생값
 FINAL_SCORE = "final_score"    # 최종 스코어를 센 값 (득점·승점·승무패…)
 MATCH_STAT = "match_stat"      # 소스가 계산해 준 경기 스탯 값
 SHOT_EVENTS = "shot_events"    # 슛 이벤트를 하나씩 합산한 값
+# **상대 팀**의 슛 이벤트를 합산한 값 (Phase 2-C 의 피슛·npxGA·피xGOT).
+# `shot_events` 와 구분하는 이유: 같은 슛맵이라도 우리 슛을 센 것과 상대 슛을
+# 센 것은 다른 양이다. 이름이 같아 보여도 `TeamStats.*_against_recent`
+# (경기 스탯 표에서 온 값)와도 다르다 — 그쪽은 match_stats/match_stat 이다.
+OPPONENT_SHOT_EVENTS = "opponent_shot_events"
 MIXED_BASIS = "mixed"          # 서로 다른 방식이 섞였다
 
 # **직접 비교 가능한 원천 묶음.** 서로 다른 피드지만 같은 것을 세고 있어
@@ -152,6 +157,7 @@ _SEASON_ORIGIN: dict[str, tuple[str, str]] = {
     "shots_against": (SEASON_STATS_FEED, MATCH_STAT),
     "shots_on_target_against": (SEASON_STATS_FEED, MATCH_STAT),
     "big_chances": (SEASON_STATS_FEED, MATCH_STAT),
+    "xga": (SEASON_XG_TABLE, MATCH_STAT),
     "xg_per_shot": (DERIVED_SOURCE, MATCH_STAT),
     "on_target_rate": (DERIVED_SOURCE, MATCH_STAT),
     "goals_minus_xg": (DERIVED_SOURCE, MIXED_BASIS),
@@ -184,6 +190,24 @@ _RECENT_ORIGIN: dict[str, tuple[str, str]] = {
     "goals_minus_npxg": (DERIVED_SOURCE, MIXED_BASIS),
     "goals_minus_xgot": (DERIVED_SOURCE, MIXED_BASIS),
 }
+
+
+# 2-C 의 최근 수비 지표. **같은 이름이 2-A 에도 있지만 원천이 다르다** —
+# 2-A 는 `TeamStats.*_against_recent`(경기 스탯 표)를, 2-C 는 상대 팀의
+# 슛맵을 쓴다. 그래서 이름만으로 원천을 정할 수 없고, 축이 자기 원천을
+# 직접 지정한다 (`_metric(..., origin=...)`).
+DEFENSIVE_SHOTMAP_ORIGIN: dict[str, tuple[str, str]] = {
+    name: (SHOTMAP, OPPONENT_SHOT_EVENTS) for name in (
+        "shots_against", "shots_on_target_against",
+        "shots_inside_box_against", "shots_outside_box_against",
+        "npxga", "xgot_against")
+}
+DEFENSIVE_SHOTMAP_ORIGIN.update({
+    "npxga_per_shot_against": (DERIVED_SOURCE, OPPONENT_SHOT_EVENTS),
+    "goals_against": (SEASON_MATCH_INDEX, FINAL_SCORE),
+    "goals_against_minus_npxga": (DERIVED_SOURCE, MIXED_BASIS),
+    "goals_against_minus_xgot_against": (DERIVED_SOURCE, MIXED_BASIS),
+})
 
 
 def metric_origin(period: str, name: str) -> tuple[str, str]:
@@ -257,6 +281,24 @@ DERIVED_SPECS: dict[str, tuple[str, str, str, str]] = {
 }
 SPECS.update(DERIVED_SPECS)
 
+# ---- 2-C 수비 지표 -------------------------------------------------------
+# 상대가 우리에게 무엇을 했나. 전부 **적을수록 좋다**(lower_better) — 다만
+# 아래 '차이' 두 개는 예외다.
+DEFENSE_SPECS: dict[str, tuple[str, str, str, str]] = {
+    "shots_inside_box_against":  ("피박스 안 슈팅", "per_match",
+                                  LOWER_BETTER, "defense"),
+    "shots_outside_box_against": ("피박스 밖 슈팅", "per_match", "", "defense"),
+    "xga": ("xGA", "per_match", LOWER_BETTER, "defense"),
+    "npxga_per_shot_against": ("피슛당 npxGA", "per_shot",
+                               LOWER_BETTER, "defense"),
+    # **방향을 정하지 않는다.** 실점이 기대보다 적다고 골키퍼가 잘한 것도,
+    # 많다고 못한 것도 아니다 (§9 — goalkeeper_score 를 만들지 않는다).
+    "goals_against_minus_npxga": ("실점 − npxGA", "per_match", "", "defense"),
+    "goals_against_minus_xgot_against": ("실점 − 피xGOT", "per_match",
+                                         "", "defense"),
+}
+SPECS.update(DEFENSE_SPECS)
+
 # 지표 묶음 (2-B §15). **점수 계산용이 아니다** — 2-I 가 같은 사실을 여러 번
 # 세지 않도록 붙이는 메타데이터다. xG·npxG·슛당 xG 는 같은 이야기의 세 얼굴이다.
 VOLUME = "volume"
@@ -264,8 +306,14 @@ CHANCE_CREATION = "chance_quality"
 EXECUTION = "execution"
 GAP = "sustainability_gap"
 OUTCOME = "outcome"
-DEFENSE_GROUP = "defense"
 RESULT_GROUP = "result"
+# 수비쪽은 따로 둔다. 2-I 가 "우리 슈팅이 많다" 와 "상대 슈팅을 많이
+# 허용한다" 를 같은 근거로 세면 안 되기 때문이다.
+DEF_VOLUME = "defense_volume"
+DEF_QUALITY = "defense_quality"
+DEF_EXECUTION = "defense_execution"
+DEF_GAP = "defense_gap"
+DEF_OUTCOME = "defense_outcome"
 
 GROUPS: dict[str, str] = {
     "shots": VOLUME, "shots_on_target": VOLUME, "shots_inside_box": VOLUME,
@@ -276,9 +324,16 @@ GROUPS: dict[str, str] = {
     "xgot": EXECUTION, "on_target_rate": EXECUTION,
     "goals_minus_xg": GAP, "goals_minus_npxg": GAP, "goals_minus_xgot": GAP,
     "goals": OUTCOME,
-    "goals_against": DEFENSE_GROUP, "npxga": DEFENSE_GROUP,
-    "xgot_against": DEFENSE_GROUP, "shots_against": DEFENSE_GROUP,
-    "shots_on_target_against": DEFENSE_GROUP,
+    # ---- 수비 (2-C) ----
+    "shots_against": DEF_VOLUME, "shots_on_target_against": DEF_VOLUME,
+    "shots_inside_box_against": DEF_VOLUME,
+    "shots_outside_box_against": DEF_VOLUME,
+    "npxga": DEF_QUALITY, "xga": DEF_QUALITY,
+    "npxga_per_shot_against": DEF_QUALITY,
+    "xgot_against": DEF_EXECUTION,
+    "goals_against_minus_npxga": DEF_GAP,
+    "goals_against_minus_xgot_against": DEF_GAP,
+    "goals_against": DEF_OUTCOME,
     "points": RESULT_GROUP, "goal_diff": RESULT_GROUP, "xgd": RESULT_GROUP,
     "npxgd": RESULT_GROUP, "wins": RESULT_GROUP, "draws": RESULT_GROUP,
     "losses": RESULT_GROUP,
@@ -294,12 +349,16 @@ SPEC_DIRECTIONS = frozenset((
 EXTRA_DIRECTIONS = frozenset((
     "goal_diff", "npxgd", "wins", "losses",
     # 2-B 파생 비율. 명세가 방향을 지정하지는 않았지만 자명하다.
-    "xg_per_shot", "npxg_per_shot", "box_shot_share", "on_target_rate"))
+    "xg_per_shot", "npxg_per_shot", "box_shot_share", "on_target_rate",
+    # 2-C 수비. 적을수록 좋다.
+    "shots_inside_box_against", "xga", "npxga_per_shot_against"))
 # 방향을 정하지 않은 지표 (많고 적음이 곧 좋고 나쁨이 아니다).
 # 득점−xG 계열이 여기 있는 이유: 양수를 "결정력이 좋다" 로 읽으면 안 된다.
+# 실점−npxGA 계열도 같다 — "골키퍼가 잘한다" 로 읽으면 안 된다.
 UNDIRECTED = frozenset((
-    "shots", "draws", "shots_outside_box",
-    "goals_minus_xg", "goals_minus_npxg", "goals_minus_xgot"))
+    "shots", "draws", "shots_outside_box", "shots_outside_box_against",
+    "goals_minus_xg", "goals_minus_npxg", "goals_minus_xgot",
+    "goals_against_minus_npxga", "goals_against_minus_xgot_against"))
 
 ATTACK = tuple(k for k, v in SPECS.items()
                if v[3] == "attack" and k not in DERIVED_SPECS)
@@ -691,9 +750,15 @@ def trend_min_sample(settings: Settings) -> int:
 # 6. 축 만들기
 # --------------------------------------------------------------------------
 def _metric(name: str, period: str, value: float, sample: int | None,
-            provenance: str = OBSERVED, note: str = "") -> Metric:
+            provenance: str = OBSERVED, note: str = "",
+            origin: tuple[str, str] | None = None) -> Metric:
+    """지표 한 칸.
+
+    `origin` 은 축이 자기 원천을 직접 지정할 때 쓴다 — 같은 이름(`npxga`)이
+    축마다 다른 피드에서 올 수 있어서, 이름만으로 원천을 정할 수 없다.
+    """
     label, unit, direction, _family = SPECS[name]
-    source, basis = metric_origin(period, name)
+    source, basis = origin if origin else metric_origin(period, name)
     return Metric(name=name, label=label, value=value, provenance=provenance,
                   period=period, sample_count=sample, unit=unit, note=note,
                   direction=direction, group=GROUPS.get(name, ""),
@@ -1300,6 +1365,366 @@ def patterns_in(axis: AnalysisAxis | None) -> list[str]:
     return [n for n in axis.notes if n.startswith("패턴 ")]
 
 
+# ==========================================================================
+# Phase 2-C — 수비의 질 (defensive_quality)
+# ==========================================================================
+# 2-B 를 거울에 비춘 것이다:
+#
+#     피슈팅  →  npxGA  →  피xGOT  →  실점
+#     (양)      (허용한 기회의 질)  (실행)  (결과)
+#
+# ## 값이 어디서 오나
+#
+# **상대 팀의 같은 경기 슛 집계**다. 팀 A 의 과거 경기에서 상대 B 가 친 슛이
+# 곧 A 의 피슛이고, B 의 npxG 가 A 의 npxGA 다. 그 연결은 `opponent_id`
+# (숫자 teamId, P0-1)로만 한다 — 팀명 문자열로 찾지 않는다.
+#
+# 원재료는 `TeamProfile.opponent_matches` 다 (2-C 에서 저장하기 시작했다).
+# 예전에는 `fotmob._attach_shot_aggregates` 안에서 만들어졌다가 버려졌다.
+#
+# ## `TeamStats.*_against_recent` 와 다른 값이다
+#
+# 이름이 비슷해 헷갈리기 쉬운데 원천이 다르다.
+#
+#   · `TeamStats.npxga_recent`  → 경기 스탯 표      (match_stats / match_stat)
+#     — 2-A 가 쓰는 값. 창이 `match_detail_matches` 하나뿐이다.
+#   · 이 축의 `npxga`           → 상대 슛맵 합산    (shotmap / opponent_shot_events)
+#     — 창마다 만들 수 있다.
+#
+# 둘을 억지로 맞추지 않는다. `source`·`measurement_basis` 로 구분해 두면
+# `trend_allowed()` 가 알아서 섞이지 않게 막는다.
+#
+# ## 실점은 슛맵이 아니라 최종 스코어에서 온다 (§18)
+#
+# 슛맵의 자책골 표기는 어느 팀에 다는지 실물로 확인하지 못했다(§1-1-3).
+# 실제 실점은 `SeasonMatch` 의 최종 스코어가 권위다.
+#
+# ## 하지 않는 것
+#
+# 실점−npxGA · 실점−피xGOT 를 골키퍼 능력이라고 부르지 않는다. 방향도
+# 정하지 않고, 둘을 합쳐 수비 점수로 만들지 않는다.
+
+# (지표 이름, 상대 집계의 필드)
+_AGAINST_FIELDS: tuple[tuple[str, str], ...] = (
+    ("shots_against", "shots"),
+    ("shots_on_target_against", "shots_on_target"),
+    ("shots_inside_box_against", "shots_inside_box"),
+    ("shots_outside_box_against", "shots_outside_box"),
+    ("npxga", "npxg"),
+    ("xgot_against", "xgot"),
+)
+# 차이 지표: (지표 이름, 빼는 값의 지표 이름)
+_DEF_GAPS: tuple[tuple[str, str], ...] = (
+    ("goals_against_minus_npxga", "npxga"),
+    ("goals_against_minus_xgot_against", "xgot_against"),
+)
+
+# 최근 수비 지표의 출처 판정 (§6 — 임의로 정하지 않고 실제 경로를 따른다).
+#
+#   · 실점은 **최종 스코어**를 그대로 읽은 값이라 OBSERVED 다.
+#   · 나머지는 전부 **상대 팀의 관측값을 우리 관점으로 옮긴 것**이라 DERIVED
+#     다. 원본은 상대의 슛이지 우리의 무엇이 아니다.
+_DEF_PROVENANCE: dict[str, str] = {"goals_against": OBSERVED}
+
+DEFAULT_DEFENSIVE_QUALITY: dict = {
+    "min_sample": 3,
+    "thresholds": {
+        "shots_against_high": 14.0, "shots_against_low": 9.0,
+        "npxga_per_shot_high": 0.12, "npxga_per_shot_low": 0.08,
+        "npxga_high": 1.50, "npxga_low": 0.90,
+        "xgot_against_high": 1.30,
+        "goals_against_gap_high": 0.30,
+    },
+}
+
+DEFENSIVE_PATTERN_LABELS = {
+    "A": "허용 슈팅은 많지만 평균 기회 질은 낮음",
+    "B": "허용 슈팅은 적지만 평균 기회 질이 높음",
+    "C": "허용한 기대 기회 대비 실제 실점이 많음",
+    "D": "상대의 질 높은 기회를 많이 허용",
+}
+
+
+def defensive_quality_config(settings: Settings) -> dict:
+    cfg = (getattr(settings, "analysis", None) or {}).get("defensive_quality")
+    out = {"min_sample": DEFAULT_DEFENSIVE_QUALITY["min_sample"],
+           "thresholds": dict(DEFAULT_DEFENSIVE_QUALITY["thresholds"])}
+    if isinstance(cfg, dict):
+        try:
+            out["min_sample"] = max(1, int(cfg.get("min_sample",
+                                                   out["min_sample"])))
+        except (TypeError, ValueError):
+            pass
+        for k, v in (cfg.get("thresholds") or {}).items():
+            try:
+                out["thresholds"][str(k)] = float(v)
+            except (TypeError, ValueError):
+                continue
+    return out
+
+
+def opponent_rows(profile: TeamProfile | None, agg) -> list:
+    """창에 들어간 경기에서 **상대 팀**의 집계.
+
+    `shot_matches` 와 `match_id` 로 짝을 맞춘다 — 순서(index)를 믿지 않는다.
+    상대를 모르는 경기(`opponent_id=None`)는 애초에 담기지 않았으므로 여기서
+    빠지고, 그 사실은 표본 수 차이로 드러난다.
+    """
+    rows = getattr(profile, "opponent_matches", None) or []
+    wanted = [str(x) for x in (_agg_field(agg, "match_ids") or [])]
+    if not rows or not wanted:
+        return []
+    index = {str(_field(r, "match_id")): r for r in rows}
+    return [index[m] for m in wanted if m in index]
+
+
+def _season_defense_values(stats) -> tuple[dict, list[str]]:
+    """시즌 수비 지표. **npxGA·피xGOT 는 시즌에 없다.**
+
+    시즌 피드가 주는 것은 실점(순위표)·xGA(시즌 xG 표)뿐이고, 피슛 계열은
+    소스가 줄 때만 있다(보통 비어 있다). 없는 칸을 만들지 않는다.
+    """
+    out: dict[str, tuple[float, int | None, str]] = {}
+    notes: list[str] = []
+    if stats is None:
+        return out, notes
+    played, xg_played = stats.played, stats.xg_played
+    _put(out, "goals_against", stats.goals_against_pg, played)
+    _put(out, "xga", stats.xga_pg, xg_played or played)
+    _put(out, "shots_against", stats.shots_against_pg, played)
+    _put(out, "shots_on_target_against", stats.shots_on_target_against_pg,
+         played)
+    notes.append(
+        "시즌: npxGA·피xGOT·피박스 안 슈팅이 없습니다 — 시즌 통계 피드에 "
+        "없고 상대 슛맵은 최근 N경기만 받습니다 (시즌 값은 xGA 뿐)")
+    return out, notes
+
+
+def detect_defensive_patterns(values: dict, config: dict
+                              ) -> list[tuple[str, str, str]]:
+    """[(코드, 라벨, 근거)]. **수비 점수가 아니다** — 상태 설명이다.
+
+    표본이 `min_sample` 에 못 미치면 아무 패턴도 만들지 않는다.
+    """
+    th = config.get("thresholds") or {}
+    floor = int(config.get("min_sample") or 1)
+
+    def get(name):
+        row = values.get(name)
+        if row is None or row[1] is None or int(row[1]) < floor:
+            return None
+        return row[0]
+
+    shots = get("shots_against")
+    per_shot = get("npxga_per_shot_against")
+    npxga, xgot_a = get("npxga"), get("xgot_against")
+    gap = get("goals_against_minus_npxga")
+    out: list[tuple[str, str, str]] = []
+
+    if shots is not None and per_shot is not None:
+        if (shots >= th.get("shots_against_high", 1e9)
+                and per_shot <= th.get("npxga_per_shot_low", -1)):
+            out.append(("A", DEFENSIVE_PATTERN_LABELS["A"],
+                        f"피슈팅 {shots:.1f} · 피슛당 npxGA {per_shot:.3f}"))
+        elif (shots <= th.get("shots_against_low", -1)
+                and per_shot >= th.get("npxga_per_shot_high", 1e9)):
+            out.append(("B", DEFENSIVE_PATTERN_LABELS["B"],
+                        f"피슈팅 {shots:.1f} · 피슛당 npxGA {per_shot:.3f}"))
+    if (npxga is not None and npxga <= th.get("npxga_low", -1)
+            and gap is not None
+            and gap >= th.get("goals_against_gap_high", 1e9)):
+        out.append(("C", DEFENSIVE_PATTERN_LABELS["C"],
+                    f"npxGA {npxga:.2f} · 실점−npxGA {gap:+.2f}"))
+    if (npxga is not None and npxga >= th.get("npxga_high", 1e9)
+            and xgot_a is not None
+            and xgot_a >= th.get("xgot_against_high", 1e9)):
+        out.append(("D", DEFENSIVE_PATTERN_LABELS["D"],
+                    f"npxGA {npxga:.2f} · 피xGOT {xgot_a:.2f}"))
+    return out
+
+
+def build_defensive_quality(profile: TeamProfile | None, team: str,
+                            season_matches: list[SeasonMatch] | None,
+                            as_of: datetime | None,
+                            windows: list[int],
+                            config: dict,
+                            thresholds: dict[str, float] | None = None,
+                            quality: DataQuality | None = None,
+                            min_sample: int = DEFAULT_TREND_MIN_SAMPLE
+                            ) -> AnalysisAxis:
+    """피슈팅 → npxGA → 피xGOT → 실점 을 기간별로 담는다 (Phase 2-C).
+
+    키는 2-A·2-B 와 같은 `기간.지표` 다. 기간 구조를 새로 만들지 않는다.
+    """
+    axis = AnalysisAxis(name="defensive_quality")
+    stats = getattr(profile, "stats", None) if profile else None
+    aggregates = getattr(profile, "shot_aggregates", None) or {}
+    season = list(season_matches or [])
+    thresholds = thresholds or DEFAULT_TREND_THRESHOLDS
+
+    history = team_history(season, team, as_of)
+    known_ids = {str(m.match_id) for m in season if m.match_id}
+    allowed_ids = {str(m.match_id) for m in matches_before(season, as_of)
+                   if m.match_id}
+    # {경기 id: 그 경기에서 이 팀이 **허용한** 골} — 최종 스코어 기준 (§18).
+    conceded: dict[str, int] = {}
+    for m in history:
+        theirs = m.away_goals if m.home_team == team else m.home_goals
+        if theirs is not None:
+            conceded[str(m.match_id)] = int(theirs)
+
+    windows = sorted({int(w) for w in windows if int(w) > 0}, reverse=True)
+    axis.requested_matches = windows[0] if windows else None
+    axis.available_matches = len(history)
+
+    # ---- 시즌 --------------------------------------------------------------
+    season_values, season_notes = _season_defense_values(stats)
+    for name, (value, sample, note) in season_values.items():
+        axis.metrics[metric_key(SEASON, name)] = _metric(
+            name, SEASON, value, sample, note=note)
+    axis.notes.extend(season_notes)
+    played = getattr(stats, "played", None) if stats else None
+    if quality is not None:
+        quality.mark("defensive_quality.season", bool(season_values),
+                     requested=played, available_matches=played,
+                     reason="" if season_values else "시즌 지표 없음")
+
+    blocked: dict[str, set[str]] = {}
+    structural: dict[str, set[str]] = {}
+
+    # ---- 최근 N경기 ---------------------------------------------------------
+    for window in windows:
+        period = period_name(window)
+        agg = aggregates.get(f"all{window}")
+        if agg is None:
+            if quality is not None:
+                quality.mark(f"defensive_quality.{period}", False,
+                             requested=window, available_matches=0,
+                             reason="슛 계층 창 없음")
+            continue
+
+        future, unknown = _window_time_check(agg, allowed_ids, known_ids)
+        if future:
+            axis.notes.append(
+                f"{period_label(period)}: 기준시각 이후 경기 {len(future)}건이 "
+                "창에 들어 있어 이 기간을 만들지 않았습니다")
+            if quality is not None:
+                quality.mark(f"defensive_quality.{period}", False,
+                             requested=window, available_matches=0,
+                             reason="기준시각 이후 경기 혼입")
+            continue
+
+        window_available = int(_agg_field(agg, "available_matches") or 0)
+        rows = opponent_rows(profile, agg)
+        values: dict[str, tuple[float, int | None, str]] = {}
+
+        for name, field_name in _AGAINST_FIELDS:
+            value, n = _mean(rows, field_name)
+            _put(values, name, value, n)
+        # 피슛당 npxGA — 분자·분모가 **둘 다 있는 경기만** (2-B 와 같은 규칙).
+        value, n, note = _ratio(rows, "npxg", "shots")
+        _put(values, "npxga_per_shot_against", value, n, note)
+        # 실점 (최종 스코어)
+        conceded_rows = [conceded[str(_field(r, "match_id"))] for r in rows
+                         if str(_field(r, "match_id")) in conceded]
+        if conceded_rows:
+            _put(values, "goals_against",
+                 sum(conceded_rows) / len(conceded_rows), len(conceded_rows))
+        # 실점 − 기대값. 표본은 둘 다 있는 경기만.
+        # `_gap(rows, goals, field)` 은 (골 − 지표)/경기 를 만든다. 여기서는
+        # `conceded`(실점)를 넘기고 `rows`가 상대 집계이므로 결과가
+        # (실점 − npxGA) · (실점 − 피xGOT) 가 된다. 같은 함수, 같은 규칙이다.
+        for name, against in _DEF_GAPS:
+            field_name = "npxg" if against == "npxga" else "xgot"
+            gap_value, gap_n, gap_note = _gap(rows, conceded, field_name)
+            _put(values, name, gap_value, gap_n, gap_note)
+
+        if rows:
+            missing = window_available - len(rows)
+            if missing > 0:
+                axis.notes.append(
+                    f"{period_label(period)}: 상대 집계를 잇지 못한 경기 "
+                    f"{missing}건이 수비 표본에서 빠졌습니다")
+        elif window_available:
+            axis.notes.append(
+                f"{period_label(period)}: 상대 팀의 경기별 집계가 없습니다 "
+                "(옛 캐시 — 재수집하면 채워집니다)")
+
+        for name, (value, sample, note) in values.items():
+            axis.metrics[metric_key(period, name)] = _metric(
+                name, period, value, sample,
+                provenance=_DEF_PROVENANCE.get(name, DERIVED),
+                note=note,
+                origin=DEFENSIVE_SHOTMAP_ORIGIN.get(name))
+
+        if unknown:
+            axis.notes.append(
+                f"{period_label(period)}: 시즌 색인에 없어 시점을 확인하지 "
+                f"못한 경기 {len(unknown)}건이 들어 있습니다")
+        axis.notes.append(
+            f"{period_label(period)}: {len(rows)}/{window}경기 (상대 집계 기준)")
+        if quality is not None:
+            quality.mark(f"defensive_quality.{period}", bool(values),
+                         requested=window, available_matches=len(rows),
+                         reason="" if values else "상대 집계 없음")
+
+        # ---- 트렌드 — 2-B 교정의 게이트를 그대로 쓴다 ------------------------
+        same_set = (played is not None and len(rows) >= played)
+        for name, (value, sample, _note) in values.items():
+            base = season_values.get(name)
+            if base is None:
+                continue
+            season_metric = axis.get(metric_key(SEASON, name))
+            recent_metric = axis.get(metric_key(period, name))
+            ok, code, reason = trend_allowed(
+                name, season_metric, recent_metric,
+                same_match_set=same_set, min_sample=min_sample)
+            key = metric_key(f"trend{window}", name)
+            label = f"{SPECS[name][0]} (시즌 대비)"
+            if not ok:
+                axis.metrics[key] = Metric(
+                    name=name, label=label, value=None, provenance=DERIVED,
+                    period=f"trend{window}", sample_count=sample,
+                    unit=SPECS[name][1], direction=SPECS[name][2],
+                    group=GROUPS.get(name, ""), source=DERIVED_SOURCE,
+                    measurement_basis=MIXED_BASIS,
+                    note=f"{NOT_MEANINGFUL} {reason}")
+                target = structural if code in STRUCTURAL_BLOCKS else blocked
+                target.setdefault(reason, set()).add(name)
+                continue
+            delta = value - base[0]
+            band, limit = trend_band(name, delta, thresholds)
+            axis.metrics[key] = Metric(
+                name=name, label=label, value=delta, provenance=DERIVED,
+                period=f"trend{window}", sample_count=sample,
+                unit=SPECS[name][1], direction=SPECS[name][2],
+                group=GROUPS.get(name, ""), source=DERIVED_SOURCE,
+                measurement_basis=season_metric.measurement_basis,
+                note=f"{band} 시즌 {base[0]:.2f} → 최근 {window}경기 "
+                     f"{value:.2f} (차이 {delta:+.2f}, 표시 기준 {limit:g})")
+        for reason, names in sorted(blocked.items()):
+            axis.notes.append(
+                f"{period_label(period)} trend 미생성: {reason} — "
+                + ", ".join(SPECS[n][0] for n in sorted(names)))
+        blocked.clear()
+
+        for code, label, basis in detect_defensive_patterns(values, config):
+            axis.notes.append(
+                f"패턴 {code} · {period_label(period)} · {label} ({basis})")
+
+    for reason, names in sorted(structural.items()):
+        axis.notes.append("trend 미생성(모든 기간): " + reason + " — "
+                          + ", ".join(SPECS[n][0] for n in sorted(names)))
+
+    axis.notes.append(
+        "피슛·npxGA·피xGOT 는 **상대 팀의 슛맵**을 합산한 값입니다 "
+        "(TeamStats 의 *_against_recent 는 경기 스탯 표에서 온 다른 값입니다)")
+    axis.notes.append(
+        "실점 − npxGA · 실점 − 피xGOT 는 실제 실점과 기대값의 차이일 뿐이며 "
+        "골키퍼 능력이나 수비 점수를 뜻하지 않습니다")
+    return axis
+
+
 # --------------------------------------------------------------------------
 # 7. TeamAnalysis / Match 연결
 # --------------------------------------------------------------------------
@@ -1325,6 +1750,11 @@ def build_team_analysis(profile: TeamProfile | None, team: str,
     out.chance_quality = build_chance_quality(
         profile, team, season_matches, as_of, windows=windows,
         config=chance_quality_config(settings), quality=quality)
+    out.defensive_quality = build_defensive_quality(
+        profile, team, season_matches, as_of, windows=windows,
+        config=defensive_quality_config(settings),
+        thresholds=thresholds_from(settings), quality=quality,
+        min_sample=trend_min_sample(settings))
     return out
 
 
@@ -1357,10 +1787,17 @@ def attach_time_context(matches: list[Match], settings: Settings,
 
     if built:
         windows = "/".join(str(w) for w in periods_from(settings))
-        patterns = sum(len(patterns_in(getattr(m.analysis, side).chance_quality
-                                       if getattr(m.analysis, side) else None))
-                       for m in matches if m.analysis
-                       for side in ("home", "away"))
-        log.info("팀 분석(2-A 시간축 · 2-B 기회의 질): %d경기 · 창 %s · "
-                 "시즌 색인 %d경기 · 패턴 %d건",
-                 built, windows, len(season), patterns)
+        sides = [getattr(m.analysis, side) for m in matches if m.analysis
+                 for side in ("home", "away")]
+        sides = [s for s in sides if s is not None]
+        patterns = sum(len(patterns_in(s.chance_quality))
+                       + len(patterns_in(s.defensive_quality)) for s in sides)
+        with_defense = sum(
+            1 for s in sides
+            if s.defensive_quality
+            and any(k.startswith("recent") for k in s.defensive_quality.metrics))
+        log.info("팀 분석(2-A 시간축 · 2-B 기회의 질 · 2-C 수비의 질): "
+                 "%d경기 · 창 %s · 시즌 색인 %d경기 · 패턴 %d건 · "
+                 "상대 집계로 수비 지표를 만든 팀 %d/%d",
+                 built, windows, len(season), patterns, with_defense,
+                 len(sides))

@@ -436,6 +436,11 @@ class TeamProfile:
     # 없다. 그래서 원재료를 함께 싣는다. 수집·캐시는 이미 하고 있었고
     # (`fotmob._attach_shot_aggregates`) 여기로 넘겨 주기만 하면 된다.
     shot_matches: list = field(default_factory=list)
+    # **상대 팀**의 같은 경기 집계 [MatchShotAggregate] (`shot_matches` 와
+    # 같은 경기, match_id 로 짝을 맞춘다). 상대가 그 경기에 몇 슛을 쳤고
+    # npxG 가 얼마였는지가 곧 우리의 피슛·npxGA 다 (Phase 2-C).
+    # 상대는 **숫자 teamId**(`opponent_id`, P0-1)로 잇는다 — 팀명이 아니다.
+    opponent_matches: list = field(default_factory=list)
 
     @property
     def form_points(self) -> int:

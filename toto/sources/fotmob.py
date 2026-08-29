@@ -56,7 +56,7 @@ LEAGUE_PATH = "/api/data/leagues?id={id}"
 ALL_LEAGUES_PATH = "/api/data/allLeagues"
 
 # 캐시 형식이나 파싱 로직이 바뀌면 올린다. 옛 캐시는 자동으로 버려진다.
-_CACHE_VERSION = 8
+_CACHE_VERSION = 9
 
 _SCORE_RE = re.compile(r"(\d+)\s*[-:]\s*(\d+)")
 
@@ -1131,6 +1131,7 @@ def _attach_shot_aggregates(details: dict, teams: dict[str, dict],
 
     # 2) 팀별 최근 N경기 (전체 / 홈 / 원정)
     filled = 0
+    empty_sides = 0       # 상대가 0슛이라 슛맵에 없던 경기 수
     for canon, entry in teams.items():
         tid = _int(entry.get("fotmob_id"))
         if tid is None:
@@ -1142,11 +1143,35 @@ def _attach_shot_aggregates(details: dict, teams: dict[str, dict],
             continue
         entry["shot_aggregates"] = shots.aggregate_windows(ordered, tid, windows)
         entry["shot_matches"] = ordered
+        # Phase 2-C: **상대 팀의 같은 경기 집계**. `per_match[mid]` 는 양 팀을
+        # 다 갖고 있는데 지금까지 자기 것만 꺼내 쓰고 버렸다. 상대가 그 경기에
+        # 몇 슛을 쳤는지 없이는 피슛·npxGA·피xGOT 를 만들 수 없다.
+        # 상대 팀 ID 는 `opponent_id`(P0-1)가 들고 있다 — 팀명으로 찾지 않는다.
+        opponents = []
+        for agg in ordered:
+            opp_id = agg.opponent_id
+            if opp_id is None:
+                continue                      # 상대를 모르면 담지 않는다
+            side = per_match.get(agg.match_id) or {}
+            opp = side.get(opp_id)
+            if opp is None:
+                # 상대가 **0슛**이면 슛맵에 나타나지 않는다. 그 경기를 버리면
+                # 가장 잘 막은 경기가 표본에서 사라져 피슛이 위로 치우친다.
+                opp = shots.empty_aggregate(
+                    agg.match_id, opp_id,
+                    is_home=(None if agg.is_home is None else not agg.is_home),
+                    opponent_id=tid)
+                empty_sides += 1
+            opponents.append(opp)
+        entry["opponent_matches"] = opponents
         filled += 1
 
     log.info("[%s] 슛 이벤트 계층: 경기 %d개 · 팀 %d개 · 창 %s",
              league_key, len(per_match), filled,
              "/".join(str(w) for w in windows))
+    if empty_sides:
+        log.info("[%s] 상대가 0슛이라 슛맵에 없던 팀-경기 %d건 — "
+                 "0으로 채워 수비 표본에 넣었습니다", league_key, empty_sides)
     if broken:
         log.warning("[%s] 슛 집계 불변조건 위반 %d건: %s", league_key,
                     len(broken), " | ".join(broken[:3]))
@@ -1264,6 +1289,10 @@ def _freeze(result: dict) -> dict:
                                     in (entry.get("shot_aggregates") or {}).items()},
                 "shot_matches": [asdict(m) for m
                                  in (entry.get("shot_matches") or [])],
+                # Phase 2-C: 상대 팀의 같은 경기 집계. 캐시에 안 남기면
+                # 같은 날 재실행에서 수비 지표가 통째로 사라진다.
+                "opponent_matches": [asdict(m) for m
+                                     in (entry.get("opponent_matches") or [])],
             }
             for canon, entry in result["teams"].items()
         },
@@ -1285,6 +1314,9 @@ def _revive(data: Any) -> dict | None:
                     for k, v in (entry.get("shot_aggregates") or {}).items()},
                 "shot_matches": [shots.MatchShotAggregate(**m)
                                  for m in (entry.get("shot_matches") or [])],
+                "opponent_matches": [
+                    shots.MatchShotAggregate(**m)
+                    for m in (entry.get("opponent_matches") or [])],
             }
             for canon, entry in (data.get("teams") or {}).items()
         }
@@ -1408,6 +1440,9 @@ def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None,
                     # 경기별 원재료. 2-B 의 비율 지표가 지표를 가로질러 표본을
                     # 맞추려면 창의 합계만으로는 안 되고 이게 있어야 한다.
                     profile.shot_matches = list(entry["shot_matches"])
+                if entry.get("opponent_matches") and not profile.opponent_matches:
+                    # 2-C 수비 지표의 원재료 — 상대가 그 경기에 무엇을 했나.
+                    profile.opponent_matches = list(entry["opponent_matches"])
             setattr(match, f"{side}_profile", profile)
 
         if match.home.canonical and match.away.canonical and not match.h2h.entries:

@@ -181,6 +181,37 @@ true** 로 온다(골문으로 가던 슛이라는 뜻). 통상적인 유효슈�
 
 회귀 테스트: `python tests/test_shot_events.py` (46개).
 
+### 1-1-4. 시즌 경기 색인 (Phase 2 P0-2) — `Report.season_matches`
+
+Phase 2 의 시점별 분석(상대 강도)이 "그 경기 **이전에** 무슨 일이 있었나"를
+물으려면 시즌 경기 목록이 필요하다. 예전에는 `read_league` 안에서만 쓰고
+버렸다. 이제 `enrich(..., season_out=report.season_matches)` 로 넘긴다.
+
+- **새로 수집하지 않는다.** 이미 받은 리그 응답을 `SeasonMatch` 로 옮길 뿐이다.
+- **팀 식별자를 두 벌 싣는다.** 이 프로젝트의 정규 식별자는 **팀명 문자열**
+  (`TeamResolver` 의 canonical name)이고 슛 계층은 **숫자 teamId** 로 돈다.
+  서로 다른 체계라 하나로 합치면 한쪽이 끊긴다 —
+  `home_team`/`away_team`(정규명)과 `home_fotmob_id`/`away_fotmob_id`(숫자)를
+  함께 둔다. 팀명만으로 과거 경기를 잇지 않는다.
+- **`kickoff` 는 시간대를 지어내지 않는다.** `...Z` 면 aware, 표시가 없으면
+  naive 로 두고 `kickoff_aware=False` 로 남긴다. 파싱 실패면 `kickoff=None`
+  이고 `kickoff_raw` 에 원본이 남는다.
+- **경기 ID 가 없으면 담지 않는다.** 팀명+날짜를 임의의 키로 만들지 않는다.
+- 정렬은 kickoff 오름차순, 동시각은 match_id. 시점을 모르는 경기는 뒤로.
+
+**누수 방지는 `matches_before(as_of)` 하나로 모은다** (`toto/models.py`).
+
+  · 기준은 **엄격한 `<`** — 같은 시각 경기는 포함하지 않는다. 그 경기 결과가
+    아직 없기 때문이다(같은 날 15시 경기는 20시 경기에 쓸 수 있지만 그 반대는
+    안 되고, 15시끼리도 서로 못 쓴다).
+  · 기본은 **종료 경기만**. 예정 경기를 과거처럼 쓰지 않는다.
+  · `as_of=None` 이면 빈 목록. "기준이 없으니 전부"로 두면 미래가 섞인다.
+  · aware↔naive 가 섞이면 비교하지 않고 제외한다.
+
+회귀 테스트: `python tests/test_season_matches.py` (27개). 그중 미래 경기를
+덧붙여도 과거 조회가 한 건도 안 바뀌는지 보는 테스트가 Phase 2-F 누수
+검사의 기반이다.
+
 ### 1-1-1. 리그 ID 를 이름만으로 정하지 않는다
 
 이름 매칭은 두 소스 모두에서 엉뚱한 리그를 골랐다. 실측 기록이다.
@@ -277,7 +308,7 @@ toto/render.py:536
 옛 캐시를 읽어 수정이 반영되지 않는다 — 실제로 이것 때문에 두 번 헛돌았다.
 
 ```
-toto/sources/fotmob.py:57     _CACHE_VERSION = 7   (1-B 2→3→4→5, 1-C 6, Phase 2 P0-1 에서 7)
+toto/sources/fotmob.py:59     _CACHE_VERSION = 8   (1-B 2→3→4→5, 1-C 6, Phase 2 P0-1 7 · P0-2 8)
 toto/sources/whoscored.py:415 _LEAGUE_CACHE_VERSION = 2
 ```
 

@@ -38,9 +38,11 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import asdict
+from datetime import datetime
 from typing import Any, Iterator
 
-from ..models import FormEntry, H2H, H2HEntry, TeamProfile, TeamRef, TeamStats
+from ..models import FormEntry, H2H, H2HEntry, SeasonMatch
+from ..models import TeamProfile, TeamRef, TeamStats
 from ..models import fill_stats
 from ..normalize import TeamResolver
 from .. import shots
@@ -54,7 +56,7 @@ LEAGUE_PATH = "/api/data/leagues?id={id}"
 ALL_LEAGUES_PATH = "/api/data/allLeagues"
 
 # 캐시 형식이나 파싱 로직이 바뀌면 올린다. 옛 캐시는 자동으로 버려진다.
-_CACHE_VERSION = 7
+_CACHE_VERSION = 8
 
 _SCORE_RE = re.compile(r"(\d+)\s*[-:]\s*(\d+)")
 
@@ -680,11 +682,59 @@ def _parse_matches(data: Any, resolver: TeamResolver) -> list[dict]:
             "utc": _utc_time(raw),
             "home": home,
             "away": away,
+            # 숫자 teamId. 정규명(home/away)과 **다른 식별 체계**라 함께 남긴다 —
+            # 슛 계층과 순위표는 이 숫자로 돌고, 팀명으로는 이어지지 않는다.
+            "home_id": _int((raw.get("home") or {}).get("id")),
+            "away_id": _int((raw.get("away") or {}).get("id")),
             "home_goals": hg,
             "away_goals": ag,
             "finished": _finished(raw) and hg is not None,
         })
     out.sort(key=lambda m: m["utc"], reverse=True)
+    return out
+
+
+def _parse_kickoff(text: str) -> tuple[Any, bool]:
+    """(datetime | None, timezone 정보가 있었나).
+
+    FotMob 은 `status.utcTime` 을 ISO 로 준다 — 관찰된 형태는 `...Z` 다.
+    파이썬 `fromisoformat` 은 버전에 따라 `Z` 를 못 읽으므로 `+00:00` 으로
+    바꿔 준다. **시간대 표시가 없으면 붙이지 않는다** — 임의로 UTC 라고
+    단정하면 시점 비교가 조용히 어긋난다. naive 로 두고 그렇다고 표시한다.
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return None, False
+    try:
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None, False
+    return dt, dt.tzinfo is not None
+
+
+def season_matches_from(matches: list[dict], competition: str) -> list[SeasonMatch]:
+    """`_parse_matches` 결과 → `SeasonMatch` 목록.
+
+    새로 수집하지 않는다. 이미 받아 둔 리그 응답을 옮겨 담을 뿐이다.
+    """
+    out = []
+    for m in matches:
+        mid = m.get("id")
+        if not mid:
+            # 경기 ID 가 없으면 담지 않는다. 팀명+날짜를 임의의 키로 만들면
+            # 나중에 같은 경기가 두 벌로 들어온다.
+            continue
+        kickoff, aware = _parse_kickoff(m.get("utc", ""))
+        out.append(SeasonMatch(
+            match_id=str(mid),
+            competition=competition,
+            kickoff=kickoff, kickoff_raw=str(m.get("utc") or ""),
+            kickoff_aware=aware,
+            home_team=m.get("home", ""), away_team=m.get("away", ""),
+            home_fotmob_id=m.get("home_id"), away_fotmob_id=m.get("away_id"),
+            home_goals=m.get("home_goals"), away_goals=m.get("away_goals"),
+            finished=bool(m.get("finished")),
+        ))
     return out
 
 
@@ -1247,10 +1297,16 @@ def _revive(data: Any) -> dict | None:
 # --------------------------------------------------------------------------
 # 진입점
 # --------------------------------------------------------------------------
-def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None) -> str:
+def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None,
+           season_out: list | None = None) -> str:
     """모든 경기에 FotMob 데이터를 붙인다. 반환값은 상태 문자열.
 
     이미 프로필이 있으면(다른 소스가 먼저 채웠으면) 빈 칸만 메운다.
+
+    `season_out` 을 주면 받아 온 리그의 **시즌 경기 목록**을 거기에 담는다
+    (Phase 2 의 시점별 분석용). 반환형을 바꾸지 않으려고 out-파라미터로 뒀다 —
+    whoscored.enrich 와 시그니처를 맞춰 두는 편이 호출부가 단순하다.
+    새로 수집하지 않고 이미 받은 응답을 옮겨 담을 뿐이다.
     """
     # 경기의 리그만 받으면 컵대회에서 구멍이 난다. 부천(K2) vs 전북(K1) 같은
     # 경기는 match.league 가 홈팀 기준으로 하나만 정해지는데, 그러면 원정팀은
@@ -1276,6 +1332,23 @@ def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None) -> s
 
         data = {key: read_league(browser, settings, key, resolver, cache=cache)
                 for key in leagues}
+
+    # 시즌 경기 색인 (Phase 2). 같은 경기가 두 리그 피드에 겹쳐 실릴 수 있어
+    # match_id 로 한 번만 담고, kickoff 오름차순으로 정렬해 둔다.
+    if season_out is not None:
+        seen_ids = {sm.match_id for sm in season_out}
+        for league_key in leagues:
+            for sm in season_matches_from(
+                    (data.get(league_key) or {}).get("matches", []), league_key):
+                if sm.match_id in seen_ids:
+                    continue
+                seen_ids.add(sm.match_id)
+                season_out.append(sm)
+        season_out.sort(key=lambda x: x.sort_key)
+        no_time = sum(1 for sm in season_out if sm.kickoff is None)
+        log.info("시즌 경기 색인 %d경기 (종료 %d) — Phase 2 시점 분석용%s",
+                 len(season_out), sum(1 for sm in season_out if sm.finished),
+                 f", 시각 해석 실패 {no_time}건" if no_time else "")
 
     # 팀 → 항목 통합 색인. 어느 리그에서 왔든 팀만 알면 찾을 수 있게 한다.
     index: dict[str, dict] = {}

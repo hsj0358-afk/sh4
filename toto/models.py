@@ -526,6 +526,101 @@ class Match:
 
 
 @dataclass
+class SeasonMatch:
+    """시즌에 이미 치러졌거나 예정된 경기 1건 (Phase 2 의 과거 경기 색인).
+
+    회차 14경기를 담는 `Match` 와 목적이 다르다 — 이쪽은 배당·확률·프로필이
+    없는 **기록**이고, 시점별 분석(2-F 상대 강도)이 "그 경기 이전에 무슨 일이
+    있었나"를 묻기 위한 것이다.
+
+    ## 팀 식별자가 두 벌인 이유
+
+    이 프로젝트의 정규 식별자는 **팀명 문자열**(`TeamResolver` 가 만든
+    canonical name)이고, 슛 계층은 **FotMob 숫자 teamId** 로 돈다. 둘은
+    서로 다른 체계라서 하나로 합치면 한쪽이 조용히 끊긴다. 그래서 둘 다
+    들고 다닌다.
+
+      · `home_team` / `away_team`         정규명 (프로젝트 canonical)
+      · `home_fotmob_id` / `away_fotmob_id` 숫자 (슛 계층·순위표와 연결)
+
+    팀명만으로 과거 경기를 잇지 않는다.
+
+    ## kickoff
+
+    `kickoff` 는 정렬·시점 비교에 쓰는 datetime 이다. 원본 문자열이 UTC 표시
+    (`...Z`)면 **timezone 을 가진** datetime 이 되고, 표시가 없으면 naive 로
+    두고 `kickoff_aware=False` 로 남긴다. **임의의 시간대를 가정하지 않는다.**
+    파싱에 실패하면 `kickoff=None` 이고 `kickoff_raw` 에 원본이 남는다.
+    """
+    match_id: str = ""
+    competition: str = ""         # 내부 리그 키 (이 경기를 어느 리그 피드에서 얻었나)
+    kickoff: Any = None           # datetime | None
+    kickoff_raw: str = ""         # 원본 문자열 (파싱 실패해도 근거를 남긴다)
+    kickoff_aware: bool = False   # timezone 정보가 있었나
+    home_team: str = ""           # 정규명
+    away_team: str = ""
+    home_fotmob_id: int | None = None
+    away_fotmob_id: int | None = None
+    home_goals: int | None = None
+    away_goals: int | None = None
+    finished: bool = False
+
+    @property
+    def sort_key(self) -> tuple:
+        """kickoff 오름차순, 같으면 match_id 로 안정 정렬.
+
+        kickoff 가 없는 경기는 **뒤로** 보낸다 — 시점을 모르는 경기를 과거
+        구간에 끼워 넣으면 시점 비교가 무너진다.
+        """
+        if self.kickoff is None:
+            return (1, "", str(self.match_id))
+        return (0, self.kickoff.isoformat(), str(self.match_id))
+
+    @property
+    def result(self) -> str | None:
+        """홈 기준 H/D/A. 종료되지 않았거나 점수가 없으면 None."""
+        if not self.finished or self.home_goals is None or self.away_goals is None:
+            return None
+        if self.home_goals > self.away_goals:
+            return HOME
+        return DRAW if self.home_goals == self.away_goals else AWAY
+
+
+def matches_before(season: list[SeasonMatch], as_of: Any,
+                   finished_only: bool = True) -> list[SeasonMatch]:
+    """`as_of` **이전에 시작한** 경기만. Phase 2-F 누수 방지의 기본 장치.
+
+    - 기준은 **엄격한 부등호** `kickoff < as_of` 다. 같은 시각에 시작한 경기는
+      **포함하지 않는다** — 그 경기 결과가 아직 나오지 않았기 때문이다.
+      (같은 날 15:00 경기는 20:00 경기 분석에 쓸 수 있지만, 15:00 경기끼리는
+      서로를 쓸 수 없다.)
+    - `kickoff` 가 없는 경기는 시점을 알 수 없으므로 **항상 제외**한다.
+    - `as_of` 가 None 이면 빈 목록. "기준이 없으니 전부"가 아니다 — 그렇게
+      두면 실수로 미래가 섞인다.
+    - 기본은 **종료된 경기만**. 예정 경기를 과거처럼 쓰면 안 된다.
+
+    tz-aware 와 naive 를 섞어 비교하면 파이썬이 TypeError 를 낸다. 그런
+    경기는 비교 자체를 하지 않고 제외하며, 호출부가 세어 볼 수 있도록
+    조용히 빠뜨리기만 한다(추측해서 시간대를 붙이지 않는다).
+    """
+    if as_of is None:
+        return []
+    out = []
+    for m in season:
+        if m.kickoff is None:
+            continue
+        if finished_only and not m.finished:
+            continue
+        try:
+            if m.kickoff < as_of:
+                out.append(m)
+        except TypeError:          # aware ↔ naive 혼용 — 비교 불가
+            continue
+    out.sort(key=lambda x: x.sort_key)
+    return out
+
+
+@dataclass
 class Report:
     """리포트 한 부."""
     round_id: str = ""            # 회차
@@ -534,6 +629,13 @@ class Report:
     warnings: list[str] = field(default_factory=list)
     source_status: dict[str, str] = field(default_factory=dict)
     verdict: RoundVerdict | None = None   # 회차 승산 (지침 §5)
+    # 시즌 경기 색인 (Phase 2). kickoff 오름차순으로 정렬해 둔다.
+    season_matches: list[SeasonMatch] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+    def matches_before(self, as_of: Any,
+                       finished_only: bool = True) -> list[SeasonMatch]:
+        """`as_of` 이전 경기만 (모듈 함수와 같은 규칙)."""
+        return matches_before(self.season_matches, as_of, finished_only)

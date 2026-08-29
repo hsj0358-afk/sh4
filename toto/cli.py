@@ -184,7 +184,10 @@ def main(argv: list[str] | None = None) -> int:
                 settings.fotmob = dict(settings.fotmob, match_detail_matches=0)
             try:
                 report.source_status["순위·폼"] = fotmob.enrich(
-                    matches, settings, resolver, cache=cache)
+                    matches, settings, resolver, cache=cache,
+                    # Phase 2 가 쓸 시즌 경기 색인. 새로 수집하지 않고
+                    # 이미 받은 리그 응답을 옮겨 담는다.
+                    season_out=report.season_matches)
             except Exception as exc:
                 log.error("FotMob 수집 중 오류: %s", exc)
                 report.source_status["순위·폼"] = "실패"

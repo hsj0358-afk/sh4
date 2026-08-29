@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
 
+from datetime import datetime
+
 from .predict import MatchProb, RoundVerdict
 from typing import Any
 
@@ -683,7 +685,11 @@ class MatchAnalysis:
     conflicts: list[Signal] = field(default_factory=list)
     evidence: list[EvidenceItem] = field(default_factory=list)
     data_quality: DataQuality | None = None
-    as_of: Any = None               # datetime | None — 시점 기준
+    # 모델 산출값 전용 축 (xPTS·포아송 확률…). observed/derived 축과 섞지
+    # 않으려고 자리를 따로 뒀다. `probs`(피나클 배당 확률)와는 무관하며
+    # 서로 합치지 않는다.
+    model: AnalysisAxis | None = None
+    as_of: datetime | None = None   # 시점 기준
 
     def evidence_for(self, side: str, counter: bool = False
                      ) -> list[EvidenceItem]:
@@ -735,6 +741,7 @@ def revive_match_analysis(d: Any) -> MatchAnalysis | None:
     if not isinstance(d, dict):
         return None
     out = MatchAnalysis(as_of=d.get("as_of"))
+    out.model = _revive_axis(d.get("model"))
     out.home = revive_team_analysis(d.get("home"))
     out.away = revive_team_analysis(d.get("away"))
     out.matchup = [MatchupPair(**{k: v for k, v in p.items()
@@ -813,7 +820,7 @@ class SeasonMatch:
     """
     match_id: str = ""
     competition: str = ""         # 내부 리그 키 (이 경기를 어느 리그 피드에서 얻었나)
-    kickoff: Any = None           # datetime | None
+    kickoff: datetime | None = None
     kickoff_raw: str = ""         # 원본 문자열 (파싱 실패해도 근거를 남긴다)
     kickoff_aware: bool = False   # timezone 정보가 있었나
     home_team: str = ""           # 정규명
@@ -845,7 +852,7 @@ class SeasonMatch:
         return DRAW if self.home_goals == self.away_goals else AWAY
 
 
-def matches_before(season: list[SeasonMatch], as_of: Any,
+def matches_before(season: list[SeasonMatch], as_of: datetime | None,
                    finished_only: bool = True) -> list[SeasonMatch]:
     """`as_of` **이전에 시작한** 경기만. Phase 2-F 누수 방지의 기본 장치.
 
@@ -894,7 +901,7 @@ class Report:
     def to_dict(self) -> dict:
         return asdict(self)
 
-    def matches_before(self, as_of: Any,
+    def matches_before(self, as_of: datetime | None,
                        finished_only: bool = True) -> list[SeasonMatch]:
         """`as_of` 이전 경기만 (모듈 함수와 같은 규칙)."""
         return matches_before(self.season_matches, as_of, finished_only)

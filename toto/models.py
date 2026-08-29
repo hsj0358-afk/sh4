@@ -531,6 +531,11 @@ class Metric:
     sample_count: int | None = None  # 이 지표에 실제로 값이 있던 경기 수
     unit: str = ""                  # "" · "%" · "per_match" …
     note: str = ""
+    # 값이 클수록 좋은가 (2-A §9). "higher_better" | "lower_better" | ""
+    # **빈 문자열은 '방향을 정하지 않았다'는 뜻이지 중립이라는 뜻이 아니다.**
+    # 슈팅처럼 많다고 좋은지 단정할 수 없는 지표는 비워 둔다. 이 값을 점수로
+    # 바꾸거나 부호를 곱해 합산하지 않는다 — 표시용 메타데이터다.
+    direction: str = ""
 
     @property
     def known(self) -> bool:

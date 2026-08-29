@@ -177,6 +177,9 @@ class Settings:
     radar_metrics: list = field(default_factory=lambda: list(DEFAULT_RADAR_METRICS))
     compare_metrics: list = field(default_factory=lambda: list(DEFAULT_COMPARE_METRICS))
     recent_metrics: list = field(default_factory=lambda: list(DEFAULT_RECENT_METRICS))
+    # 시간축 분석(Phase 2-A) 설정: periods · trend_thresholds.
+    # 비어 있으면 toto/analysis.py 의 기본값을 쓴다.
+    analysis: dict = field(default_factory=dict)
     output: dict = field(default_factory=dict)
 
     root: Path = ROOT
@@ -252,6 +255,7 @@ def load_settings(config_path: Path | None = None, env_path: Path | None = None)
         s.compare_metrics = cfg["compare_metrics"]
     if cfg.get("recent_metrics"):
         s.recent_metrics = cfg["recent_metrics"]
+    s.analysis = cfg.get("analysis") or {}
     s.output = cfg.get("output") or {
         "dir": "reports", "filename": "toto_{round}.html",
         "copy_to": [], "copy_to_exclude": ["OneDrive"],

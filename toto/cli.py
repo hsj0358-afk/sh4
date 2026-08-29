@@ -235,7 +235,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # ---- 5. 분석 ----------------------------------------------------------
     report.matches = matches
-    run_all(matches, settings)
+    run_all(matches, settings, season_matches=report.season_matches)
 
     # 회차 승산 (지침 §5)
     expected = int(settings.betman.get("expected_matches", 14))

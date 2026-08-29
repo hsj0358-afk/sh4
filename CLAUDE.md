@@ -291,6 +291,75 @@ observed)이고 이쪽은 경기내용에서 만든 모델값이다. 두 확률�
 
 회귀 테스트: `python tests/test_xpts.py` (36개).
 
+### 1-1-7. 시간축 분석 (Phase 2-A) — `toto/analysis.py`
+
+시즌 전체 경기력과 최근 경기력을 **나란히** 보여 준다. 픽을 고르지 않고
+전력 점수를 만들지 않는다.
+
+결과는 `TeamAnalysis.time_context`(`AnalysisAxis`) 하나에 들어가고, 키는
+**`기간.지표`** 다 — `season.xg` · `recent6.xg` · `trend6.xg`.
+기간을 키에 넣어 두면 **시즌 값과 최근 값이 구조적으로 섞일 수 없다.**
+하나의 평균으로 합치지 않는다.
+
+기간 N 은 코드에 박지 않는다. `config_toto.yaml` 의 `analysis.periods`,
+없으면 `fotmob.shot_recent_windows` 를 쓴다.
+
+**지표가 기간마다 다르다. 빈칸을 추정으로 채우지 않는다.**
+
+| 지표 | 시즌 | 최근 N |
+|---|---|---|
+| 득점·실점·승점·득실차·승무패 | 순위표 | 시즌 경기 색인(`SeasonMatch`)의 **실제 스코어** |
+| xG | 시즌 xG 표 | 슛 계층 |
+| 슈팅·유효슈팅 | 시즌 통계 피드 | 슛 계층 |
+| npxG · xGOT · 박스 안 슈팅 | **없다** | 슛 계층 |
+| 결정적 기회 | 시즌 통계 피드 | **없다** (경기별 값을 안 받는다) |
+| 피npxG · 피xGOT · 피슈팅 · 피유효슈팅 | 없다 | **경기 상세 창 1개에서만** |
+
+수비 지표가 창 하나뿐인 이유: 상대 팀의 **경기별** 슛 집계가 저장되지 않는다
+(`opponent_id` 만 남는다). 지금 있는 것은 `TeamStats` 의 `*_against_recent`
+합계뿐이고 그 표본은 `fotmob.match_detail_matches` 로 정한 창 하나다.
+창별 수비 지표는 2-C 에서 상대 집계를 확보한 뒤에 만든다.
+
+최근 득점은 **슛맵이 아니라 최종 스코어**에서 센다 — 슛맵은 상대 자책골을
+우리 득점으로 세지 않으므로 승점·득실차의 기준이 될 수 없다.
+
+- 평균은 언제나 **그 지표의 표본 수**로 나눈다. `requested_matches`(요청한
+  창) · `available_matches`(확보한 경기) · `Metric.sample_count`(그 지표에
+  값이 있던 경기) 셋을 구분해 전부 남긴다.
+- 커버리지는 `DataQuality.axes["time_context.recent6"]` 에 남는다.
+  **신뢰도 점수로 바꾸지 않는다.** 시즌 초 `1/6 경기` 는 오류가 아니다.
+- **트렌드는 `최근 − 시즌` 이고 파생값(DERIVED)이다.** 시즌에 없는 지표
+  (npxG·xGOT…)는 트렌드도 없다. 밴드(`higher`/`lower`/`similar`)는 라벨일
+  뿐이고, 문턱은 `config_toto.yaml` 의 `analysis.trend_thresholds` 에 있다 —
+  그 자리에 **"운영용 기준이며 통계적으로 검증된 기준이 아님"** 이라고
+  적어 두었다. 밴드를 점수로 바꾸거나 여러 지표를 합산하지 않는다.
+- **최근 값이 높다고 "상승세"·"전력 상승"·"강팀" 이라고 적지 않는다.**
+  "최근 6경기 xG 가 시즌보다 +0.22" 까지가 전부다.
+- `Metric.direction` 은 표시용 메타데이터다 (`higher_better`/`lower_better`,
+  정하지 않았으면 빈 문자열). **슈팅 수와 무승부 수는 비워 둔다** — 많다고
+  좋은 것이 아니다. 부호를 곱해 합산하는 데 쓰지 않는다.
+- 승/무/패는 남기되 **폼 점수 같은 단일 숫자를 만들지 않는다.**
+- xPTS 를 여기서 다시 계산하지 않는다 (P1 의 값, 연결은 2-D). `analysis.py`
+  는 `xpts` 를 import 하지도 참조하지도 않는다 — AST 로 테스트한다.
+
+**시점.** cutoff 는 `models.matches_before(as_of)` **하나뿐**이다. 이 모듈은
+`kickoff` 을 직접 비교하지 않는다(테스트로 고정). `as_of` 는
+`Match.kickoff_kst` 를 UTC+9 로 읽어 만든다 — 필드 이름이 KST 라고 밝히고
+있어서지 시간대를 임의로 정하는 게 아니다. 파싱 실패면 `None` 이고, 그러면
+과거 경기 구간이 비고 그 사실이 notes 에 남는다.
+
+슛 계층의 창은 **수집 시점에 이미 만들어져 있어 다시 자를 수 없다.** 그래서
+자르는 대신 창의 `match_ids` 를 시즌 색인과 대조한다.
+
+  · `as_of` 이후 경기가 섞였으면 → 그 창의 **슛 지표를 만들지 않는다**
+  · 색인에 없어 확인 불가면 → 값은 내되 notes 에 적는다
+
+순위표·시즌 통계 피드는 **수집 시점 스냅샷**이라 `as_of` 로 잘리지 않는다.
+과거 경기 수와 어긋나면 notes 에 그렇게 적는다 — 조용히 지나가면 과거
+경기를 분석할 때 미래가 섞인 줄 모르게 된다.
+
+회귀 테스트: `python tests/test_time_context.py` (43개).
+
 ### 1-1-1. 리그 ID 를 이름만으로 정하지 않는다
 
 이름 매칭은 두 소스 모두에서 엉뚱한 리그를 골랐다. 실측 기록이다.
@@ -586,7 +655,12 @@ python -m toto --round 260044      # 회차 지정 수집
 python -m toto --skip-whoscored    # 배당 + 순위·폼만 (빠름)
 python -m toto --skip-match-details        # 경기 상세(npxG·xGOT…) 생략
 python tests/test_league_matching.py       # 리그·팀 매칭 회귀 (15개)
-python tests/test_match_details.py         # 경기 상세 파싱 회귀 (30개)
+python tests/test_match_details.py         # 경기 상세 파싱 회귀 (36개)
+python tests/test_shot_events.py           # 슛 이벤트 계층 (46개)
+python tests/test_season_matches.py        # 시즌 경기 색인·시점 (27개)
+python tests/test_analysis_model.py        # Phase 2 분석 모델 (22개)
+python tests/test_xpts.py                  # 독립 포아송 기대승점 (36개)
+python tests/test_time_context.py          # 시간축 분석 2-A (43개)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_sources.py --browser    # 소스 구조 점검
 python tools/probe_sources.py --analyze    # 저장본 재분석 (접속 없음)

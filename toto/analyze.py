@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
+from . import analysis
 from .models import Match, TeamStats
 from .predict import additive_probabilities, round_winnability
 from .settings import Settings
@@ -215,9 +216,18 @@ def build_rest_days(matches: list[Match]) -> None:
                     profile.rest_days = delta
 
 
-def run_all(matches: list[Match], settings: Settings) -> None:
-    """분석 파이프라인 전체 실행."""
+def run_all(matches: list[Match], settings: Settings,
+            season_matches: list | None = None) -> None:
+    """분석 파이프라인 전체 실행.
+
+    `season_matches` 는 Phase 2 의 시즌 경기 색인(`Report.season_matches`)이다.
+    없으면 시간축 분석의 결과 지표(득점·승점·승무패)가 비고, 슛 기반 지표만
+    남는다 — 실행이 죽지는 않는다.
+    """
     attach_probabilities(matches)
     build_radar(matches, settings)
     build_matchup(matches)
     build_rest_days(matches)
+    # Phase 2-A. 기존 산출물(probs·radar·matchup)을 건드리지 않고
+    # `Match.analysis` 에만 붙는다.
+    analysis.attach_time_context(matches, settings, season_matches)

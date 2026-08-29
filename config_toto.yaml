@@ -252,6 +252,48 @@ recent_metrics:
   - {key: "shots_on_target_against_recent_pg", label: "피유효슈팅", fmt: "{:.1f}"}
   - {key: "inside_box_shot_share", label: "박스 안 슈팅 비율(%)", fmt: "{:.0f}"}
 
+# 시간축 분석 (Phase 2-A) ---------------------------------------------------
+analysis:
+  # 분석할 최근 N경기 창. 비워 두면 fotmob.shot_recent_windows 를 그대로 쓴다.
+  # 여기 적은 창이 슛 계층에 없으면 그 창의 슛 지표는 비고, 득점·승점 같은
+  # 결과 지표만 시즌 경기 색인에서 계산된다.
+  periods: [10, 6, 5, 3]
+
+  # 트렌드 표시 문턱 ---------------------------------------------------------
+  #
+  #   ⚠ 운영용 기준이며 통계적으로 검증된 기준이 아님.
+  #
+  # "최근 값 − 시즌 값" 의 절댓값이 아래 숫자보다 작으면 화면에 "similar"
+  # 로 적고, 크면 "higher"/"lower" 로 적는다. 그게 전부다.
+  #
+  #   · 이 문턱을 넘었다고 해서 전력이 올랐다는 뜻이 아니다.
+  #   · 유의성 검정이 아니다. 표본 수(1~10경기)를 전혀 고려하지 않는다.
+  #   · 밴드를 점수로 바꾸거나 여러 지표의 밴드를 합산하지 않는다.
+  #
+  # 단위는 그 지표의 단위 그대로다 (대부분 경기당 값, 승/무/패는 경기 수).
+  trend_thresholds:
+    default: 0.20
+    goals: 0.30
+    goals_against: 0.30
+    goal_diff: 0.40
+    xg: 0.25
+    npxg: 0.25
+    xgot: 0.25
+    npxga: 0.25
+    xgot_against: 0.25
+    xgd: 0.35
+    npxgd: 0.35
+    shots: 2.0
+    shots_against: 2.0
+    shots_on_target: 1.0
+    shots_on_target_against: 1.0
+    shots_inside_box: 1.5
+    points: 0.40
+    big_chances: 0.8
+    wins: 1.0
+    draws: 1.0
+    losses: 1.0
+
 # 출력 ---------------------------------------------------------------------
 output:
   dir: "reports"

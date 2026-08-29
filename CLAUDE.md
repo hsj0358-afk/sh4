@@ -360,6 +360,67 @@ observed)이고 이쪽은 경기내용에서 만든 모델값이다. 두 확률�
 
 회귀 테스트: `python tests/test_time_context.py` (43개).
 
+### 1-1-8. 기회의 질 (Phase 2-B) — `toto/analysis.py` `build_chance_quality()`
+
+흐름 하나를 구조로 만든다.
+
+```
+슈팅  →  xG · npxG  →  xGOT  →  득점
+(양)     (기회의 질)    (실행)    (결과)
+```
+
+결과는 `TeamAnalysis.chance_quality` 에 들어가고 키는 2-A 와 같은
+`기간.지표` 다. **기간 구조를 새로 만들지 않았다.**
+
+**비율은 '평균의 평균' 이 아니다.** 경기별 xG/슛 을 구해 다시 평균 내면
+슛이 적은 경기가 과대 대표된다. `Σ xG / Σ 슛` 으로 **합계끼리 나눈다.**
+
+**분자와 분모의 표본이 같아야 한다.** 창의 합계(`RecentShotAggregate.sums`)
+만으로는 이걸 보장할 수 없다 — 6경기 창에서 슛은 6경기에 있고 xG 는
+4경기에만 있으면 `Σxg/Σshots` 는 4경기치를 6경기치로 나눈 값이 되어 조용히
+낮아진다. 그래서 **경기별 원재료**(`TeamProfile.shot_matches`, 이번에
+프로필까지 연결했다)에서 **둘 다 있는 경기만** 골라 합산한다.
+원재료가 없으면(옛 캐시·데모) 창의 표본 수가 창의 확보 경기 수와 **완전히
+일치할 때만** 계산하고, 아니면 만들지 않는다.
+
+**`xGOT − npxG` 를 만들지 않는다.** xGOT 은 PK 를 포함하고 npxG 는
+제외하므로 기준이 다르다. 이 차이를 "결정력"·"슈팅 효율" 로 부르면 PK 를
+많이 얻은 팀이 자동으로 좋아 보인다. xG·npxG·xGOT 세 원값을 따로 둔다.
+(리포트의 `recent_metrics` 에 Phase 1-B 때 넣은 `xgot_delta_recent` 행이
+아직 남아 있다 — 2-B 는 UI 를 건드리지 않아 그대로 뒀다. §3-7 참고.)
+
+**득점−xG 계열을 "결정력" 이라 부르지 않는다.** `goals_minus_xg` ·
+`goals_minus_npxg` · `goals_minus_xgot` 세 개를 각각 따로 두고 **방향을
+정하지 않는다**(`Metric.direction=""`) — 양수가 좋은 것도, 음수가 나쁜 것도
+아니다. 셋을 합쳐 단일 점수로 만들지 않는다.
+
+- 득점은 **슛맵이 아니라 최종 스코어**에서 온다(2-A 와 같은 이유). 스코어를
+  모르는 경기는 차이 지표의 표본에서 빠진다 — 0 으로 치지 않는다.
+- 박스 안 비율·유효슈팅 비율은 **%** 다 (`TeamStats.inside_box_shot_share`
+  와 같은 관례). 분모 합이 0 이면 `None` 이다 — 0 이 답인 게 아니다.
+- 시즌에는 npxG·xGOT·박스 안 슈팅이 없어 `npxg_per_shot`·`box_shot_share`·
+  `goals_minus_npxg`·`goals_minus_xgot` 의 **시즌 값이 없다.** 결정적 기회는
+  반대로 **시즌에만** 있다.
+- 시즌 비율은 순위표 경기 수(`played`)와 xG 표 경기 수(`xg_played`)가
+  **같을 때만** 만든다. 다르면 만들지 않고 notes 에 적는다.
+
+**`Metric.group`** 을 붙인다 — `volume` · `chance_quality` · `execution` ·
+`sustainability_gap` · `outcome`. **점수 계산용이 아니다.** 2-I 근거 요약에서
+xG·npxG·슛당 xG 처럼 같은 이야기를 세 번 세지 않으려는 메타데이터다.
+
+**패턴(A~D)은 추천이 아니라 상태 설명이다.** 문턱은
+`config_toto.yaml` 의 `analysis.chance_quality.thresholds` 에 있고 그 자리에
+**"운영용 기준이며 통계적으로 검증된 기준이 아님"** 이라고 적어 두었다.
+표본이 `min_sample`(기본 3)에 못 미치면 **패턴을 아예 만들지 않는다** —
+시즌 초 1경기로 "슈팅량 대비 기회 질이 낮다" 고 적으면 안 된다.
+"반등한다"·"결정력이 좋다" 같은 예측 문구를 만들지 않는다.
+
+시점은 2-A 와 **같은 장치**를 쓴다 — `matches_before(as_of)` 와
+`_window_time_check`. 창에 기준시각 이후 경기가 섞였으면 그 기간을 통째로
+만들지 않는다. 이 함수는 `kickoff` 을 직접 비교하지 않는다(테스트로 고정).
+
+회귀 테스트: `python tests/test_chance_quality.py` (41개).
+
 ### 1-1-1. 리그 ID 를 이름만으로 정하지 않는다
 
 이름 매칭은 두 소스 모두에서 엉뚱한 리그를 골랐다. 실측 기록이다.
@@ -645,6 +706,20 @@ toto/sources/whoscored.py:415 _LEAGUE_CACHE_VERSION = 2
 
 → 이 셋을 다시 쓰려면 `[7]` 점검부터 다시 한다.
 
+### 3-7. 리포트에 남아 있는 `xGOT−npxG` 행
+
+`config_toto.yaml` 의 `recent_metrics` 에 Phase 1-B 때 넣은
+`xgot_delta_recent`("xGOT−npxG(합계)") 행이 있고,
+`TeamStats.xgot_delta_recent` 가 그 값을 만든다.
+
+Phase 2-B 에서 **이 지표를 분석에 쓰지 않기로 정했다** — xGOT 은 PK 를
+포함하고 npxG 는 제외해 기준이 다르므로, 둘의 차이를 "결정력"·"슈팅 효율"
+로 읽으면 PK 를 많이 얻은 팀이 자동으로 좋아 보인다(§1-1-3, §1-1-8).
+
+리포트 UI 는 2-B 범위가 아니라 그대로 뒀다. **행을 지울지, 남기되 설명을
+붙일지는 사용자 판단이 필요하다.** 분석 축(`chance_quality`)에는 들어가지
+않는다는 것만 코드로 고정돼 있다.
+
 ---
 
 ## 4. 빠른 참조
@@ -661,6 +736,7 @@ python tests/test_season_matches.py        # 시즌 경기 색인·시점 (27개
 python tests/test_analysis_model.py        # Phase 2 분석 모델 (22개)
 python tests/test_xpts.py                  # 독립 포아송 기대승점 (36개)
 python tests/test_time_context.py          # 시간축 분석 2-A (43개)
+python tests/test_chance_quality.py        # 기회의 질 2-B (41개)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_sources.py --browser    # 소스 구조 점검
 python tools/probe_sources.py --analyze    # 저장본 재분석 (접속 없음)

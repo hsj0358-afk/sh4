@@ -442,7 +442,11 @@ def test_team_analysis_integration():
         profile(), HOME_TEAM, history(HOME_TEAM, 6), kick(30), s,
         is_home=True)
     assert ta.time_context is not None
-    assert ta.computed_axes() == ["time_context"], "다른 축을 미리 채웠다"
+    # 2-B 가 chance_quality 를 함께 채운다. 나머지 축(2-C~2-F)은 여전히 None
+    # 이어야 한다 — 빈 축을 넣어 분석이 끝난 것처럼 보이게 하지 않는다.
+    assert ta.computed_axes() == ["time_context", "chance_quality"]
+    assert ta.defensive_quality is None and ta.sustainability is None
+    assert ta.venue_context is None and ta.schedule_strength is None
     assert ta.fotmob_id == 111
     assert ta.is_home is True
     assert ta.data_quality is not None
@@ -517,7 +521,7 @@ def test_season_snapshot_mismatch_is_disclosed():
 def test_metric_labels_exist_for_every_spec():
     for name, (label, unit, direction, group) in analysis.SPECS.items():
         assert label, name
-        assert unit in ("per_match", "count"), name
+        assert unit in ("per_match", "count", "per_shot", "%"), name
         assert direction in (analysis.HIGHER_BETTER, analysis.LOWER_BETTER, "")
         assert group in ("attack", "defense", "result"), name
 

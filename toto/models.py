@@ -430,6 +430,12 @@ class TeamProfile:
     # TeamStats 가 아니라 여기 둔다 — 구조가 있는 값이라 fill_stats 의
     # 스칼라 병합 규칙에 맞지 않고, 기존 지표 계산에 끼어들면 안 된다.
     shot_aggregates: dict = field(default_factory=dict)
+    # **경기별** 슛 집계 [MatchShotAggregate] (최신순). 창(`shot_aggregates`)은
+    # 지표별 합계와 표본 수만 들고 있어서, "xG 와 슈팅이 **둘 다** 있는 경기"
+    # 처럼 지표를 가로질러 표본을 맞춰야 하는 계산(2-B 의 비율 지표)을 할 수
+    # 없다. 그래서 원재료를 함께 싣는다. 수집·캐시는 이미 하고 있었고
+    # (`fotmob._attach_shot_aggregates`) 여기로 넘겨 주기만 하면 된다.
+    shot_matches: list = field(default_factory=list)
 
     @property
     def form_points(self) -> int:
@@ -536,6 +542,11 @@ class Metric:
     # 슈팅처럼 많다고 좋은지 단정할 수 없는 지표는 비워 둔다. 이 값을 점수로
     # 바꾸거나 부호를 곱해 합산하지 않는다 — 표시용 메타데이터다.
     direction: str = ""
+    # 같은 정보를 가리키는 지표 묶음 (2-B §15). "volume" · "chance_quality" ·
+    # "execution" · "sustainability_gap" · "outcome" …
+    # **점수 계산용이 아니다.** 2-I 근거 요약에서 같은 사실을 세 번 세지
+    # 않으려고 붙이는 메타데이터다 (xG·npxG·xG/슛은 같은 이야기다).
+    group: str = ""
 
     @property
     def known(self) -> bool:

@@ -1404,6 +1404,10 @@ def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None,
                     ref.fotmob_id = entry["fotmob_id"]
                 if entry.get("shot_aggregates") and not profile.shot_aggregates:
                     profile.shot_aggregates = entry["shot_aggregates"]
+                if entry.get("shot_matches") and not profile.shot_matches:
+                    # 경기별 원재료. 2-B 의 비율 지표가 지표를 가로질러 표본을
+                    # 맞추려면 창의 합계만으로는 안 되고 이게 있어야 한다.
+                    profile.shot_matches = list(entry["shot_matches"])
             setattr(match, f"{side}_profile", profile)
 
         if match.home.canonical and match.away.canonical and not match.h2h.entries:

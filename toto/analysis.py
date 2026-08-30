@@ -102,6 +102,10 @@ TREND_BANDS = (HIGHER, LOWER, SIMILAR)
 NOT_MEANINGFUL = "not_meaningful"
 TREND_STATES = TREND_BANDS + (NOT_MEANINGFUL,)
 
+# 값이 없을 때의 사유 중 **여러 창에서 똑같이 나오는 것**. 경기 수를 넣지
+# 않아야 창마다 다른 문장이 되지 않는다.
+NO_SCORE = "시즌 경기 색인에서 스코어를 찾지 못함"
+
 
 # --------------------------------------------------------------------------
 # 0. 값의 출처와 산출 방식 (2-B 교정)
@@ -516,15 +520,49 @@ def _num(value) -> float | None:
 
 
 def _put(out: dict, name: str, value, sample: int | None,
-         note: str = "") -> None:
+         note: str = "", reasons: dict | None = None) -> None:
     """값이 있을 때만 넣는다. **None 은 넣지 않는다** — 0 과 구분하기 위해서다.
 
     `value=0.0` 은 실제 값이라 그대로 들어간다.
+
+    `reasons` 를 주면 **값이 없을 때 그 사유를 거기 모은다.** 예전에는 값과
+    함께 사유까지 버려서, 리포트에 "커버리지 6/6인데 실점이 없다" 는 상태만
+    남고 왜 없는지는 알 수 없었다. `out` 에 들어가는 내용은 전과 같다 —
+    사유를 곁길로 빼낼 뿐 값은 한 칸도 바뀌지 않는다.
     """
     v = _num(value)
     if v is None:
+        if reasons is not None and note:
+            reasons.setdefault(note, set()).add(name)
         return
     out[name] = (v, sample, note)
+
+
+def _merge_missing(store: dict, reasons: dict, period: str) -> None:
+    """창별로 모은 사유 `{사유: {지표…}}` 를 `{사유: {지표: {기간…}}}` 로 누적한다.
+
+    창마다 같은 사유를 되풀이해 적지 않으려고 기간을 모아 둔다 (2-B 교정의
+    `STRUCTURAL_BLOCKS` 와 같은 뜻).
+    """
+    for reason, names in reasons.items():
+        slot = store.setdefault(reason, {})
+        for name in names:
+            slot.setdefault(name, set()).add(period)
+
+
+def _missing_notes(store: dict) -> list[str]:
+    """`{사유: {지표: {기간…}}}` → notes 줄. 사유 하나당 한 줄이다."""
+    out: list[str] = []
+    for reason, names in sorted(store.items()):
+        periods: set[str] = set()
+        for spans in names.values():
+            periods |= spans
+        labels = ", ".join(SPECS.get(n, (n,))[0] for n in sorted(names))
+        where = "·".join(period_label(p) for p in sorted(
+            periods, key=lambda p: -int(p[6:]) if p.startswith("recent")
+            else 0))
+        out.append(f"값 없음 ({where}): {reason} — {labels}")
+    return out
 
 
 def _season_values(stats) -> dict[str, tuple[float, int | None, str]]:
@@ -1110,7 +1148,9 @@ def _gap(rows: list, goals_by_match: dict, field_name: str
             continue
         pairs.append((goals_by_match[mid], value))
     if not pairs:
-        note = f"스코어를 모르는 경기 {unknown}건" if unknown else ""
+        # 한 경기도 못 이었다. 사유는 **경기 수를 빼고** 적는다 — 창마다
+        # 숫자만 달라 같은 사유가 네 줄로 늘어나기 때문이다(2-B 교정 §8).
+        note = NO_SCORE if unknown else ""
         return None, 0, note
     n = len(pairs)
     note = f"스코어 미상 {unknown}경기 제외" if unknown else ""
@@ -1246,6 +1286,8 @@ def build_chance_quality(profile: TeamProfile | None, team: str,
     windows = sorted({int(w) for w in windows if int(w) > 0}, reverse=True)
     axis.requested_matches = windows[0] if windows else None
     axis.available_matches = len(history)
+    # {사유: {지표: {기간…}}} — 값이 없을 때의 이유를 창을 가로질러 모은다.
+    missing_store: dict[str, dict[str, set]] = {}
 
     # ---- 시즌 --------------------------------------------------------------
     season_values, season_notes = _season_chance_values(stats)
@@ -1291,6 +1333,7 @@ def build_chance_quality(profile: TeamProfile | None, team: str,
         available = int(_agg_field(agg, "available_matches") or 0)
         rows = _match_rows(profile, agg)
         values: dict[str, tuple[float, int | None, str]] = {}
+        missing: dict[str, set] = {}      # 이 창에서 값이 없는 지표의 사유
 
         if rows:
             for field_name in _OBSERVED_FIELDS:
@@ -1298,18 +1341,20 @@ def build_chance_quality(profile: TeamProfile | None, team: str,
                 _put(values, field_name, value, n)
             for name, num, den, scale in _RATES:
                 value, n, note = _ratio(rows, num, den, scale)
-                _put(values, name, value, n, note)
+                _put(values, name, value, n, note, reasons=missing)
             for name, field_name in _GAPS:
                 value, n, note = _gap(rows, goals_by_match, field_name)
-                _put(values, name, value, n, note)
+                _put(values, name, value, n, note, reasons=missing)
             # 득점은 **슛맵이 아니라 최종 스코어**에서 온다. 슛맵의 `goals`
             # 는 상대 자책골을 우리 득점으로 세지 않아 결과 지표가 될 수 없다.
             team_goals = [goals_by_match[str(_field(r, "match_id"))]
                           for r in rows
                           if str(_field(r, "match_id")) in goals_by_match]
-            if team_goals:
-                _put(values, "goals", sum(team_goals) / len(team_goals),
-                     len(team_goals))
+            # 이을 수 있을 때만 값이 생긴다. 못 이으면 **사유를 남긴다** —
+            # 값이 없는 것과 이유를 모르는 것은 다르다.
+            _put(values, "goals",
+                 sum(team_goals) / len(team_goals) if team_goals else None,
+                 len(team_goals), NO_SCORE, reasons=missing)
             inside = sum(int(_field(r, "shots_inside_box") or 0) for r in rows)
             outside = sum(int(_field(r, "shots_outside_box") or 0)
                           for r in rows)
@@ -1325,7 +1370,7 @@ def build_chance_quality(profile: TeamProfile | None, team: str,
                 _put(values, name, value, n)
             for name, (value, n, note) in _rates_from_window(
                     agg, available).items():
-                _put(values, name, value, n, note)
+                _put(values, name, value, n, note, reasons=missing)
             axis.notes.append(
                 f"{period_label(period)}: 경기별 슛 원재료가 없어 비율 지표를 "
                 "표본이 완전히 일치할 때만 만들었고 득점 차이는 만들지 "
@@ -1341,14 +1386,17 @@ def build_chance_quality(profile: TeamProfile | None, team: str,
             axis.notes.append(
                 f"{period_label(period)}: 시즌 색인에 없어 시점을 확인하지 "
                 f"못한 경기 {len(unknown)}건이 들어 있습니다")
+        _merge_missing(missing_store, missing, period)
         if quality is not None:
             quality.mark(f"chance_quality.{period}", bool(values),
                          requested=window, available_matches=available,
-                         reason="" if values else "표본 없음")
+                         reason=("" if values else "표본 없음")
+                         or "; ".join(sorted(missing)))
         for code, label, basis in detect_patterns(values, config):
             axis.notes.append(
                 f"패턴 {code} · {period_label(period)} · {label} ({basis})")
 
+    axis.notes.extend(_missing_notes(missing_store))
     axis.notes.append(
         "비율은 기간 합계끼리 나눈 값입니다 (경기별 비율의 평균이 아닙니다). "
         "분자와 분모가 모두 있는 경기만 씁니다")
@@ -1591,6 +1639,8 @@ def build_defensive_quality(profile: TeamProfile | None, team: str,
 
     blocked: dict[str, set[str]] = {}
     structural: dict[str, set[str]] = {}
+    # {사유: {지표: {기간…}}} — 값이 없을 때의 이유를 창을 가로질러 모은다.
+    missing_store: dict[str, dict[str, set]] = {}
 
     # ---- 최근 N경기 ---------------------------------------------------------
     for window in windows:
@@ -1617,19 +1667,21 @@ def build_defensive_quality(profile: TeamProfile | None, team: str,
         window_available = int(_agg_field(agg, "available_matches") or 0)
         rows = opponent_rows(profile, agg)
         values: dict[str, tuple[float, int | None, str]] = {}
+        missing: dict[str, set] = {}      # 이 창에서 값이 없는 지표의 사유
 
         for name, field_name in _AGAINST_FIELDS:
             value, n = _mean(rows, field_name)
             _put(values, name, value, n)
         # 피슛당 npxGA — 분자·분모가 **둘 다 있는 경기만** (2-B 와 같은 규칙).
         value, n, note = _ratio(rows, "npxg", "shots")
-        _put(values, "npxga_per_shot_against", value, n, note)
-        # 실점 (최종 스코어)
+        _put(values, "npxga_per_shot_against", value, n, note, reasons=missing)
+        # 실점 (최종 스코어). 이을 수 있을 때만 값이 생기고, 못 이으면
+        # **사유를 남긴다** — 값이 없는 것과 이유를 모르는 것은 다르다.
         conceded_rows = [conceded[str(_field(r, "match_id"))] for r in rows
                          if str(_field(r, "match_id")) in conceded]
-        if conceded_rows:
-            _put(values, "goals_against",
-                 sum(conceded_rows) / len(conceded_rows), len(conceded_rows))
+        _put(values, "goals_against",
+             sum(conceded_rows) / len(conceded_rows) if conceded_rows else None,
+             len(conceded_rows), NO_SCORE if rows else "", reasons=missing)
         # 실점 − 기대값. 표본은 둘 다 있는 경기만.
         # `_gap(rows, goals, field)` 은 (골 − 지표)/경기 를 만든다. 여기서는
         # `conceded`(실점)를 넘기고 `rows`가 상대 집계이므로 결과가
@@ -1637,14 +1689,14 @@ def build_defensive_quality(profile: TeamProfile | None, team: str,
         for name, against in _DEF_GAPS:
             field_name = "npxg" if against == "npxga" else "xgot"
             gap_value, gap_n, gap_note = _gap(rows, conceded, field_name)
-            _put(values, name, gap_value, gap_n, gap_note)
+            _put(values, name, gap_value, gap_n, gap_note, reasons=missing)
 
         if rows:
-            missing = window_available - len(rows)
-            if missing > 0:
+            unlinked = window_available - len(rows)
+            if unlinked > 0:
                 axis.notes.append(
                     f"{period_label(period)}: 상대 집계를 잇지 못한 경기 "
-                    f"{missing}건이 수비 표본에서 빠졌습니다")
+                    f"{unlinked}건이 수비 표본에서 빠졌습니다")
         elif window_available:
             axis.notes.append(
                 f"{period_label(period)}: 상대 팀의 경기별 집계가 없습니다 "
@@ -1663,10 +1715,12 @@ def build_defensive_quality(profile: TeamProfile | None, team: str,
                 f"못한 경기 {len(unknown)}건이 들어 있습니다")
         axis.notes.append(
             f"{period_label(period)}: {len(rows)}/{window}경기 (상대 집계 기준)")
+        _merge_missing(missing_store, missing, period)
         if quality is not None:
             quality.mark(f"defensive_quality.{period}", bool(values),
                          requested=window, available_matches=len(rows),
-                         reason="" if values else "상대 집계 없음")
+                         reason=("" if values else "상대 집계 없음")
+                         or "; ".join(sorted(missing)))
 
         # ---- 트렌드 — 2-B 교정의 게이트를 그대로 쓴다 ------------------------
         same_set = (played is not None and len(rows) >= played)
@@ -1716,6 +1770,7 @@ def build_defensive_quality(profile: TeamProfile | None, team: str,
         axis.notes.append("trend 미생성(모든 기간): " + reason + " — "
                           + ", ".join(SPECS[n][0] for n in sorted(names)))
 
+    axis.notes.extend(_missing_notes(missing_store))
     axis.notes.append(
         "피슛·npxGA·피xGOT 는 **상대 팀의 슛맵**을 합산한 값입니다 "
         "(TeamStats 의 *_against_recent 는 경기 스탯 표에서 온 다른 값입니다)")

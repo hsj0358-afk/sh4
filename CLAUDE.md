@@ -544,6 +544,21 @@ xG·npxG·슛당 xG 처럼 같은 이야기를 세 번 세지 않으려는 메�
 
 회귀 테스트: `python tests/test_defensive_quality.py` (52개).
 
+**값이 없으면 이유를 남긴다 (2-C 교정).** 예전에는 `_put()` 이 값이 `None`
+일 때 `note` 까지 함께 버려서, 리포트에 "커버리지 6/6인데 실점이 없다" 는
+상태만 남고 왜 없는지는 알 수 없었다. `_put(..., reasons=…)` 이 사유만
+곁길로 빼내 `AnalysisAxis.notes` 와 `DataQuality.degraded_reason` 에 싣는다.
+
+  · **값은 한 칸도 바뀌지 않는다** — `out` 에 들어가는 내용은 전과 같고,
+    `None` 이 `0` 이 되지도 않는다.
+  · 사유는 **창을 가로질러 한 줄로 모은다** (`_merge_missing` /
+    `_missing_notes`). 창 4개에 같은 사유가 네 번 적히지 않는다 —
+    2-B 교정의 `STRUCTURAL_BLOCKS` 와 같은 뜻이다. 그래서 `_gap()` 의
+    "못 이었다" 사유는 경기 수를 빼고 `NO_SCORE` 상수를 쓴다.
+  · 2-B·2-C 가 **같은 `_put()` 을 통해** 사유를 남긴다. 한 곳만 고쳤다.
+
+회귀 테스트: `python tests/test_reason_preservation.py` (17개).
+
 ### 1-1-1. 리그 ID 를 이름만으로 정하지 않는다
 
 이름 매칭은 두 소스 모두에서 엉뚱한 리그를 골랐다. 실측 기록이다.
@@ -862,6 +877,7 @@ python tests/test_time_context.py          # 시간축 분석 2-A (43개)
 python tests/test_chance_quality.py        # 기회의 질 2-B (41개)
 python tests/test_trend_validity.py        # 트렌드 유효성 2-B 교정 (25개)
 python tests/test_defensive_quality.py     # 수비의 질 2-C (52개)
+python tests/test_reason_preservation.py   # 값 없음 사유 보존 2-C 교정 (17개)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_sources.py --browser    # 소스 구조 점검
 python tools/probe_sources.py --analyze    # 저장본 재분석 (접속 없음)

@@ -30,11 +30,21 @@ log = logging.getLogger("toto")
 
 
 def _setup_logging(verbose: bool) -> None:
-    logging.basicConfig(
-        level=logging.DEBUG if verbose else logging.INFO,
+    """로그 설정. **여러 번 불려도 레벨이 반영돼야 한다.**
+
+    메뉴가 같은 프로세스 안에서 기능을 반복 실행하므로 이 함수도 반복해서
+    불린다. `basicConfig` 는 루트에 핸들러가 이미 있으면 **아무것도 하지
+    않아서**, 2회차부터 `verbose` 가 무시된다(실측: 2회차 verbose=True 인데
+    레벨이 INFO 그대로). 핸들러 구성은 그대로 두고 레벨만 다시 맞춘다 —
+    `force=True` 는 쓰지 않는다. 그러면 남의 핸들러까지 걷어내기 때문이다.
+    """
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(          # 첫 호출에만 핸들러를 붙인다 (중복 없음)
+        level=level,
         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
         datefmt="%H:%M:%S",
     )
+    logging.getLogger().setLevel(level)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -118,11 +128,13 @@ def _resolve_teams(matches, resolver: TeamResolver, report: Report,
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
+    # 메뉴로 가기 전에 로그를 켠다 — 메뉴 루프가 예외를 잡아 traceback 을
+    # 로그로 남기는데, 그때 핸들러가 없으면 아무 데도 남지 않는다.
+    _setup_logging(args.verbose)
+
     if args.menu:
         from .menu import main as menu_main
         return menu_main()
-
-    _setup_logging(args.verbose)
 
     settings = load_settings()
 

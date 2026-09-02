@@ -1035,6 +1035,37 @@ toto/sources/whoscored.py:415 _LEAGUE_CACHE_VERSION = 2
 - 메뉴 문구는 배치 파일이 아니라 파이썬(`toto/menu.py`)에서 출력한다.
   이유는 그 파일 상단 주석에 적혀 있다.
 
+### 1-7-1. 메뉴는 루프다 (Phase 3-A) — EOF 와 Ctrl+C 를 구분한다
+
+`run_menu()` 는 **메뉴 1회**, `main()` 이 반복·예외 격리·종료 판정을 맡는다.
+루프를 `run_menu()` 안에 두면 판정이 두 곳으로 흩어진다.
+
+**`_ask()` 가 EOF 에 `None` 을 준다.** 빈 문자열과 나누지 않으면 무한 루프가
+된다 — 호출부가 `_ask(...) or "1"` 이라 표준입력이 닫히는 순간 **1번 메뉴
+(전체 수집)가 끝없이 돈다.** 실측으로 확인한 뒤 고쳤다.
+
+**`KeyboardInterrupt` 는 `_ask()` 가 잡지 않는다.** 예전에는 EOF 와 함께
+삼켜 `""` 를 돌려줬는데, 그러면 `main()` 의 "중단했습니다 → 130" 정책에
+닿지 못하고 **Ctrl+C 가 오히려 1번 메뉴를 실행**시켰다. 이제 그대로
+올라가 루프를 끝낸다.
+
+일반 예외는 루프가 잡아 한 줄로 알리고 traceback 은 로그에 남긴다. 기능
+하나가 터져도 다른 메뉴를 계속 쓸 수 있다. `[0]` 과 입력 종료로만 빠져나가고,
+`[0]` 에는 pause 하지 않는다. 돌려주는 값은 **마지막 실행의 코드**라 한 번
+쓰고 끝내면 루프가 없던 때와 같다.
+
+**`_setup_logging()` 은 여러 번 불린다.** `basicConfig` 는 루트에 핸들러가
+있으면 아무것도 하지 않아 2회차부터 `verbose` 가 무시됐다(실측: 2회차
+verbose=True 인데 INFO 그대로). 핸들러 구성은 두고 **레벨만 다시 맞춘다** —
+`force=True` 는 남의 핸들러까지 걷어내므로 쓰지 않는다. 핸들러 중복은 원래
+없었고 테스트로 고정했다.
+
+`--menu` 는 이제 **로그를 켠 뒤** 메뉴로 간다. 그래야 루프가 잡은 예외의
+traceback 이 남는다. 다만 메뉴 안의 각 기능은 자기 인자로 다시 설정하므로
+`--menu -v` 의 DEBUG 는 **메뉴 계층에만** 적용된다.
+
+회귀 테스트: `python tests/test_menu_flow.py` (27개).
+
 ### 1-8. 새 기능은 기존 모듈을 먼저 재사용한다
 
 중복 코드를 새로 만들지 않는다. 실제로 그렇게 정리한 사례가 있다.
@@ -1206,6 +1237,7 @@ python tests/test_sustainability.py        # 지속성 2-D (51개)
 python tests/test_venue_context.py         # 장소 문맥 2-E (58개)
 python tests/test_schedule_strength.py     # 상대 강도 2-F (40개)
 python tests/test_evidence.py              # 근거 생성 2-G (57개)
+python tests/test_menu_flow.py             # 메뉴 루프·예외·로그 3-A (27개)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)
 python tools/probe_sources.py --browser    # 소스 구조 점검

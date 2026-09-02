@@ -4,10 +4,17 @@
 윈도우 cmd 는 콘솔 코드페이지(한국어 윈도우는 cp949)로 배치 파일을 읽어서
 한글이 깨지거나 명령이 잘릴 수 있다. 파이썬은 코드페이지와 무관하게
 유니코드를 콘솔에 안전하게 쓰므로 여기서 출력하는 편이 확실하다.
+
+`run_menu()` 는 **메뉴 1회**를 맡고, 반복은 `main()` 이 맡는다. 기능 하나를
+쓰려고 프로그램을 다시 켜지 않아도 되게 하려는 것이고, 그래서 예외 격리와
+입력 종료 판정도 전부 `main()` 의 루프 한 곳에 모여 있다.
 """
 from __future__ import annotations
 
+import logging
 import sys
+
+log = logging.getLogger(__name__)
 
 BANNER = """
 ╔══════════════════════════════════════════════════════╗
@@ -41,18 +48,39 @@ ITEMS = [
 ]
 
 
-def _ask(prompt: str) -> str:
+def _ask(prompt: str) -> str | None:
+    """한 줄 입력. **입력이 끝났으면(EOF) `None`** 을 돌려준다.
+
+    빈 문자열과 `None` 을 나눠야 하는 이유는 메뉴가 루프가 됐기 때문이다.
+    "그냥 Enter"(빈 문자열 → 기본 동작)와 "더 받을 입력이 없다"(파이프 종료·
+    리다이렉트)를 같은 값으로 두면 후자가 기본 동작을 **무한히 반복**한다 —
+    실측하면 `_ask()` 가 `''` 를 주고 호출부의 `or "1"` 이 1번 메뉴(전체
+    수집)를 골라 버린다.
+
+    `KeyboardInterrupt` 는 **잡지 않는다.** `main()` 에 '중단' 으로 끝내는
+    정책이 이미 있는데 여기서 삼키면 그 정책에 닿지 못하고, Ctrl+C 가
+    오히려 1번 메뉴를 실행시킨다.
+    """
     try:
         return input(prompt).strip()
-    except (EOFError, KeyboardInterrupt):
+    except EOFError:
         print()
-        return ""
+        return None
+
+
+def _pause() -> bool:
+    """결과를 읽을 시간을 준다. 입력이 끝났으면 False (루프를 끝낸다)."""
+    print()
+    return _ask("[Enter] 를 누르면 메뉴로 돌아갑니다: ") is not None
 
 
 def run_menu() -> int | None:
-    """메뉴를 띄우고 선택에 맞는 인자를 만들어 실행한다.
+    """메뉴를 **한 번** 띄우고 선택에 맞는 인자를 만들어 실행한다.
 
-    Returns: 실행 결과 코드. 사용자가 종료를 고르면 None (실행한 게 없음).
+    반복은 `main()` 이 맡는다 — 여기에 루프를 두면 종료 판정과 예외 격리가
+    두 곳으로 흩어진다.
+
+    Returns: 실행 결과 코드. 종료를 고르거나 입력이 끝나면 None.
     """
     print(BANNER)
     for key, title, desc, _ in ITEMS:
@@ -61,7 +89,11 @@ def run_menu() -> int | None:
     print("  [0] 종료")
     print()
 
-    choice = _ask("번호를 고르고 Enter (그냥 Enter 면 1번): ") or "1"
+    choice = _ask("번호를 고르고 Enter (그냥 Enter 면 1번): ")
+    if choice is None:                     # 입력이 끝났다 — 루프를 돌지 않는다
+        print("입력이 끝나 종료합니다.")
+        return None
+    choice = choice or "1"
     if choice == "0":
         print("종료합니다.")
         return None
@@ -89,6 +121,9 @@ def run_menu() -> int | None:
         print(f"캐시 {removed}개 항목을 지웠습니다 "
               f"(브라우저 프로필은 유지).")
         rnd = _ask("회차 번호 (비우면 자동 탐지): ")
+        if rnd is None:                    # 캐시는 지웠지만 수집까지 가지 않는다
+            print("입력이 끝나 수집은 하지 않았습니다.")
+            return 1
         args = ["--round", rnd] if rnd else []
 
     # 진단·점검 도구는 별도 스크립트 (리포트를 만들지 않으므로 따로 표시)
@@ -102,7 +137,7 @@ def run_menu() -> int | None:
         if args == "probe-analyze":
             return ("diagnose", tool_main(["--analyze"]))
         use_browser = _ask("차단될 때를 대비해 브라우저로 시도할까요? (y/N): ")
-        extra = ["--browser"] if use_browser.lower().startswith("y") else []
+        extra = ["--browser"] if (use_browser or "").lower().startswith("y") else []
         return ("diagnose", tool_main(extra))
 
     if args is None:                       # 회차 직접 입력
@@ -126,16 +161,8 @@ def run_menu() -> int | None:
     return cli_main(args)
 
 
-def main() -> int:
-    try:
-        result = run_menu()
-    except KeyboardInterrupt:
-        print("\n중단했습니다.")
-        return 130
-
-    if result is None:                     # 사용자가 종료를 고름
-        return 0
-
+def _report(result) -> int:
+    """한 번의 실행 결과를 사람이 읽을 문장으로 알린다."""
     kind, code = result if isinstance(result, tuple) else ("report", result)
 
     print()
@@ -148,3 +175,36 @@ def main() -> int:
     else:
         print("완료했습니다. 리포트는 reports 폴더에 있습니다.")
     return code
+
+
+def main() -> int:
+    """메뉴를 반복해서 띄운다. `[0]` 이나 입력 종료로만 빠져나간다.
+
+    예외 격리를 **이 루프 한 곳**에 둔다. 기능 하나가 터졌다고 프로그램이
+    죽으면 사용자가 다시 켜야 하는데, 메뉴를 루프로 만든 이유가 바로 그것을
+    없애는 것이기 때문이다. 다만 `KeyboardInterrupt` 는 잡지 않는다 —
+    Ctrl+C 로 멈추라는 뜻인데 삼키면 루프가 계속 돈다.
+
+    돌려주는 값은 **마지막으로 실행한 기능의 코드**다. 한 번 쓰고 종료하면
+    루프가 없던 때와 같은 값이 나온다.
+    """
+    last = 0
+    while True:
+        try:
+            result = run_menu()
+        except KeyboardInterrupt:
+            print("\n중단했습니다.")
+            return 130
+        except Exception as exc:
+            # 사용자에게는 한 줄, 로그에는 traceback (-v 로 볼 수 있다)
+            log.exception("메뉴 실행 중 오류")
+            print(f"\n오류가 발생했습니다: {exc}")
+            print("다른 메뉴는 계속 사용할 수 있습니다.")
+            last = 1
+        else:
+            if result is None:             # [0] 또는 입력 종료
+                return last
+            last = _report(result)
+
+        if not _pause():                   # 입력이 끝났으면 루프를 끝낸다
+            return last

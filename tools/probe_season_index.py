@@ -48,13 +48,49 @@ from toto.settings import load_settings                        # noqa: E402
 from toto.sources import fotmob                                # noqa: E402
 
 
+def played_of(stats) -> int | None:
+    """`TeamStats` 든 그것을 풀어 놓은 dict 든 같은 방식으로 읽는다."""
+    if isinstance(stats, dict):
+        return stats.get("played")
+    return getattr(stats, "played", None)
+
+
+def read_loose(raw) -> dict | None:
+    """캐시 버전이 달라도 **이 도구가 쓰는 두 가지**만 꺼낸다.
+
+    `fotmob._revive` 는 `_CACHE_VERSION` 이 다르면 통째로 버린다. 파싱이
+    바뀌었을 때 옛 값을 쓰지 않으려는 안전장치이고 그건 그대로 옳다.
+
+    다만 이 도구가 보는 것은 `matches` 와 `teams[].stats.played` 뿐이고,
+    그 둘은 캐시 버전이 오르는 동안 형식이 바뀐 적이 없다(버전이 오른 이유는
+    슛 계층·상대 집계가 붙어서다). 그래서 **읽기 전용 진단에 한해** 버전을
+    따지지 않고 읽는다. 대신 어느 버전을 읽었는지 반드시 화면에 적는다.
+    """
+    if not isinstance(raw, dict):
+        return None
+    matches = raw.get("matches")
+    teams = raw.get("teams")
+    if not isinstance(matches, list) or not isinstance(teams, dict):
+        return None
+    return {"matches": matches,
+            "teams": {k: {"stats": (v or {}).get("stats") or {}}
+                      for k, v in teams.items()},
+            "_v": raw.get("_v")}
+
+
 def collect(settings, resolver, keys, cache, use_cache):
     """{리그: read_league 결과}. 캐시가 있으면 그것을 쓴다."""
     out = {}
     missing = []
     for key in keys:
-        cached = fotmob._revive(cache.get("fotmob", f"league_{key}")) \
-            if use_cache else None
+        raw = cache.get("fotmob", f"league_{key}") if use_cache else None
+        cached = fotmob._revive(raw) if raw is not None else None
+        if cached is None and raw is not None:
+            cached = read_loose(raw)
+            if cached is not None:
+                print(f"  [{key}] 캐시 버전 {cached.get('_v')} "
+                      f"(현재 {fotmob._CACHE_VERSION}) — 이 도구가 쓰는 "
+                      f"경기 목록·순위표만 읽습니다")
         if cached is not None:
             out[key] = cached
             print(f"  [{key}] 캐시 사용 — 팀 {len(cached['teams'])}개")
@@ -128,7 +164,7 @@ def main(argv=None) -> int:
         print("  " + "-" * 60)
         exact = short = over = unknown = 0
         for canon, team in sorted(entry["teams"].items()):
-            played = getattr(team["stats"], "played", None)
+            played = played_of(team["stats"])
             got = counted.get(canon, 0)
             if played is None:
                 unknown += 1

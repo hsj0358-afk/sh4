@@ -563,6 +563,13 @@ class Metric:
     # 적으면 측정 방식의 차이를 경기력 변화로 둔갑시킨 것이 된다. 그래서 두
     # 값을 빼기 전에 원천과 산출 방식이 같은지 먼저 본다.
     measurement_basis: str = ""
+    # **두 값을 뺀 지표에서만** 채운다 (2-D §11). 실제 6경기와 xG 4경기를
+    # 비교할 때 뺄 수 있는 것은 **양쪽이 다 있는 4경기**뿐이고, 그 4가 여기
+    # 들어간다. `sample_count` 는 '이 지표에 값이 있던 경기 수'라는 뜻이라
+    # 차이 지표에서는 같은 수가 되지만, **개념이 다르므로** 따로 적는다 —
+    # requested(요청한 창) · available(확보한 경기) · sample_count(그 지표의
+    # 표본) · common_sample_count(양쪽 공통) 넷은 서로 다른 수다.
+    common_sample_count: int | None = None
 
     @property
     def known(self) -> bool:

@@ -79,8 +79,8 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
-from .models import (DERIVED, OBSERVED, AnalysisAxis, DataQuality, Match,
-                     MatchAnalysis, Metric, SeasonMatch, TeamAnalysis,
+from .models import (DERIVED, MODEL, OBSERVED, AnalysisAxis, DataQuality,
+                     Match, MatchAnalysis, Metric, SeasonMatch, TeamAnalysis,
                      TeamProfile, matches_before)
 from .settings import Settings
 
@@ -134,7 +134,12 @@ SHOT_EVENTS = "shot_events"    # 슛 이벤트를 하나씩 합산한 값
 # 센 것은 다른 양이다. 이름이 같아 보여도 `TeamStats.*_against_recent`
 # (경기 스탯 표에서 온 값)와도 다르다 — 그쪽은 match_stats/match_stat 이다.
 OPPONENT_SHOT_EVENTS = "opponent_shot_events"
+# 모델이 만들어 낸 값 (P1 의 독립 포아송 xPTS). 관측이 아니다 (Phase 2-D).
+POISSON_MODEL = "poisson_model"
 MIXED_BASIS = "mixed"          # 서로 다른 방식이 섞였다
+
+# xPTS 의 원천. `toto/xpts.py` 의 모델 산출값이며 피나클 배당 확률과 무관하다.
+XPTS_MODEL = "xpts_poisson"
 
 # **직접 비교 가능한 원천 묶음.** 서로 다른 피드지만 같은 것을 세고 있어
 # 값이 일치하는 쌍만 넣는다. 순위표의 득점·승점 누계는 정의상 최종 스코어의
@@ -303,6 +308,15 @@ DEFENSE_SPECS: dict[str, tuple[str, str, str, str]] = {
 }
 SPECS.update(DEFENSE_SPECS)
 
+# ---- 2-D 지속성 (Actual ↔ Underlying ↔ Model) ----------------------------
+SUSTAIN_SPECS: dict[str, tuple[str, str, str, str]] = {
+    "xpts": ("기대승점(모델)", "per_match", HIGHER_BETTER, "result"),
+    # **방향을 정하지 않는다.** 실제 승점이 모델보다 높다고 좋은 것도, 낮다고
+    # 나쁜 것도 아니다 — 평균회귀를 예언하는 지표가 아니다 (§13).
+    "points_minus_xpts": ("승점 − 기대승점", "per_match", "", "result"),
+}
+SPECS.update(SUSTAIN_SPECS)
+
 # 지표 묶음 (2-B §15). **점수 계산용이 아니다** — 2-I 가 같은 사실을 여러 번
 # 세지 않도록 붙이는 메타데이터다. xG·npxG·슛당 xG 는 같은 이야기의 세 얼굴이다.
 VOLUME = "volume"
@@ -318,6 +332,9 @@ DEF_QUALITY = "defense_quality"
 DEF_EXECUTION = "defense_execution"
 DEF_GAP = "defense_gap"
 DEF_OUTCOME = "defense_outcome"
+# 2-D. 모델 산출값과 실제-모델 괴리는 따로 둔다 — 2-I 가 "득점이 xG 보다
+# 많다" 와 "승점이 xPTS 보다 많다" 를 같은 근거로 세면 안 된다.
+MODEL_GROUP = "model"
 
 GROUPS: dict[str, str] = {
     "shots": VOLUME, "shots_on_target": VOLUME, "shots_inside_box": VOLUME,
@@ -338,6 +355,7 @@ GROUPS: dict[str, str] = {
     "goals_against_minus_npxga": DEF_GAP,
     "goals_against_minus_xgot_against": DEF_GAP,
     "goals_against": DEF_OUTCOME,
+    "xpts": MODEL_GROUP, "points_minus_xpts": GAP,
     "points": RESULT_GROUP, "goal_diff": RESULT_GROUP, "xgd": RESULT_GROUP,
     "npxgd": RESULT_GROUP, "wins": RESULT_GROUP, "draws": RESULT_GROUP,
     "losses": RESULT_GROUP,
@@ -351,7 +369,7 @@ SPEC_DIRECTIONS = frozenset((
     "shots_on_target_against"))
 # 명세에 없지만 방향이 자명해 붙인 것. 어디까지가 명세인지 구분해 둔다.
 EXTRA_DIRECTIONS = frozenset((
-    "goal_diff", "npxgd", "wins", "losses",
+    "goal_diff", "npxgd", "wins", "losses", "xpts",
     # 2-B 파생 비율. 명세가 방향을 지정하지는 않았지만 자명하다.
     "xg_per_shot", "npxg_per_shot", "box_shot_share", "on_target_rate",
     # 2-C 수비. 적을수록 좋다.
@@ -362,7 +380,8 @@ EXTRA_DIRECTIONS = frozenset((
 UNDIRECTED = frozenset((
     "shots", "draws", "shots_outside_box", "shots_outside_box_against",
     "goals_minus_xg", "goals_minus_npxg", "goals_minus_xgot",
-    "goals_against_minus_npxga", "goals_against_minus_xgot_against"))
+    "goals_against_minus_npxga", "goals_against_minus_xgot_against",
+    "points_minus_xpts"))
 
 ATTACK = tuple(k for k, v in SPECS.items()
                if v[3] == "attack" and k not in DERIVED_SPECS)
@@ -773,6 +792,65 @@ def trend_allowed(name: str, season_metric: Metric | None,
     if s_n < min_sample or r_n < min_sample:
         return False, BLOCK_SAMPLE, (
             f"표본 부족 (시즌 {s_n} · 최근 {r_n}, 최소 {min_sample})")
+    return True, "", ""
+
+
+# 실제값 ↔ 기대값을 빼도 되는 (actual basis, expected basis) 쌍.
+#
+# **트렌드와 판단 기준이 다르다.** 트렌드는 같은 지표를 두 기간에서 재므로
+# 산출 방식이 **같아야** 하지만, Gap 은 "실제로 몇 골 넣었나" 와 "몇 골
+# 기대됐나" 처럼 **다른 종류의 양을 일부러 견주는 것**이다. 그래서 방식이
+# 같은지가 아니라 **이 쌍을 견주는 것이 프로젝트의 명시적 판단인지**를 본다.
+# "비슷해 보인다" 로 늘리지 않는다 (§7).
+COMPARABLE_GAPS: frozenset[tuple[str, str]] = frozenset({
+    # 최종 스코어의 득점·실점 ↔ 슛 이벤트에서 합산한 xG·npxG·xGOT.
+    # 정의상 같은 경기의 '실제'와 '기대'다.
+    (FINAL_SCORE, SHOT_EVENTS),
+    # 최종 스코어 ↔ 상대 슛 이벤트 (실점 − npxGA).
+    (FINAL_SCORE, OPPONENT_SHOT_EVENTS),
+    # 최종 스코어의 승점 ↔ 포아송 모델의 기대승점.
+    (FINAL_SCORE, POISSON_MODEL),
+    # 시즌 순위표의 득점 ↔ 시즌 xG 표. 둘 다 시즌 전체를 덮고, 2-B 가 이미
+    # `played == xg_played` 일 때만 쓰도록 막아 두었다.
+    (FINAL_SCORE, MATCH_STAT),
+})
+
+# Gap 을 만들지 못한 사유 코드. 2-B 교정의 코드를 최대한 재사용하고,
+# Gap 에만 있는 두 가지(경기 집합 불일치·공통 경기 0)만 새로 둔다.
+BLOCK_MATCH_SET = "different_match_set"
+BLOCK_NO_COMMON = "no_common_matches"
+
+
+def comparison_allowed(actual: Metric | None, expected: Metric | None, *,
+                       common_sample: int, min_sample: int,
+                       same_match_set: bool = True) -> tuple[bool, str, str]:
+    """실제값에서 기대값을 빼도 되나. `(가능한가, 사유 코드, 사유 문구)`.
+
+    `trend_allowed()` 와 **판단 기준이 다르다** — 트렌드는 같은 지표를 두
+    기간에서 재는 것이고, Gap 은 같은 경기의 실제와 기대를 견주는 것이다.
+    그래서 산출 방식이 같은지가 아니라 `COMPARABLE_GAPS` 에 등록된 쌍인지를
+    본다. 반면 **경기 집합은 반드시 같아야 한다** (트렌드는 반대로 달라야
+    한다).
+    """
+    if actual is None or expected is None:
+        which = "실제값" if actual is None else "기대값"
+        return False, BLOCK_MISSING, f"{which}이 없음"
+    if not actual.source or not actual.measurement_basis:
+        return False, BLOCK_SOURCE, "실제값의 원천/산출 방식을 알 수 없음"
+    if not expected.source or not expected.measurement_basis:
+        return False, BLOCK_SOURCE, "기대값의 원천/산출 방식을 알 수 없음"
+    pair = (actual.measurement_basis, expected.measurement_basis)
+    if pair not in COMPARABLE_GAPS:
+        return False, BLOCK_BASIS, (
+            f"견줄 수 있다고 등록되지 않은 조합 "
+            f"({actual.measurement_basis} ↔ {expected.measurement_basis})")
+    if not same_match_set:
+        return False, BLOCK_MATCH_SET, "두 값의 경기 집합이 다름"
+    if common_sample <= 0:
+        return False, BLOCK_NO_COMMON, "두 값이 모두 있는 경기가 없음"
+    if common_sample < min_sample:
+        return False, BLOCK_SAMPLE, (
+            f"공통 표본 부족 ({common_sample}경기, 최소 {min_sample})")
     return True, "", ""
 
 
@@ -1780,6 +1858,430 @@ def build_defensive_quality(profile: TeamProfile | None, team: str,
     return axis
 
 
+# ==========================================================================
+# Phase 2-D — 지속성 (실제 ↔ 경기내용 ↔ 모델)
+# ==========================================================================
+# 세 층을 **섞지 않고** 나란히 둔다.
+#
+#     ACTUAL      득점 · 승점        최종 스코어
+#     UNDERLYING  xG · npxG · xGOT   슛 이벤트
+#     MODEL       xPTS               독립 포아송 (P1)
+#
+# ## 이 축의 유일한 규칙: 같은 경기끼리만 뺀다
+#
+# 2-B/2-C 는 창 단위로 합계를 냈다. 여기서는 **경기별 원재료를 먼저 맞춘 뒤**
+# 양쪽이 다 있는 경기에서만 합산한다. 그래서 이런 일이 구조적으로 불가능하다:
+#
+#     시즌 11경기 득점  −  최근 6경기 npxG      ← 다른 경기 집합
+#     6경기 승점        −  4경기 xPTS           ← 공통 4경기여야 한다
+#
+# 공통 경기 수는 `common_sample_count` 로 따로 적는다. requested /
+# available / metric sample 과 **또 다른 수**다 (§11).
+#
+# ## xPTS 는 다시 계산하지 않는다
+#
+# P1 의 `xpts.aggregate_team_xpts()` 를 그대로 부른다. 포아송을 여기서 다시
+# 구현하지 않는다(테스트로 고정). 그 xG 는 슛맵 합산이므로 시즌 xG 표와
+# 자동으로 같은 기준이라고 보지 않는다 (§15).
+#
+# ## 하지 않는 것
+#
+# 평균회귀를 예언하지 않는다 (§13). "반등한다"·"곧 하락한다"·"평균으로
+# 회귀한다" 를 만들지 않고, 상태 라벨만 둔다:
+# actual_below_underlying / actual_above_underlying / aligned / not_comparable.
+# Gap 의 크기를 Small/Moderate/Large 로 나누지 않는다 — 이 프로젝트에
+# 검증된 기준이 없으므로 **원값과 부호만** 준다 (§14).
+
+# 축 끝에 붙는 고정 문구. **이 축이 하지 않는 일**을 밝히는 자리라 예언
+# 어휘("회귀"·"다음 경기")가 부정문으로 들어간다 — 지표 note 나 패턴 라벨에
+# 같은 말이 새어 들어가지 않았는지 검사할 때는 이 목록을 빼고 본다.
+SUSTAIN_DISCLAIMERS: tuple[str, ...] = (
+    "모든 차이는 **양쪽 값이 다 있는 같은 경기**에서만 계산합니다 "
+    "(공통 경기 수를 함께 적습니다)",
+    "실제와 기대의 차이는 상태 설명일 뿐이며, 평균으로 회귀한다거나 "
+    "다음 경기 결과를 뜻하지 않습니다",
+)
+
+# (Gap 이름, 실제값 이름, 기대값 이름)
+_SUSTAIN_GAPS: tuple[tuple[str, str, str], ...] = (
+    ("goals_minus_xg", "goals", "xg"),
+    ("goals_minus_npxg", "goals", "npxg"),
+    ("goals_minus_xgot", "goals", "xgot"),
+)
+
+# 상태 라벨 (§13). 예측이 아니라 현재 상태의 이름이다.
+ACTUAL_BELOW = "actual_below_underlying"
+ACTUAL_ABOVE = "actual_above_underlying"
+ALIGNED = "aligned"
+NOT_COMPARABLE = "not_comparable"
+
+SUSTAIN_PATTERN_LABELS = {
+    "A": "실제 득점이 경기내용(xG)보다 적음",
+    "B": "실제 득점이 경기내용(xG)보다 많음",
+    "C": "실제 승점이 모델 기대승점보다 적음",
+    "D": "실제 승점이 모델 기대승점보다 많음",
+}
+
+
+def _sustain_rows(profile: TeamProfile | None, agg, history: list,
+                  team: str) -> list[dict]:
+    """창에 들어간 경기의 **경기별 원재료**. 세 층을 한 줄에 모은다.
+
+    한 줄은 한 경기다: 실제(득점·승점) · 경기내용(xG·npxG·xGOT) · 모델 입력
+    (우리 xG, 상대 xG). 값이 없으면 그 칸만 None 이고, 줄은 남는다 — 어느
+    지표가 어느 경기에 있었는지를 잃지 않기 위해서다.
+    """
+    wanted = [str(x) for x in (_agg_field(agg, "match_ids") or [])]
+    if not wanted:
+        return []
+    own = {str(_field(r, "match_id")): r
+           for r in (getattr(profile, "shot_matches", None) or [])}
+    opp = {str(_field(r, "match_id")): r
+           for r in (getattr(profile, "opponent_matches", None) or [])}
+    index = {str(m.match_id): m for m in history}
+
+    rows: list[dict] = []
+    seen: set[str] = set()
+    for mid in wanted:
+        if mid in seen:
+            continue                       # 같은 경기를 두 번 세지 않는다
+        seen.add(mid)
+        match = index.get(mid)
+        goals = points = None
+        is_home = None
+        if match is not None:
+            is_home = (match.home_team == team)
+            mine = match.home_goals if is_home else match.away_goals
+            theirs = match.away_goals if is_home else match.home_goals
+            if mine is not None and theirs is not None:
+                goals = int(mine)
+                points = 3 if mine > theirs else (1 if mine == theirs else 0)
+        mine_agg = own.get(mid)
+        opp_agg = opp.get(mid)
+        rows.append({
+            "match_id": mid,
+            "goals": goals, "points": points, "is_home": is_home,
+            "xg": _num(_field(mine_agg, "xg")) if mine_agg else None,
+            "npxg": _num(_field(mine_agg, "npxg")) if mine_agg else None,
+            "xgot": _num(_field(mine_agg, "xgot")) if mine_agg else None,
+            "opponent_xg": _num(_field(opp_agg, "xg")) if opp_agg else None,
+        })
+    return rows
+
+
+def _common_mean(rows: list, *fields: str) -> tuple[dict, int]:
+    """지정한 칸이 **모두 있는 경기만** 골라 각 칸의 경기당 평균을 낸다.
+
+    돌려주는 것은 `({칸: 평균}, 공통 경기 수)`. 한 칸이라도 없으면 그 경기는
+    통째로 빠지므로, 두 평균의 분모가 **반드시 같다**.
+    """
+    usable = [r for r in rows if all(r.get(f) is not None for f in fields)]
+    n = len(usable)
+    if not n:
+        return {}, 0
+    return ({f: sum(float(r[f]) for r in usable) / n for f in fields}, n)
+
+
+def _xg_by_match(rows: list) -> dict:
+    """`{경기 id: (홈 xG, 원정 xG)}` — P1 의 `aggregate_team_xpts` 입력.
+
+    홈/원정 방향은 **시즌 경기 색인**이 정한다 (`is_home`). 슛 집계의
+    `is_home` 을 쓰지 않는 이유는 `aggregate_team_xpts` 가 `SeasonMatch` 의
+    `home_team`/`away_team` 으로 팀을 찾기 때문이다 — 방향 기준을 하나로 둔다.
+    """
+    out: dict[str, tuple] = {}
+    for r in rows:
+        ours, theirs, home = r["xg"], r["opponent_xg"], r["is_home"]
+        if ours is None or theirs is None or home is None:
+            continue
+        out[r["match_id"]] = (ours, theirs) if home else (theirs, ours)
+    return out
+
+
+def detect_sustainability_patterns(values: dict, min_sample: int
+                                   ) -> list[tuple[str, str, str]]:
+    """[(코드, 라벨, 근거)]. **부호만 본다** — 크기를 등급으로 나누지 않는다.
+
+    표본이 모자라면 아무것도 만들지 않는다. 추천이 아니고 평균회귀 예언도
+    아니다 (§13, §14, §21).
+    """
+    out: list[tuple[str, str, str]] = []
+
+    def get(name):
+        row = values.get(name)
+        if row is None or row[1] is None or int(row[1]) < min_sample:
+            return None, None
+        return row[0], row[1]
+
+    gap, n = get("goals_minus_xg")
+    if gap is not None and gap != 0:
+        code = "A" if gap < 0 else "B"
+        out.append((code, SUSTAIN_PATTERN_LABELS[code],
+                    f"득점 − xG {gap:+.2f} (공통 {n}경기)"))
+    pgap, pn = get("points_minus_xpts")
+    if pgap is not None and pgap != 0:
+        code = "C" if pgap < 0 else "D"
+        out.append((code, SUSTAIN_PATTERN_LABELS[code],
+                    f"승점 − 기대승점 {pgap:+.2f} (공통 {pn}경기)"))
+    return out
+
+
+def gap_state(gap: float | None) -> str:
+    """상태 라벨. 부호만 본다 — 등급 문턱을 만들지 않는다."""
+    if gap is None:
+        return NOT_COMPARABLE
+    if gap == 0:
+        return ALIGNED
+    return ACTUAL_ABOVE if gap > 0 else ACTUAL_BELOW
+
+
+def build_sustainability(profile: TeamProfile | None, team: str,
+                         season_matches: list[SeasonMatch] | None,
+                         as_of: datetime | None,
+                         windows: list[int],
+                         quality: DataQuality | None = None,
+                         min_sample: int = DEFAULT_TREND_MIN_SAMPLE
+                         ) -> AnalysisAxis:
+    """실제 ↔ 경기내용 ↔ 모델을 **같은 경기 집합에서** 견준다 (Phase 2-D).
+
+    키는 2-A~2-C 와 같은 `기간.지표` 다. 기간 구조를 새로 만들지 않는다.
+    """
+    from . import xpts as xpts_model        # P1. 포아송을 다시 만들지 않는다.
+
+    axis = AnalysisAxis(name="sustainability")
+    stats = getattr(profile, "stats", None) if profile else None
+    aggregates = getattr(profile, "shot_aggregates", None) or {}
+    season = list(season_matches or [])
+
+    history = team_history(season, team, as_of)
+    known_ids = {str(m.match_id) for m in season if m.match_id}
+    allowed_ids = {str(m.match_id) for m in matches_before(season, as_of)
+                   if m.match_id}
+
+    windows = sorted({int(w) for w in windows if int(w) > 0}, reverse=True)
+    axis.requested_matches = windows[0] if windows else None
+    axis.available_matches = len(history)
+    missing_store: dict[str, dict[str, set]] = {}
+
+    # ---- 시즌 --------------------------------------------------------------
+    # 시즌은 순위표(실제)와 시즌 xG 표(경기내용)뿐이다. npxG·xGOT 는 시즌에
+    # 없고, 시즌 전체의 경기별 xG 도 없어 **시즌 xPTS 는 만들 수 없다**(§17).
+    season_values: dict[str, tuple[float, int | None, str]] = {}
+    season_missing: dict[str, set] = {}
+    season_common = 0
+    if stats is not None:
+        played, xg_played = stats.played, stats.xg_played
+        _put(season_values, "goals", stats.goals_for_pg, played)
+        _put(season_values, "points", stats.points_pg, played)
+        _put(season_values, "goals_against", stats.goals_against_pg, played)
+        if stats.goal_diff is not None and played:
+            _put(season_values, "goal_diff", stats.goal_diff / played, played)
+        _put(season_values, "xg", stats.xg_pg, xg_played or played)
+        # 시즌 득점은 순위표 누계, 시즌 xG 는 xG 표다. **두 표의 경기 수가
+        # 같을 때만** 같은 경기를 본 것이라고 말할 수 있다. 그 다음은 최근
+        # 구간과 **같은 문(comparison_allowed)** 을 지난다 (§12).
+        same = (played is not None and xg_played is not None
+                and played == xg_played)
+        if same and played:
+            season_common = int(played)
+        if stats.goals_for_pg is not None and stats.xg_pg is not None:
+            ok, _code, reason = comparison_allowed(
+                _sustain_metric("goals", SEASON, stats.goals_for_pg, played),
+                _sustain_metric("xg", SEASON, stats.xg_pg, xg_played),
+                common_sample=season_common, min_sample=min_sample,
+                same_match_set=same)
+            _put(season_values, "goals_minus_xg",
+                 (stats.goals_for_pg - stats.xg_pg) if ok else None,
+                 season_common,
+                 f"공통 {season_common}경기" if ok else
+                 (reason if same else
+                  f"시즌 경기 수({played})와 xG 표 경기 수({xg_played})가 다름"),
+                 reasons=season_missing)
+    _merge_missing(missing_store, season_missing, SEASON)
+    for name, (value, sample, note) in season_values.items():
+        built = _metric(
+            name, SEASON, value, sample,
+            provenance=(DERIVED if name in _SUSTAIN_GAP_NAMES else OBSERVED),
+            note=note)
+        if name in _SUSTAIN_GAP_NAMES:
+            built.common_sample_count = season_common
+        axis.metrics[metric_key(SEASON, name)] = built
+    axis.notes.append(
+        "시즌: npxG·xGOT 가 없고 시즌 전체의 경기별 xG 도 없어 "
+        "시즌 xPTS 를 만들지 않습니다 (경기내용 비교는 xG 뿐)")
+    if quality is not None:
+        quality.mark("sustainability.season", bool(season_values),
+                     requested=getattr(stats, "played", None),
+                     available_matches=getattr(stats, "played", None),
+                     reason="" if season_values else "시즌 지표 없음")
+
+    # ---- 최근 N경기 ---------------------------------------------------------
+    for window in windows:
+        period = period_name(window)
+        agg = aggregates.get(f"all{window}")
+        if agg is None:
+            if quality is not None:
+                quality.mark(f"sustainability.{period}", False,
+                             requested=window, available_matches=0,
+                             reason="슛 계층 창 없음")
+            continue
+
+        future, unknown = _window_time_check(agg, allowed_ids, known_ids)
+        if future:
+            axis.notes.append(
+                f"{period_label(period)}: 기준시각 이후 경기 {len(future)}건이 "
+                "창에 들어 있어 이 기간을 만들지 않았습니다")
+            if quality is not None:
+                quality.mark(f"sustainability.{period}", False,
+                             requested=window, available_matches=0,
+                             reason="기준시각 이후 경기 혼입")
+            continue
+
+        rows = _sustain_rows(profile, agg, history, team)
+        values: dict[str, tuple[float, int | None, str]] = {}
+        missing: dict[str, set] = {}
+        commons: dict[str, int] = {}       # {지표: 공통 경기 수}
+
+        # ACTUAL — 실제 결과가 있는 경기만
+        actual, n_actual = _common_mean(rows, "goals", "points")
+        if n_actual:
+            _put(values, "goals", actual["goals"], n_actual)
+            _put(values, "points", actual["points"], n_actual)
+        elif rows:
+            _put(values, "goals", None, 0, NO_SCORE, reasons=missing)
+
+        # UNDERLYING — 각 지표가 있는 경기만
+        for field_name in ("xg", "npxg", "xgot"):
+            one, n_one = _common_mean(rows, field_name)
+            if n_one:
+                _put(values, field_name, one[field_name], n_one)
+
+        # GAP — **양쪽이 다 있는 경기에서 실제도 다시 계산한다** (§8, §9)
+        for gap_name, actual_name, expected_name in _SUSTAIN_GAPS:
+            pair, n_common = _common_mean(rows, actual_name, expected_name)
+            commons[gap_name] = n_common
+            a_metric = _sustain_metric(actual_name, period, pair.get(
+                actual_name), n_common)
+            e_metric = _sustain_metric(expected_name, period, pair.get(
+                expected_name), n_common)
+            ok, code, reason = comparison_allowed(
+                a_metric, e_metric, common_sample=n_common,
+                min_sample=min_sample)
+            if not ok:
+                _put(values, gap_name, None, n_common, reason,
+                     reasons=missing)
+                continue
+            _put(values, gap_name,
+                 pair[actual_name] - pair[expected_name], n_common,
+                 f"공통 {n_common}경기")
+
+        # MODEL — P1 의 xPTS. 공통 경기에서 실제 승점도 다시 계산한다 (§10).
+        xg_map = _xg_by_match(rows)
+        window_matches = [m for m in history
+                          if str(m.match_id) in {r["match_id"] for r in rows}]
+        team_xpts = xpts_model.aggregate_team_xpts(window_matches, xg_map,
+                                                   team)
+        n_model = team_xpts.available_matches
+        commons["points_minus_xpts"] = n_model
+        if n_model and team_xpts.xpts_per_match is not None:
+            _put(values, "xpts", team_xpts.xpts_per_match, n_model)
+            used = set(team_xpts.match_ids)
+            scored = [r["points"] for r in rows
+                      if r["match_id"] in used and r["points"] is not None]
+            actual_pts = (sum(scored) / len(scored)) if scored else None
+            a_metric = _sustain_metric("points", period, actual_pts,
+                                       len(scored))
+            e_metric = _sustain_metric("xpts", period,
+                                       team_xpts.xpts_per_match, n_model)
+            ok, code, reason = comparison_allowed(
+                a_metric, e_metric, common_sample=min(len(scored), n_model),
+                min_sample=min_sample,
+                same_match_set=(len(scored) == n_model))
+            if ok:
+                _put(values, "points_minus_xpts",
+                     actual_pts - team_xpts.xpts_per_match, n_model,
+                     f"공통 {n_model}경기")
+            else:
+                _put(values, "points_minus_xpts", None, n_model, reason,
+                     reasons=missing)
+        elif rows:
+            _put(values, "xpts", None, 0,
+                 "경기별 xG 가 없어 기대승점을 만들지 못함", reasons=missing)
+
+        for name, (value, sample, note) in values.items():
+            built = _metric(
+                name, period, value, sample,
+                provenance=_SUSTAIN_PROVENANCE.get(name, OBSERVED),
+                note=note, origin=_SUSTAIN_ORIGIN.get(name))
+            # 차이 지표에만 공통 표본을 싣는다 (§11). 원값에는 붙이지
+            # 않는다 — 뺀 적이 없으므로 '공통' 이라는 개념 자체가 없다.
+            if name in commons:
+                built.common_sample_count = commons[name]
+            axis.metrics[metric_key(period, name)] = built
+
+        if unknown:
+            axis.notes.append(
+                f"{period_label(period)}: 시즌 색인에 없어 시점을 확인하지 "
+                f"못한 경기 {len(unknown)}건이 들어 있습니다")
+        axis.notes.append(
+            f"{period_label(period)}: {len(rows)}/{window}경기 · "
+            "공통 표본 " + " · ".join(
+                f"{SPECS[k][0]} {v}" for k, v in sorted(commons.items())))
+        _merge_missing(missing_store, missing, period)
+        if quality is not None:
+            quality.mark(f"sustainability.{period}", bool(values),
+                         requested=window, available_matches=len(rows),
+                         reason=("" if values else "표본 없음")
+                         or "; ".join(sorted(missing)))
+        for code, label, basis in detect_sustainability_patterns(
+                values, min_sample):
+            axis.notes.append(
+                f"패턴 {code} · {period_label(period)} · {label} ({basis})")
+
+    axis.notes.extend(_missing_notes(missing_store))
+    axis.notes.extend(SUSTAIN_DISCLAIMERS)
+    return axis
+
+
+_SUSTAIN_GAP_NAMES = frozenset(
+    {"goals_minus_xg", "goals_minus_npxg", "goals_minus_xgot",
+     "points_minus_xpts"})
+_SUSTAIN_PROVENANCE: dict[str, str] = {
+    "goals": OBSERVED, "points": OBSERVED, "goals_against": OBSERVED,
+    "goal_diff": OBSERVED,
+    "xg": OBSERVED, "npxg": OBSERVED, "xgot": OBSERVED,
+    "xpts": MODEL,
+    "goals_minus_xg": DERIVED, "goals_minus_npxg": DERIVED,
+    "goals_minus_xgot": DERIVED, "points_minus_xpts": DERIVED,
+}
+_SUSTAIN_ORIGIN: dict[str, tuple[str, str]] = {
+    "goals": (SEASON_MATCH_INDEX, FINAL_SCORE),
+    "points": (SEASON_MATCH_INDEX, FINAL_SCORE),
+    "xg": (SHOTMAP, SHOT_EVENTS),
+    "npxg": (SHOTMAP, SHOT_EVENTS),
+    "xgot": (SHOTMAP, SHOT_EVENTS),
+    "xpts": (XPTS_MODEL, POISSON_MODEL),
+    "goals_minus_xg": (DERIVED_SOURCE, MIXED_BASIS),
+    "goals_minus_npxg": (DERIVED_SOURCE, MIXED_BASIS),
+    "goals_minus_xgot": (DERIVED_SOURCE, MIXED_BASIS),
+    "points_minus_xpts": (DERIVED_SOURCE, MIXED_BASIS),
+}
+
+
+def _sustain_metric(name: str, period: str, value, sample: int) -> Metric:
+    """`comparison_allowed()` 에 넘길 임시 Metric. 축에는 들어가지 않는다.
+
+    시즌과 최근은 **다른 피드**에서 온다 — 시즌 득점은 순위표, 최근 득점은
+    시즌 경기 색인이고, 시즌 xG 는 xG 표(경기 스탯), 최근 xG 는 슛맵이다.
+    그래서 원천을 기간별로 가른다 (§1-1-9 와 같은 이유).
+    """
+    source, basis = (metric_origin(period, name) if period == SEASON
+                     else _SUSTAIN_ORIGIN.get(name, ("", "")))
+    return Metric(name=name, label=SPECS.get(name, (name,))[0], value=value,
+                  period=period, sample_count=sample, source=source,
+                  measurement_basis=basis)
+
+
 # --------------------------------------------------------------------------
 # 7. TeamAnalysis / Match 연결
 # --------------------------------------------------------------------------
@@ -1810,6 +2312,9 @@ def build_team_analysis(profile: TeamProfile | None, team: str,
         config=defensive_quality_config(settings),
         thresholds=thresholds_from(settings), quality=quality,
         min_sample=trend_min_sample(settings))
+    out.sustainability = build_sustainability(
+        profile, team, season_matches, as_of, windows=windows,
+        quality=quality, min_sample=trend_min_sample(settings))
     return out
 
 
@@ -1846,13 +2351,22 @@ def attach_time_context(matches: list[Match], settings: Settings,
                  for side in ("home", "away")]
         sides = [s for s in sides if s is not None]
         patterns = sum(len(patterns_in(s.chance_quality))
-                       + len(patterns_in(s.defensive_quality)) for s in sides)
+                       + len(patterns_in(s.defensive_quality))
+                       + len(patterns_in(s.sustainability)) for s in sides)
         with_defense = sum(
             1 for s in sides
             if s.defensive_quality
             and any(k.startswith("recent") for k in s.defensive_quality.metrics))
-        log.info("팀 분석(2-A 시간축 · 2-B 기회의 질 · 2-C 수비의 질): "
-                 "%d경기 · 창 %s · 시즌 색인 %d경기 · 패턴 %d건 · "
-                 "상대 집계로 수비 지표를 만든 팀 %d/%d",
+        # 차이 지표를 실제로 만든 팀 수. 표본이 모자라면 값이 없는 것이 정상
+        # 이므로 몇 팀에서 만들어졌는지 로그에 남긴다.
+        with_gap = sum(
+            1 for s in sides
+            if s.sustainability
+            and any(k.endswith("_minus_xpts") or "_minus_" in k
+                    for k in s.sustainability.metrics))
+        log.info("팀 분석(2-A 시간축 · 2-B 기회의 질 · 2-C 수비의 질 · "
+                 "2-D 지속성): %d경기 · 창 %s · 시즌 색인 %d경기 · 패턴 %d건 · "
+                 "상대 집계로 수비 지표를 만든 팀 %d/%d · "
+                 "실제↔기대 차이를 만든 팀 %d/%d",
                  built, windows, len(season), patterns, with_defense,
-                 len(sides))
+                 len(sides), with_gap, len(sides))

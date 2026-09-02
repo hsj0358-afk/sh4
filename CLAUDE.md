@@ -559,6 +559,69 @@ xG·npxG·슛당 xG 처럼 같은 이야기를 세 번 세지 않으려는 메�
 
 회귀 테스트: `python tests/test_reason_preservation.py` (17개).
 
+### 1-1-11. 지속성 (Phase 2-D) — `build_sustainability()`
+
+세 층을 **나란히** 두고 차이만 적는다. 하나로 합치지 않는다.
+
+```
+ACTUAL      득점 · 승점            최종 스코어      observed
+UNDERLYING  xG · npxG · xGOT       슛 이벤트        observed
+MODEL       xPTS                   독립 포아송(P1)  model
+```
+
+결과는 `TeamAnalysis.sustainability` 에 들어가고 키는 2-A~2-C 와 같은
+`기간.지표` 다.
+
+**핵심 질문은 "값이 있나" 가 아니라 "같은 것을 비교하고 있나" 다.**
+실제는 6경기, xG 는 4경기, xPTS 는 4경기인 일이 흔하다. 6경기 평균에서
+4경기 평균을 빼면 그 차이의 절반은 **경기 구성이 다른 데서** 온다.
+
+- **차이는 양쪽 값이 다 있는 경기에서만 만든다.** `_common_mean()` 이 그
+  경기만 골라 합산하고, **실제값도 그 공통 경기에서 다시 계산한다** —
+  6경기 승점 평균에서 4경기 xPTS 를 빼지 않는다.
+- 그래서 **수가 넷**이다. `requested_matches`(요청한 창) ·
+  `available_matches`(확보한 경기) · `Metric.sample_count`(그 지표에 값이
+  있던 경기) · **`Metric.common_sample_count`(양쪽이 다 있던 경기)**.
+  마지막 칸은 **차이 지표에만** 채운다 — 원값은 뺀 적이 없다.
+- 빼기 전에 `comparison_allowed()` 를 지난다. 시즌 차이도 **같은 문**을
+  지난다. 막히면 값은 `None` 이고 사유가 notes 와 `degraded_reason` 에
+  남는다 (2-C 교정의 `_put(reasons=…)` 를 그대로 쓴다).
+
+**`trend_allowed()` 와 반대 방향의 문이다.** 헷갈리기 쉬워 적어 둔다.
+
+| | `trend_allowed()` (2-B 교정) | `comparison_allowed()` (2-D) |
+|---|---|---|
+| 묻는 것 | 최근 − 시즌 을 빼도 되나 | 실제 − 기대 를 빼도 되나 |
+| 산출 방식 | **같아야** 한다 | **등록된 쌍**이어야 한다 |
+| 경기 집합 | **달라야** 한다 (다른 기간) | **같아야** 한다 (공통 경기) |
+
+등록된 쌍은 `COMPARABLE_GAPS` 넷뿐이다 — `final_score` ↔
+`shot_events` · `opponent_shot_events` · `poisson_model` · `match_stat`.
+"아마 비슷할 것" 으로 늘리지 않는다.
+
+- 만드는 차이는 넷이고 전부 `DERIVED` 다 — `goals_minus_xg` ·
+  `goals_minus_npxg` · `goals_minus_xgot` · `points_minus_xpts`.
+- **xPTS 를 다시 구현하지 않는다.** P1 의 `xpts.aggregate_team_xpts()` 를
+  부른다. `build_sustainability` 안에 거듭제곱도 `math.` 도 없다(AST 테스트).
+- **시즌 xPTS 는 만들지 않는다.** 경기 상세를 팀당 최근 N경기만 받으므로
+  시즌 전체의 경기별 xG 가 없다. 시즌에는 npxG·xGOT 도 없어 시즌에서
+  견줄 수 있는 것은 **득점 ↔ xG 하나뿐**이고, 그것도 순위표 경기 수와 xG 표
+  경기 수가 같을 때만 만든다.
+- **평균회귀를 예언하지 않는다.** 상태 라벨 넷(`actual_below_underlying` ·
+  `actual_above_underlying` · `aligned` · `not_comparable`)과 **부호**만
+  둔다. "반등한다"·"곧 떨어진다" 를 만들지 않는다.
+- **차이의 크기를 Small/Moderate/Large 로 나누지 않는다.** 이 프로젝트에
+  검증된 기준이 없다 — 그래서 `config_toto.yaml` 에 2-D 문턱을 두지 않았다.
+  패턴은 **부호**로만 갈리고, 표본이 `analysis.trend_min_sample` 에 못 미치면
+  아예 만들지 않는다.
+- 확률과 무관하다. `predict`·`Match.probs`·`odds` 를 참조하지 않는다(AST).
+
+실물 260048 세 경기(팀-경기 6개)로 축의 값과 원자료 손계산이 전부 일치했다
+(최대 차이 4.4e-16). 그 세 경기에는 PK 가 없어 **npxG 가 xG 와 같다** —
+둘이 같다고 파서가 잘못된 것이 아니다.
+
+회귀 테스트: `python tests/test_sustainability.py` (51개).
+
 ### 1-1-1. 리그 ID 를 이름만으로 정하지 않는다
 
 이름 매칭은 두 소스 모두에서 엉뚱한 리그를 골랐다. 실측 기록이다.
@@ -878,6 +941,7 @@ python tests/test_chance_quality.py        # 기회의 질 2-B (41개)
 python tests/test_trend_validity.py        # 트렌드 유효성 2-B 교정 (25개)
 python tests/test_defensive_quality.py     # 수비의 질 2-C (52개)
 python tests/test_reason_preservation.py   # 값 없음 사유 보존 2-C 교정 (17개)
+python tests/test_sustainability.py        # 지속성 2-D (51개)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_sources.py --browser    # 소스 구조 점검
 python tools/probe_sources.py --analyze    # 저장본 재분석 (접속 없음)

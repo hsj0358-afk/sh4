@@ -804,6 +804,84 @@ as-of 상대 강도를 만들 수 있다 (`tools/probe_season_index.py` 로 다�
 
 회귀 테스트: `python tests/test_schedule_strength.py` (40개).
 
+### 1-1-14. 근거 생성 (Phase 2-G) — `toto/evidence.py`
+
+2-B~2-F 가 만든 것을 **압축**한다. 새 값을 만들지 않는다.
+
+```
+지표(Metric)   xG = 2.24                 관측·계산된 수
+      ↓
+발견(Finding)  기회 창출 수준이 높다        지표를 해석한 것
+      ↓
+근거(Evidence) 독립적인 발견 하나 + 그것을 지지한 지표·축·출처
+```
+
+**지표 ≠ 근거이고, 근거의 개수는 근거의 세기가 아니다.** 지지 지표가 늘어도
+근거 개수는 늘지 않는다. 리포트에도 그 문장을 적어 두었다.
+
+**패턴을 문자열로 되읽지 않는다.** `detect_*_patterns()` 가 돌려주는
+`(코드, 라벨, 근거문자열)` 에서 구동 지표 이름이 구조로 남지 않는데, 그렇다고
+축의 notes 를 정규식으로 파싱하지 않는다. `(축, 코드) → (finding_kind,
+anchor, drivers)` 를 `CATALOG` 에 선언해 두고 값은 축의 `Metric` 에서 직접
+읽는다 — detector 는 '언제 발견이 성립하나' 만 정하고 카탈로그는 '그 발견이
+무엇에 관한 것인가' 를 정한다. 덕분에 **2-B~2-F 의 출력 문자열과 수치를 한
+글자도 바꾸지 않는다** (실물 692칸 + DataQuality 78칸 대조로 확인).
+
+`evidence.py` 는 축을 다시 계산하지 않고 소스를 부르지도 않는다.
+`sources`·`requests`·`cache` 를 import 하지 않는다(AST 테스트).
+
+**같은 사실이면 근거 하나로 합치되, 자동으로 합치지 않는 조건이 넷이다.**
+
+| 다르면 | 왜 |
+|---|---|
+| 표본 | recent6 과 recent3 은 다른 경기다 |
+| 산출 방식 | `shot_events` 와 `opponent_shot_events` 는 다른 양이다 |
+| 원천 | 피드가 다르면 같은 수가 아니다 |
+| 의미 | 같은 xG 가 '기회 창출' 과 '득점 대비 기대' 두 발견의 재료일 수 있다 |
+
+합치기 열쇠는 `(팀, finding_kind, context, 기간, 표본, 원천)` 이다.
+
+- **anchor 하나로만 표본을 잰다.** 곁들여 보는 지표(2-B 가 득점↔xG 를 말할 때
+  함께 보는 xG 수준)까지 열쇠에 넣으면 같은 사실이 축마다 갈라진다 — 실제로
+  갈라졌다.
+- **`common_sample_count` 는 열쇠에 넣지 않는다.** 그것은 표본 크기가 아니라
+  '어떻게 셌나' 다. 실물 260048 에서 2-B 와 2-D 의 `season.goals_minus_xg` 는
+  값(0.7599999999999998)·표본·원천·산출 방식이 전부 같고 **2-D 만 공통 표본
+  수를 적는다.** 대신 `_rank()` 가 그것을 보고 더 엄격하게 잰 쪽을 대표로
+  고른다 — 특정 사례를 하드코딩하지 않고 규칙만으로 2-D 가 2-B 를 이긴다.
+- 같은 이유로 `_same_metric_axes()`(대표를 고른 뒤 같은 지표를 들고 있는 다른
+  축을 provenance 로 남기는 곳)도 **공통 표본 수를 보지 않는다.** 보면 '둘 다
+  발견하면 합쳐지고 하나만 발견하면 지지축이 사라지는' 엇갈린 동작이 된다.
+- **한계**: `Metric` 이 경기 ID 집합을 들고 다니지 않아 **표본 크기가 같지만
+  경기가 다른 경우**는 구분하지 못한다. 기간·원천·산출 방식이 함께 같아야
+  하므로 어긋날 여지는 좁지만 완전한 동일성 검사는 아니다.
+
+**장소는 category 가 아니라 context 다.** category 는 `Metric.group` 에서
+오고(공격·수비·실제↔기대·결과·상대 구성), context 는 `overall`·`recent`·
+`venue`·`schedule` 이다. 둘을 한 축으로 합치면 "홈 공격" 이 별도 갈래가 되어
+같은 이야기를 두 번 세게 된다.
+
+**방향이 엇갈리면 지우지도 상쇄하지도 않는다.** 같은 팀·같은 finding 인데
+표본에 따라 부호가 반대면 `Signal` 로 관계만 적는다 — `lean` 은 언제나
+`UNKNOWN` 이고 `strength` 는 빈 문자열이다. 개수를 세기로 쓰지 않는다.
+
+- 근거의 `side` 는 **언제나 중립**이다. 유리/불리를 매기지 않는다.
+- **시장 확률과 격리한다.** `Match.probs`·`odds`·`predict` 를 읽지도 쓰지도
+  않는다(AST 테스트). 시장 확률은 패널이 견줄 기준선이지 근거가 아니다.
+- 순서는 `(팀, category, context, 기간, finding, 지표)` 로 고정한다 —
+  집합·사전 순서에 기대지 않는다. 기간 정렬은 2-C 교정의 `period_sort_key()`
+  를 그대로 쓴다.
+- 리포트 블록은 근거가 하나도 없으면 통째로 나오지 않는다. 개수를 막대·게이지
+  ·신뢰도 계기로 그리지 않는다.
+
+캐시는 **올리지 않았다** (버전 9 그대로). 근거는 `MatchAnalysis` 에 붙고
+`MatchAnalysis` 는 캐시되지 않으며, 소스 응답의 저장 형식도 바뀌지 않았다.
+
+실물 260048 은 기본 게이트에서 **근거 0건**이다 — 팀당 과거 1경기라 패턴이
+성립하지 않는다. 0건이 정답이고 표본을 늘려 지어내지 않는다.
+
+회귀 테스트: `python tests/test_evidence.py` (57개).
+
 
 ### 1-1-1. 리그 ID 를 이름만으로 정하지 않는다
 
@@ -1127,6 +1205,7 @@ python tests/test_reason_preservation.py   # 값 없음 사유 보존 2-C 교정
 python tests/test_sustainability.py        # 지속성 2-D (51개)
 python tests/test_venue_context.py         # 장소 문맥 2-E (58개)
 python tests/test_schedule_strength.py     # 상대 강도 2-F (40개)
+python tests/test_evidence.py              # 근거 생성 2-G (57개)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)
 python tools/probe_sources.py --browser    # 소스 구조 점검

@@ -231,3 +231,7 @@ def run_all(matches: list[Match], settings: Settings,
     # Phase 2-A. 기존 산출물(probs·radar·matchup)을 건드리지 않고
     # `Match.analysis` 에만 붙는다.
     analysis.attach_time_context(matches, settings, season_matches)
+    # Phase 2-G. 이미 만들어진 분석을 읽어 근거로 압축할 뿐 — 소스를 다시
+    # 부르지 않고 확률(`Match.probs`)도 읽지 않는다.
+    from . import evidence
+    evidence.attach_evidence(matches, settings)

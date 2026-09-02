@@ -541,6 +541,65 @@ def _sos_block(match: Match) -> str:
             f'<div class="traits">{cols}</div></div>')
 
 
+_CATEGORY_KO = {"attack": "공격", "defense": "수비",
+                "sustainability_gap": "실제 ↔ 기대", "result": "결과",
+                "schedule": "상대 구성"}
+_CONTEXT_KO = {"overall": "시즌 전체", "recent": "최근", "venue": "장소",
+               "schedule": "상대"}
+# 지지 축은 '같은 사실을 다른 축도 들고 있었다'는 출처 표시다. 축 이름을
+# 그대로 내보내면 화면에서 읽히지 않아 한국어 이름을 붙인다.
+_AXIS_KO = {"time_context": "시간축", "chance_quality": "기회의 질",
+            "defensive_quality": "수비의 질", "sustainability": "지속성",
+            "venue_context": "장소 문맥", "schedule_strength": "상대 강도"}
+
+
+def _evidence_block(match: Match) -> str:
+    """근거 (Phase 2-G).
+
+    **개수를 세기로 보여주지 않는다** — 막대·게이지·신뢰도 계기를 만들지
+    않고, 지지 지표는 근거 안에 접어 넣는다. 근거가 하나도 없으면 블록을
+    통째로 내지 않는다.
+    """
+    data = getattr(match, "analysis", None)
+    items = list(getattr(data, "evidence", None) or []) if data else []
+    if not items:
+        return ""
+    cols = ""
+    for side, color in (("home", charts.C_HOME), ("away", charts.C_AWAY)):
+        ref = getattr(match, side)
+        team = getattr(getattr(data, side, None), "team", "")
+        mine = [i for i in items if i.team == team] if team else []
+        if not mine:
+            continue
+        rows = ""
+        for item in mine:
+            cat = _CATEGORY_KO.get(item.category, item.category)
+            ctx = _CONTEXT_KO.get(item.context, item.context)
+            n = "" if item.sample_count is None else f" · n={item.sample_count}"
+            support = ", ".join(item.supporting_metrics)
+            axes = ", ".join(_AXIS_KO.get(a, a)
+                             for a in item.supporting_axes)
+            axes = f" · 함께 관찰한 축: {esc(axes)}" if axes else ""
+            rows += (f'<li><b>{esc(cat)} · {esc(ctx)}</b> {esc(item.claim)}'
+                     f'<span class="vs">근거 지표 {esc(support)}{esc(n)}'
+                     f'{axes}</span></li>')
+        cols += (f'<div><h5>{_swatch(color)}{esc(ref.display)}</h5>'
+                 f'<ul class="mnotes">{rows}</ul></div>')
+    if not cols:
+        return ""
+    conflicts = ""
+    for sig in (getattr(data, "conflicts", None) or []):
+        conflicts += (f'<li>{esc(sig.basis)} — {esc(sig.note)}</li>')
+    if conflicts:
+        conflicts = (f'<p class="lbl">방향이 엇갈리는 관찰</p>'
+                     f'<ul class="mnotes">{conflicts}</ul>')
+    return ('<div class="block"><h4>근거 (관찰된 사실)</h4>'
+            '<p class="meta">같은 사실은 하나로 묶고 그것을 지지한 지표를 '
+            '함께 적었습니다 · <b>근거의 개수는 근거의 세기가 아닙니다</b> · '
+            '승무패를 추천하지 않습니다</p>'
+            f'<div class="traits">{cols}</div>{conflicts}</div>')
+
+
 def _match_card(match: Match, settings: Settings) -> str:
     meta = " · ".join(x for x in (match.league_ko or match.league,
                                   match.kickoff_kst) if x)
@@ -565,6 +624,7 @@ def _match_card(match: Match, settings: Settings) -> str:
             f'{_recent_block(match, settings)}'
             f'{_venue_block(match)}'
             f'{_sos_block(match)}'
+            f'{_evidence_block(match)}'
             f'{_form_block(match)}'
             f'{_h2h_block(match)}'
             f'{_traits_block(match)}'

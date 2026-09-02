@@ -651,6 +651,29 @@ class EvidenceItem:
     provenance: str = OBSERVED
     axis: str = ""                  # 어느 분석 축에서 나왔나 (중복 방지용)
 
+    # ---- Phase 2-G 에서 더한 칸 (전부 기본값이 있어 옛 저장본도 살아난다) ----
+    # 이 근거가 **어느 팀에 관한 것인가**. `side`(HOME/DRAW/AWAY)와 다르다 —
+    # side 는 '어느 결과를 지지하나' 라서 추천으로 읽힌다. 2-G 는 그것을
+    # 만들지 않으므로 side 를 NEUTRAL 로 두고 팀만 적는다.
+    team: str = ""
+    # 기존 `Metric.group` taxonomy 에서 온다 (attack / defense / result …).
+    # **장소(venue)는 category 가 아니다** — 그건 context 다.
+    category: str = ""
+    # 어떤 표본 문맥인가: overall · recent · venue · schedule.
+    # `period`(recent6 · home6 …)와 중복 저장하지 않는다 — period 는 '어느
+    # 구간' 이고 context 는 '어떤 종류의 비교' 다 (2-E 설계 §12).
+    context: str = ""
+    # **같은 사실인가**를 정하는 의미 열쇠. 축이 달라도 이것이 같으면 한
+    # 근거로 합친다 (2-G §5). 지표 이름이 아니라 '무엇을 말하는가' 다.
+    finding_kind: str = ""
+    # 이 근거를 지지하는 지표들. **개수가 근거의 강도가 아니다** (§19·§20).
+    supporting_metrics: list[str] = field(default_factory=list)
+    # 같은 사실을 함께 말한 분석 축들. 대표를 골라도 나머지가 사라지지
+    # 않게 여기 남긴다 (§5-2).
+    supporting_axes: list[str] = field(default_factory=list)
+    source: str = ""
+    measurement_basis: str = ""
+
 
 @dataclass
 class DataQuality:

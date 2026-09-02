@@ -126,6 +126,8 @@ table.mini td{padding:5px 6px;border-bottom:1px solid var(--grid);
 table.mini td:first-child{color:var(--text-primary)}
 table.mini .num{text-align:right;font-variant-numeric:tabular-nums}
 table.mini tr:last-child td{border-bottom:0}
+/* 표본 수(n=3). 값보다 한 단계 약하게 — 적은 표본이 충분해 보이면 안 된다 */
+table.mini small{color:var(--text-muted);font-size:11px;font-weight:400}
 
 /* 폼 */
 .form .chips{list-style:none;display:flex;flex-wrap:wrap;gap:6px;margin:0;padding:0}
@@ -364,6 +366,114 @@ def _traits_block(match: Match) -> str:
             + '</div>')
 
 
+_VENUE_ROWS = (
+    ("points", "{:.2f}"), ("goals", "{:.2f}"), ("goals_against", "{:.2f}"),
+    ("xg", "{:.2f}"), ("npxg", "{:.2f}"), ("xgot", "{:.2f}"),
+    ("shots", "{:.1f}"), ("shots_against", "{:.1f}"),
+    ("shots_on_target_against", "{:.1f}"), ("npxga", "{:.2f}"),
+    ("xgot_against", "{:.2f}"),
+)
+
+
+def _venue_table(axis, venue: str, window: int) -> str:
+    """전체 · 장소 · 장소차를 한 표에. 표본 수를 함께 적는다 (2-E §24).
+
+    값이 없으면 `데이터 없음` 으로 적는다 — 빈칸으로 두면 0 과 구별되지
+    않는다. 장소차가 없는 줄은 사유를 그대로 보여 준다.
+    """
+    from . import analysis
+
+    def cell(period, name):
+        return axis.get(f"{period}.{name}")
+
+    def num(metric, fmt, sign=False):
+        if metric is None or metric.value is None:
+            return '<span class="nodata">—</span>', ""
+        text = fmt.format(metric.value)
+        if sign and metric.value > 0:
+            text = "+" + text
+        n = "" if metric.sample_count is None else f"n={metric.sample_count}"
+        return esc(text), n
+
+    blocks = ((analysis.SEASON, analysis.venue_season_name(venue),
+               "시즌"),
+              (analysis.period_name(window),
+               analysis.venue_period_name(venue, window),
+               f"최근 {window}경기"))
+    label = analysis.VENUE_LABELS.get(venue, venue)
+    out = ""
+    for overall_period, venue_period, span in blocks:
+        rows = ""
+        for name, fmt in _VENUE_ROWS:
+            o = cell(overall_period, name)
+            v = cell(venue_period, name)
+            if o is None and v is None:
+                continue
+            gap = cell(venue_period, f"{name}{analysis.VENUE_GAP_SUFFIX}")
+            o_txt, o_n = num(o, fmt)
+            v_txt, v_n = num(v, fmt)
+            g_txt, _g_n = num(gap, fmt, sign=True)
+            if gap is None or gap.value is None:
+                blocked = ""
+                for m in (v, o):
+                    if m is not None and m.note:
+                        blocked = m.note
+                        break
+                g_txt = (f'<span class="nodata">{esc(blocked)}</span>'
+                         if blocked else '<span class="nodata">—</span>')
+            spec = analysis.SPECS.get(name, (name,))
+            rows += (f'<tr><td>{esc(spec[0])}</td>'
+                     f'<td class="num">{o_txt}<small> {esc(o_n)}</small></td>'
+                     f'<td class="num">{v_txt}<small> {esc(v_n)}</small></td>'
+                     f'<td class="num">{g_txt}</td></tr>')
+        if not rows:
+            continue
+        out += (f'<table class="mini"><thead><tr>'
+                f'<th>{esc(span)}</th><th class="num">전체</th>'
+                f'<th class="num">{esc(label)}</th>'
+                f'<th class="num">장소차</th></tr></thead>'
+                f'<tbody>{rows}</tbody></table>')
+    return out
+
+
+def _venue_block(match: Match) -> str:
+    """홈팀의 홈 문맥 · 원정팀의 원정 문맥 (Phase 2-E).
+
+    승무패를 추천하지 않는다. 같은 장소의 과거 표본을 전체와 나란히 놓을
+    뿐이고, 표본 수를 함께 적어 적은 표본이 충분해 보이지 않게 한다.
+    """
+    from . import analysis
+
+    analysis_data = getattr(match, "analysis", None)
+    if analysis_data is None:
+        return ""
+    cols = ""
+    for side, venue, color in (("home", analysis.HOME, charts.C_HOME),
+                               ("away", analysis.AWAY, charts.C_AWAY)):
+        team = getattr(analysis_data, side, None)
+        axis = getattr(team, "venue_context", None) if team else None
+        if axis is None or not axis.metrics:
+            continue
+        window = axis.requested_matches or 0
+        table = _venue_table(axis, venue, window) if window else ""
+        if not table:
+            continue
+        marks = [n for n in axis.notes if n.startswith("패턴 ")]
+        notes = ("".join(f"<li>{esc(n)}</li>" for n in marks)
+                 if marks else "")
+        ref = getattr(match, side)
+        cols += (f'<div><h5>{_swatch(color)}{esc(ref.display)} — '
+                 f'{esc(analysis.VENUE_LABELS[venue])} 문맥</h5>{table}'
+                 + (f'<ul>{notes}</ul>' if notes else "") + '</div>')
+    if not cols:
+        return ""
+    return ('<div class="block"><h4>홈/원정 문맥 (같은 장소의 과거 표본)</h4>'
+            '<p class="meta">장소차 = 장소 − 전체 · 같은 지표를 같은 방식으로 '
+            '재고 표본만 좁힌 값입니다 · n 은 그 지표의 실제 표본 수 · '
+            '승무패를 추천하지 않습니다</p>'
+            f'<div class="traits">{cols}</div></div>')
+
+
 def _match_card(match: Match, settings: Settings) -> str:
     meta = " · ".join(x for x in (match.league_ko or match.league,
                                   match.kickoff_kst) if x)
@@ -386,6 +496,7 @@ def _match_card(match: Match, settings: Settings) -> str:
             f'{_compare_inner(match, settings)}'
             f'</div></div>'
             f'{_recent_block(match, settings)}'
+            f'{_venue_block(match)}'
             f'{_form_block(match)}'
             f'{_h2h_block(match)}'
             f'{_traits_block(match)}'

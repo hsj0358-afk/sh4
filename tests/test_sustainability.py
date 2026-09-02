@@ -657,8 +657,9 @@ def test_19_team_analysis_integration():
         profile(mids), TEAM, season(mids), kick(30), SETTINGS, is_home=True)
     assert ta.sustainability is not None
     assert ta.computed_axes() == ["time_context", "chance_quality",
-                                  "defensive_quality", "sustainability"]
-    assert ta.venue_context is None, "2-E 를 미리 만들었다"
+                                  "defensive_quality", "sustainability",
+                                  "venue_context"]
+    assert ta.schedule_strength is None, "2-F 를 미리 만들었다"
     assert ta.schedule_strength is None
     assert "sustainability.recent6" in ta.data_quality.axes
 

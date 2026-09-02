@@ -317,6 +317,31 @@ SUSTAIN_SPECS: dict[str, tuple[str, str, str, str]] = {
 }
 SPECS.update(SUSTAIN_SPECS)
 
+# ---- Phase 2-E. 장소 문맥 -------------------------------------------------
+HOME = "home"
+AWAY = "away"
+VENUE_GAP_SUFFIX = "_venue_gap"
+
+# 장소 문맥에서 보는 지표 (§4). 성과 · 공격 내용 · 수비 내용 순.
+VENUE_METRICS: tuple[str, ...] = (
+    "points", "goals", "goals_against",
+    "xg", "npxg", "xgot", "shots",
+    "shots_against", "shots_on_target_against", "npxga", "xgot_against",
+)
+# 시즌 장소 블록에서 만들 수 있는 것은 **최종 스코어 계열뿐**이다. 시즌
+# 전체의 경기별 xG 가 없고(2-D §17), 시즌 통계 피드에는 홈/원정 분리가 없다.
+VENUE_SEASON_METRICS: tuple[str, ...] = ("points", "goals", "goals_against")
+
+# 장소차는 **방향을 정하지 않는다** (§17). 홈 승점이 전체보다 높다는 것은
+# 홈이 좋다는 뜻일 수도, 원정이 나쁘다는 뜻일 수도 있다. 부호를 곱해
+# 우위 점수로 만들지 않는다.
+VENUE_GAP_SPECS: dict[str, tuple[str, str, str, str]] = {
+    f"{name}{VENUE_GAP_SUFFIX}": (f"{SPECS[name][0]} 장소차",
+                                  SPECS[name][1], "", SPECS[name][3])
+    for name in VENUE_METRICS
+}
+SPECS.update(VENUE_GAP_SPECS)
+
 # 지표 묶음 (2-B §15). **점수 계산용이 아니다** — 2-I 가 같은 사실을 여러 번
 # 세지 않도록 붙이는 메타데이터다. xG·npxG·슛당 xG 는 같은 이야기의 세 얼굴이다.
 VOLUME = "volume"
@@ -335,6 +360,9 @@ DEF_OUTCOME = "defense_outcome"
 # 2-D. 모델 산출값과 실제-모델 괴리는 따로 둔다 — 2-I 가 "득점이 xG 보다
 # 많다" 와 "승점이 xPTS 보다 많다" 를 같은 근거로 세면 안 된다.
 MODEL_GROUP = "model"
+# 2-E. 장소차는 원값과 따로 센다 — "홈에서 xG 가 높다" 와 "xG 가 높다" 는
+# 같은 사실의 두 얼굴이라 근거를 두 번 세면 안 된다.
+VENUE_GAP_GROUP = "venue_gap"
 
 GROUPS: dict[str, str] = {
     "shots": VOLUME, "shots_on_target": VOLUME, "shots_inside_box": VOLUME,
@@ -360,6 +388,7 @@ GROUPS: dict[str, str] = {
     "npxgd": RESULT_GROUP, "wins": RESULT_GROUP, "draws": RESULT_GROUP,
     "losses": RESULT_GROUP,
 }
+GROUPS.update({name: VENUE_GAP_GROUP for name in VENUE_GAP_SPECS})
 
 # §9 가 직접 방향을 지정한 지표.
 SPEC_DIRECTIONS = frozenset((
@@ -381,7 +410,7 @@ UNDIRECTED = frozenset((
     "shots", "draws", "shots_outside_box", "shots_outside_box_against",
     "goals_minus_xg", "goals_minus_npxg", "goals_minus_xgot",
     "goals_against_minus_npxga", "goals_against_minus_xgot_against",
-    "points_minus_xpts"))
+    "points_minus_xpts")) | frozenset(VENUE_GAP_SPECS)
 
 ATTACK = tuple(k for k, v in SPECS.items()
                if v[3] == "attack" and k not in DERIVED_SPECS)
@@ -425,6 +454,23 @@ def period_name(window: int) -> str:
     return f"recent{int(window)}"
 
 
+def venue_season_name(venue: str) -> str:
+    """장소 시즌 기간 이름. `home_season` · `away_season` (2-E)."""
+    return f"{venue}_season"
+
+
+def venue_period_name(venue: str, window: int) -> str:
+    """장소 최근 기간 이름. `home6` · `away6` (2-E).
+
+    **'최근 홈 6경기' 가 아니다.** 최근 6경기 중 그 장소의 경기다 — 기간
+    정의는 2-A 의 것을 그대로 쓰고 장소로 거를 뿐이다 (§7·§8).
+    """
+    return f"{venue}{int(window)}"
+
+
+VENUE_LABELS = {HOME: "홈", AWAY: "원정"}
+
+
 def period_label(period: str) -> str:
     if period == SEASON:
         return "시즌"
@@ -432,6 +478,11 @@ def period_label(period: str) -> str:
         return f"최근 {period[6:]}경기"
     if period.startswith("trend"):
         return f"시즌 대비 최근 {period[5:]}경기"
+    for venue, label in VENUE_LABELS.items():
+        if period == venue_season_name(venue):
+            return f"{label} 시즌"
+        if period.startswith(venue) and period[len(venue):].isdigit():
+            return f"최근 {period[len(venue):]}경기 중 {label}"
     return period
 
 
@@ -819,18 +870,41 @@ COMPARABLE_GAPS: frozenset[tuple[str, str]] = frozenset({
 # Gap 에만 있는 두 가지(경기 집합 불일치·공통 경기 0)만 새로 둔다.
 BLOCK_MATCH_SET = "different_match_set"
 BLOCK_NO_COMMON = "no_common_matches"
+# 2-E. 장소 표본이 전체 표본에 들어 있지 않다.
+BLOCK_NOT_SUBSET = "not_subset"
+
+# 두 값의 **경기 집합이 어떤 관계**여야 하는가.
+#
+#   SAME_SET  (2-D) 같은 경기의 실제와 기대. 예: 4경기 승점 ↔ 그 4경기 xPTS.
+#   SUBSET    (2-E) 한쪽이 다른 쪽의 부분집합. 예: 홈 3경기 ↔ 전체 10경기.
+#
+# 관계가 다르면 **묻는 것도 다르다**. 같은 경기끼리는 산출 방식이 달라도
+# (실제 ↔ 기대) 되지만, 부분집합끼리는 **같은 지표를 같은 방식으로** 재고
+# 표본만 좁힌 것이어야 한다. 그래서 조건이 반대로 걸린다.
+SAME_SET = "same"
+SUBSET = "subset"
 
 
 def comparison_allowed(actual: Metric | None, expected: Metric | None, *,
                        common_sample: int, min_sample: int,
-                       same_match_set: bool = True) -> tuple[bool, str, str]:
-    """실제값에서 기대값을 빼도 되나. `(가능한가, 사유 코드, 사유 문구)`.
+                       same_match_set: bool = True,
+                       relation: str = SAME_SET) -> tuple[bool, str, str]:
+    """두 값을 빼도 되나. `(가능한가, 사유 코드, 사유 문구)`.
 
     `trend_allowed()` 와 **판단 기준이 다르다** — 트렌드는 같은 지표를 두
-    기간에서 재는 것이고, Gap 은 같은 경기의 실제와 기대를 견주는 것이다.
-    그래서 산출 방식이 같은지가 아니라 `COMPARABLE_GAPS` 에 등록된 쌍인지를
-    본다. 반면 **경기 집합은 반드시 같아야 한다** (트렌드는 반대로 달라야
-    한다).
+    기간에서 재는 것이고, 여기는 두 값을 견주는 것이다.
+
+    관계에 따라 보는 것이 다르다.
+
+    | | `SAME_SET` (2-D 실제↔기대) | `SUBSET` (2-E 장소↔전체) |
+    |---|---|---|
+    | 지표 이름 | 달라도 된다 (득점 ↔ xG) | **같아야** 한다 |
+    | 산출 방식 | `COMPARABLE_GAPS` 등록 쌍 | **같아야** 한다 |
+    | 원천 | 묻지 않는다 | `sources_comparable()` |
+    | 경기 집합 | **같아야** 한다 | 한쪽이 **다른 쪽에 들어** 있어야 한다 |
+
+    두 경우 모두 `same_match_set` 은 "그 관계가 실제로 확인됐다"는 뜻이고,
+    호출부가 **경기 ID 로 확인해서** 넘긴다. 표본 수는 좁은 쪽 기준이다.
     """
     if actual is None or expected is None:
         which = "실제값" if actual is None else "기대값"
@@ -839,13 +913,28 @@ def comparison_allowed(actual: Metric | None, expected: Metric | None, *,
         return False, BLOCK_SOURCE, "실제값의 원천/산출 방식을 알 수 없음"
     if not expected.source or not expected.measurement_basis:
         return False, BLOCK_SOURCE, "기대값의 원천/산출 방식을 알 수 없음"
-    pair = (actual.measurement_basis, expected.measurement_basis)
-    if pair not in COMPARABLE_GAPS:
-        return False, BLOCK_BASIS, (
-            f"견줄 수 있다고 등록되지 않은 조합 "
-            f"({actual.measurement_basis} ↔ {expected.measurement_basis})")
-    if not same_match_set:
-        return False, BLOCK_MATCH_SET, "두 값의 경기 집합이 다름"
+    if relation == SUBSET:
+        if actual.name != expected.name:
+            return False, BLOCK_METRIC, (
+                f"다른 지표끼리 견줄 수 없음 ({actual.name} ↔ {expected.name})")
+        if actual.measurement_basis != expected.measurement_basis:
+            return False, BLOCK_BASIS, (
+                f"산출 방식이 다름 ({actual.measurement_basis} ↔ "
+                f"{expected.measurement_basis})")
+        if not sources_comparable(actual.source, expected.source):
+            return False, BLOCK_SOURCE, (
+                f"직접 비교할 수 없는 원천 ({actual.source} ↔ "
+                f"{expected.source})")
+        if not same_match_set:
+            return False, BLOCK_NOT_SUBSET, "좁은 쪽 경기가 넓은 쪽에 없음"
+    else:
+        pair = (actual.measurement_basis, expected.measurement_basis)
+        if pair not in COMPARABLE_GAPS:
+            return False, BLOCK_BASIS, (
+                f"견줄 수 있다고 등록되지 않은 조합 "
+                f"({actual.measurement_basis} ↔ {expected.measurement_basis})")
+        if not same_match_set:
+            return False, BLOCK_MATCH_SET, "두 값의 경기 집합이 다름"
     if common_sample <= 0:
         return False, BLOCK_NO_COMMON, "두 값이 모두 있는 경기가 없음"
     if common_sample < min_sample:
@@ -2283,6 +2372,368 @@ def _sustain_metric(name: str, period: str, value, sample: int) -> Metric:
 
 
 # --------------------------------------------------------------------------
+# 6-E. 장소 문맥 (Phase 2-E)
+# --------------------------------------------------------------------------
+#
+# 묻는 것은 하나다. **이 경기와 같은 장소에서 이 팀은 어땠나, 그리고 그것이
+# 전체와 얼마나 다른가.**
+#
+# ## 기간 정의를 새로 만들지 않는다 (§7·§8)
+#
+# 장소 최근 구간은 "최근 홈 N경기" 가 아니라 **최근 N경기 중 그 장소의
+# 경기**다. 2-A 의 기간을 먼저 잡고 장소로 거른다.
+#
+#     최근 5경기 → 그중 홈 1경기 → `home5` 는 1경기다.
+#
+# 이렇게 해야 두 가지가 지켜진다.
+#
+#   · 장소 표본이 **전체 표본의 부분집합**이라는 것이 경기 ID 로 확인된다.
+#     그래야 `comparison_allowed(relation=SUBSET)` 을 지날 수 있다.
+#   · 한 블록 안에서 **승점과 xG 의 경기 집합이 같다.** 슛 계층의
+#     `home6` 창(최근 홈 6경기)을 그대로 쓰면 승점은 시즌 색인 기준, xG 는
+#     다른 경기 집합 기준이 되어 조용히 어긋난다.
+#
+# ## 값의 출처
+#
+#   승점·득점·실점    시즌 경기 색인의 최종 스코어   (`_result_values`)
+#   xG·npxG·xGOT·슈팅 우리 슛맵의 경기별 집계        (`_match_rows` + `_mean`)
+#   피슈팅·npxGA·피xGOT  상대 슛맵의 경기별 집계     (`opponent_rows` + `_mean`)
+#
+# 셋 다 2-A~2-C 가 쓰는 것과 **같은 함수**다. 집계 로직을 새로 만들지 않는다.
+#
+# ## 하지 않는 것
+#
+# 우위 점수·추천을 만들지 않는다 (§17). 상대 강도(SoS)는 2-F 소관이라 여기서
+# 손대지 않는다. 시즌 순위표의 홈/원정 표는 **수집 시점 스냅샷**이라 as_of 로
+# 잘리지 않으므로 값으로 쓰지 않고, 경기 수가 어긋나면 notes 에만 적는다.
+
+# 상대 슛맵의 필드 → 이 축의 피지표 이름 (2-C 의 `_AGAINST_FIELDS` 와 같은 짝).
+_VENUE_AGAINST = {name: field for name, field in _AGAINST_FIELDS
+                  if name in VENUE_METRICS}
+# 우리 슛맵의 필드 → 지표 이름. 이름이 같아 그대로 쓴다.
+_VENUE_ATTACK = ("xg", "npxg", "xgot", "shots")
+_VENUE_ACTUAL = ("points", "goals", "goals_against")
+
+_VENUE_ORIGIN: dict[str, tuple[str, str]] = {
+    **{n: (SEASON_MATCH_INDEX, FINAL_SCORE) for n in _VENUE_ACTUAL},
+    **{n: (SHOTMAP, SHOT_EVENTS) for n in _VENUE_ATTACK},
+    **{n: (SHOTMAP, OPPONENT_SHOT_EVENTS) for n in _VENUE_AGAINST},
+}
+
+DEFAULT_VENUE_CONTEXT: dict = {
+    "min_sample": 3,
+    "thresholds": {
+        "points_gap_high": 0.40,
+        "attack_gap_high": 0.25,
+        "defense_gap_high": 0.25,
+        "points_gap_large": 0.80,
+    },
+}
+
+# 축 끝에 붙는 고정 문구. **이 축이 하지 않는 일**을 밝히는 자리라 금지
+# 어휘("추천"·"우위")가 부정문으로 들어간다 — 지표 note 나 패턴 라벨에 같은
+# 말이 새어 들어갔는지 검사할 때는 이 목록을 빼고 본다 (2-D 와 같은 장치).
+VENUE_DISCLAIMERS: tuple[str, ...] = (
+    "장소차는 **같은 지표를 같은 방식으로** 재고 표본만 좁힌 것입니다 — "
+    "우위 점수나 승무패 추천이 아닙니다",
+)
+
+VENUE_PATTERN_LABELS = {
+    "A": "장소 성적이 전체와 다름",
+    "B": "장소 공격 지표가 전체와 다름",
+    "C": "장소에서 허용한 기회 질이 전체와 다름",
+    "D": "여러 갈래에서 같은 방향으로 장소 차이가 나타남",
+}
+
+
+def venue_context_config(settings: Settings) -> dict:
+    cfg = (getattr(settings, "analysis", None) or {}).get("venue_context")
+    out = {"min_sample": DEFAULT_VENUE_CONTEXT["min_sample"],
+           "thresholds": dict(DEFAULT_VENUE_CONTEXT["thresholds"])}
+    if isinstance(cfg, dict):
+        try:
+            out["min_sample"] = max(1, int(cfg.get("min_sample",
+                                                   out["min_sample"])))
+        except (TypeError, ValueError):
+            pass
+        for k, v in (cfg.get("thresholds") or {}).items():
+            try:
+                out["thresholds"][str(k)] = float(v)
+            except (TypeError, ValueError):
+                continue
+    return out
+
+
+def venue_of(match: SeasonMatch, team: str) -> str | None:
+    """그 경기에서 이 팀이 홈이었나 원정이었나.
+
+    **팀 이름을 추측하지 않는다** — 경기의 home_team / away_team 과 정확히
+    맞을 때만 답한다 (§3-1).
+    """
+    if match.home_team == team:
+        return HOME
+    if match.away_team == team:
+        return AWAY
+    return None
+
+
+def venue_rows(history: list[SeasonMatch], team: str, venue: str
+               ) -> list[SeasonMatch]:
+    """과거 경기 중 그 장소의 경기만. 순서(오래된 것부터)는 그대로."""
+    return [m for m in history if venue_of(m, team) == venue]
+
+
+def _venue_block(profile: TeamProfile | None, team: str,
+                 rows: list[SeasonMatch], metrics: tuple[str, ...]
+                 ) -> tuple[dict, dict, list[str]]:
+    """한 블록(전체/장소 × 시즌/최근)의 값·표본·경기 ID.
+
+    돌려주는 것: (`{지표: (값, 표본, 비고)}`, `{지표: 사유}` 없음용, 경기 ID).
+    """
+    values: dict[str, tuple[float, int | None, str]] = {}
+    missing: dict[str, set] = {}
+    ids = [str(m.match_id) for m in rows if m.match_id]
+    if not rows:
+        return values, missing, ids
+
+    # ---- 실제 결과 — 최종 스코어에서 센다 (2-A 와 같은 함수) --------------
+    actual, _n = _result_values(rows, team, len(rows))
+    for name in _VENUE_ACTUAL:
+        if name in metrics and name in actual:
+            value, sample, note = actual[name]
+            _put(values, name, value, sample, note, reasons=missing)
+    if not any(n in actual for n in _VENUE_ACTUAL):
+        _put(values, "points", None, 0, NO_SCORE, reasons=missing)
+
+    # ---- 우리 슛맵 · 상대 슛맵 — 경기별 원재료에서 (2-B/2-C 와 같은 함수) --
+    window = {"match_ids": ids}
+    mine = _match_rows(profile, window)
+    theirs = opponent_rows(profile, window)
+    for name in _VENUE_ATTACK:
+        if name not in metrics:
+            continue
+        value, sample = _mean(mine, name)
+        _put(values, name, value, sample,
+             "" if sample else "슛맵 경기별 자료 없음", reasons=missing)
+    for name, field_name in _VENUE_AGAINST.items():
+        if name not in metrics:
+            continue
+        value, sample = _mean(theirs, field_name)
+        _put(values, name, value, sample,
+             "" if sample else "상대 슛맵 경기별 자료 없음", reasons=missing)
+    return values, missing, ids
+
+
+def _venue_metric(name: str, period: str, value, sample: int | None) -> Metric:
+    """`comparison_allowed()` 에 넘길 임시 Metric. 축에는 들어가지 않는다."""
+    source, basis = _VENUE_ORIGIN.get(name, ("", ""))
+    return Metric(name=name, label=SPECS.get(name, (name,))[0], value=value,
+                  period=period, sample_count=sample, source=source,
+                  measurement_basis=basis)
+
+
+def detect_venue_patterns(values: dict, config: dict
+                          ) -> list[tuple[str, str, str]]:
+    """장소차의 **상태 설명**. 추천도 점수도 아니다 (§17·§18).
+
+    같은 이야기를 여러 번 세지 않으려고 **갈래마다 대표 지표 하나**만 본다
+    (§19) — 공격은 npxG(없으면 xG) 하나, 수비는 npxGA 하나.
+    """
+    th = config.get("thresholds") or {}
+    min_sample = int(config.get("min_sample") or 1)
+    out: list[tuple[str, str, str]] = []
+
+    def gap(name: str):
+        cell = values.get(f"{name}{VENUE_GAP_SUFFIX}")
+        if not cell or cell[0] is None:
+            return None
+        if (cell[1] or 0) < min_sample:
+            return None
+        return float(cell[0])
+
+    signs: list[int] = []
+    points = gap("points")
+    if points is not None and abs(points) >= th.get("points_gap_high", 0.40):
+        out.append(("A", VENUE_PATTERN_LABELS["A"],
+                    f"승점 장소차 {points:+.2f}"))
+        signs.append(1 if points > 0 else -1)
+
+    attack_name = "npxg" if gap("npxg") is not None else "xg"
+    attack = gap(attack_name)
+    if attack is not None and abs(attack) >= th.get("attack_gap_high", 0.25):
+        label = SPECS[attack_name][0]
+        out.append(("B", VENUE_PATTERN_LABELS["B"],
+                    f"{label} 장소차 {attack:+.2f}"))
+        signs.append(1 if attack > 0 else -1)
+
+    conceded = gap("npxga")
+    if conceded is not None and abs(conceded) >= th.get("defense_gap_high",
+                                                        0.25):
+        out.append(("C", VENUE_PATTERN_LABELS["C"],
+                    f"npxGA 장소차 {conceded:+.2f}"))
+        # 허용 기회는 **적을수록** 좋은 방향이라 부호를 뒤집어 모은다.
+        signs.append(-1 if conceded > 0 else 1)
+
+    # D 는 A~C 를 다시 세는 것이 아니라 **여러 갈래가 같은 방향인가**를
+    # 본다 — 그래야 근거를 중복해서 세지 않는다 (§19).
+    if len(signs) >= 2 and len(set(signs)) == 1 and points is not None \
+            and abs(points) >= th.get("points_gap_large", 0.80):
+        out.append(("D", VENUE_PATTERN_LABELS["D"],
+                    f"{len(signs)}갈래 · 승점 장소차 {points:+.2f}"))
+    return out
+
+
+def build_venue_context(profile: TeamProfile | None, team: str,
+                        season_matches: list[SeasonMatch] | None,
+                        as_of: datetime | None,
+                        windows: list[int], venue: str,
+                        config: dict | None = None,
+                        quality: DataQuality | None = None
+                        ) -> AnalysisAxis:
+    """이 경기의 장소와 같은 조건의 과거 표본을 전체와 나란히 둔다 (2-E).
+
+    키는 2-A~2-D 와 같은 `기간.지표` 다. 기간이 넷이다 —
+    `season` · `<venue>_season` · `recentN` · `<venue>N`.
+    """
+    axis = AnalysisAxis(name="venue_context")
+    if venue not in (HOME, AWAY):
+        axis.notes.append("홈/원정을 알 수 없어 장소 문맥을 만들지 않았습니다")
+        if quality is not None:
+            quality.mark("venue_context", False, reason="장소 미상")
+        return axis
+
+    cfg = config or venue_context_config(Settings())
+    min_sample = int(cfg.get("min_sample") or 1)
+    season = list(season_matches or [])
+    history = team_history(season, team, as_of)
+    windows = sorted({int(w) for w in windows if int(w) > 0}, reverse=True)
+    axis.requested_matches = windows[0] if windows else None
+    axis.available_matches = len(history)
+    axis.notes.append(
+        f"이 경기에서 {VENUE_LABELS[venue]}팀이므로 과거 "
+        f"{VENUE_LABELS[venue]} 경기와 전체를 나란히 둡니다")
+
+    missing_store: dict[str, dict[str, set]] = {}
+    pattern_source: dict[str, tuple[float, int | None, str]] = {}
+
+    def emit(period: str, values: dict, ids: list[str], requested,
+             base_period: str = "", base_values: dict | None = None,
+             base_ids: list[str] | None = None,
+             missing: dict | None = None) -> None:
+        """한 블록을 축에 싣고, 기준 블록이 있으면 장소차까지 만든다."""
+        store = dict(missing or {})
+        if base_values is not None:
+            contained = set(ids) <= set(base_ids or [])
+            for name in list(values):
+                if name not in base_values:
+                    continue
+                v_value, v_sample, _n = values[name]
+                o_value, o_sample, _o = base_values[name]
+                a = _venue_metric(name, period, v_value, v_sample)
+                b = _venue_metric(name, base_period, o_value, o_sample)
+                ok, _code, reason = comparison_allowed(
+                    a, b, common_sample=int(v_sample or 0),
+                    min_sample=min_sample, same_match_set=contained,
+                    relation=SUBSET)
+                gap_name = f"{name}{VENUE_GAP_SUFFIX}"
+                _put(values, gap_name,
+                     (v_value - o_value) if ok else None, v_sample,
+                     (f"{VENUE_LABELS[venue]} {v_sample}경기 ⊂ 전체 "
+                      f"{o_sample}경기") if ok else reason,
+                     reasons=store)
+            if not contained:
+                axis.notes.append(
+                    f"{period_label(period)}: 장소 경기가 전체 표본에 들어 "
+                    "있지 않아 장소차를 만들지 않았습니다")
+        for name, (value, sample, note) in values.items():
+            built = _metric(name, period, value, sample,
+                            provenance=(DERIVED
+                                        if name.endswith(VENUE_GAP_SUFFIX)
+                                        else OBSERVED),
+                            note=note, origin=_venue_origin(name))
+            if name.endswith(VENUE_GAP_SUFFIX):
+                built.common_sample_count = sample
+            axis.metrics[metric_key(period, name)] = built
+        _merge_missing(missing_store, store, period)
+        if quality is not None:
+            quality.mark(f"venue_context.{period}", bool(values),
+                         requested=requested, available_matches=len(ids),
+                         reason=("" if values else "표본 없음")
+                         or "; ".join(sorted(store)))
+
+    # ---- 시즌 (전체 → 장소) -------------------------------------------------
+    season_values, season_missing, season_ids = _venue_block(
+        profile, team, history, VENUE_SEASON_METRICS)
+    emit(SEASON, season_values, season_ids, len(history),
+         missing=season_missing)
+
+    v_history = venue_rows(history, team, venue)
+    v_values, v_missing, v_ids = _venue_block(
+        profile, team, v_history, VENUE_SEASON_METRICS)
+    emit(venue_season_name(venue), v_values, v_ids, len(v_history),
+         base_period=SEASON, base_values=season_values, base_ids=season_ids,
+         missing=v_missing)
+    pattern_source = dict(v_values)
+    axis.notes.append(
+        f"{VENUE_LABELS[venue]} 시즌: 기준시각까지 끝난 {len(history)}경기 중 "
+        f"{len(v_history)}경기가 {VENUE_LABELS[venue]} 경기입니다 "
+        "(시즌 장소 블록은 최종 스코어 계열뿐입니다 — 시즌 전체의 경기별 "
+        "xG 가 없습니다)")
+
+    # 순위표의 홈/원정 표와 대조한다. **값으로 쓰지 않는다** — 수집 시점
+    # 스냅샷이라 as_of 로 잘리지 않는다 (§3-3).
+    stats = getattr(profile, "stats", None) if profile else None
+    snapshot = getattr(stats, f"{venue}_played", None) if stats else None
+    if snapshot is not None and snapshot != len(v_history):
+        axis.notes.append(
+            f"순위표의 {VENUE_LABELS[venue]} 경기 수({snapshot})와 시즌 색인의 "
+            f"과거 {VENUE_LABELS[venue]} 경기 수({len(v_history)})가 다릅니다 "
+            "— 순위표는 수집 시점 스냅샷이라 기준시각으로 잘리지 않습니다")
+
+    # ---- 최근 N경기 (전체 → 그중 장소) --------------------------------------
+    for window in windows:
+        recent = history[-window:] if history else []
+        o_values, o_missing, o_ids = _venue_block(
+            profile, team, recent, VENUE_METRICS)
+        emit(period_name(window), o_values, o_ids, window,
+             missing=o_missing)
+
+        picked = [m for m in recent if venue_of(m, team) == venue]
+        p_values, p_missing, p_ids = _venue_block(
+            profile, team, picked, VENUE_METRICS)
+        period = venue_period_name(venue, window)
+        emit(period, p_values, p_ids, window,
+             base_period=period_name(window), base_values=o_values,
+             base_ids=o_ids, missing=p_missing)
+        axis.notes.append(
+            f"{period_label(period)}: 최근 {window}경기 중 "
+            f"{len(picked)}경기가 {VENUE_LABELS[venue]} 경기입니다")
+        if window == windows[0]:
+            pattern_source = dict(p_values)
+
+    axis.notes.extend(_missing_notes(missing_store))
+    for code, label, basis in detect_venue_patterns(pattern_source, cfg):
+        axis.notes.append(f"패턴 {code} · {label} ({basis})")
+    axis.notes.extend(VENUE_DISCLAIMERS)
+    return axis
+
+
+def _venue_origin(name: str) -> tuple[str, str]:
+    """장소 문맥 지표의 (원천, 산출 방식).
+
+    장소차는 **같은 산출 방식의 두 값**을 뺀 것이라 방식이 섞이지 않는다 —
+    `mixed` 가 아니라 원래의 방식을 그대로 물려준다. 그래야 이 값을 다시
+    다른 것과 견주려 할 때 문이 옳게 판단한다.
+    """
+    base = name[:-len(VENUE_GAP_SUFFIX)] if name.endswith(VENUE_GAP_SUFFIX) \
+        else name
+    source, basis = _VENUE_ORIGIN.get(base, ("", ""))
+    if name.endswith(VENUE_GAP_SUFFIX):
+        return DERIVED_SOURCE, basis
+    return source, basis
+
+
+# --------------------------------------------------------------------------
 # 7. TeamAnalysis / Match 연결
 # --------------------------------------------------------------------------
 def build_team_analysis(profile: TeamProfile | None, team: str,
@@ -2315,6 +2766,15 @@ def build_team_analysis(profile: TeamProfile | None, team: str,
     out.sustainability = build_sustainability(
         profile, team, season_matches, as_of, windows=windows,
         quality=quality, min_sample=trend_min_sample(settings))
+    # 2-E. **이 경기에서 이 팀이 어느 쪽인지 모르면 만들지 않는다** — 장소를
+    # 추측해서 홈 표본을 원정 팀에 붙이면 안 된다.
+    if is_home is None:
+        quality.mark("venue_context", False, reason="장소 미상")
+    else:
+        out.venue_context = build_venue_context(
+            profile, team, season_matches, as_of, windows=windows,
+            venue=(HOME if is_home else AWAY),
+            config=venue_context_config(settings), quality=quality)
     return out
 
 
@@ -2352,7 +2812,8 @@ def attach_time_context(matches: list[Match], settings: Settings,
         sides = [s for s in sides if s is not None]
         patterns = sum(len(patterns_in(s.chance_quality))
                        + len(patterns_in(s.defensive_quality))
-                       + len(patterns_in(s.sustainability)) for s in sides)
+                       + len(patterns_in(s.sustainability))
+                       + len(patterns_in(s.venue_context)) for s in sides)
         with_defense = sum(
             1 for s in sides
             if s.defensive_quality
@@ -2364,9 +2825,16 @@ def attach_time_context(matches: list[Match], settings: Settings,
             if s.sustainability
             and any(k.endswith("_minus_xpts") or "_minus_" in k
                     for k in s.sustainability.metrics))
+        # 장소차를 실제로 만든 팀 수. 장소 표본이 모자라면 없는 것이 정상이다.
+        with_venue = sum(
+            1 for s in sides
+            if s.venue_context
+            and any(k.endswith(VENUE_GAP_SUFFIX)
+                    for k in s.venue_context.metrics))
         log.info("팀 분석(2-A 시간축 · 2-B 기회의 질 · 2-C 수비의 질 · "
-                 "2-D 지속성): %d경기 · 창 %s · 시즌 색인 %d경기 · 패턴 %d건 · "
+                 "2-D 지속성 · 2-E 장소 문맥): %d경기 · 창 %s · "
+                 "시즌 색인 %d경기 · 패턴 %d건 · "
                  "상대 집계로 수비 지표를 만든 팀 %d/%d · "
-                 "실제↔기대 차이를 만든 팀 %d/%d",
+                 "실제↔기대 차이를 만든 팀 %d/%d · 장소차를 만든 팀 %d/%d",
                  built, windows, len(season), patterns, with_defense,
-                 len(sides), with_gap, len(sides))
+                 len(sides), with_gap, len(sides), with_venue, len(sides))

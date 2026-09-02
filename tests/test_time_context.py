@@ -450,8 +450,8 @@ def test_team_analysis_integration():
     # 2-A·2-B·2-C·2-D 네 축이 채워진다. 나머지(2-E~2-F)는 여전히 None 이어야
     # 한다 — 빈 축을 넣어 분석이 끝난 것처럼 보이게 하지 않는다.
     assert ta.computed_axes() == ["time_context", "chance_quality",
-                                  "defensive_quality", "sustainability"]
-    assert ta.venue_context is None
+                                  "defensive_quality", "sustainability",
+                                  "venue_context"]
     assert ta.schedule_strength is None
     assert ta.fotmob_id == 111
     assert ta.is_home is True

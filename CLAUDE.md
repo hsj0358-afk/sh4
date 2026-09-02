@@ -622,6 +622,91 @@ MODEL       xPTS                   독립 포아송(P1)  model
 
 회귀 테스트: `python tests/test_sustainability.py` (51개).
 
+### 1-1-12. 장소 문맥 (Phase 2-E) — `build_venue_context()`
+
+묻는 것은 하나다. **이 경기와 같은 장소에서 이 팀은 어땠고, 그것이 전체와
+얼마나 다른가.** 홈팀에는 홈 표본을, 원정팀에는 원정 표본을 붙인다.
+
+기간이 넷이고 키는 2-A~2-D 와 같은 `기간.지표` 다.
+
+```
+season          전체 시즌      (기준시각까지 끝난 모든 경기)
+home_season     홈 시즌        ← away_season
+recentN         전체 최근 N경기
+homeN           최근 N경기 중 홈 ← awayN
+```
+
+**기간 정의를 새로 만들지 않았다.** 장소 최근 구간은 "최근 홈 N경기" 가
+아니라 **최근 N경기 중 그 장소의 경기**다. 2-A 의 기간을 먼저 잡고 장소로
+거른다 — 최근 5경기 중 홈이 1경기면 `home5` 는 1경기다.
+
+이렇게 하는 이유가 둘이다.
+
+  · 장소 표본이 **전체 표본의 부분집합**이라는 것이 경기 ID 로 확인된다.
+    그래야 장소차를 만들 자격이 생긴다.
+  · 한 블록 안에서 **승점과 xG 의 경기 집합이 같다.** 슛 계층의 `home6`
+    창(최근 홈 6경기)을 그대로 쓰면 승점은 시즌 색인 기준, xG 는 다른 경기
+    집합 기준이 되어 조용히 어긋난다.
+
+**장소는 실제 경기의 home/away 로만 정한다** (`venue_of()`). 팀 이름이나
+경기 수로 추정하지 않고, 이름이 정확히 맞지 않으면 `None` 이다.
+
+값의 출처는 2-A~2-C 가 쓰는 **같은 함수**다. 집계를 새로 만들지 않았다.
+
+| 지표 | 출처 | 함수 |
+|---|---|---|
+| 승점·득점·실점 | 시즌 경기 색인의 최종 스코어 | `_result_values` |
+| xG·npxG·xGOT·슈팅 | 우리 슛맵의 경기별 집계 | `_match_rows` + `_mean` |
+| 피슈팅·피유효슈팅·npxGA·피xGOT | 상대 슛맵의 경기별 집계 | `opponent_rows` + `_mean` |
+
+**시즌 장소 블록은 최종 스코어 계열뿐이다.** 시즌 통계 피드에 홈/원정 분리가
+없고 시즌 전체의 경기별 xG 도 없다 (2-D §17 과 같은 한계). 없는 것을
+만들지 않는다.
+
+**순위표의 홈/원정 표는 값으로 쓰지 않는다.** 수집 시점 스냅샷이라 기준시각
+으로 잘리지 않는다. 경기 수가 시즌 색인과 어긋나면 notes 에만 적는다.
+
+**장소차는 `comparison_allowed(relation=SUBSET)` 를 지나야 만들어진다.**
+이 문은 2-D 와 **묻는 것이 다르다.**
+
+| | `SAME_SET` (2-D 실제↔기대) | `SUBSET` (2-E 장소↔전체) |
+|---|---|---|
+| 지표 이름 | 달라도 된다 (득점 ↔ xG) | **같아야** 한다 |
+| 산출 방식 | `COMPARABLE_GAPS` 등록 쌍 | **같아야** 한다 |
+| 원천 | 묻지 않는다 | `sources_comparable()` |
+| 경기 집합 | **같아야** 한다 | 한쪽이 **다른 쪽에 들어** 있어야 한다 |
+
+`same_match_set` 은 두 경우 모두 "그 관계가 실제로 확인됐다"는 뜻이고,
+호출부가 **경기 ID 로 확인해서** 넘긴다.
+
+- 장소차 이름은 `<지표>_venue_gap` 이고 전부 `DERIVED` · **방향 없음**이다.
+  홈 승점이 전체보다 높다는 것은 홈이 좋다는 뜻일 수도, 원정이 나쁘다는
+  뜻일 수도 있다. 부호를 곱해 우위 점수로 만들지 않는다.
+- 장소차의 `measurement_basis` 는 **`mixed` 가 아니라 원래 방식 그대로**다.
+  같은 방식의 두 값을 뺐으므로 섞이지 않았다.
+- `Metric.common_sample_count` 에 **장소 표본 수**를 싣는다 (좁은 쪽이
+  한계 표본이다). note 에 `홈 3경기 ⊂ 전체 6경기` 로 적는다.
+- 표본이 `analysis.venue_context.min_sample`(기본 3)에 못 미치면 장소차를
+  만들지 않고 사유가 notes 와 `degraded_reason` 에 남는다.
+- 패턴 A~D 는 상태 설명이다. 문턱은 `config_toto.yaml` 의
+  `analysis.venue_context.thresholds` 에 있고 **"운영용 기준이며 통계적으로
+  검증된 기준이 아님"** 이라고 적어 두었다. 갈래마다 **대표 지표 하나**만
+  본다(공격은 npxG, 수비는 npxGA) — 같은 이야기를 세 번 세지 않는다.
+  D 는 A~C 를 다시 세는 것이 아니라 **여러 갈래가 같은 방향인가**를 본다.
+- **상대 강도(SoS)는 여기서 보지 않는다** — 2-F 소관이다.
+- 확률과 무관하다. `predict`·`Match.probs`·`odds` 를 참조하지 않는다(AST).
+
+**리포트에 처음으로 분석 축이 나간다.** `render._venue_block()` 이 전체 ·
+장소 · 장소차를 한 표에 놓고 **지표마다 표본 수(n=…)를 함께 적는다** — 적은
+표본이 충분해 보이면 안 되기 때문이다. 새 CSS 는 표본 수를 흐리게 하는
+`table.mini small` 한 줄뿐이고 외부 참조는 그대로 0 이다.
+`--demo` 에는 시즌 경기 색인이 없어 이 블록이 나오지 않는다 (2-A~2-D 와 같다).
+
+캐시는 **올리지 않았다.** `MatchAnalysis` 는 캐시되지 않고 소스 응답의
+저장 형식도 바뀌지 않았다.
+
+회귀 테스트: `python tests/test_venue_context.py` (57개).
+
 ### 1-1-1. 리그 ID 를 이름만으로 정하지 않는다
 
 이름 매칭은 두 소스 모두에서 엉뚱한 리그를 골랐다. 실측 기록이다.
@@ -942,6 +1027,7 @@ python tests/test_trend_validity.py        # 트렌드 유효성 2-B 교정 (25�
 python tests/test_defensive_quality.py     # 수비의 질 2-C (52개)
 python tests/test_reason_preservation.py   # 값 없음 사유 보존 2-C 교정 (17개)
 python tests/test_sustainability.py        # 지속성 2-D (51개)
+python tests/test_venue_context.py         # 장소 문맥 2-E (57개)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_sources.py --browser    # 소스 구조 점검
 python tools/probe_sources.py --analyze    # 저장본 재분석 (접속 없음)

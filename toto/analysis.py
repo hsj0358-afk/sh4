@@ -2614,7 +2614,11 @@ def build_venue_context(profile: TeamProfile | None, team: str,
         f"{VENUE_LABELS[venue]} 경기와 전체를 나란히 둡니다")
 
     missing_store: dict[str, dict[str, set]] = {}
+    # 패턴을 어느 블록에서 뽑았는지 함께 들고 다닌다. 2-B~2-D 의 패턴 줄은
+    # 기간을 적는데 2-E 만 빠져 있으면 나중에 근거를 모을 때 "어느 표본에서
+    # 나온 말인가" 를 알 수 없다.
     pattern_source: dict[str, tuple[float, int | None, str]] = {}
+    pattern_period = venue_season_name(venue)
 
     def emit(period: str, values: dict, ids: list[str], requested,
              base_period: str = "", base_values: dict | None = None,
@@ -2674,6 +2678,7 @@ def build_venue_context(profile: TeamProfile | None, team: str,
          base_period=SEASON, base_values=season_values, base_ids=season_ids,
          missing=v_missing)
     pattern_source = dict(v_values)
+    pattern_period = venue_season_name(venue)
     axis.notes.append(
         f"{VENUE_LABELS[venue]} 시즌: 기준시각까지 끝난 {len(history)}경기 중 "
         f"{len(v_history)}경기가 {VENUE_LABELS[venue]} 경기입니다 "
@@ -2710,10 +2715,12 @@ def build_venue_context(profile: TeamProfile | None, team: str,
             f"{len(picked)}경기가 {VENUE_LABELS[venue]} 경기입니다")
         if window == windows[0]:
             pattern_source = dict(p_values)
+            pattern_period = period
 
     axis.notes.extend(_missing_notes(missing_store))
     for code, label, basis in detect_venue_patterns(pattern_source, cfg):
-        axis.notes.append(f"패턴 {code} · {label} ({basis})")
+        axis.notes.append(
+            f"패턴 {code} · {period_label(pattern_period)} · {label} ({basis})")
     axis.notes.extend(VENUE_DISCLAIMERS)
     return axis
 

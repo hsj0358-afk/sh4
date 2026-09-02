@@ -534,6 +534,21 @@ def test_patterns_are_descriptive_and_thresholded():
     assert analysis.detect_venue_patterns(tiny, CFG) == []
 
 
+def test_pattern_line_says_which_block_it_came_from():
+    """패턴 줄에 기간이 들어간다 — 2-B~2-D 와 같은 형식이어야 한다.
+
+    근거를 모을 때 "어느 표본에서 나온 말인가" 를 알 수 있어야 하고,
+    2-E 만 형식이 다르면 그 자리에서 끊긴다.
+    """
+    axis = build(analysis.HOME)
+    lines = analysis.patterns_in(axis)
+    assert lines, "이 픽스처에서는 패턴이 나와야 한다"
+    for line in lines:
+        parts = line.split(" · ")
+        assert len(parts) >= 3, line
+        assert parts[1] in ("홈 시즌", "최근 6경기 중 홈"), parts[1]
+
+
 def test_pattern_d_needs_two_directions_agreeing():
     """D 는 A~C 를 다시 세는 것이 아니다 (증거 중복 방지)."""
     only_points = {"points_venue_gap": (1.5, 3, "")}

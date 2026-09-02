@@ -1029,6 +1029,7 @@ python tests/test_reason_preservation.py   # 값 없음 사유 보존 2-C 교정
 python tests/test_sustainability.py        # 지속성 2-D (51개)
 python tests/test_venue_context.py         # 장소 문맥 2-E (57개)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
+python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)
 python tools/probe_sources.py --browser    # 소스 구조 점검
 python tools/probe_sources.py --analyze    # 저장본 재분석 (접속 없음)
 python tools/diagnose_whoscored.py         # 실패 원본 진단

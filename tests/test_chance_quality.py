@@ -484,7 +484,7 @@ def test_team_analysis_integration():
         profile(rows, mids), TEAM, season(mids), kick(30), s, is_home=True)
     assert ta.chance_quality is not None
     assert ta.time_context is not None
-    assert ta.schedule_strength is None, "2-F 를 미리 만들었다"
+    assert ta.schedule_strength is not None, "2-F 축이 붙어야 한다"
     assert "chance_quality.recent6" in ta.data_quality.axes
     assert "time_context.recent6" in ta.data_quality.axes
 

@@ -474,6 +474,73 @@ def _venue_block(match: Match) -> str:
             f'<div class="traits">{cols}</div></div>')
 
 
+_SOS_ROWS = (("opponent_points", "{:.2f}"),
+             ("opponent_goal_diff", "{:+.2f}"),
+             ("opponent_resolved", "{:.0f}"))
+
+
+def _sos_block(match: Match) -> str:
+    """상대 강도 (Phase 2-F). 그 기간의 **상대 구성**만 적는다.
+
+    성과를 보정하지 않고 일정이 유리했다·불리했다고 말하지 않는다. 표본이
+    없으면 블록을 통째로 내지 않는다 — 빈 표는 오해를 만든다.
+    """
+    from . import analysis
+
+    data = getattr(match, "analysis", None)
+    if data is None:
+        return ""
+    cols = ""
+    for side, color in (("home", charts.C_HOME), ("away", charts.C_AWAY)):
+        team = getattr(data, side, None)
+        axis = getattr(team, "schedule_strength", None) if team else None
+        if axis is None or not axis.metrics:
+            continue
+        window = axis.requested_matches or 0
+        periods = [(analysis.SEASON, "시즌")]
+        if window:
+            periods.append((analysis.period_name(window), f"최근 {window}경기"))
+            venue = analysis.HOME if getattr(team, "is_home", None) else (
+                analysis.AWAY if getattr(team, "is_home", None) is False
+                else None)
+            if venue:
+                periods.append((analysis.venue_period_name(venue, window),
+                                f"최근 {window}경기 중 "
+                                f"{analysis.VENUE_LABELS[venue]}"))
+        rows = ""
+        for name, fmt in _SOS_ROWS:
+            cells = ""
+            found = False
+            for period, _label in periods:
+                m = axis.get(f"{period}.{name}")
+                if m is None or m.value is None:
+                    cells += ('<td class="num">'
+                              '<span class="nodata">—</span></td>')
+                    continue
+                found = True
+                n = "" if m.sample_count is None else f" n={m.sample_count}"
+                cells += (f'<td class="num">{esc(fmt.format(m.value))}'
+                          f'<small>{esc(n)}</small></td>')
+            if found:
+                label = analysis.SPECS.get(name, (name,))[0]
+                rows += f'<tr><td>{esc(label)}</td>{cells}</tr>'
+        if not rows:
+            continue
+        head = "".join(f'<th class="num">{esc(l)}</th>' for _p, l in periods)
+        ref = getattr(match, side)
+        cols += (f'<div><h5>{_swatch(color)}{esc(ref.display)}</h5>'
+                 f'<table class="mini"><thead><tr><th>상대</th>{head}</tr>'
+                 f'</thead><tbody>{rows}</tbody></table></div>')
+    if not cols:
+        return ""
+    return ('<div class="block"><h4>상대 강도 (그 기간의 상대 구성)</h4>'
+            '<p class="meta">상대의 <b>그 경기 이전</b> 성적입니다 · '
+            '상대 성적에서 이 팀과의 경기는 뺐습니다 · '
+            'n 은 그 지표의 실제 표본 수 · '
+            '성과를 보정하거나 일정이 유리했다고 말하지 않습니다</p>'
+            f'<div class="traits">{cols}</div></div>')
+
+
 def _match_card(match: Match, settings: Settings) -> str:
     meta = " · ".join(x for x in (match.league_ko or match.league,
                                   match.kickoff_kst) if x)
@@ -497,6 +564,7 @@ def _match_card(match: Match, settings: Settings) -> str:
             f'</div></div>'
             f'{_recent_block(match, settings)}'
             f'{_venue_block(match)}'
+            f'{_sos_block(match)}'
             f'{_form_block(match)}'
             f'{_h2h_block(match)}'
             f'{_traits_block(match)}'

@@ -705,7 +705,77 @@ homeN           최근 N경기 중 홈 ← awayN
 캐시는 **올리지 않았다.** `MatchAnalysis` 는 캐시되지 않고 소스 응답의
 저장 형식도 바뀌지 않았다.
 
-회귀 테스트: `python tests/test_venue_context.py` (57개).
+회귀 테스트: `python tests/test_venue_context.py` (58개).
+
+### 1-1-13. 상대 강도 (Phase 2-F) — `build_schedule_strength()`
+
+묻는 것은 하나다. **지금까지의 성과가 어떤 상대 구성에서 만들어졌나.**
+성과를 보정하지 않고, 판단하지 않는다. 표본을 설명할 뿐이다.
+
+키는 2-A~2-E 와 같은 `기간.지표` 다. 기간은 `season` · `recentN` ·
+(장소를 알면) `<venue>N` — 2-A/2-E 의 경기 집합을 그대로 빌린다.
+
+| 지표 | 뜻 |
+|---|---|
+| `opponent_points` | 상대들의 경기당 승점 (그 경기 **이전** 기준) |
+| `opponent_goal_diff` | 상대들의 경기당 득실차 |
+| `opponent_resolved` | 강도를 만든 경기 수 / 그 기간이 확보한 경기 수 |
+
+**결과 기반만 만든다.** 상대의 xG 로 재는 방법은 데이터가 없어 불가능하다 —
+경기별 xG 는 팀당 최근 N경기만 받으므로 임의의 상대는 값이 없다. 억지로
+섞으면 "일부는 xG, 일부는 승점" 이 되어 원천이 뒤섞인다.
+
+**순환을 끊는 장치가 둘이다.**
+
+  1. **self-exclusion** — 상대의 성적을 셀 때 **이 팀과의 경기를 뺀다.**
+     빼지 않으면 "우리가 그 상대를 이겼다" 가 그 상대의 강도로 들어가고,
+     그 강도로 다시 우리 성과를 설명하게 된다. 손계산 픽스처에서 이 차이가
+     실제로 값을 바꾼다 — 포함 시 승점 1.00 / 제외 시 0.00.
+  2. **시점 고정** — 그 경기 **이전**의 상대 성적만 본다. cutoff 는
+     `matches_before()` 하나뿐이고 여기서 `kickoff` 을 비교하지 않는다.
+     (경기의 kickoff 을 `as_of` 로 **넘기기는** 한다 — 그건 비교가 아니다.)
+
+**상대의 상대까지 재귀로 가중하지 않는다.** 1차만 본다.
+
+**현재 순위표를 값으로 쓰지 않는다.** 수집 시점 스냅샷이라 과거 경기에
+쓰면 look-ahead 다 — 2-E 가 홈/원정 표를 다룬 규칙과 같다.
+
+- 상대 연결은 **숫자 teamId** 로 한다. 팀명이 다르게 표기돼도 ID 로 알아본다.
+- 상대의 이전 경기가 `opponent_min_matches`(기본 3)에 못 미치면 **그 경기를
+  표본에서 뺀다** — 1경기 치른 상대를 강팀/약팀으로 세지 않는다.
+- 기간 표본이 `min_sample`(기본 3)에 못 미치면 그 기간을 만들지 않는다.
+- **제외 사유는 `opponent_resolved` 한 곳에만 적는다.** 같은 말을 세 지표에
+  나눠 적으면 근거를 세 번 세는 꼴이 된다.
+- **단일 점수를 만들지 않는다.** `sos_score`·`strength_score`·`adjusted_*`
+  같은 이름이 코드에 없어야 한다(테스트).
+- **피지표를 이 축에 만들지 않는다.** "상대가 강해서 슈팅을 많이 허용했다"
+  와 "수비력이 나쁘다" 를 갈라 놓는 방법이 그것이다 — 넣으면 2-C 와 같은
+  이름·같은 값이 두 축에 생긴다.
+- 성과를 강도로 나누거나 곱해 '보정 성과' 를 만들지 않는다.
+
+**새 `measurement_basis` 를 하나 뒀다 — `opponent_record`.** 2-C 가
+`opponent_shot_events` 를 따로 둔 것과 같은 이유다: 우리 승점을 센 것과
+상대 승점을 센 것은 **다른 양**이고, 나누지 않으면 문(`comparison_allowed`)
+이 둘을 빼는 것을 막지 못한다. group 도 기존 taxonomy 에 섞지 않고
+`schedule` 로 따로 뒀다.
+
+**문턱을 비워 두었다.** `config_toto.yaml` 의
+`analysis.schedule_strength.thresholds` 가 `{}` 다 — **상대 강도의 실제
+분산을 아직 관측하지 못했다**(2026-08-30 실측 시점 2라운드, 상대 표본
+0/40팀). 숫자를 지금 적으면 분산을 모른 채 눈으로 찍는 것이다. 라운드가
+쌓이면(대략 6~8라운드) 실물을 보고 채운다.
+
+**시즌 색인이 시즌 전체를 담는다는 것이 이 축의 전제이고, 실측으로 확인됐다.**
+2026-08-30 EPL·세리에A 각 380경기(20팀 더블 라운드로빈 전체), 순위표 대조
+40팀 전부 차이 0. 그래서 **추가 수집 없이** 회차마다 받는 리그 피드 한 장으로
+as-of 상대 강도를 만들 수 있다 (`tools/probe_season_index.py` 로 다시 잴 수
+있다).
+
+실물 260048 에서는 **한 칸도 만들어지지 않는다** — 팀당 과거 1경기뿐이라
+상대의 이전 경기가 0이다. 값이 없는 것이 정답이고 0 으로 채우지 않는다.
+
+회귀 테스트: `python tests/test_schedule_strength.py` (40개).
+
 
 ### 1-1-1. 리그 ID 를 이름만으로 정하지 않는다
 
@@ -1027,7 +1097,8 @@ python tests/test_trend_validity.py        # 트렌드 유효성 2-B 교정 (25�
 python tests/test_defensive_quality.py     # 수비의 질 2-C (52개)
 python tests/test_reason_preservation.py   # 값 없음 사유 보존 2-C 교정 (17개)
 python tests/test_sustainability.py        # 지속성 2-D (51개)
-python tests/test_venue_context.py         # 장소 문맥 2-E (57개)
+python tests/test_venue_context.py         # 장소 문맥 2-E (58개)
+python tests/test_schedule_strength.py     # 상대 강도 2-F (40개)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)
 python tools/probe_sources.py --browser    # 소스 구조 점검

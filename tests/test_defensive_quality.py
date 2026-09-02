@@ -600,8 +600,7 @@ def test_team_analysis_integration():
     assert ta.defensive_quality is not None
     assert ta.computed_axes() == ["time_context", "chance_quality",
                                   "defensive_quality", "sustainability",
-                                  "venue_context"]
-    assert ta.schedule_strength is None, "2-F 를 미리 만들었다"
+                                  "venue_context", "schedule_strength"]
     assert "defensive_quality.recent6" in ta.data_quality.axes
 
 

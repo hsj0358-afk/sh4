@@ -378,11 +378,36 @@ def test_unverifiable_window_is_flagged_not_silently_used():
 
 
 def test_no_duplicate_cutoff_logic():
-    """cutoff 는 matches_before 하나뿐 — 모듈이 kickoff 을 직접 비교하지 않는다."""
+    """cutoff 는 `matches_before` 하나뿐이다.
+
+    막으려는 것은 **kickoff 을 직접 비교하는 두 번째 시점 판정**이다
+    (`if m.kickoff < as_of` · `[m for m in season if m.kickoff >= x]` …).
+
+    kickoff 을 **읽어서 `as_of` 로 넘기는 것**은 여기 해당하지 않는다 —
+    2-F 의 상대 강도가 "그 경기 시점 기준" 을 물으려면 그 경기의 kickoff 을
+    넘길 수밖에 없고, 자르는 일은 여전히 `matches_before` 가 한다. 그래서
+    부분문자열이 아니라 **비교 연산**만 본다.
+    """
+    import ast
     import inspect
-    src = inspect.getsource(analysis)
-    body = src.split("def team_history", 1)[1]
-    assert ".kickoff" not in body, "두 번째 cutoff 경로가 생겼다"
+
+    def touches_kickoff(node) -> bool:
+        return any(isinstance(n, ast.Attribute) and n.attr == "kickoff"
+                   for n in ast.walk(node))
+
+    tree = ast.parse(inspect.getsource(analysis))
+    bad = [n for n in ast.walk(tree)
+           if isinstance(n, ast.Compare)
+           and (touches_kickoff(n.left)
+                or any(touches_kickoff(c) for c in n.comparators))]
+    assert not bad, f"kickoff 을 직접 비교하는 곳 {len(bad)}군데 — 두 번째 cutoff"
+
+    # 정렬로 우회하는 것도 막는다 (sorted(..., key=lambda m: m.kickoff))
+    calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call)
+             and getattr(n.func, "id", "") in ("sorted", "min", "max")
+             and any(touches_kickoff(k.value) for k in n.keywords
+                     if k.arg == "key")]
+    assert not calls, "kickoff 으로 정렬/최대최소를 직접 구하고 있다"
 
 
 def test_as_of_from_match_uses_kst():
@@ -451,8 +476,8 @@ def test_team_analysis_integration():
     # 한다 — 빈 축을 넣어 분석이 끝난 것처럼 보이게 하지 않는다.
     assert ta.computed_axes() == ["time_context", "chance_quality",
                                   "defensive_quality", "sustainability",
-                                  "venue_context"]
-    assert ta.schedule_strength is None
+                                  "venue_context", "schedule_strength"]
+    assert ta.data_quality is not None
     assert ta.fotmob_id == 111
     assert ta.is_home is True
     assert ta.data_quality is not None

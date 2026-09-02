@@ -136,6 +136,13 @@ SHOT_EVENTS = "shot_events"    # 슛 이벤트를 하나씩 합산한 값
 OPPONENT_SHOT_EVENTS = "opponent_shot_events"
 # 모델이 만들어 낸 값 (P1 의 독립 포아송 xPTS). 관측이 아니다 (Phase 2-D).
 POISSON_MODEL = "poisson_model"
+# **상대 팀**의 최종 스코어 성적을 센 값 (Phase 2-F 상대 강도).
+# `final_score` 와 구분하는 이유는 2-C 가 `opponent_shot_events` 를 따로 둔
+# 것과 같다 — 우리 승점을 센 것과 상대 승점을 센 것은 **다른 양**이다.
+# 나누지 않으면 "우리 경기당 승점 1.5" 와 "상대들의 경기당 승점 1.8" 이 같은
+# basis 가 되어, 문(`comparison_allowed`·`trend_allowed`)이 둘을 빼는 것을
+# 막지 못한다.
+OPPONENT_RECORD = "opponent_record"
 MIXED_BASIS = "mixed"          # 서로 다른 방식이 섞였다
 
 # xPTS 의 원천. `toto/xpts.py` 의 모델 산출값이며 피나클 배당 확률과 무관하다.
@@ -342,6 +349,19 @@ VENUE_GAP_SPECS: dict[str, tuple[str, str, str, str]] = {
 }
 SPECS.update(VENUE_GAP_SPECS)
 
+# ---- Phase 2-F. 상대 강도 ---------------------------------------------------
+# **방향을 정하지 않는다.** 상대가 강했다는 것은 성과가 대단했다는 뜻일 수도,
+# 그냥 어려운 일정이었다는 뜻일 수도 있다. 이 축은 어느 쪽도 말하지 않는다.
+SOS_SPECS: dict[str, tuple[str, str, str, str]] = {
+    "opponent_points": ("상대 경기당 승점", "per_match", "", "result"),
+    "opponent_goal_diff": ("상대 경기당 득실차", "per_match", "", "result"),
+    # 표본 신뢰도 readout. 값은 '상대 강도를 만들 수 있었던 경기 수' 이고
+    # `sample_count` 에는 그 기간이 확보한 경기 수가 들어간다 — 둘이 다르면
+    # 일부 상대의 이전 경기가 모자랐다는 뜻이다.
+    "opponent_resolved": ("상대 강도 산출 경기", "count", "", "result"),
+}
+SPECS.update(SOS_SPECS)
+
 # 지표 묶음 (2-B §15). **점수 계산용이 아니다** — 2-I 가 같은 사실을 여러 번
 # 세지 않도록 붙이는 메타데이터다. xG·npxG·슛당 xG 는 같은 이야기의 세 얼굴이다.
 VOLUME = "volume"
@@ -363,6 +383,10 @@ MODEL_GROUP = "model"
 # 2-E. 장소차는 원값과 따로 센다 — "홈에서 xG 가 높다" 와 "xG 가 높다" 는
 # 같은 사실의 두 얼굴이라 근거를 두 번 세면 안 된다.
 VENUE_GAP_GROUP = "venue_gap"
+# 2-F. 상대 강도는 **우리 성과가 아니라 상대의 성적**이라 기존 묶음 어디에도
+# 속하지 않는다. 섞으면 2-I 가 "우리 승점이 높다" 와 "상대가 강했다" 를 같은
+# 근거로 세게 된다.
+SCHEDULE_GROUP = "schedule"
 
 GROUPS: dict[str, str] = {
     "shots": VOLUME, "shots_on_target": VOLUME, "shots_inside_box": VOLUME,
@@ -389,6 +413,7 @@ GROUPS: dict[str, str] = {
     "losses": RESULT_GROUP,
 }
 GROUPS.update({name: VENUE_GAP_GROUP for name in VENUE_GAP_SPECS})
+GROUPS.update({name: SCHEDULE_GROUP for name in SOS_SPECS})
 
 # §9 가 직접 방향을 지정한 지표.
 SPEC_DIRECTIONS = frozenset((
@@ -410,7 +435,7 @@ UNDIRECTED = frozenset((
     "shots", "draws", "shots_outside_box", "shots_outside_box_against",
     "goals_minus_xg", "goals_minus_npxg", "goals_minus_xgot",
     "goals_against_minus_npxga", "goals_against_minus_xgot_against",
-    "points_minus_xpts")) | frozenset(VENUE_GAP_SPECS)
+    "points_minus_xpts")) | frozenset(VENUE_GAP_SPECS) | frozenset(SOS_SPECS)
 
 ATTACK = tuple(k for k, v in SPECS.items()
                if v[3] == "attack" and k not in DERIVED_SPECS)
@@ -2741,6 +2766,286 @@ def _venue_origin(name: str) -> tuple[str, str]:
 
 
 # --------------------------------------------------------------------------
+# 6-F. 상대 강도 (Phase 2-F)
+# --------------------------------------------------------------------------
+#
+# 묻는 것은 하나다. **지금까지의 성과가 어떤 상대 구성에서 만들어졌나.**
+# 성과를 보정하지 않고, 판단하지 않는다. 표본을 설명할 뿐이다.
+#
+# ## 결과 기반만 만든다
+#
+# 상대의 xG 로 강도를 재는 방법은 **데이터가 없어 불가능하다** — 경기별 xG 는
+# 팀당 최근 N경기만 받으므로 임의의 상대는 값이 없다. 억지로 섞으면 "일부는
+# xG, 일부는 승점" 이 되어 원천이 뒤섞인다. 그래서 최종 스코어만 쓴다.
+#
+# ## 순환을 끊는 두 장치
+#
+# 팀 A 가 B 를 이기면 A 의 승점이 오르고, 그 A 를 상대한 팀들의 '상대 강도'가
+# 올라가고, 그 강도로 다시 그 팀들의 성과를 설명하게 된다. 특히 A 와 B 가
+# 서로를 상대한 경우엔 자기 참조가 된다.
+#
+#   1. **self-exclusion** — 상대의 성적을 셀 때 **우리와의 경기를 뺀다.**
+#   2. **시점 고정** — 그 경기 **이전**의 상대 성적만 본다 (`matches_before`).
+#
+# 상대의 상대까지 재귀로 가중하지 않는다 (Elo 유사 반복 수렴 금지). 1차만 본다.
+#
+# ## 하지 않는 것
+#
+# 단일 점수를 만들지 않는다. 이 프로젝트에 종합점수가 하나도 없는 것이
+# 의도이고, SoS 만 예외로 두면 그 숫자가 다음 단계에서 가중치가 된다.
+#
+# **피지표(피슛·npxGA)를 이 축에 만들지 않는다.** "상대가 강해서 슈팅을 많이
+# 허용했다" 와 "수비력이 나쁘다" 를 갈라 놓는 방법이 그것이다. 넣으면 2-C 와
+# 같은 이름·같은 값이 두 축에 생긴다.
+#
+# 성과를 강도로 나누거나 곱해 '보정 성과' 를 만들지 않는다 — 순환을 값 안에
+# 굳히는 짓이다.
+
+SOS_METRICS: tuple[str, ...] = ("opponent_points", "opponent_goal_diff")
+_SOS_ORIGIN = (SEASON_MATCH_INDEX, OPPONENT_RECORD)
+
+# 상대의 이전 경기가 없어 강도를 만들지 못한 사유. 창을 가로질러 한 줄로
+# 모으려고 경기 수를 넣지 않는다 (2-C 교정의 `NO_SCORE` 와 같은 이유).
+NO_OPPONENT_HISTORY = "상대의 기준시각 이전 경기가 모자람"
+NO_OPPONENT_ID = "상대를 알 수 없음"
+
+DEFAULT_SCHEDULE_STRENGTH: dict = {
+    "min_sample": 3,            # 이 수에 못 미치는 기간은 값을 만들지 않는다
+    "opponent_min_matches": 3,  # 상대의 이전 경기가 이보다 적으면 그 경기를 뺀다
+    "thresholds": {},           # ⚠ 실물 분산 미관측 — 아래 주석 참고
+}
+
+# 축 끝에 붙는 고정 문구. **이 축이 하지 않는 일**을 밝히는 자리라 금지
+# 어휘가 부정문으로 들어간다 — 지표 note 나 패턴 라벨에 같은 말이 새어
+# 들어갔는지 검사할 때는 이 목록을 빼고 본다 (2-D·2-E 와 같은 장치).
+SOS_DISCLAIMERS: tuple[str, ...] = (
+    "상대 강도는 그 기간의 **상대 구성**을 적은 것입니다 — 성과를 보정하거나 "
+    "일정이 유리했다·불리했다고 말하지 않습니다",
+    "상대의 성적에서 이 팀과의 경기는 빼고 셉니다 (서로를 근거로 삼지 "
+    "않기 위해서입니다)",
+)
+
+
+def schedule_strength_config(settings: Settings) -> dict:
+    cfg = (getattr(settings, "analysis", None) or {}).get("schedule_strength")
+    out = {"min_sample": DEFAULT_SCHEDULE_STRENGTH["min_sample"],
+           "opponent_min_matches":
+               DEFAULT_SCHEDULE_STRENGTH["opponent_min_matches"],
+           "thresholds": dict(DEFAULT_SCHEDULE_STRENGTH["thresholds"])}
+    if isinstance(cfg, dict):
+        for key in ("min_sample", "opponent_min_matches"):
+            try:
+                out[key] = max(1, int(cfg.get(key, out[key])))
+            except (TypeError, ValueError):
+                pass
+        for k, v in (cfg.get("thresholds") or {}).items():
+            try:
+                out["thresholds"][str(k)] = float(v)
+            except (TypeError, ValueError):
+                continue
+    return out
+
+
+def opponent_in(match: SeasonMatch, team: str) -> str:
+    """그 경기에서 이 팀의 상대. 이름이 정확히 맞지 않으면 빈 문자열."""
+    if match.home_team == team:
+        return match.away_team or ""
+    if match.away_team == team:
+        return match.home_team or ""
+    return ""
+
+
+def opponent_id_in(match: SeasonMatch, team: str) -> int | None:
+    """상대의 숫자 teamId. **연결은 이 값으로 한다** — 팀명이 아니다."""
+    if match.home_team == team:
+        return match.away_fotmob_id
+    if match.away_team == team:
+        return match.home_fotmob_id
+    return None
+
+
+def _side_of(match: SeasonMatch, team: str, team_id: int | None
+             ) -> str | None:
+    """그 경기에서 이 팀이 홈이었나 원정이었나. 숫자 ID 를 먼저 본다."""
+    if team_id is not None:
+        if match.home_fotmob_id == team_id:
+            return HOME
+        if match.away_fotmob_id == team_id:
+            return AWAY
+    return venue_of(match, team)
+
+
+def opponent_record(season: list[SeasonMatch], opponent: str,
+                    opponent_id: int | None, as_of: datetime | None,
+                    exclude_team: str, exclude_id: int | None
+                    ) -> tuple[float, float, int] | None:
+    """상대의 `as_of` 이전 성적. `(경기당 승점, 경기당 득실차, 경기 수)`.
+
+    **우리와의 경기는 뺀다** (self-exclusion). 우리가 그 상대를 이긴 사실이
+    그 상대의 강도에 들어가고, 그 강도로 다시 우리 성과를 설명하는 순환을
+    끊기 위해서다.
+
+    시점 판단은 `matches_before()` 하나만 쓴다 — 여기서 날짜를 비교하지
+    않는다. 스코어를 모르는 경기는 세지 않는다(0 으로 치지 않는다).
+    """
+    pts = gd = 0
+    n = 0
+    for m in matches_before(season, as_of):
+        side = _side_of(m, opponent, opponent_id)
+        if side is None:
+            continue
+        other = _side_of(m, exclude_team, exclude_id)
+        if other is not None:
+            continue                       # 우리와의 경기 — 뺀다
+        mine = m.home_goals if side == HOME else m.away_goals
+        theirs = m.away_goals if side == HOME else m.home_goals
+        if mine is None or theirs is None:
+            continue
+        n += 1
+        gd += mine - theirs
+        pts += 3 if mine > theirs else (1 if mine == theirs else 0)
+    if not n:
+        return None
+    return pts / n, gd / n, n
+
+
+def _sos_values(season: list[SeasonMatch], rows: list[SeasonMatch],
+                team: str, team_id: int | None, as_of: datetime | None,
+                opponent_min: int
+                ) -> tuple[dict, dict, int]:
+    """한 기간의 상대 강도. `({지표: (값, 표본, 비고)}, 사유, 확보 경기)`.
+
+    각 경기의 상대를 찾아 그 경기 **이전** 성적을 재고, 기간의 경기들에서
+    평균 낸다. 상대의 이전 경기가 `opponent_min` 에 못 미치면 그 경기는
+    표본에서 빠진다 — 1경기짜리 상대를 '강팀' 으로 세지 않기 위해서다.
+    """
+    values: dict[str, tuple[float, int | None, str]] = {}
+    missing: dict[str, set] = {}
+    if not rows:
+        return values, missing, 0
+
+    points: list[float] = []
+    diffs: list[float] = []
+    unknown = thin = 0
+    for m in rows:
+        opp = opponent_in(m, team)
+        opp_id = opponent_id_in(m, team)
+        if not opp and opp_id is None:
+            unknown += 1
+            continue
+        # `m.kickoff` 을 **비교하지 않는다** — 그 경기 시점을 `as_of` 로
+        # 넘길 뿐이고, 자르는 일은 `matches_before` 가 한다 (cutoff 는 하나).
+        got = opponent_record(season, opp, opp_id, m.kickoff, team, team_id)
+        if got is None or got[2] < opponent_min:
+            thin += 1
+            continue
+        points.append(got[0])
+        diffs.append(got[1])
+
+    n = len(points)
+    if n:
+        _put(values, "opponent_points", sum(points) / n, n)
+        _put(values, "opponent_goal_diff", sum(diffs) / n, n)
+        # 표본 신뢰도 readout. 값은 산출된 경기 수, sample_count 는 그 기간이
+        # 확보한 경기 수다 — 둘이 다르면 일부 상대의 이전 경기가 모자랐다.
+        #
+        # **빠진 사유는 여기 한 곳에만 적는다.** 같은 말을 세 지표에 나눠
+        # 적으면 근거를 세 번 세는 꼴이 된다 (2-B §15 와 같은 이유).
+        why = []
+        if thin:
+            why.append(f"상대의 이전 경기 부족 {thin}경기")
+        if unknown:
+            why.append(f"상대 미상 {unknown}경기")
+        note = f"{n}/{len(rows)}경기에서 상대 강도 산출"
+        if why:
+            note += " · 제외: " + " · ".join(why)
+        _put(values, "opponent_resolved", float(n), len(rows), note)
+    else:
+        _put(values, "opponent_points", None, 0,
+             NO_OPPONENT_ID if unknown and not thin else NO_OPPONENT_HISTORY,
+             reasons=missing)
+    return values, missing, len(rows)
+
+
+def build_schedule_strength(profile: TeamProfile | None, team: str,
+                            season_matches: list[SeasonMatch] | None,
+                            as_of: datetime | None,
+                            windows: list[int],
+                            venue: str | None = None,
+                            config: dict | None = None,
+                            quality: DataQuality | None = None
+                            ) -> AnalysisAxis:
+    """그 기간의 상대 구성을 적는다 (2-F). 성과를 보정하지 않는다.
+
+    키는 2-A~2-E 와 같은 `기간.지표` 다. 기간 구조를 새로 만들지 않는다 —
+    `season` · `recentN` · (장소를 알면) `<venue>N`.
+    """
+    axis = AnalysisAxis(name="schedule_strength")
+    cfg = config or schedule_strength_config(Settings())
+    min_sample = int(cfg.get("min_sample") or 1)
+    opponent_min = int(cfg.get("opponent_min_matches") or 1)
+    season = list(season_matches or [])
+    history = team_history(season, team, as_of)
+    windows = sorted({int(w) for w in windows if int(w) > 0}, reverse=True)
+    axis.requested_matches = windows[0] if windows else None
+    axis.available_matches = len(history)
+
+    ref = getattr(profile, "team", None) if profile else None
+    raw_id = getattr(ref, "fotmob_id", "") if ref else ""
+    try:
+        team_id = int(raw_id) if raw_id else None
+    except (TypeError, ValueError):
+        team_id = None
+
+    missing_store: dict[str, dict[str, set]] = {}
+
+    def emit(period: str, rows: list[SeasonMatch], requested) -> None:
+        values, missing, available = _sos_values(
+            season, rows, team, team_id, as_of, opponent_min)
+        sample = (values.get("opponent_points") or (None, 0, ""))[1] or 0
+        if sample and sample < min_sample:
+            # 표본이 모자라면 값을 만들지 않는다. 사유는 남긴다.
+            reason = f"표본 부족 ({sample}경기, 최소 {min_sample})"
+            for name in SOS_METRICS:
+                values.pop(name, None)
+                missing.setdefault(reason, set()).add(name)
+            values.pop("opponent_resolved", None)
+        for name, (value, n, note) in values.items():
+            axis.metrics[metric_key(period, name)] = _metric(
+                name, period, value, n,
+                provenance=(DERIVED if name == "opponent_resolved"
+                            else OBSERVED),
+                note=note, origin=_SOS_ORIGIN)
+        _merge_missing(missing_store, missing, period)
+        if quality is not None:
+            # **구체적 사유를 먼저 쓴다.** 다른 축이 쓰는
+            # `("" if values else "표본 없음") or join(missing)` 은 기간이
+            # 통째로 비면 "표본 없음" 에서 단락되어 사유가 사라진다 — 2-C
+            # 교정이 고친 것과 같은 종류의 손실이다.
+            quality.mark(f"schedule_strength.{period}", bool(values),
+                         requested=requested, available_matches=available,
+                         reason=("; ".join(sorted(missing))
+                                 or ("" if values else "표본 없음")))
+
+    emit(SEASON, history, len(history))
+    for window in windows:
+        recent = history[-window:] if history else []
+        emit(period_name(window), recent, window)
+        if venue in (HOME, AWAY):
+            picked = [m for m in recent
+                      if _side_of(m, team, team_id) == venue]
+            emit(venue_period_name(venue, window), picked, window)
+            axis.notes.append(
+                f"{period_label(venue_period_name(venue, window))}: "
+                f"최근 {window}경기 중 {len(picked)}경기가 "
+                f"{VENUE_LABELS[venue]} 경기입니다")
+
+    axis.notes.extend(_missing_notes(missing_store))
+    axis.notes.extend(SOS_DISCLAIMERS)
+    return axis
+
+
+# --------------------------------------------------------------------------
 # 7. TeamAnalysis / Match 연결
 # --------------------------------------------------------------------------
 def build_team_analysis(profile: TeamProfile | None, team: str,
@@ -2782,6 +3087,12 @@ def build_team_analysis(profile: TeamProfile | None, team: str,
             profile, team, season_matches, as_of, windows=windows,
             venue=(HOME if is_home else AWAY),
             config=venue_context_config(settings), quality=quality)
+    # 2-F. 장소를 몰라도 만든다 — 전체·최근 구간은 장소와 무관하다.
+    # 장소를 알면 그 장소 구간이 하나 더 붙을 뿐이다.
+    out.schedule_strength = build_schedule_strength(
+        profile, team, season_matches, as_of, windows=windows,
+        venue=(None if is_home is None else (HOME if is_home else AWAY)),
+        config=schedule_strength_config(settings), quality=quality)
     return out
 
 
@@ -2838,10 +3149,19 @@ def attach_time_context(matches: list[Match], settings: Settings,
             if s.venue_context
             and any(k.endswith(VENUE_GAP_SUFFIX)
                     for k in s.venue_context.metrics))
+        # 상대 강도를 실제로 만든 팀 수. 상대의 이전 경기가 모자라면 없는
+        # 것이 정상이다 (시즌 초에는 0/28 이 나온다).
+        with_sos = sum(
+            1 for s in sides
+            if s.schedule_strength
+            and any(k.endswith(".opponent_points")
+                    for k in s.schedule_strength.metrics))
         log.info("팀 분석(2-A 시간축 · 2-B 기회의 질 · 2-C 수비의 질 · "
-                 "2-D 지속성 · 2-E 장소 문맥): %d경기 · 창 %s · "
-                 "시즌 색인 %d경기 · 패턴 %d건 · "
+                 "2-D 지속성 · 2-E 장소 문맥 · 2-F 상대 강도): "
+                 "%d경기 · 창 %s · 시즌 색인 %d경기 · 패턴 %d건 · "
                  "상대 집계로 수비 지표를 만든 팀 %d/%d · "
-                 "실제↔기대 차이를 만든 팀 %d/%d · 장소차를 만든 팀 %d/%d",
+                 "실제↔기대 차이를 만든 팀 %d/%d · 장소차를 만든 팀 %d/%d · "
+                 "상대 강도를 만든 팀 %d/%d",
                  built, windows, len(season), patterns, with_defense,
-                 len(sides), with_gap, len(sides), with_venue, len(sides))
+                 len(sides), with_gap, len(sides), with_venue, len(sides),
+                 with_sos, len(sides))

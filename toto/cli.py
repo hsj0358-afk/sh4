@@ -67,6 +67,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="경기 상세 생략 (npxG·xGOT·총슈팅·피슈팅). 몇 분 빨라진다")
     p.add_argument("--skip-odds", action="store_true",
                    help="피나클 배당률 수집 생략")
+    p.add_argument("--panel", action="store_true",
+                   help="두 전문가 패널의 해석을 붙입니다 (Anthropic API 필요·"
+                        "유료). 지정하지 않으면 호출하지 않습니다.")
     p.add_argument("--no-cache", action="store_true",
                    help="캐시를 무시하고 새로 수집")
     p.add_argument("--open", action="store_true",
@@ -248,6 +251,13 @@ def main(argv: list[str] | None = None) -> int:
     # ---- 5. 분석 ----------------------------------------------------------
     report.matches = matches
     run_all(matches, settings, season_matches=report.season_matches)
+
+    # ---- 5-B. 패널 (Phase 3-B) — **--panel 없이는 호출하지 않는다** --------
+    # 유료 API 라 기본은 꺼져 있다. 분석 결과를 읽기만 하고 되먹이지 않는다.
+    if args.panel:
+        from . import panel
+        report.source_status["패널"] = panel.attach_panels(
+            matches, settings, cache=cache)
 
     # 회차 승산 (지침 §5)
     expected = int(settings.betman.get("expected_matches", 14))

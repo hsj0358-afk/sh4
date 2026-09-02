@@ -15,3 +15,7 @@ requests>=2.31.0          # Pinnacle guest API
 beautifulsoup4>=4.12.0    # WhoScored HTML parsing
 lxml>=5.0.0               # parser backend for bs4
 PyYAML>=6.0               # config_toto.yaml / teams.yaml / matches.yaml
+
+# Optional: only the --panel feature (dual expert panel) needs this.
+# It is imported lazily at call time, so the analysis pipeline runs without it.
+anthropic>=0.40.0         # Claude API for the two analyst panels

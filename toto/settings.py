@@ -180,6 +180,11 @@ class Settings:
     # 시간축 분석(Phase 2-A) 설정: periods · trend_thresholds.
     # 비어 있으면 toto/analysis.py 의 기본값을 쓴다.
     analysis: dict = field(default_factory=dict)
+    # 패널(Phase 3-B) 설정: model · max_tokens · timeout_sec.
+    # **API 키는 여기 담지 않는다** — 설정 객체는 로그·디버그에 통째로 찍히기
+    # 쉬운데 키가 섞이면 안 된다. `llm.py` 가 호출 시점에 환경변수에서 읽는다
+    # (`_load_dotenv` 가 이미 `.env` 를 `os.environ` 으로 밀어 넣는다).
+    panel: dict = field(default_factory=dict)
     output: dict = field(default_factory=dict)
 
     root: Path = ROOT
@@ -256,6 +261,7 @@ def load_settings(config_path: Path | None = None, env_path: Path | None = None)
     if cfg.get("recent_metrics"):
         s.recent_metrics = cfg["recent_metrics"]
     s.analysis = cfg.get("analysis") or {}
+    s.panel = cfg.get("panel") or {}
     s.output = cfg.get("output") or {
         "dir": "reports", "filename": "toto_{round}.html",
         "copy_to": [], "copy_to_exclude": ["OneDrive"],

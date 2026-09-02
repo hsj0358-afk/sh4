@@ -786,6 +786,101 @@ def _revive_axis(d: Any) -> AnalysisAxis | None:
     return out
 
 
+# --------------------------------------------------------------------------
+# Phase 3-B — 패널 (LLM 해석 계층)
+# --------------------------------------------------------------------------
+# 여기 있는 것은 **분석이 아니라 해석**이다. Phase 2 가 만든 사실(축·근거)과
+# 시장 확률을 읽어 두 전문가가 각자 해석한 결과를 담는다. 그래서 자리도
+# `MatchAnalysis` 안이 아니라 `Match` 옆이다.
+#
+# 네 가지 불변조건이 이 dataclass 들의 모양으로 강제된다.
+#
+#   1. Market Reference 는 분석가가 아니다 — `PanelOpinion` 이 아니고 role 도
+#      없다. 확률만 담는 별도 구조다.
+#   2. 두 분석가는 **같은 `PanelPayload` 객체**를 받는다 — 그래서 payload 를
+#      역할별로 나눠 담는 필드가 없다.
+#   3. 근거 ID 는 전역 공유다 — 패널이 자기 ID 를 만들지 않는다.
+#   4. 예상 스코어에서 승무패를 파생하지 않는다 — `winner`·`pick`·`lean`·
+#      `recommendation`·`confidence` 필드가 **없어야** 하고, 그것을 만드는
+#      property 도 없어야 한다.
+@dataclass(frozen=True)
+class MarketReference:
+    """시장이 제시하는 외부 기준값. **분석가가 아니다** (불변조건 1).
+
+    기존 `MatchProb`·`Odds` 에서 **읽기만** 한다. 확률을 다시 계산하지 않고,
+    `pick`·`p_pick`·`favorite`·`toss_up` 같은 **선택값 계열은 싣지 않는다** —
+    그것을 넘기면 패널에게 시장의 픽을 알려 주는 셈이 되고, 그 순간
+    Market Reference 가 조용히 세 번째 분석가가 된다.
+    """
+    source: str = ""                # Odds.source ("arcadia-api" / …)
+    as_of: str = ""                 # Odds.fetched_at (원본 그대로 문자열)
+    home_probability: float | None = None
+    draw_probability: float | None = None
+    away_probability: float | None = None
+    overround: float | None = None
+
+
+@dataclass(frozen=True)
+class PanelOpinion:
+    """한 분석가의 해석. **의견만 담는다.**
+
+    실패·재시도 같은 운영 상태는 여기 넣지 않는다 (`PanelRun` 이 맡는다) —
+    섞으면 "의견이 있는데 실패했다" 같은 모호한 값이 생긴다.
+
+    **예상 스코어는 정수 둘이다.** `"2-1"` 문자열로 두지 않는 이유는, 문자열
+    이면 파싱이 생기고 파싱이 생기면 비교가 생기고 비교는 승무패로 미끄러지기
+    때문이다. 모르면 `None, None` 이다 (0-0 은 실제 예측이라 다르다).
+    """
+    role: str = ""                  # panel.DATA_ANALYST / MATCHUP_ANALYST
+    predicted_home: int | None = None
+    predicted_away: int | None = None
+    summary: str = ""
+    rationale: tuple[str, ...] = ()
+    evidence_ids: tuple[str, ...] = ()   # payload 안에 있는 ID 만
+    model: str = ""
+    prompt_version: str = ""
+
+
+@dataclass(frozen=True)
+class PanelRun:
+    """한 경기의 패널 실행 결과 (의견 + 운영 상태).
+
+    `opinions` 는 **성공한 의견만** 담는다. 실패한 역할은 `role_status` 에
+    사유가 남고 가짜 의견을 만들지 않는다.
+    """
+    status: str = ""                # 생략 / 실패(사유) / 부분 (n/m) / ok (n/m)
+    opinions: tuple[PanelOpinion, ...] = ()
+    role_status: dict[str, str] = field(default_factory=dict)
+    market_reference: MarketReference | None = None
+    evidence_ids: tuple[str, ...] = ()   # 이 경기에서 쓸 수 있던 근거 ID 전부
+    payload_hash: str = ""
+
+    def opinion(self, role: str) -> PanelOpinion | None:
+        for item in self.opinions:
+            if item.role == role:
+                return item
+        return None
+
+
+def revive_panel_run(d: Any) -> PanelRun | None:
+    """dict → PanelRun. `asdict` 가 tuple 을 list 로 풀어 놓으므로 되감는다."""
+    if not isinstance(d, dict):
+        return None
+    market = d.get("market_reference")
+    return PanelRun(
+        status=d.get("status", ""),
+        opinions=tuple(
+            PanelOpinion(**{**o,
+                            "rationale": tuple(o.get("rationale") or ()),
+                            "evidence_ids": tuple(o.get("evidence_ids") or ())})
+            for o in (d.get("opinions") or []) if isinstance(o, dict)),
+        role_status=dict(d.get("role_status") or {}),
+        market_reference=(MarketReference(**market)
+                          if isinstance(market, dict) else None),
+        evidence_ids=tuple(d.get("evidence_ids") or ()),
+        payload_hash=d.get("payload_hash", ""))
+
+
 def revive_team_analysis(d: Any) -> TeamAnalysis | None:
     """dict → TeamAnalysis. dataclass 중첩은 asdict 가 풀어 놓으므로 되감는다."""
     if not isinstance(d, dict):
@@ -847,6 +942,11 @@ class Match:
     # Phase 2 분석 결과. None = 아직 계산하지 않음.
     # `probs`(피나클 배당 확률)와 **별개**이며 서로 덮어쓰지 않는다.
     analysis: MatchAnalysis | None = None
+    # Phase 3-B 패널 해석. `--panel` 없이는 언제나 None 이다.
+    # **`MatchAnalysis` 안에 넣지 않는다** — 저쪽은 관측·계산된 사실이고
+    # 이쪽은 그 사실에 대한 해석이라 층이 다르다. 섞으면 패널이 분석 결과인
+    # 것처럼 읽히고, 패널이 새 근거를 만드는 구조로 미끄러진다.
+    panel: PanelRun | None = None
 
     @property
     def title(self) -> str:

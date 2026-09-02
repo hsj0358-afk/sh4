@@ -306,12 +306,21 @@ def test_evidence_has_three_directions_and_counter():
 # 11·12. 기존 필드 regression
 # --------------------------------------------------------------------------
 def test_existing_match_fields_unchanged():
+    """기존 필드는 **자리까지** 그대로고, 새 필드는 그 뒤에만 붙는다.
+
+    예전에는 `names[-1] == "analysis"` 로 확인했는데, 그러면 Phase 3-B 의
+    `panel` 처럼 **규칙을 지켜 뒤에 붙인 필드**까지 실패로 잡힌다. 진짜
+    지키려는 것은 '기존 필드의 순서가 밀리지 않는다' 이므로 접두사 전체를
+    본다 — 원래보다 강한 검사다.
+    """
     names = [f.name for f in fields(Match)]
-    for k in ("no", "league", "league_ko", "home", "away", "kickoff_kst",
-              "odds", "probs", "home_profile", "away_profile", "h2h",
-              "radar", "matchup_notes", "notes"):
-        assert k in names, f"{k} 가 사라졌다"
-    assert names[-1] == "analysis", "analysis 는 맨 뒤에 추가돼야 한다"
+    original = ["no", "league", "league_ko", "home", "away", "kickoff_kst",
+                "odds", "probs", "home_profile", "away_profile", "h2h",
+                "radar", "matchup_notes", "notes"]
+    assert names[:len(original)] == original, "기존 필드의 자리가 바뀌었다"
+    assert names[len(original)] == "analysis", "analysis 자리가 바뀌었다"
+    for extra in names[len(original):]:
+        assert extra in ("analysis", "panel"), f"모르는 필드: {extra}"
     m = Match(no=3, league="epl")
     assert m.no == 3 and m.league == "epl" and m.radar == {}
     assert m.title == " vs "

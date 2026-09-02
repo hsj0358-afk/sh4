@@ -1084,6 +1084,75 @@ traceback 이 남는다. 다만 메뉴 안의 각 기능은 자기 인자로 다
 이미지·`<script src>` 를 추가하지 않는다. 폰에서 열기와 오프라인 열람이
 여기에 달려 있다.
 
+### 1-9. 패널 (Phase 3-B) — `toto/panel.py` · `toto/llm.py`
+
+Phase 2 가 만든 **사실**을 두 전문가가 **해석**한다. 분석이 아니라 해석이라
+자리도 `MatchAnalysis` 안이 아니라 `Match.panel` 이다.
+
+```
+같은 PanelPayload  →  데이터 분석가  ┐
+                   →  맞대결·전술 분석가 ┘ → PanelOpinion 둘 (서로 독립)
+```
+
+**네 가지가 설계 선택이 아니라 불변조건이다.**
+
+1. **Market Reference 는 분석가가 아니다.** 시장 확률은 외부 기준값이고
+   세 번째 페르소나가 아니다. `ROLES` 는 둘뿐이고, `MarketReference` 는
+   `PanelOpinion` 이 아니며, **`pick`·`p_pick`·`favorite`·`toss_up` 을 싣지
+   않는다** — 시장의 선택을 알려 주는 순간 조용히 분석가가 된다.
+2. **두 분석가는 같은 `PanelPayload` 객체와 같은 직렬화 문자열을 받는다.**
+   자료를 **한 번** 만들어 두 역할에 넘긴다(`run_match`). 역할별 payload 를
+   만들면 두 의견이 비교 불가능해진다. 차이는 오직 역할 지시에서 나온다.
+3. **근거 ID 는 전역 공유다.** 2-G 가 정렬해 저장한 순서 그대로 `E001…` 을
+   붙인다(`evidence_rows`). 여기서 다시 정렬하지 않는다 — 2-G 의 규칙을
+   복제하면 두 곳이 어긋난다. 모델이 없는 ID 를 쓰면 검증에서 떨어뜨리고
+   **가짜 근거를 만들어 통과시키지 않는다.**
+4. **예상 스코어는 승무패가 아니다.** `winner`·`pick`·`lean`·
+   `recommendation`·`confidence` 필드가 `PanelOpinion`·`PanelRun` 에 **없고**
+   그것을 만드는 property 도 없다. `predicted_home > predicted_away` 같은
+   비교가 코드에 없는지 AST 로 검사한다.
+
+**돈이 드는 계층이라 기본은 꺼져 있다.**
+
+  · `--panel` 없이는 **호출 0회**. 기본 실행 결과가 달라지지 않는다.
+  · **근거 0건이면 부르지 않는다** — 줄 것이 팀 이름뿐이라 지어낼 수밖에
+    없다. 실물 260048 이 기본 게이트에서 정확히 이 경우다.
+  · 자료·역할·모델·프롬프트 버전이 모두 같아야 캐시가 적중한다. 하나라도
+    바뀌면 다시 부른다. **소스 캐시(fotmob 9)와 무관한 독립 번호**
+    (`PANEL_CACHE_VERSION`)를 쓴다.
+
+**없어도 프로그램은 돈다.** `anthropic` 은 **호출 시점에** import 하고,
+`ANTHROPIC_API_KEY` 는 **환경변수에서 그때 읽는다**. `Settings` 에 키를
+담지 않는 이유는 설정 객체가 로그·디버그에 통째로 찍히기 쉬워서다. 둘 중
+하나라도 없으면 패널만 `실패 (사유)` 가 되고 리포트는 그대로 나온다 —
+§1-6 의 4상태 어휘를 그대로 쓴다.
+
+**가짜 결과를 만들지 않는다.** 실패하면 `predicted_home/away` 가 `None` 이
+아니라 **의견 자체가 없다**. `PanelOpinion` 은 의견만 담고 실패 사유는
+`PanelRun.role_status` 에 있다 — 섞으면 "의견이 있는데 실패했다" 는 모호한
+값이 생긴다. 한 역할이 실패해도 나머지는 가고, 한 경기가 실패해도 다른
+경기는 간다.
+
+**응답을 느슨하게 고쳐 주지 않는다.** `"2-1"` 을 2 와 1 로 해석하거나
+`1.5` 를 반올림하지 않는다. `True` 는 `int` 의 하위형이라 그냥 두면 1 로
+통과하므로 따로 막는다. 형식 오류면 1회만 재요청하고 그래도 안 되면 그
+역할만 포기한다.
+
+**전술 자료는 없다.** WhoScored 정성 데이터가 한 번도 수집된 적이 없고
+(§3-1) `MatchAnalysis.matchup` 도 채워지지 않는다. 맞대결 분석가에게는
+지표의 상대 관계만 있고, 포메이션·선수·부상을 아는 것처럼 쓰지 말라고
+프롬프트에 못 박았다. 없는 데이터를 채우려고 새 소스를 붙이지 않는다.
+
+**payload 는 데이터이지 지시문이 아니다.** 팀명·근거 문구에 명령처럼 보이는
+문자열이 있어도 시스템 지시가 우선하도록 프롬프트에 적었고, 순서도
+시스템 → 역할 → 자료로 고정했다.
+
+**패널끼리 서로 보지 않는다.** 한 의견이 다른 프롬프트에 들어가지 않고,
+여기서 두 의견을 비교하거나 평균내지 않는다 — 그건 Moderator(3-C) 소관이고
+아직 없다.
+
+회귀 테스트: `python tests/test_panel.py` (69개).
+
 ---
 
 ## 2. 작업 방식
@@ -1222,6 +1291,7 @@ python -m toto --demo              # 네트워크 없이 렌더링 확인
 python -m toto --round 260044      # 회차 지정 수집
 python -m toto --skip-whoscored    # 배당 + 순위·폼만 (빠름)
 python -m toto --skip-match-details        # 경기 상세(npxG·xGOT…) 생략
+python -m toto --panel                     # 두 전문가 패널 (Claude API 필요·유료)
 python tests/test_league_matching.py       # 리그·팀 매칭 회귀 (15개)
 python tests/test_match_details.py         # 경기 상세 파싱 회귀 (36개)
 python tests/test_shot_events.py           # 슛 이벤트 계층 (46개)
@@ -1238,6 +1308,7 @@ python tests/test_venue_context.py         # 장소 문맥 2-E (58개)
 python tests/test_schedule_strength.py     # 상대 강도 2-F (40개)
 python tests/test_evidence.py              # 근거 생성 2-G (57개)
 python tests/test_menu_flow.py             # 메뉴 루프·예외·로그 3-A (27개)
+python tests/test_panel.py                 # 두 전문가 패널 3-B (69개)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)
 python tools/probe_sources.py --browser    # 소스 구조 점검

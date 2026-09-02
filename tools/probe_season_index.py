@@ -158,24 +158,30 @@ def main(argv=None) -> int:
         # 개수만으로 알 수 없다. 팀·시각으로 대조해 가른다.
         idless = [m for m in matches if not m.get("id")]
         if idless:
-            have = {(m.home_team, m.away_team, m.kickoff_raw[:16])
-                    for m in index}
-            dup = [m for m in idless
-                   if (m.get("home"), m.get("away"),
-                       str(m.get("utc") or "")[:16]) in have]
-            lost = len(idless) - len(dup)
-            print(f"  ! 경기 ID 없음 {len(idless)}건 "
-                  f"→ 이미 색인에 있는 경기의 중복 표현 {len(dup)}건 · "
-                  f"실제 손실 {lost}건")
+            # 실측(2026-08-30)에서 배운 것: ID 가 없는 항목은 **시각도 없다.**
+            # 팀+시각으로만 대조하면 맞을 수가 없어 전부 '손실' 로 잘못
+            # 나온다. 그래서 시각이 있으면 팀+시각으로, 없으면 팀 짝으로
+            # 대조하고 어느 열쇠를 썼는지 함께 적는다.
+            by_time = {(m.home_team, m.away_team, m.kickoff_raw[:16])
+                       for m in index}
+            by_pair = {(m.home_team, m.away_team) for m in index}
+            no_utc = sum(1 for m in idless if not str(m.get("utc") or ""))
+            dup, lost = [], []
+            for m in idless:
+                pair = (m.get("home"), m.get("away"))
+                utc = str(m.get("utc") or "")[:16]
+                hit = ((pair + (utc,)) in by_time) if utc else (pair in by_pair)
+                (dup if hit else lost).append(m)
+            print(f"  ! 경기 ID 없음 {len(idless)}건"
+                  + (f" (그중 시각도 없음 {no_utc}건)" if no_utc else "")
+                  + f" → 색인에 이미 있는 경기 {len(dup)}건 · "
+                  f"색인에 없는 경기 {len(lost)}건")
             if lost:
-                print("    ↓ 손실분 (색인에 같은 팀·시각이 없다)")
-                for m in idless:
-                    key = (m.get("home"), m.get("away"),
-                           str(m.get("utc") or "")[:16])
-                    if key not in have:
-                        print(f"      {m.get('utc', '')[:16]:<18}"
-                              f"{str(m.get('home'))[:18]:<20}"
-                              f"{str(m.get('away'))[:18]}")
+                print("    ↓ 색인에 없는 팀 짝 (진짜 손실일 수 있다)")
+                for m in lost:
+                    print(f"      {str(m.get('utc') or '시각없음')[:16]:<18}"
+                          f"{str(m.get('home'))[:18]:<20}"
+                          f"{str(m.get('away'))[:18]}")
 
         # ---- 핵심 판정: 순위표 played vs 색인 종료 경기 수 -----------------
         counted: dict[str, int] = defaultdict(int)

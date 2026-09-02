@@ -148,11 +148,34 @@ def main(argv=None) -> int:
         if dates:
             print(f"  기간 {dates[0].date()} ~ {dates[-1].date()}")
         no_time = sum(1 for m in index if m.kickoff is None)
-        no_id = sum(1 for m in matches if not m.get("id"))
         if no_time:
             print(f"  ! 킥오프 해석 실패 {no_time}건")
-        if no_id:
-            print(f"  ! 경기 ID 가 없어 담지 못한 경기 {no_id}건")
+
+        # ---- ID 없는 경기가 손실인가 중복인가 ------------------------------
+        # `season_matches_from` 은 경기 ID 가 없으면 담지 않는다 (팀명+날짜를
+        # 임의의 키로 만들면 같은 경기가 두 벌로 들어오기 때문). 그런데 그게
+        # **정말 못 담은 경기**인지, **이미 담은 경기의 다른 표현**인지는
+        # 개수만으로 알 수 없다. 팀·시각으로 대조해 가른다.
+        idless = [m for m in matches if not m.get("id")]
+        if idless:
+            have = {(m.home_team, m.away_team, m.kickoff_raw[:16])
+                    for m in index}
+            dup = [m for m in idless
+                   if (m.get("home"), m.get("away"),
+                       str(m.get("utc") or "")[:16]) in have]
+            lost = len(idless) - len(dup)
+            print(f"  ! 경기 ID 없음 {len(idless)}건 "
+                  f"→ 이미 색인에 있는 경기의 중복 표현 {len(dup)}건 · "
+                  f"실제 손실 {lost}건")
+            if lost:
+                print("    ↓ 손실분 (색인에 같은 팀·시각이 없다)")
+                for m in idless:
+                    key = (m.get("home"), m.get("away"),
+                           str(m.get("utc") or "")[:16])
+                    if key not in have:
+                        print(f"      {m.get('utc', '')[:16]:<18}"
+                              f"{str(m.get('home'))[:18]:<20}"
+                              f"{str(m.get('away'))[:18]}")
 
         # ---- 핵심 판정: 순위표 played vs 색인 종료 경기 수 -----------------
         counted: dict[str, int] = defaultdict(int)

@@ -351,6 +351,144 @@ def test_no_new_dataclass_or_enum():
 
 
 # --------------------------------------------------------------------------
+# 9. degraded_reason 단락 (2-F 때 발견한 같은 종류의 손실)
+# --------------------------------------------------------------------------
+# 호출부마다 이렇게 쓰고 있었다.
+#
+#     reason=("" if values else "표본 없음") or "; ".join(sorted(missing))
+#
+# 기간이 **통째로 비면** 첫 항이 truthy 라 `or` 가 단락되어 사유가 사라진다.
+# 값이 하나라도 있을 때만 사유가 보이고 정작 전부 없을 때 "표본 없음" 만
+# 남는 뒤집힌 동작이었다 — 이 파일이 고친 것과 같은 종류다.
+def empty_profile() -> TeamProfile:
+    """슛 자료가 아예 없는 프로필. 값이 한 칸도 안 생긴다."""
+    p = profile()
+    p.shot_matches = []
+    p.opponent_matches = []
+    return p
+
+
+NO_SCORES = [SeasonMatch(
+    match_id=m, competition="epl",
+    kickoff=datetime(2026, 4, 1 + i, tzinfo=UTC), kickoff_aware=True,
+    home_team=TEAM, away_team="상대", home_goals=None, away_goals=None,
+    finished=True) for i, m in enumerate(MIDS)]
+
+
+def test_9_helper_prefers_the_specific_reason():
+    assert analysis.degraded_reason({}, {"사유A": {"x"}}) == "사유A"
+    assert analysis.degraded_reason({}, {"B": {"x"}, "A": {"y"}}) == "A; B"
+    # 값이 있으면 사유가 없을 때 빈 문자열
+    assert analysis.degraded_reason({"x": 1}, None) == ""
+    # 값도 사유도 없으면 그때만 기본 문구
+    assert analysis.degraded_reason({}, None) == "표본 없음"
+    assert analysis.degraded_reason({}, set(), "다른 문구") == "다른 문구"
+
+
+def test_9_empty_period_keeps_its_reason_2d():
+    """값이 하나도 없는 기간에서도 사유가 남는다 (예전엔 '표본 없음')."""
+    q = analysis.DataQuality()
+    analysis.build_sustainability(empty_profile(), TEAM, NO_SCORES, AS_OF,
+                                  WINDOWS, quality=q)
+    entry = q.axes["sustainability.recent6"]
+    assert entry["available"] is False
+    assert entry["degraded_reason"] != "표본 없음", "사유가 단락됐다"
+    assert analysis.NO_SCORE in entry["degraded_reason"]
+
+
+def test_9_empty_period_keeps_its_reason_2e():
+    q = analysis.DataQuality()
+    analysis.build_venue_context(empty_profile(), TEAM, NO_SCORES, AS_OF,
+                                 WINDOWS, analysis.HOME,
+                                 config=analysis.venue_context_config(SETTINGS),
+                                 quality=q)
+    entry = q.axes["venue_context.recent6"]
+    assert entry["available"] is False
+    assert entry["degraded_reason"] != "표본 없음"
+    assert analysis.NO_SCORE in entry["degraded_reason"]
+
+
+def test_9_all_axes_route_through_the_helper():
+    """`quality.mark(reason=…)` 이 전부 헬퍼를 지난다.
+
+    문자열로 훑지 않는다 — 헬퍼의 docstring 이 옛 표현을 **설명으로** 담고
+    있어서 부분문자열 검사는 자기 자신에 걸린다. 호출부를 AST 로 본다.
+    """
+    import ast
+    import inspect
+    tree = ast.parse(inspect.getsource(analysis))
+    marks = [n for n in ast.walk(tree) if isinstance(n, ast.Call)
+             and isinstance(n.func, ast.Attribute) and n.func.attr == "mark"]
+    assert len(marks) >= 6, f"quality.mark 호출이 {len(marks)}개뿐"
+    routed = 0
+    for call in marks:
+        kw = {k.arg: k.value for k in call.keywords}
+        reason = kw.get("reason")
+        if reason is None:
+            continue
+        # 막으려는 것은 **단락 형태**다: `(... if ... else "…") or join(…)`.
+        # 앞항이 truthy 면 뒤가 통째로 버려진다.
+        assert not isinstance(reason, ast.BoolOp), \
+            f"L{call.lineno}: 단락 형태의 사유가 남아 있다"
+        if isinstance(reason, ast.Call):
+            assert getattr(reason.func, "id", "") == "degraded_reason", \
+                f"L{call.lineno}: 헬퍼를 거치지 않는다"
+            routed += 1
+        else:
+            # 고정 문구(`"장소 미상"`)나 시즌 블록의 단순 기본값은 그대로 둔다
+            assert isinstance(reason, (ast.Constant, ast.IfExp)), \
+                f"L{call.lineno}: {type(reason).__name__}"
+    assert routed >= 6, f"헬퍼를 지나는 호출이 {routed}개뿐"
+
+
+def test_9_available_flag_is_untouched():
+    """정상 경로에서는 사유가 비어 있고 available 도 그대로다.
+
+    `season` 블록은 이 픽스처에 시즌 통계가 없어 원래부터 '시즌 지표 없음'
+    이다 — 교정 대상이 아니므로 최근 구간만 본다.
+    """
+    q = analysis.DataQuality()
+    defense(MATCHED, quality=q)
+    recent = {k: v for k, v in q.axes.items() if ".recent" in k}
+    assert recent, q.axes
+    for key, entry in recent.items():
+        assert entry["available"] is True, key
+        assert entry["degraded_reason"] == "", key
+    season_entry = q.axes["defensive_quality.season"]
+    assert season_entry["degraded_reason"] == "시즌 지표 없음", "기존 사유가 바뀌었다"
+
+
+# --------------------------------------------------------------------------
+# 10. 기간 나열 순서가 결정적인가
+# --------------------------------------------------------------------------
+def test_10_period_order_is_total():
+    """같은 키가 남지 않는다 — 남으면 집합 순서가 결과를 정하게 된다."""
+    periods = ["season", "recent10", "recent6", "recent5", "recent3",
+               "home_season", "home10", "home6", "away_season", "away3",
+               "무엇인지모름"]
+    keys = [analysis.period_sort_key(p) for p in periods]
+    assert len(set(keys)) == len(keys), "동점이 남았다"
+
+
+def test_10_period_order_is_meaningful():
+    got = sorted(["home6", "recent3", "season", "home_season", "recent10"],
+                 key=analysis.period_sort_key)
+    assert got == ["season", "recent10", "recent3", "home_season", "home6"]
+
+
+def test_10_missing_notes_do_not_depend_on_set_order():
+    """집합을 어떤 순서로 넣어도 같은 줄이 나온다."""
+    names = ["goals", "points"]
+    spans = ["season", "recent10", "recent6", "home_season", "home6"]
+    first = analysis._missing_notes(
+        {"사유": {n: set(spans) for n in names}})
+    second = analysis._missing_notes(
+        {"사유": {n: set(reversed(spans)) for n in names}})
+    assert first == second
+    assert "시즌·최근 10경기·최근 6경기·홈 시즌·최근 6경기 중 홈" in first[0]
+
+
+# --------------------------------------------------------------------------
 def main() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0

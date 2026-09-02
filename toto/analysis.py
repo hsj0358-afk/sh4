@@ -645,6 +645,32 @@ def _merge_missing(store: dict, reasons: dict, period: str) -> None:
             slot.setdefault(name, set()).add(period)
 
 
+def period_sort_key(period: str) -> tuple[int, int, str]:
+    """기간을 늘어놓을 순서. **집합 순서에 기대지 않는다.**
+
+    예전 키는 `recent` 로 시작하지 않는 기간에 전부 0 을 줬다. 그래서
+    `season` · `home_season` · `home6` 이 전부 동점이 되고, 파이썬의 문자열
+    해시가 실행마다 달라지므로 **같은 데이터에서 리포트 문구가 실행마다
+    다르게 나왔다** (시드 0/1/2 에서 순서가 각각 달랐다).
+
+    돌려주는 것은 `(묶음, 창 크기 내림차순, 이름)` 이고 마지막에 이름을 두어
+    **동점이 남지 않게** 한다. 묶음 순서는 넓은 표본부터다 —
+    시즌 → 최근 N → 장소 시즌 → 장소 최근.
+    """
+    if period == SEASON:
+        return (0, 0, period)
+    if period.startswith("recent"):
+        tail = period[len("recent"):]
+        return (1, -int(tail) if tail.isdigit() else 0, period)
+    for venue in VENUE_LABELS:
+        if period == venue_season_name(venue):
+            return (2, 0, period)
+        tail = period[len(venue):]
+        if period.startswith(venue) and tail.isdigit():
+            return (3, -int(tail), period)
+    return (4, 0, period)
+
+
 def _missing_notes(store: dict) -> list[str]:
     """`{사유: {지표: {기간…}}}` → notes 줄. 사유 하나당 한 줄이다."""
     out: list[str] = []
@@ -653,11 +679,30 @@ def _missing_notes(store: dict) -> list[str]:
         for spans in names.values():
             periods |= spans
         labels = ", ".join(SPECS.get(n, (n,))[0] for n in sorted(names))
-        where = "·".join(period_label(p) for p in sorted(
-            periods, key=lambda p: -int(p[6:]) if p.startswith("recent")
-            else 0))
+        where = "·".join(period_label(p)
+                         for p in sorted(periods, key=period_sort_key))
         out.append(f"값 없음 ({where}): {reason} — {labels}")
     return out
+
+
+def degraded_reason(values, reasons=None, fallback: str = "표본 없음") -> str:
+    """`DataQuality.degraded_reason` 에 넣을 문구.
+
+    **구체적 사유를 먼저 쓴다.** 예전에는 호출부마다
+
+        reason=("" if values else "표본 없음") or "; ".join(sorted(missing))
+
+    였는데, 기간이 통째로 비면 첫 항이 truthy 라 `or` 가 단락되어 **왜
+    없는지가 사라졌다.** 값이 하나라도 있을 때만 사유가 보이고, 정작 전부
+    없을 때 "표본 없음" 만 남는 뒤집힌 동작이었다 — 2-C 교정이 고친 것과
+    같은 종류의 손실이다.
+
+    규칙을 호출부마다 적지 않고 여기 한 곳에 둔다.
+    """
+    detail = "; ".join(sorted(reasons or ()))
+    if detail:
+        return detail
+    return "" if values else fallback
 
 
 def _season_values(stats) -> dict[str, tuple[float, int | None, str]]:
@@ -1112,7 +1157,7 @@ def build_time_context(profile: TeamProfile | None, team: str,
         if quality is not None:
             quality.mark(f"time_context.{period}", bool(values),
                          requested=window, available_matches=available,
-                         reason="" if values else "표본 없음")
+                         reason=degraded_reason(values))
 
         # ---- 트렌드 (시즌 대비) --------------------------------------------
         # **빼기 전에 뺄 수 있는지 먼저 본다.** 원천이나 산출 방식이 다르면
@@ -1582,8 +1627,7 @@ def build_chance_quality(profile: TeamProfile | None, team: str,
         if quality is not None:
             quality.mark(f"chance_quality.{period}", bool(values),
                          requested=window, available_matches=available,
-                         reason=("" if values else "표본 없음")
-                         or "; ".join(sorted(missing)))
+                         reason=degraded_reason(values, missing))
         for code, label, basis in detect_patterns(values, config):
             axis.notes.append(
                 f"패턴 {code} · {period_label(period)} · {label} ({basis})")
@@ -1911,8 +1955,8 @@ def build_defensive_quality(profile: TeamProfile | None, team: str,
         if quality is not None:
             quality.mark(f"defensive_quality.{period}", bool(values),
                          requested=window, available_matches=len(rows),
-                         reason=("" if values else "상대 집계 없음")
-                         or "; ".join(sorted(missing)))
+                         reason=degraded_reason(values, missing,
+                                                "상대 집계 없음"))
 
         # ---- 트렌드 — 2-B 교정의 게이트를 그대로 쓴다 ------------------------
         same_set = (played is not None and len(rows) >= played)
@@ -2345,8 +2389,7 @@ def build_sustainability(profile: TeamProfile | None, team: str,
         if quality is not None:
             quality.mark(f"sustainability.{period}", bool(values),
                          requested=window, available_matches=len(rows),
-                         reason=("" if values else "표본 없음")
-                         or "; ".join(sorted(missing)))
+                         reason=degraded_reason(values, missing))
         for code, label, basis in detect_sustainability_patterns(
                 values, min_sample):
             axis.notes.append(
@@ -2687,8 +2730,7 @@ def build_venue_context(profile: TeamProfile | None, team: str,
         if quality is not None:
             quality.mark(f"venue_context.{period}", bool(values),
                          requested=requested, available_matches=len(ids),
-                         reason=("" if values else "표본 없음")
-                         or "; ".join(sorted(store)))
+                         reason=degraded_reason(values, store))
 
     # ---- 시즌 (전체 → 장소) -------------------------------------------------
     season_values, season_missing, season_ids = _venue_block(
@@ -3018,14 +3060,9 @@ def build_schedule_strength(profile: TeamProfile | None, team: str,
                 note=note, origin=_SOS_ORIGIN)
         _merge_missing(missing_store, missing, period)
         if quality is not None:
-            # **구체적 사유를 먼저 쓴다.** 다른 축이 쓰는
-            # `("" if values else "표본 없음") or join(missing)` 은 기간이
-            # 통째로 비면 "표본 없음" 에서 단락되어 사유가 사라진다 — 2-C
-            # 교정이 고친 것과 같은 종류의 손실이다.
             quality.mark(f"schedule_strength.{period}", bool(values),
                          requested=requested, available_matches=available,
-                         reason=("; ".join(sorted(missing))
-                                 or ("" if values else "표본 없음")))
+                         reason=degraded_reason(values, missing))
 
     emit(SEASON, history, len(history))
     for window in windows:

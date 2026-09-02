@@ -557,7 +557,35 @@ xG·npxG·슛당 xG 처럼 같은 이야기를 세 번 세지 않으려는 메�
     "못 이었다" 사유는 경기 수를 빼고 `NO_SCORE` 상수를 쓴다.
   · 2-B·2-C 가 **같은 `_put()` 을 통해** 사유를 남긴다. 한 곳만 고쳤다.
 
-회귀 테스트: `python tests/test_reason_preservation.py` (17개).
+회귀 테스트: `python tests/test_reason_preservation.py` (25개).
+
+**같은 손실이 한 군데 더 있었다 (2-F 때 발견).** `DataQuality` 에 사유를
+넣는 자리가 축마다 이렇게 돼 있었다.
+
+```python
+reason=("" if values else "표본 없음") or "; ".join(sorted(missing))
+```
+
+기간이 **통째로 비면** 앞항이 truthy 라 `or` 가 단락되어 사유가 사라진다.
+값이 하나라도 있을 때만 사유가 보이고, 정작 전부 없을 때 "표본 없음" 만
+남는 **뒤집힌 동작**이었다. 규칙을 호출부에서 걷어 `degraded_reason()`
+한 곳에 뒀다 — 구체적 사유를 먼저 쓰고, 없을 때만 기본 문구를 쓴다.
+
+  · 값이 없으면서 사유가 있는 상태에서 실제로 달라진다 —
+    `"표본 없음"` → `"상대 슛맵 경기별 자료 없음; 슛맵 경기별 자료 없음;
+    시즌 경기 색인에서 스코어를 찾지 못함"`.
+  · **값은 한 칸도 바뀌지 않는다.** 실물 두 팀 여섯 축 692칸과
+    `DataQuality` 78칸이 교정 전후로 완전히 같다.
+  · 시즌 블록의 단순 기본값(`"" if season_values else "시즌 지표 없음"`)은
+    단락 버그가 아니라 그대로 뒀다. 테스트는 **`or` 단락 형태**만 막는다.
+
+**기간 나열 순서도 결정적으로 바꿨다.** `_missing_notes` 의 정렬 키가
+`recent` 로 시작하지 않는 기간에 전부 0 을 줘서 `season`·`home_season`·
+`home6` 이 동점이 됐고, 파이썬 문자열 해시가 실행마다 달라지므로 **같은
+데이터에서 리포트 문구가 실행마다 다르게 나왔다**(시드 0/1/2 에서 순서가
+각각 달랐다). `period_sort_key()` 가 `(묶음, 창 크기 내림차순, 이름)` 을
+돌려주고 마지막에 이름을 두어 동점을 없앤다 — 시즌 → 최근 N → 장소 시즌 →
+장소 최근 순이다. 다섯 시드에서 같은 줄이 나오는 것을 확인했다.
 
 ### 1-1-11. 지속성 (Phase 2-D) — `build_sustainability()`
 
@@ -1095,7 +1123,7 @@ python tests/test_time_context.py          # 시간축 분석 2-A (43개)
 python tests/test_chance_quality.py        # 기회의 질 2-B (41개)
 python tests/test_trend_validity.py        # 트렌드 유효성 2-B 교정 (25개)
 python tests/test_defensive_quality.py     # 수비의 질 2-C (52개)
-python tests/test_reason_preservation.py   # 값 없음 사유 보존 2-C 교정 (17개)
+python tests/test_reason_preservation.py   # 값 없음 사유 보존 2-C 교정 (25개)
 python tests/test_sustainability.py        # 지속성 2-D (51개)
 python tests/test_venue_context.py         # 장소 문맥 2-E (58개)
 python tests/test_schedule_strength.py     # 상대 강도 2-F (40개)

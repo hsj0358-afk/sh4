@@ -402,20 +402,60 @@ def test_o36_moderator_does_not_recompute_anything():
 
 
 def test_o37_input_drops_the_axis_dumps():
-    """46KB 자료를 통째로 다시 보내지 않는다 (§20).
+    """자료를 통째로 다시 보내지 않는다 (§20).
 
     크기 비율로 재지 않는다 — 합성 픽스처에는 축 지표 덤프가 없어서 비율이
     실물과 전혀 다르다(실측 1,682 vs 2,610). 무엇이 빠졌는지를 **구조로**
-    본다: 용량의 대부분을 차지하는 축 요약과 notes 가 없어야 한다.
+    본다: 용량의 대부분을 차지하는 축 요약(실물 86%)과 notes 가 없어야 한다.
     """
     p = payload_of()
     data = moderator.build_input(p, [opinion(DATA), opinion(MATCHUP)])
-    for dropped in ("home", "away", "data_quality", "conflicts"):
+    for dropped in ("home", "away", "data_quality"):
         assert dropped not in data, f"{dropped} 를 그대로 다시 보내고 있다"
     blob = moderator.serialize_input(data)
     for token in ('"metrics"', '"notes"', '"provenance"'):
         assert token not in blob, f"축 덤프({token})가 들어 있다"
     assert len(blob) < len(panel.serialize_payload(p))
+
+
+def test_o37b_input_keeps_what_the_moderator_cannot_reconstruct():
+    """축소 검증에서 **남기기로 정한 둘**이 실제로 실린다.
+
+    빼면 사회자가 할 일을 못 한다:
+
+      · `conflicts`             2-G 가 이미 찾은 방향 불일치 — "왜 갈렸나"
+                                의 원재료이고 다른 칸으로 복원할 수 없다
+      · `source`/`measurement_basis`  측정 방식이 다르면 직접 견줄 수 없다
+                                (§1-1-9). `claim` 문장으로는 알 수 없다
+    """
+    p = payload_of()
+    data = moderator.build_input(p, [opinion(DATA), opinion(MATCHUP)])
+    assert "conflicts" in data, "2-G 방향 불일치가 사라졌다"
+    for row in data["evidence"]:
+        assert "source" in row and "measurement_basis" in row
+    # 이름이 겹치면 안 된다 — conflicts 의 basis 는 신호 설명이라 뜻이 다르다
+    assert all("basis" != k for row in data["evidence"] for k in row
+               if k == "basis")
+
+
+def test_o37c_conflicts_are_passed_through_not_recomputed():
+    m = make_match()
+    from toto.models import Signal
+    m.analysis.conflicts = [Signal(name="goals_vs_xg 방향 불일치",
+                                   basis="H: 최근 3경기 +0.55 ↔ 최근 6경기 -0.40",
+                                   note="표본에 따라 방향이 다릅니다.")]
+    data = moderator.build_input(panel.build_panel_payload(m),
+                                 [opinion(DATA)])
+    assert len(data["conflicts"]) == 1
+    assert data["conflicts"][0]["basis"].startswith("H:")
+    assert "goals_vs_xg" in data["conflicts"][0]["name"]
+
+
+def test_o37d_prompt_explains_the_two_retained_fields():
+    """모델이 알아서 이해할 것이라 가정하지 않는다 (§14)."""
+    for phrase in ("measurement_basis", "conflicts",
+                   "직접 견줄 수 없습니다", "이미 발견된"):
+        assert phrase in moderator.SYSTEM, phrase
 
 
 def test_o38_input_keeps_every_evidence_id():
@@ -445,6 +485,65 @@ def test_40_changed_opinion_invalidates():
     moderator.run_moderator(p, [opinion(DATA, home=3), opinion(MATCHUP)],
                             settings=S, cache=cache, client=c2)
     assert len(c2.moderator_calls) == 1, "의견이 바뀌었는데 캐시를 썼다"
+
+
+def test_40b_changed_market_invalidates():
+    cache = MemCache()
+    ops = [opinion(DATA)]
+    with_odds = panel.build_panel_payload(make_match())
+    moderator.run_moderator(with_odds, ops, settings=S, cache=cache,
+                            client=FakeClient())
+    c2 = FakeClient()
+    moderator.run_moderator(panel.build_panel_payload(
+        make_match(with_odds=False)), ops, settings=S, cache=cache, client=c2)
+    assert len(c2.moderator_calls) == 1, "시장이 바뀌었는데 캐시를 썼다"
+
+
+def test_40c_changed_evidence_content_invalidates():
+    """입력에 **실린** 근거 정보가 바뀌면 미적중이어야 한다."""
+    cache = MemCache()
+    ops = [opinion(DATA, ["E001"])]
+    moderator.run_moderator(panel.build_panel_payload(make_match([ev(1)])),
+                            ops, settings=S, cache=cache, client=FakeClient())
+    c2 = FakeClient()
+    moderator.run_moderator(
+        panel.build_panel_payload(make_match([ev(1, value=9.9)])),
+        ops, settings=S, cache=cache, client=c2)
+    assert len(c2.moderator_calls) == 1, "근거 값이 바뀌었는데 캐시를 썼다"
+
+
+def test_40d_irrelevant_payload_change_may_hit():
+    """입력에 **안 실리는** 자료가 바뀌면 적중해도 된다 (§11).
+
+    사회자 캐시는 **사회자가 실제로 받은 것**을 추적한다. 축 지표 덤프는
+    입력에 없으므로 그것만 달라진 경우 다시 물을 이유가 없다 — 같은 질문에
+    같은 자료를 준 것이기 때문이다.
+    """
+    from toto.models import AnalysisAxis, Metric, TeamAnalysis
+    cache = MemCache()
+    ops = [opinion(DATA, ["E001"])]
+    base = make_match([ev(1)])
+    moderator.run_moderator(panel.build_panel_payload(base), ops,
+                            settings=S, cache=cache, client=FakeClient())
+
+    other = make_match([ev(1)])
+    ta = TeamAnalysis(team="H", is_home=True)
+    axis = AnalysisAxis(name="chance_quality")
+    axis.metrics["recent6.xg"] = Metric(name="xg", value=1.23, period="recent6")
+    ta.chance_quality = axis
+    other.analysis.home = ta                      # 근거로 이어지지 않는 축
+    p2 = panel.build_panel_payload(other)
+    assert p2.home != panel.build_panel_payload(base).home, "자료가 안 바뀌었다"
+    c2 = FakeClient()
+    moderator.run_moderator(p2, ops, settings=S, cache=cache, client=c2)
+    assert c2.moderator_calls == [], "사회자가 못 본 변경으로 다시 물었다"
+
+
+def test_40e_cache_tracks_the_moderator_input_not_the_panel_payload():
+    """캐시 키의 대상이 무엇인지 코드로 고정한다."""
+    src = inspect.getsource(moderator.run_moderator)
+    assert "input_hash(payload_in)" in src
+    assert "payload_hash" not in src, "패널 자료 해시를 키로 쓰고 있다"
 
 
 def test_41_model_change_invalidates():

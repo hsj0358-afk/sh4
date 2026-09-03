@@ -99,17 +99,43 @@ def _opinion_row(opinion: PanelOpinion) -> dict:
 
 
 def build_input(payload, opinions) -> dict:
-    """사회자 입력. **패널 자료 46KB 를 통째로 다시 보내지 않는다.**
+    """사회자 입력. **패널 자료를 통째로 다시 보내지 않는다.**
 
     자료를 지우는 것이 아니라 **참조로 바꾼다** — 근거는 ID 와 함께 짧은
-    형태로 싣고, 축 지표 덤프는 빼되 `payload_hash` 로 어느 자료에서 나온
-    의견인지 추적할 수 있게 한다. 두 패널이 같은 자료를 봤다는 사실
+    형태로 싣고, 축 지표 덤프는 빼되 두 패널이 같은 자료를 봤다는 사실
     (불변조건 2)은 패널 단계에서 이미 강제돼 있고 여기서 바뀌지 않는다.
+
+    ## 무엇을 빼고 무엇을 남겼나 (실측으로 정한 것)
+
+    실물 260048 에서 패널 자료 52,044 bytes 중 **축 지표 덤프가 44,963
+    bytes(86%)** 다. 사회자는 새 통계를 만들지 않으므로 원지표가 필요 없고,
+    넣으면 '새 분석 금지' 를 프롬프트에만 기대게 된다 — 그래서 뺐다.
+
+    반대로 **빼면 사회자가 할 일을 못 하는 것 둘**은 남긴다.
+
+      · `conflicts` — 2-G 가 **이미 찾아 둔** 방향 불일치다. "왜 갈렸나" 의
+        원재료이고 다른 칸으로 복원할 수 없다.
+      · 근거의 `source`·`measurement_basis` — E001 은 `shotmap/shot_events`,
+        E002 는 `derived/mixed` 라 **측정 방식이 다르다.** 이 프로젝트가
+        §1-1-9 에서 "빼기 전에 뺄 수 있는지 본다" 로 못 박은 구분이고,
+        불확실성 정리("같은 표본에서 비교할 수 없다")가 여기 달려 있다.
+        `claim` 문장만으로는 알 수 없다.
+
+    뺀 채로 둔 것과 그 이유:
+
+      · `finding`             `claim`·`metric`·`period` 가 이미 담는다
+      · `axis`·`supporting_*` 2-G 가 dedup 을 끝내 근거끼리 이미 독립이다.
+                              넣으면 개수를 세는 유혹만 생긴다
+      · `data_quality`        **두 패널이 이미 봤다.** 한계는 각자의
+                              `rationale` 로 나오고 표본은 근거의 `n` 에 있다
     """
     evidence = [{"id": e["id"], "team": e["team"], "category": e["category"],
                  "context": e["context"], "period": e["period"],
                  "claim": e["claim"], "metric": e["metric"],
-                 "value": e["value"], "n": e["n"]}
+                 "value": e["value"], "n": e["n"],
+                 # 이름을 `basis` 로 줄이지 않는다 — 아래 `conflicts` 의
+                 # `basis`(신호 설명)와 뜻이 달라 섞이면 안 된다.
+                 "source": e["source"], "measurement_basis": e["basis"]}
                 for e in payload.evidence]
     market = payload.market_reference
     return {
@@ -119,6 +145,8 @@ def build_input(payload, opinions) -> dict:
                   "kickoff_kst": payload.kickoff_kst,
                   "as_of": payload.as_of},
         "evidence": evidence,
+        # 2-G 가 이미 계산한 방향 불일치. 여기서 새로 찾지 않는다.
+        "conflicts": [dict(c) for c in payload.conflicts],
         "opinions": [_opinion_row(o) for o in opinions],
         # 시장은 **의견 목록 밖의 별도 칸**이다 (불변조건 1).
         "market_reference": (asdict(market) if isinstance(
@@ -151,6 +179,16 @@ SYSTEM = """\
 4. 의견이 갈린 지점에서 어떤 근거 해석·표본 차이가 있었는지 설명합니다.
 5. 시장 기준값과의 관계를 설명합니다.
 6. 자료의 한계와 불확실성을 정리합니다.
+
+자료를 읽는 법:
+
+- 근거(evidence)의 `source`·`measurement_basis` 는 그 수가 **어느 피드에서
+  어떻게 만들어졌는지**입니다. 둘이 다르면 서로 다른 방식으로 잰 값이라
+  직접 견줄 수 없습니다 — 두 패널이 그런 근거를 각각 들었다면 그 사실을
+  불확실성에 적으십시오.
+- `conflicts` 는 분석 단계에서 **이미 발견된** 방향 불일치입니다. 같은
+  사실인데 표본에 따라 부호가 반대인 경우이고, 의견이 갈린 이유를 설명할
+  때 쓰십시오. 여기서 새로 찾아내려 하지 마십시오.
 
 반드시 지킬 것:
 

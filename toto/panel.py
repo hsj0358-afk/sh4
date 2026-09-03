@@ -41,7 +41,7 @@ import json
 import logging
 from dataclasses import asdict, dataclass, field
 
-from . import llm
+from . import llm, moderator
 from .models import (Match, MarketReference, PanelOpinion, PanelRun)
 
 log = logging.getLogger(__name__)
@@ -515,10 +515,26 @@ def run_match(match: Match, *, settings, cache=None, client=None) -> PanelRun:
         overall = f"부분 ({done}/{len(ROLES)} 분석가)"
     else:
         overall = f"실패 (0/{len(ROLES)} 분석가)"
+
+    # Phase 3-C. **의견이 하나도 없으면 부르지 않는다** — 종합할 것이 없다.
+    # 하나만 있어도 부른다(그 사실이 `panels_seen` 에 남는다).
+    synthesis = None
+    if opinions:
+        try:
+            synthesis = moderator.run_moderator(
+                payload, opinions, settings=settings, cache=cache,
+                client=client)
+        except llm.LLMError as exc:
+            synthesis = moderator.failed(exc.korean, opinions)
+            log.warning("사회자 실패: %s", exc.korean)
+        except moderator.ValidationError as exc:
+            synthesis = moderator.failed(f"응답 형식: {exc}", opinions)
+            log.warning("사회자 응답을 쓸 수 없습니다: %s", exc)
+
     return PanelRun(status=overall, opinions=tuple(opinions),
                     role_status=status, evidence_ids=ids,
                     market_reference=payload.market_reference,
-                    payload_hash=digest)
+                    payload_hash=digest, moderator=synthesis)
 
 
 def attach_panels(matches: list[Match], settings, *, cache=None,

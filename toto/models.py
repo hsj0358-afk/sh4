@@ -842,6 +842,40 @@ class PanelOpinion:
 
 
 @dataclass(frozen=True)
+class ModeratorResult:
+    """두 의견을 **비교·종합**한 결과 (Phase 3-C).
+
+    **세 번째 분석가가 아니다.** 누가 맞는지 고르지 않고, 두 전문가가 왜
+    같고 왜 다른지·어떤 근거를 공유하고 어디서 갈리는지를 정리한다.
+
+    **예상 스코어 칸을 두지 않는다.** `predicted_home`·`predicted_away` 가
+    여기 있으면 두 패널 스코어를 평균·반올림해 '대표 스코어' 를 만드는 길이
+    열린다. 그 유혹을 구조로 막고, 스코어 차이는 `score_comparison` 에
+    문장으로만 적는다.
+
+    `winner`·`wdl`·`pick`·`lean`·`recommendation`·`confidence`·`strength`·
+    `favorite`·`probability` 칸도 없다 — 있으면 그 자체가 추천이 된다.
+    """
+    status: str = ""                # 생략 / 실패(사유) / ok
+    # **실제로 본 역할**. 하나만 봤으면 하나만 들어간다 — 둘을 본 것처럼
+    # 보이면 안 된다. 개수는 `len()` 으로 알 수 있으므로 따로 세지 않는다.
+    panels_seen: tuple[str, ...] = ()
+    # 근거 ID 는 **기존 순서**로 정렬한다. 집합 순회 순서를 그대로 내보내면
+    # 같은 입력에서 실행마다 다른 줄이 나온다.
+    shared_evidence_ids: tuple[str, ...] = ()
+    data_only_evidence_ids: tuple[str, ...] = ()
+    matchup_only_evidence_ids: tuple[str, ...] = ()
+    common_points: tuple[str, ...] = ()
+    differences: tuple[str, ...] = ()
+    counterpoints: tuple[str, ...] = ()
+    score_comparison: str = ""      # 두 예상 스코어의 차이 설명 (승패 아님)
+    market_relation: str = ""       # 시장 기준선과의 관계 (투표가 아님)
+    uncertainty: tuple[str, ...] = ()
+    model: str = ""
+    prompt_version: str = ""
+
+
+@dataclass(frozen=True)
 class PanelRun:
     """한 경기의 패널 실행 결과 (의견 + 운영 상태).
 
@@ -854,6 +888,8 @@ class PanelRun:
     market_reference: MarketReference | None = None
     evidence_ids: tuple[str, ...] = ()   # 이 경기에서 쓸 수 있던 근거 ID 전부
     payload_hash: str = ""
+    # Phase 3-C. 의견이 하나도 없으면 None 이다 (종합할 것이 없다).
+    moderator: ModeratorResult | None = None
 
     def opinion(self, role: str) -> PanelOpinion | None:
         for item in self.opinions:
@@ -862,12 +898,28 @@ class PanelRun:
         return None
 
 
+_MODERATOR_TUPLES = ("panels_seen", "shared_evidence_ids",
+                     "data_only_evidence_ids", "matchup_only_evidence_ids",
+                     "common_points", "differences", "counterpoints",
+                     "uncertainty")
+
+
+def revive_moderator(d: Any) -> ModeratorResult | None:
+    if not isinstance(d, dict):
+        return None
+    body = dict(d)
+    for key in _MODERATOR_TUPLES:
+        body[key] = tuple(body.get(key) or ())
+    return ModeratorResult(**body)
+
+
 def revive_panel_run(d: Any) -> PanelRun | None:
     """dict → PanelRun. `asdict` 가 tuple 을 list 로 풀어 놓으므로 되감는다."""
     if not isinstance(d, dict):
         return None
     market = d.get("market_reference")
     return PanelRun(
+        moderator=revive_moderator(d.get("moderator")),
         status=d.get("status", ""),
         opinions=tuple(
             PanelOpinion(**{**o,

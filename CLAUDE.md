@@ -1151,7 +1151,59 @@ Phase 2 가 만든 **사실**을 두 전문가가 **해석**한다. 분석이 �
 여기서 두 의견을 비교하거나 평균내지 않는다 — 그건 Moderator(3-C) 소관이고
 아직 없다.
 
-회귀 테스트: `python tests/test_panel.py` (69개).
+회귀 테스트: `python tests/test_panel.py` (70개).
+
+### 1-10. 사회자 (Phase 3-C) — `toto/moderator.py`
+
+두 의견을 **비교·종합**한다. 세 번째 분석가가 아니다.
+
+```
+데이터 분석가 ┐
+             ├→ 사회자 ←  시장 기준값 (외부 baseline)
+맞대결 분석가 ┘
+                   ↓
+          사용자가 최종 승무패 판단
+```
+
+**투표하지 않는다.** 두 의견 + 시장을 '3표 중 2표' 로 세지 않는다 — 시장은
+의견이 아니다. `build_input` 의 `opinions` 목록에는 언제나 분석가만 들어가고
+시장은 **별도 칸**이다(실물에서 의견 2개·시장 1칸으로 확인).
+
+**평균내지 않는다.** `ModeratorResult` 에 **스코어 칸이 아예 없다** —
+`predicted_home`·`final_home`·`consensus_*` 어느 것도 없다. 자리를 두지
+않는 것이 `2-1` 과 `1-1` 을 `1.5-1` 로 만드는 길을 막는 방법이다. 스코어
+차이는 `score_comparison` 에 문장으로만 적는다. 나눗셈·`round()`·`mean()`
+이 모듈에 없는지 AST 로 검사한다.
+
+**근거 개수를 세기로 쓰지 않는다.** 같은 ID 를 둘이 인용하면 **하나**다.
+분류는 모델에게 묻지 않고 `split_evidence()` 가 계산한다 — 모델이 보낸
+`shared_evidence_ids` 는 무시된다. 실물에서 인용 6개(중복 2) → 고유 4개.
+
+**순서를 집합에 맡기지 않는다.** 집합 연산 결과를 그대로 내보내면 같은
+자료에서 실행마다 다른 줄이 나온다. 2-G 가 매긴 근거 순서로 다시 줄 세운다
+(2-C 교정의 `period_sort_key` 와 같은 이유).
+
+**자료를 통째로 다시 보내지 않는다.** 축 지표 덤프를 빼고 근거는 ID 와 짧은
+형태로만 싣는다 — 실물에서 패널 자료 46,420 bytes → 사회자 입력 2,300 bytes
+(**4%**). `payload_hash` 로 어느 자료에서 나온 의견인지는 그대로 추적된다.
+두 패널이 같은 자료를 봤다는 사실(3-B 불변조건 2)은 패널 단계에서 이미
+강제돼 있고 여기서 바뀌지 않는다.
+
+**의견이 없으면 부르지 않는다.** 하나만 있어도 부르고, 그 사실이
+`panels_seen` 에 남는다 — 둘을 본 것처럼 보이면 안 되므로 개수가 아니라
+**역할 이름**을 싣는다. 사회자가 실패해도 패널 의견은 그대로 남고
+(`status` 가 `실패 (사유)`), 가짜 종합을 만들지 않는다.
+
+`llm.py` 를 그대로 재사용한다 — 새 클라이언트를 만들지 않는다(`anthropic`
+이라는 낱말이 이 모듈에 없다). 캐시는 `moderator` namespace 와 독립 버전을
+쓴다. 입력 해시에 두 의견이 이미 들어 있어 의견이 바뀌면 자동으로 미적중이
+된다.
+
+`analysis`·`evidence`·`predict`·`xpts`·`shots`·`sources`·`render`·`menu` 를
+import 하지 않는다(AST 테스트). 순환을 피하려고 역할 이름을 따로 들고 있고,
+`panel` 과 어긋나지 않는지 테스트가 대조한다.
+
+회귀 테스트: `python tests/test_moderator.py` (50개).
 
 ---
 
@@ -1308,7 +1360,8 @@ python tests/test_venue_context.py         # 장소 문맥 2-E (58개)
 python tests/test_schedule_strength.py     # 상대 강도 2-F (40개)
 python tests/test_evidence.py              # 근거 생성 2-G (57개)
 python tests/test_menu_flow.py             # 메뉴 루프·예외·로그 3-A (27개)
-python tests/test_panel.py                 # 두 전문가 패널 3-B (69개)
+python tests/test_panel.py                 # 두 전문가 패널 3-B (70개)
+python tests/test_moderator.py             # 사회자 3-C (50개)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)
 python tools/probe_sources.py --browser    # 소스 구조 점검

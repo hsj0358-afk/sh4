@@ -42,14 +42,37 @@ GOOD = json.dumps({"predicted_home": 2, "predicted_away": 1,
                    "evidence_ids": ["E001"]}, ensure_ascii=False)
 
 
-class FakeClient:
-    """`complete(system, user)` 하나만 있으면 된다. 실제 API 를 부르지 않는다."""
+MODERATOR_OK = json.dumps(
+    {"common_points": ["두 의견 모두 표본이 작다고 본다"],
+     "differences": ["예상 스코어가 다르다"],
+     "counterpoints": [], "score_comparison": "홈 득점 예상이 1골 다르다",
+     "market_relation": "", "uncertainty": ["표본 1경기"],
+     "evidence_ids": []}, ensure_ascii=False)
 
-    def __init__(self, replies=None):
+
+class FakeClient:
+    """`complete(system, user)` 하나만 있으면 된다. 실제 API 를 부르지 않는다.
+
+    **분석가 호출과 사회자 호출을 나눠 센다.** 3-C 에서 `run_match` 가 세
+    번째 호출(사회자)을 하게 됐는데, 그것까지 같은 대본에서 꺼내면 3-B 의
+    호출 수 단언이 전부 어긋난다. 사회자 호출은 대본을 소비하지 않고
+    `moderator_calls` 에만 쌓이므로 3-B 단언은 **한 글자도 바뀌지 않는다.**
+    """
+
+    def __init__(self, replies=None, moderator_reply=None):
         self.replies = list(replies) if replies is not None else None
-        self.calls: list[tuple[str, str]] = []
+        self.moderator_reply = moderator_reply
+        self.calls: list[tuple[str, str]] = []            # 분석가
+        self.moderator_calls: list[tuple[str, str]] = []  # 사회자
 
     def complete(self, system, user):
+        if "사회자" in system:
+            self.moderator_calls.append((system, user))
+            reply = (self.moderator_reply if self.moderator_reply is not None
+                     else MODERATOR_OK)
+            if isinstance(reply, BaseException):
+                raise reply
+            return reply
         self.calls.append((system, user))
         if self.replies is None:
             return GOOD
@@ -817,13 +840,31 @@ def test_25f_llm_module_has_no_analysis_logic():
         assert banned not in src.lower(), banned
 
 
-def test_25g_no_moderator_yet():
-    """3-C 는 아직이다."""
-    assert not Path("toto/moderator.py").exists()
+def test_25g_panel_does_not_synthesize():
+    """패널 단계는 종합하지 않는다 — 그건 사회자(3-C) 몫이다.
+
+    예전에는 `moderator.py` 가 없다는 것으로 확인했는데 3-C 에서 생겼다.
+    지키려는 것은 '파일이 없다' 가 아니라 **패널이 두 의견을 비교·평균·
+    투표하지 않는다** 이므로 그쪽을 본다.
+    """
     src = inspect.getsource(panel)
-    for banned in ("Moderator", "moderator", "다수결", "평균 스코어"):
-        assert banned not in src.replace("Moderator(3-C)", "").replace(
-            "3-C", ""), banned
+    for banned in ("다수결", "평균", "투표", "consensus", "majority"):
+        assert banned not in src, banned
+    tree = ast.parse(src)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Compare):
+            blob = ast.dump(node)
+            assert "predicted_" not in blob, "패널이 스코어를 비교하고 있다"
+
+
+def test_25h_phase_3d_is_not_implemented():
+    """3-D(리포트 표현·메뉴 [10])는 아직 하지 않는다."""
+    from toto import menu, render
+    assert "패널" not in inspect.getsource(render._match_card)
+    assert "moderator" not in inspect.getsource(render)
+    blob = " ".join(t + d for _k, t, d, _a in menu.ITEMS)
+    for word in ("패널", "Panel", "사회자", "Moderator"):
+        assert word not in blob, word
 
 
 # --------------------------------------------------------------------------

@@ -161,8 +161,14 @@ def summarize_team(path: Path) -> None:
                 kind += f" · 예: {sample}"
             print(f"      '{node.strip()[:24]}' 위치 {' < '.join(chain)}")
             print(f"          다음 컨테이너 → {kind}")
+            # 제목이 든 블록을 통째로 찍는다. 항목 이름이 어느 태그에 있는지
+            # 조각으로는 잘려서 안 보인다 — 여기서 한 번에 끝낸다.
+            block = parent.parent if parent.parent is not None else parent
+            dump = re.sub(r"\s+", " ", str(block))
+            print(f"          블록 원본({len(dump)}자 중 앞 2200자):")
+            print(f"            {dump[:2200]}")
             seen += 1
-            if seen >= 4:
+            if seen >= 2:
                 break
         if seen == 0:
             print("      제목처럼 단독으로 있는 노드는 없음 "

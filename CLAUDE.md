@@ -1386,12 +1386,13 @@ target_kickoff` 이고, 대상 경기의 결과(4-0)와 ID 는 자료에 나타�
 아래는 이번 점검에서 **확인하지 못했거나 아직 미해결**인 항목이다.
 사실로 단정하지 말고, 다룰 때 실물을 먼저 확인한다.
 
-### 3-1. WhoScored 정성 데이터 — 아직 한 번도 수집된 적 없다
+### 3-1. WhoScored 정성 데이터 — 원인 확정, 실물 재실행 확인 대기
 
 `toto/sources/whoscored.py` 에 `_extract_characteristics()`,
 `_extract_form()`, `_extract_missing()` 가 있으나 **실제 팀 페이지에서
-성공한 기록이 없다.** 직전 원인(팀 링크 경로가 `/Teams/` → `/teams/` 소문자로
-바뀜)은 고쳤지만, 수정 후 실행 결과를 아직 못 받았다.
+성공한 기록이 아직 없다.** 원인은 두 번 좁혀졌다 — 팀 링크 경로가
+`/Teams/` → `/teams/` 소문자로 바뀐 것(수정 완료), 그리고 아래의 제목 기호
+문제(수정 완료). 수정 후 실행 결과를 아직 못 받았다.
 
 → 팀 페이지 HTML 을 실제로 받아 `Strengths`/`Weaknesses`/`Style of play`
 구조를 확인한 뒤에만 파서를 손댄다. 실패하면 `FAILED_team_*.html` 이
@@ -1428,6 +1429,42 @@ target_kickoff` 이고, 대상 경기의 결과(4-0)와 ID 는 자료에 나타�
 하나이고, 그것을 추측하지 않으려고 진단기가 **원본 조각을 그대로 찍는다**
 (`[DOM]`/`[script]` 표시 + 앞뒤 400자). 마크업이나 JSON 키 이름이 그
 줄에 그대로 나오므로 가설을 더 세울 필요가 없다.
+
+**원인이 확정됐다 — 기호 하나였다 (2026-09-03).** 진단기가 찍은 원본이다.
+
+```html
+<h3><span style="color: #35AB53;">+</span> Strengths</h3>
+```
+
+`get_text()` 로 읽으면 `"+ Strengths"` 가 된다. `_CHARACTERISTIC_HEADINGS`
+는 `"strengths"` 만 알고 있어서 조회가 통째로 빗나갔다. 봇 차단도 아니고
+데이터가 없는 것도 아니었다. `_heading_label()` 이 앞뒤의 기호·구두점을
+걷어내고 글자만 남긴다.
+
+**두 번째 원인은 항목 추출이었다.** 제목을 맞춰도 `div.grid` 안에서
+span/td/p 만 읽으면 실물에서 `['', 'Very Strong', '']` 이 나온다 —
+**이름이 아니라 강도 라벨**이다. 이름은 `div.character` 안의 `div` 에 있다.
+그래서 `li` → **클래스에 `character` 가 든 블록** → span/td/p 순으로
+내려가고, 블록은 `get_text(" · ")` 로 통째로 읽는다
+(`"Set pieces · Very Strong"`). 이름이 div 에 있든 a 에 있든 상관없다.
+
+  · **강도 어휘를 코드에 두지 않는다.** `"Very Strong"` 목록을 만들어
+    자르는 대신 구조로만 가른다 — 어휘는 리그·언어에 따라 바뀐다.
+    AST 로 문자열 상수를 검사해 하드코딩을 막는다.
+  · 꼬리표가 붙어도 `analyze._topics_of()` 의 주제 매칭은 그대로 된다
+    (`set_piece`·`aerial`·`counter` 확인).
+  · **팀 페이지 캐시에 판 번호를 뒀다** — `_TEAM_CACHE_VERSION = 1`.
+    없으면 같은 날 재실행이 '강점 0개' 였던 옛 결과를 되돌려 준다(§1-4).
+
+**검증 범위를 정확히 적는다.** 이 세션에서는 whoscored.com 이 차단돼 있어
+**실물 페이지로 돌려 보지 못했다.** 진단기가 찍어 준 원본 조각을 그대로
+재구성한 픽스처로 확인했고, 조각이 잘린 안쪽(`div.iconize…`)은 모양만
+맞췄다. 그래서 테스트는 클래스 경로가 아니라 **읽어낸 결과**를 단언한다.
+다음 실행에서 `강점/약점 n개` 가 실제로 찍히는지 확인해야 최종 확인이다.
+**`Style of play` 는 아직 미확인** — 문서에 1회 나오지만 제목 노드로는 잡히지
+않았다(AC 밀란은 그 블록이 비어 있을 수도 있다). 비면 빈 채로 둔다.
+
+회귀 테스트: `python tests/test_whoscored_characteristics.py` (22개).
 
 `tools/diagnose_whoscored.py` 가 넷을 갈라 준다. `FAILED_team_*` 이면
 `summarize_team()` 으로 분기해 (1) 문구가 DOM 에 있나 script 에 있나,
@@ -1564,6 +1601,7 @@ python tests/test_panel.py                 # 두 전문가 패널 3-B (70개)
 python tests/test_moderator.py             # 사회자 3-C (57개)
 python tests/test_panel_render.py          # 패널 리포트 출력 3-D (41개)
 python tests/test_time_safety.py           # 시간누수 감사 3-F (21개)
+python tests/test_whoscored_characteristics.py  # 팀 특성 파싱 §3-1 (22개)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)
 python tools/probe_sources.py --browser    # 소스 구조 점검

@@ -451,6 +451,29 @@ _CHARACTERISTIC_HEADINGS = {
 }
 
 
+def _heading_label(node) -> str:
+    """제목 노드에서 비교용 라벨을 만든다.
+
+    실물(AC 밀란 941KB)의 제목은 이렇게 생겼다.
+
+        <h3><span style="color: #35AB53;">+</span> Strengths</h3>
+
+    `get_text()` 로 읽으면 `"+ Strengths"` 가 되어 표(`_CHARACTERISTIC_HEADINGS`)
+    조회가 통째로 빗나간다 — 수집이 실패한 진짜 원인이 이 기호 하나였다.
+    앞뒤의 기호·구두점을 걷어내고 글자만 남긴다.
+    """
+    label = node.get_text(" ", strip=True).lower()
+    label = re.sub(r"^[^a-z]+", "", label)     # 앞의 '+', '-', 아이콘 문자
+    label = re.sub(r"[^a-z]+$", "", label)     # 뒤의 ':' 등
+    return re.sub(r"\s+", " ", label)
+
+
+# 특성 한 줄이 담긴 블록. 실물은 `div.character` 안에 이름과 강도가 열로
+# 나뉘어 있고 이름은 `div` 에, 강도는 `span` 에 있다. span/td/p 만 읽으면
+# 이름이 빠지고 강도('Very Strong')만 남는다.
+_ITEM_CLASS = re.compile(r"character|characteristic", re.I)
+
+
 def _extract_characteristics(soup) -> dict[str, list[str]]:
     """Strengths / Weaknesses / Style of Play 추출.
 
@@ -461,11 +484,12 @@ def _extract_characteristics(soup) -> dict[str, list[str]]:
 
     # 제목이 될 만한 태그만 훑는다. div/span 전체를 get_text 하면 큰 페이지에서
     # 매우 느려지므로, 자식이 거의 없는 잎 노드로 제한한다.
+    # h3 은 안에 기호 span 을 하나 품고 있으므로 이 제한에서 빼야 한다.
     for node in soup.find_all(["h1", "h2", "h3", "h4", "h5", "dt", "th",
                                "strong", "b", "label", "span", "div"]):
         if node.name in ("span", "div") and len(node.find_all(True, recursive=False)) > 1:
             continue
-        label = node.get_text(" ", strip=True).lower().rstrip(":")
+        label = _heading_label(node)
         if len(label) > 20:            # "Style of play" 보다 긴 제목은 없다
             continue
         slot = _CHARACTERISTIC_HEADINGS.get(label) or _CHARACTERISTIC_HEADINGS.get(
@@ -477,6 +501,13 @@ def _extract_characteristics(soup) -> dict[str, list[str]]:
         if holder is None:
             continue
         items = [li.get_text(" ", strip=True) for li in holder.find_all("li")]
+        if not items:
+            # 항목 단위 블록을 통째로 읽는다. 이름이 div 에 있든 a 에 있든
+            # 상관없이 한 줄로 나온다. 이름과 강도가 열로 나뉘어 있으므로
+            # 구분자를 넣어 붙는 것을 막는다 ("Set pieces · Very Strong").
+            # 어휘 목록('Very Strong' 따위)을 코드에 두지 않고 구조로만 가른다.
+            items = [x.get_text(" · ", strip=True)
+                     for x in holder.find_all(class_=_ITEM_CLASS)]
         if not items:
             items = [x.get_text(" ", strip=True)
                      for x in holder.find_all(["span", "td", "p"])]
@@ -573,11 +604,18 @@ def _extract_missing(soup) -> list[dict]:
     return out[:10]
 
 
+# 팀 페이지 캐시 판 번호. 특성 파싱을 고칠 때마다 올린다.
+#   1 = 제목 라벨 정규화(+/- 기호) · 항목 블록 단위 추출 (2026-09-03)
+_TEAM_CACHE_VERSION = 1
+
+
 def read_team(browser: WhoScoredBrowser, settings: Settings, team_url: str,
               canonical: str, resolver: TeamResolver, cache=None) -> dict:
     """팀 페이지에서 특성/폼/결장자를 수집한다."""
     cached = cache.get("whoscored", f"team_{canonical}") if cache else None
-    if cached is not None:
+    # 파싱 로직을 고쳤으면 옛 캐시를 읽으면 안 된다 (§1-4). 판만 맞으면
+    # 같은 날 재실행이 '강점 0개' 였던 옛 결과를 그대로 되돌려 준다.
+    if isinstance(cached, dict) and cached.get("_v") == _TEAM_CACHE_VERSION:
         return cached
 
     if not team_url:
@@ -592,6 +630,7 @@ def read_team(browser: WhoScoredBrowser, settings: Settings, team_url: str,
     form = _extract_form(soup, resolver, canonical, limit)
 
     payload = {
+        "_v": _TEAM_CACHE_VERSION,
         "strengths": chars["strengths"],
         "weaknesses": chars["weaknesses"],
         "style": chars["style"],

@@ -1397,6 +1397,42 @@ target_kickoff` 이고, 대상 경기의 결과(4-0)와 ID 는 자료에 나타�
 구조를 확인한 뒤에만 파서를 손댄다. 실패하면 `FAILED_team_*.html` 이
 남으므로 `[6]` 진단으로 본다.
 
+**260050 실행에서 좁혀진 것 (2026-09-03).** 28개 팀 전부 `FAILED_team_*.html`
+이 남았다. 그 파일이 남는 조건 자체가 단서다 — `read_team()` 은 `team_url`
+이 비면 **저장 없이** 돌아가고, `get_html()` 이 빈 문자열이어도 저장하지
+않는다. 파일이 28개라는 것은 **팀 주소를 만들었고 HTML 도 받았다**는 뜻이다.
+남은 가능성은 넷뿐이다.
+
+| # | 가설 | `[6]` 진단에서 보이는 모습 |
+|---|---|---|
+| 1 | 봇 차단 화면을 받았다 | `봇 차단 흔적: ['incapsula' …]` · 제목 0개 |
+| 2 | 페이지는 왔는데 그 블록이 없다 | 정성 문구 `(하나도 없음)` + 페이지 제목 목록 |
+| 3 | DOM 에 있는데 구조가 달라 못 읽는다 | `DOM n회` + 다음 컨테이너 모양 |
+| 4 | `<script>` JSON 에만, 키 이름이 다르다 | `script n회` + 실제 키 이름 |
+
+합성 픽스처로 확인한 것: **가설 3 은 이미 읽힌다.** 제목이 잎 노드로
+있고 뒤에 목록(ul/li 이든 div>span 이든)이 오면 지금 파서가 그대로 뽑아낸다.
+따라서 실패 원인은 사실상 **1·2·4 중 하나**이고, 셋은 대응이 전혀 다르다
+(1=브라우저 문제, 2=수집 불가, 4=폴백 키 추가). **어느 쪽인지 모르는 채로
+파서를 고치지 않는다.**
+
+`tools/diagnose_whoscored.py` 가 넷을 갈라 준다. `FAILED_team_*` 이면
+`summarize_team()` 으로 분기해 (1) 문구가 DOM 에 있나 script 에 있나,
+(2) 있으면 뒤따르는 컨테이너가 무엇인가, (3) script 뿐이면 키 이름이
+무엇인가, (4) 아예 없으면 그 페이지엔 무슨 제목이 있나 를 찍는다.
+파일 하나를 인자로 직접 지목할 수도 있다.
+
+**WhoScored 가 지금 리포트에 실제로 보태는 값은 세 칸뿐이다.** 리그
+페이지에서 채우는 것은 `shots_pg`·`possession`·`pass_success`·
+`aerials_won_pg`·`rating` 다섯인데, `possession`·`rating` 은 FotMob 이 먼저
+채우므로 `fill_stats(overwrite=False)` 규칙에 따라 버려진다(§1-1). 남는
+셋 중 **`pass_success`·`aerials_won_pg` 는 어디에서도 쓰이지 않는다** —
+`radar_metrics`·`compare_metrics`·분석 축 어디에도 없다. 실제로 값이
+소비되는 것은 `shots_pg` 하나이고, 그것이 `time_context.season.shots` 와
+`chance_quality` 의 `season.on_target_rate`·`season.xg_per_shot` 를 만든다.
+순위표도 FotMob 이 먼저 채운다. **끄기/켜기를 정할 때 이 세 칸이 10분과
+바꿀 값어치가 있는지를 기준으로 본다** — 강점/약점이 아니라.
+
 ### 3-2. FotMob 시즌 통계 피드 스키마
 
 `toto/sources/fotmob.py` `_parse_stat_feed()` 는 `data.fotmob.com` 피드의

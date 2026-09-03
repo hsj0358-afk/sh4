@@ -38,24 +38,137 @@ def find_dir(arg: str | None) -> Path | None:
     return None
 
 
-def summarize(path: Path) -> None:
-    raw = path.read_text(encoding="utf-8", errors="replace")
+# 팀 페이지에서 찾는 정성 데이터 제목. 파서(`_CHARACTERISTIC_HEADINGS`)가
+# 쓰는 세 개에 더해, 문구가 바뀌었을 가능성을 보려고 주변 낱말도 함께 센다.
+CHAR_MARKS = ("Strengths", "Weaknesses", "Style of play", "Characteristics",
+              "Team Characteristics", "Strength", "Weakness")
+
+
+def _head(path: Path, raw: str) -> str:
+    """파일 공통 머리말. 크기·제목·차단 흔적·최종 URL."""
     print("=" * 72)
     print(f"파일: {path.name}   ({len(raw) / 1024:.0f} KB)")
-
     title = re.search(r"<title[^>]*>(.*?)</title>", raw, re.S | re.I)
-    print(f"  <title>: {title.group(1).strip()[:110] if title else '(없음)'}")
-
-    low = raw[:6000].lower()
-    hits = [s for s in BLOCK_SIGNS if s in low]
+    text = title.group(1).strip()[:110] if title else "(없음)"
+    print(f"  <title>: {text}")
+    hits = [s for s in BLOCK_SIGNS if s in raw[:6000].lower()]
     print(f"  봇 차단 흔적: {hits if hits else '없음'}")
-
-    # 최종 URL 힌트 (리다이렉트되면 canonical 이 바뀐다)
-    for pat, label in ((r'<link[^>]+rel="canonical"[^>]+href="([^"]+)"', "canonical"),
-                       (r'<meta[^>]+property="og:url"[^>]+content="([^"]+)"', "og:url")):
+    for pat, label in (
+            (r'<link[^>]+rel="canonical"[^>]+href="([^"]+)"', "canonical"),
+            (r'<meta[^>]+property="og:url"[^>]+content="([^"]+)"', "og:url")):
         m = re.search(pat, raw, re.I)
         if m:
             print(f"  {label}: {m.group(1)[:110]}")
+    return text
+
+
+def summarize_team(path: Path) -> None:
+    """팀 페이지 전용 진단 — 정성 데이터(강점/약점/스타일)가 왜 안 나오나.
+
+    리그 페이지 진단과 묻는 것이 다르다. 저쪽은 "팀 링크가 있나" 이고
+    이쪽은 **"그 문구가 문서에 있기는 한가, 있다면 어떤 구조인가"** 다.
+    파서는 제목 텍스트를 찾아 `find_next(["ul","ol","dd","table","div"])`
+    로 뒤따르는 목록을 읽는데, 실제 구조가 그와 다르면 조용히 빈다.
+    """
+    raw = path.read_text(encoding="utf-8", errors="replace")
+    _head(path, raw)
+
+    # 1. 문구가 문서 어디에 있나 — DOM 과 <script> 를 나눠 센다.
+    scripts = "".join(re.findall(r"<script[^>]*>(.*?)</script>", raw, re.S | re.I))
+    dom = re.sub(r"<script[^>]*>.*?</script>", " ", raw, flags=re.S | re.I)
+    print("  정성 문구 (DOM / script):")
+    any_dom = any_script = 0
+    for name in CHAR_MARKS:
+        d, s = dom.lower().count(name.lower()), scripts.lower().count(name.lower())
+        if d or s:
+            print(f"      {name:<20} DOM {d:>3}회 · script {s:>3}회")
+            any_dom += d
+            any_script += s
+    if not (any_dom or any_script):
+        print("      (하나도 없음)")
+
+    try:
+        from bs4 import BeautifulSoup  # type: ignore
+    except Exception:
+        print("  ! beautifulsoup4 없음 — 구조 분석 생략")
+        return
+    soup = BeautifulSoup(raw, "html.parser")
+
+    # 2. DOM 에 있으면 어떤 구조인지 — 파서가 헛짚는 자리를 그대로 보여준다.
+    if any_dom:
+        print("  DOM 에서 찾은 자리:")
+        seen = 0
+        for node in soup.find_all(string=re.compile(
+                r"^\s*(strengths?|weaknesses?|style of play)\s*:?\s*$", re.I)):
+            parent = node.parent
+            if parent is None:
+                continue
+            chain = []
+            cur = parent
+            for _ in range(3):
+                if cur is None or not getattr(cur, "name", None):
+                    break
+                cls = ".".join((cur.get("class") or [])[:2])
+                chain.append(cur.name + (f".{cls}" if cls else ""))
+                cur = cur.parent
+            nxt = parent.find_next(["ul", "ol", "dd", "table", "div"])
+            kind = "(뒤에 아무것도 없음)"
+            if nxt is not None:
+                li = len(nxt.find_all("li"))
+                sp = len(nxt.find_all(["span", "td", "p"]))
+                cls = ".".join((nxt.get("class") or [])[:2])
+                kind = (f"{nxt.name}{'.' + cls if cls else ''} "
+                        f"· li {li}개 · span/td/p {sp}개")
+                sample = [x.get_text(" ", strip=True)
+                          for x in (nxt.find_all("li") or
+                                    nxt.find_all(["span", "td", "p"]))[:3]]
+                kind += f" · 예: {sample}"
+            print(f"      '{node.strip()[:24]}' 위치 {' < '.join(chain)}")
+            print(f"          다음 컨테이너 → {kind}")
+            seen += 1
+            if seen >= 4:
+                break
+        if seen == 0:
+            print("      제목처럼 단독으로 있는 노드는 없음 "
+                  "(문장 안에 섞여 있을 가능성)")
+
+    # 3. script 에만 있으면 어떤 키로 들어 있나 — 폴백이 찾는 키와 대조.
+    if any_script and not any_dom:
+        print("  script 안의 키 이름 (파서 폴백은 "
+              '"strengths"/"weaknesses"/"style" 을 찾는다):')
+        keys = set()
+        for m in re.finditer(r'"([A-Za-z_]{3,30})"\s*:\s*\[', scripts):
+            key = m.group(1)
+            if any(w in key.lower() for w in ("streng", "weak", "style",
+                                              "charact", "trait")):
+                keys.add(key)
+        print(f"      {sorted(keys) if keys else '(배열 형태의 관련 키 없음)'}")
+
+    # 4. 문구가 아예 없으면 — 이 페이지에 무슨 섹션이 있는지 그대로 보여준다.
+    if not (any_dom or any_script):
+        heads = []
+        for h in soup.find_all(["h1", "h2", "h3", "h4"]):
+            t = h.get_text(" ", strip=True)
+            if 1 < len(t) < 40:
+                heads.append(t)
+        print(f"  이 페이지의 제목들 (상위 20): {heads[:20]}")
+        print(f"  <table> {len(soup.find_all('table'))}개 · "
+              f"<ul> {len(soup.find_all('ul'))}개")
+
+    # 5. 최근 경기(form) 단서 — 로그상 특성과 폼이 함께 실패했다.
+    rows = 0
+    for t in soup.find_all("table"):
+        rows = max(rows, len(t.find_all("tr")))
+    print(f"  가장 큰 표의 행 수: {rows}행 "
+          f"(폼을 읽으려면 최근 경기 표가 있어야 한다)")
+
+
+def summarize(path: Path) -> None:
+    if path.name.startswith("FAILED_team_"):
+        summarize_team(path)
+        return
+    raw = path.read_text(encoding="utf-8", errors="replace")
+    _head(path, raw)   # 최종 URL 힌트(canonical·og:url)도 여기서 함께 찍는다
 
     try:
         from bs4 import BeautifulSoup
@@ -160,6 +273,14 @@ def main(argv: list[str] | None = None) -> int:
     # 메뉴에서 호출할 때는 argv=[] 로 넘어온다. sys.argv 를 그대로 읽으면
     # 부모 프로세스의 옵션(--menu 등)을 경로로 오인한다.
     argv = sys.argv[1:] if argv is None else argv
+
+    # 파일 하나를 직접 지목할 수 있다 — 특정 팀만 보고 싶을 때.
+    if argv and not argv[0].startswith("-") and Path(argv[0]).is_file():
+        summarize(Path(argv[0]))
+        print("=" * 72)
+        print("위 출력을 그대로 복사해서 전달해 주세요.")
+        return 0
+
     target = find_dir(argv[0] if argv else None)
     if target is None:
         print()
@@ -170,18 +291,24 @@ def main(argv: list[str] | None = None) -> int:
         print("  메뉴 [1] 전체 수집  또는  [3] 회차 지정해서 수집")
         return 1
 
-    # 리그 페이지 원본(page_league_*)을 우선 본다. 파싱이 '되긴 했는데
-    # 값이 이상한' 경우는 이 파일에만 단서가 있다.
-    files = sorted(target.glob("FAILED_page_league_*.html"))
-    files += [f for f in sorted(target.glob("FAILED_*.html")) if f not in files]
+    # 리그 페이지와 팀 페이지는 **묻는 것이 다르다** — 리그는 "팀 링크가 있나",
+    # 팀은 "강점/약점 문구가 있나". 앞에서부터 잘라 내면 리그 파일만 3개
+    # 나오고 정작 정성 데이터 질문에는 답이 안 나온다. 종류별로 골라 담는다.
+    league = sorted(target.glob("FAILED_page_league_*.html"))
+    team = sorted(target.glob("FAILED_team_*.html"))
+    rest = [f for f in sorted(target.glob("FAILED_*.html"))
+            if f not in league and f not in team]
+    files = league[:2] + team[:2] + rest[:2]
     if not files:
-        files = sorted(target.glob("*.html"))
+        files = sorted(target.glob("*.html"))[:3]
     if not files:
         print(f"{target} 안에 html 파일이 없습니다.")
         return 1
 
     print(f"대상 폴더: {target}")
-    for f in files[:3]:
+    print(f"  리그 원본 {len(league)}개 · 팀 원본 {len(team)}개 · 그 밖 {len(rest)}개"
+          f"  →  {len(files)}개를 봅니다")
+    for f in files:
         summarize(f)
     print("=" * 72)
     print("위 출력을 그대로 복사해서 전달해 주세요.")

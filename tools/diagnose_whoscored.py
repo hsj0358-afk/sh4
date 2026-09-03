@@ -26,6 +26,14 @@ def find_dir(arg: str | None) -> Path | None:
         if p.exists():
             return p
         print(f"지정한 경로가 없습니다: {p}")
+        # 파일명을 손으로 적다 틀리기 쉽다(팀명은 한글이 아니라 정규 영문명이다).
+        # 같은 폴더에 실제로 무엇이 있는지 보여 준다.
+        if p.parent.is_dir():
+            names = sorted(f.name for f in p.parent.glob("FAILED_*.html"))
+            if names:
+                print(f"  그 폴더에 있는 파일 {len(names)}개:")
+                for name in names[:30]:
+                    print(f"      {name}")
         return None
     cache = ROOT / "cache"
     if not cache.exists():
@@ -62,6 +70,15 @@ def _head(path: Path, raw: str) -> str:
     return text
 
 
+def _in_script(raw: str, pos: int) -> bool:
+    """raw[pos] 가 <script> 안인가. 조각을 찍을 때 자리를 밝히려고 쓴다."""
+    opened = raw.rfind("<script", 0, pos)
+    if opened < 0:
+        return False
+    closed = raw.find("</script", opened)
+    return closed < 0 or closed > pos
+
+
 def summarize_team(path: Path) -> None:
     """팀 페이지 전용 진단 — 정성 데이터(강점/약점/스타일)가 왜 안 나오나.
 
@@ -86,6 +103,25 @@ def summarize_team(path: Path) -> None:
             any_script += s
     if not (any_dom or any_script):
         print("      (하나도 없음)")
+
+    # 1-b. 원본 조각 — 가설을 더 세우지 말고 마크업을 그대로 본다.
+    #      DOM 이든 script 든 "어떤 태그·어떤 키로 싸여 있나" 가 여기서 끝난다.
+    if any_dom or any_script:
+        print("  원본 조각 (앞뒤 그대로):")
+        shown = 0
+        # 셀 때 쓴 낱말과 같은 것을 찾아야 한다. 'strengths' 만 찾으면
+        # 키가 positiveCharacteristics 인 경우에 조각이 하나도 안 나온다.
+        frag_pat = re.compile(
+            r"strengths?|weaknesses?|style ?of ?play|characteristics?|playing ?style",
+            re.I)
+        for m in frag_pat.finditer(raw):
+            lo, hi = max(0, m.start() - 150), min(len(raw), m.end() + 260)
+            frag = re.sub(r"\s+", " ", raw[lo:hi]).strip()
+            where = "script" if _in_script(raw, m.start()) else "DOM"
+            print(f"      [{where}] …{frag}…")
+            shown += 1
+            if shown >= 5:
+                break
 
     try:
         from bs4 import BeautifulSoup  # type: ignore
@@ -181,9 +217,12 @@ def summarize(path: Path) -> None:
         soup = BeautifulSoup(raw, "html.parser")
 
     # 팀 링크
+    # 실제 경로는 소문자 `/teams/` 다. 대소문자를 가려 세면 링크가 멀쩡히
+    # 있는데도 0개로 보고해, 파서(대소문자 무시)와 진단이 어긋난다.
     links = [(a.get("href", ""), a.get_text(" ", strip=True))
-             for a in soup.find_all("a", href=True) if "/Teams/" in a.get("href", "")]
-    print(f"  /Teams/ 링크: {len(links)}개")
+             for a in soup.find_all("a", href=True)
+             if "/teams/" in a.get("href", "").lower()]
+    print(f"  팀 링크(/teams/, 대소문자 무시): {len(links)}개")
     for href, text in links[:6]:
         print(f"      {text[:28]:<30} {href[:70]}")
 

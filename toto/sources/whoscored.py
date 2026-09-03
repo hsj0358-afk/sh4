@@ -352,8 +352,11 @@ def read_league(browser: WhoScoredBrowser, settings: Settings,
 
     if not out:
         # 왜 실패했는지 구분되도록 구조 정보를 남긴다.
+        # 대소문자를 가리면 안 된다 — 실제 경로는 소문자 `/teams/` 다(위 1) 참고).
+        # 가려서 세면 링크가 있는데도 0개로 보고해, "경로가 틀렸다"는 엉뚱한
+        # 진단이 로그에 남는다.
         team_links = [a["href"] for a in soup.find_all("a", href=True)
-                      if "/Teams/" in a["href"]]
+                      if "/teams/" in a["href"].lower()]
         tables = soup.find_all("table")
         log.error("리그 페이지에서 팀을 하나도 파싱하지 못함: %s "
                   "(/Teams/ 링크 %d개, <table> %d개, 문서 %.0fKB)",

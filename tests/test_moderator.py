@@ -619,12 +619,26 @@ def test_48_llm_client_is_reused_not_reimplemented():
     assert "llm.complete" in src
 
 
-def test_49_no_render_or_menu_change():
-    from toto import menu, render
-    assert "moderator" not in inspect.getsource(render)
-    blob = " ".join(t + d for _k, t, d, _a in menu.ITEMS)
-    for word in ("사회자", "Moderator", "패널"):
-        assert word not in blob, word
+def test_49_renderer_reads_the_moderator_without_deciding():
+    """3-D 가 사회자를 화면에 내지만 **판정을 만들지 않는다.**
+
+    예전에는 '렌더러가 사회자를 모른다' 로 확인했는데 3-D 에서 연결됐다.
+    지키려는 것은 '렌더러가 종합에서 승무패를 뽑지 않는다' 이므로 그쪽을
+    본다.
+    """
+    import ast as _ast
+
+    from toto import render
+    src = inspect.getsource(render._moderator_block)
+    tree = _ast.parse(src)
+    for node in _ast.walk(tree):
+        if isinstance(node, _ast.Compare):
+            assert "predicted_" not in _ast.dump(node)
+        if isinstance(node, _ast.BinOp) and isinstance(
+                node.op, (_ast.Div, _ast.FloorDiv)):
+            raise AssertionError("사회자 렌더링에 나눗셈이 있다")
+    for banned in ("winner", "wdl", "pick", "recommendation", "confidence"):
+        assert banned not in src, banned
 
 
 def test_50_run_all_does_not_reach_the_moderator():

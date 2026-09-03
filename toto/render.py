@@ -600,6 +600,179 @@ def _evidence_block(match: Match) -> str:
             f'<div class="traits">{cols}</div>{conflicts}</div>')
 
 
+# --------------------------------------------------------------------------
+# 패널 (Phase 3-D) — 이미 만들어진 해석을 읽어서 보여줄 뿐이다
+# --------------------------------------------------------------------------
+# 여기서 값을 계산하지 않는다. 평균·비교·승무패 변환을 하지 않고, 모델이 쓴
+# 문장을 escape 해서 그대로 낸다. 문구의 의미를 강화하거나 약화시키지 않는다.
+_ROLE_KO = {"data_analyst": "데이터 분석가",
+            "matchup_tactical_analyst": "맞대결·전술 분석가"}
+
+# 패널이 실제로 있을 때만 내보낸다. 항상 실으면 `--panel` 없이 돌린 리포트의
+# 바이트가 달라져 회귀 기준(데모 HTML sha256)이 깨진다 — 실측으로 확인했다
+# (+310 bytes). 새 디자인 체계를 만들지 않고 `.traits`·`.mnotes` 를 그대로
+# 쓰므로, 여기 있는 두 줄은 그것으로 안 되는 것만 채운다: 예상 스코어 한 줄과
+# 모델이 만든 긴 문장의 줄바꿈.
+PANEL_CSS = """
+.pscore{font-size:13px;font-weight:700;margin:2px 0 8px;
+  font-variant-numeric:tabular-nums}
+.ptext{font-size:12.5px;line-height:1.65;margin:0 0 8px;overflow-wrap:anywhere}
+"""
+
+
+def panel_css_for(matches) -> str:
+    """패널이 붙은 경기가 하나라도 있으면 그때만 스타일을 싣는다."""
+    return PANEL_CSS if any(getattr(m, "panel", None) is not None
+                            for m in matches) else ""
+
+
+def _ptext(text) -> str:
+    """모델이 쓴 문장 한 덩이. escape 하고 줄바꿈만 살린다.
+
+    markdown 을 해석하지 않는다 — 모델 출력을 그대로 HTML 로 넣으면 안 된다.
+    """
+    return esc(text).replace("\n", "<br>")
+
+
+def _score_line(opinion) -> str:
+    """예상 스코어. **승무패로 바꾸지 않는다.**
+
+    두 수를 나란히 적을 뿐이고, 어느 쪽이 크다는 판단을 만들지 않는다.
+    한쪽이라도 없으면 줄을 내지 않는다 (0 은 실제 예측이라 다르다).
+    """
+    home, away = opinion.predicted_home, opinion.predicted_away
+    if home is None or away is None:
+        return '<p class="pscore"><span class="nodata">예상 스코어 없음</span></p>'
+    return f'<p class="pscore">예상 스코어 {esc(home)} : {esc(away)}</p>'
+
+
+def _opinion_card(opinion, evidence_ids: tuple) -> str:
+    rationale = "".join(f'<li>{_ptext(r)}</li>' for r in opinion.rationale)
+    cited = ", ".join(esc(e) for e in opinion.evidence_ids)
+    # 근거는 **ID 나열**이다. 개수를 세기·별점·신뢰도로 그리지 않는다.
+    cite = (f'<span class="vs">인용한 근거 {cited}</span>' if cited
+            else '<span class="vs">인용한 근거 없음</span>')
+    reasons = f'<ul class="mnotes">{rationale}</ul>' if rationale else ""
+    return (f'<div><h5>{esc(_ROLE_KO.get(opinion.role, opinion.role))}</h5>'
+            f'{_score_line(opinion)}'
+            f'<p class="ptext">{_ptext(opinion.summary)}</p>'
+            f'{reasons}'
+            f'<p class="ptext">{cite}</p></div>')
+
+
+def _market_table(market) -> str:
+    """시장 기준선. **분석가가 아니다** — 별도 영역에 확률만 적는다."""
+    if market is None:
+        return ('<p class="lbl">시장 기준선</p>'
+                '<p class="nodata">배당을 가져오지 못해 시장 기준선이 '
+                '없습니다.</p>')
+    rows = ""
+    for label, value in (("홈", market.home_probability),
+                         ("무", market.draw_probability),
+                         ("원정", market.away_probability)):
+        cell = ('<span class="nodata">—</span>' if value is None
+                else esc(f"{value * 100:.1f}%"))
+        rows += f'<tr><td>{esc(label)}</td><td class="num">{cell}</td></tr>'
+    if market.overround is not None:
+        rows += (f'<tr><td>오버라운드</td><td class="num">'
+                 f'{esc(f"{market.overround:.4f}")}</td></tr>')
+    meta = " · ".join(x for x in (market.source, market.as_of) if x)
+    return (f'<p class="lbl">시장 기준선 (외부 참고값 · 분석가가 아닙니다)</p>'
+            f'<table class="mini"><tbody>{rows}</tbody></table>'
+            + (f'<p class="vs">{esc(meta)}</p>' if meta else ""))
+
+
+_MODERATOR_ROWS = (("common_points", "공통점"),
+                   ("differences", "차이"),
+                   ("counterpoints", "반론·제약"),
+                   ("uncertainty", "불확실성"))
+
+
+def _moderator_block(result) -> str:
+    """사회자. 두 의견의 **관계**만 적는다 — 최종 선택을 만들지 않는다."""
+    if result is None:
+        return ""
+    if not (result.common_points or result.differences):
+        return ('<p class="lbl">사회자</p>'
+                '<p class="nodata">종합 의견을 만들지 못했습니다. 개별 '
+                '분석가 의견은 위에서 그대로 확인할 수 있습니다.</p>')
+    seen = ", ".join(_ROLE_KO.get(r, r) for r in result.panels_seen)
+    note = ""
+    if len(result.panels_seen) < 2:
+        note = (f'<p class="vs">분석가 한 명({esc(seen)})의 의견만으로 '
+                f'정리한 것입니다.</p>')
+    parts = ""
+    for field, label in _MODERATOR_ROWS:
+        items = getattr(result, field, ()) or ()
+        if not items:
+            continue
+        lis = "".join(f'<li>{_ptext(x)}</li>' for x in items)
+        parts += (f'<p class="lbl">{esc(label)}</p>'
+                  f'<ul class="mnotes">{lis}</ul>')
+    for field, label in (("score_comparison", "예상 스코어 차이"),
+                         ("market_relation", "시장 기준선과의 관계")):
+        text = getattr(result, field, "") or ""
+        if text:
+            parts += (f'<p class="lbl">{esc(label)}</p>'
+                      f'<p class="ptext">{_ptext(text)}</p>')
+    shared = ", ".join(esc(e) for e in result.shared_evidence_ids)
+    only_a = ", ".join(esc(e) for e in result.data_only_evidence_ids)
+    only_b = ", ".join(esc(e) for e in result.matchup_only_evidence_ids)
+    used = ""
+    for label, ids in (("두 분석가가 함께 인용", shared),
+                       ("데이터 분석가만 인용", only_a),
+                       ("맞대결·전술 분석가만 인용", only_b)):
+        if ids:
+            used += f'<li><b>{esc(label)}</b> {ids}</li>'
+    if used:
+        # 관계만 보여준다 — 공통 근거가 많다고 강한 것이 아니다.
+        parts += (f'<p class="lbl">근거 사용 관계</p>'
+                  f'<ul class="mnotes">{used}</ul>')
+    return f'<p class="lbl">사회자 (두 의견의 종합)</p>{note}{parts}'
+
+
+def _panel_block(match: Match) -> str:
+    """패널 분석 (Phase 3-B·3-C 결과).
+
+    `--panel` 없이 돌린 실행에서는 `match.panel` 이 없고, 그때는 블록을
+    통째로 내지 않는다 — 기존 리포트가 한 글자도 달라지지 않아야 한다.
+    """
+    run = getattr(match, "panel", None)
+    if run is None:
+        return ""
+
+    head = ('<div class="block"><h4>패널 분석 (두 전문가의 해석)</h4>'
+            '<p class="meta">두 분석가는 <b>같은 분석 자료</b>를 서로 다른 '
+            '관점에서 해석합니다 · 시장 기준선은 분석가가 아니라 외부 '
+            '참고값입니다 · <b>승/무/패를 추천하지 않습니다</b></p>')
+
+    if not run.opinions:
+        why = "근거가 없어 실행하지 않았습니다" if run.status.startswith("생략") \
+            else "분석가 의견을 만들지 못했습니다"
+        return (f'{head}<p class="nodata">{esc(why)}. 위의 데이터 분석 '
+                f'결과는 그대로 확인할 수 있습니다.</p></div>')
+
+    cards = "".join(_opinion_card(o, run.evidence_ids) for o in run.opinions)
+    missing = ""
+    for role in sorted(run.role_status):
+        state = run.role_status.get(role, "")
+        if state and state != "ok":
+            # 사유는 사람이 읽을 한 줄만. traceback·프롬프트·키를 내지 않는다.
+            missing += (f'<li>{esc(_ROLE_KO.get(role, role))}: '
+                        f'{esc(state)}</li>')
+    if missing:
+        missing = (f'<p class="lbl">실행하지 못한 분석가</p>'
+                   f'<ul class="mnotes">{missing}</ul>')
+
+    return (f'{head}<div class="traits">{cards}</div>{missing}'
+            f'{_market_table(run.market_reference)}'
+            f'{_moderator_block(run.moderator)}'
+            '<p class="lbl">최종 판단</p>'
+            '<p class="ptext">패널 의견과 시장 기준선은 판단에 참고하는 '
+            '정보입니다. 최종 승·무·패 선택은 사용자가 직접 합니다.</p>'
+            '</div>')
+
+
 def _match_card(match: Match, settings: Settings) -> str:
     meta = " · ".join(x for x in (match.league_ko or match.league,
                                   match.kickoff_kst) if x)
@@ -625,6 +798,7 @@ def _match_card(match: Match, settings: Settings) -> str:
             f'{_venue_block(match)}'
             f'{_sos_block(match)}'
             f'{_evidence_block(match)}'
+            f'{_panel_block(match)}'
             f'{_form_block(match)}'
             f'{_h2h_block(match)}'
             f'{_traits_block(match)}'
@@ -776,7 +950,7 @@ def render_report(report: Report, settings: Settings) -> str:
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{esc(title)}</title>
-<style>{CSS}{TICKET_CSS}</style>
+<style>{CSS}{TICKET_CSS}{panel_css_for(report.matches)}</style>
 </head><body><div class="wrap" id="top">
 <header class="top">
   <h1>⚽ {esc(title)}</h1>

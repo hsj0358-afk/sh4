@@ -857,14 +857,22 @@ def test_25g_panel_does_not_synthesize():
             assert "predicted_" not in blob, "패널이 스코어를 비교하고 있다"
 
 
-def test_25h_phase_3d_is_not_implemented():
-    """3-D(리포트 표현·메뉴 [10])는 아직 하지 않는다."""
-    from toto import menu, render
-    assert "패널" not in inspect.getsource(render._match_card)
-    assert "moderator" not in inspect.getsource(render)
-    blob = " ".join(t + d for _k, t, d, _a in menu.ITEMS)
-    for word in ("패널", "Panel", "사회자", "Moderator"):
-        assert word not in blob, word
+def test_25h_panel_is_read_only_downstream():
+    """3-D 가 붙었어도 패널은 **읽히기만** 한다.
+
+    예전에는 '리포트에 패널이 없다' 로 확인했는데 3-D 에서 붙었다. 지키려는
+    것은 '리포트가 패널 결과를 바꾸지 않는다' 이므로 그쪽을 본다.
+    """
+    from dataclasses import asdict
+
+    from toto import render
+    from toto.models import Report
+    m = make_match()
+    m.panel = panel.run_match(m, settings=S, client=FakeClient())
+    before = asdict(m.panel)
+    render.render_report(Report(round_id="T", generated_at="fixed",
+                                matches=[m]), Settings())
+    assert asdict(m.panel) == before, "렌더링이 패널 결과를 바꿨다"
 
 
 # --------------------------------------------------------------------------

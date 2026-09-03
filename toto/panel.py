@@ -551,8 +551,13 @@ def attach_panels(matches: list[Match], settings, *, cache=None,
             log.warning("패널을 사용할 수 없습니다: %s", reason)
             return f"실패 ({reason})"
 
+    # 경기마다 API 를 부르므로 몇 분이 걸린다. 멈춘 것으로 오해하지 않게
+    # 시작과 진행을 알린다 (새 진행표시 장치를 들이지 않는다).
+    log.info("패널 분석 시작 — %d경기 · 경기마다 분석가 2 + 사회자 1회 호출",
+             len(matches))
     ran = skipped = failed = 0
     for match in matches:
+        log.info("  [%d/%d] %s", match.no, len(matches), match.title)
         try:
             result = run_match(match, settings=settings, cache=cache,
                                client=client)

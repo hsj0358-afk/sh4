@@ -335,15 +335,29 @@ def inspect_source(fn) -> str:
 # --------------------------------------------------------------------------
 # G. 기존 메뉴 회귀
 # --------------------------------------------------------------------------
-def test_g24_items_are_unchanged():
+def test_g24_existing_menu_numbers_are_unchanged():
+    """기존 번호는 **자리까지** 그대로고, 새 항목은 뒤에만 붙는다.
+
+    예전에는 `keys == [1..9]` 로 확인했는데, 그러면 3-D 의 `[10]` 처럼
+    규칙을 지켜 뒤에 붙인 항목까지 실패로 잡힌다. 지키려는 것은 '기존
+    번호가 밀리지 않는다' 이므로 접두사와 인자 매핑을 함께 본다 — 원래보다
+    강한 검사다.
+    """
     keys = [k for k, _t, _d, _a in menu.ITEMS]
-    assert keys == ["1", "2", "3", "4", "5", "6", "7", "8", "9"], keys
+    original = ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+    assert keys[:len(original)] == original, "기존 번호의 자리가 바뀌었다"
+    by_key = {k: a for k, _t, _d, a in menu.ITEMS}
+    assert by_key["1"] == [] and by_key["4"] == ["--demo"]
+    assert by_key["2"] == ["--skip-whoscored", "--skip-match-details"]
+    assert by_key["9"] == ["--serve"]
+    assert by_key["3"] is None and by_key["5"] == "clear-cache"
 
 
-def test_g25_no_panel_menu_yet():
-    """Phase 3-B 는 아직 아니다 — 패널 항목이 생기면 안 된다."""
+def test_g25_menu_never_recommends():
+    """메뉴 문구가 승무패를 권하지 않는다."""
     blob = " ".join(t + d for _k, t, d, _a in menu.ITEMS)
-    for word in ("패널", "Panel", "Moderator", "예상 스코어"):
+    for word in ("홈승", "원정승", "무승부 추천", "추천 픽", "적중 보장",
+                 "가장 가능성이 높은"):
         assert word not in blob, word
 
 

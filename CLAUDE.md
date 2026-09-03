@@ -1319,6 +1319,43 @@ traceback·프롬프트·API 키는 화면에 내지 않는다. 사유는 사람
 **재시도는 유한하다** — 전송 오류(429·5xx) 1회, 형식 오류 1회. 형식 오류가
 계속되면 역할당 2회로 멈추고(실측: 두 역할 합쳐 4회) 그 역할만 포기한다.
 
+### 1-13. 과거시점 백테스트는 지금 불가능하다 (Phase 3-F 감사)
+
+**억지로 만들지 않았다.** 저장된 자료로 과거 시점을 복원할 수 없기 때문이고,
+현재 스냅샷을 과거인 척 쓰면 미래를 몰래 본 상태에서 좋아 보이는 결과가
+나온다 — 백테스트에서 가장 위험한 실패다.
+
+| 자료 | 분류 | 이유 |
+|---|---|---|
+| 시즌 경기 색인 · 최근 N결과 · SoS · 장소 | **HISTORICAL_AS_OF** | kickoff+최종스코어가 있어 `matches_before()` 로 잘린다 |
+| 순위표 · 시즌 통계 피드 | COLLECTION_TIME_SNAPSHOT | 수집 시점 누계라 과거 상태를 복원할 수 없다 (§1-1-7) |
+| 슛 이벤트 · xG · npxG · xGOT · xPTS | CURRENT_ONLY | 팀당 **수집 시점 기준** 최근 N경기만 받는다 |
+| 근거(2-G) | CURRENT_ONLY | 축의 절반이 collection-time 이라 과거 재구성 불가 |
+| 배당 · Market Reference | CURRENT_ONLY | 회차 실행 때 1회 조회. 과거 배당 아카이브가 없다 |
+| 패널·사회자 과거 산출물 | 없음 | 한 번도 운영 실행된 적이 없다 |
+
+그래서 **성적 지표(정확도·Brier·log loss)는 계산하지 않았다** — 표본 0이다.
+
+**대신 백테스트의 전제를 파이프라인 끝까지 검사했다.** 축별 cutoff 테스트는
+이미 있었지만, 그 위층(근거 → PanelPayload → 사회자 입력)까지 미래가 새지
+않는지는 확인된 적이 없었다.
+
+검사 방법은 **같은 자료에 미래를 얹어도 결과가 바뀌지 않는가**다.
+
+```
+과거만          →  분석 → 근거 → PanelPayload → 사회자 입력
+과거+대상+미래   →  〃                              ← 바이트가 같아야 한다
+```
+
+실측: 6축 42지표 · 근거 5건 · payload 20,460 bytes 가 **완전히 동일**했다.
+음성 대조로 기준시각을 미래 뒤로 옮기면 **반드시 달라지는 것**도 함께
+확인했다 — 그게 없으면 "아무것도 안 만들어서 같은 것" 일 수 있다.
+
+walk-forward 도 감사표로 확인했다: 대상마다 `max_input_kickoff <
+target_kickoff` 이고, 대상 경기의 결과(4-0)와 ID 는 자료에 나타나지 않는다.
+
+회귀 테스트: `python tests/test_time_safety.py` (21개).
+
 ---
 
 ## 2. 작업 방식
@@ -1477,6 +1514,7 @@ python tests/test_menu_flow.py             # 메뉴 루프·예외·로그 3-A (
 python tests/test_panel.py                 # 두 전문가 패널 3-B (70개)
 python tests/test_moderator.py             # 사회자 3-C (57개)
 python tests/test_panel_render.py          # 패널 리포트 출력 3-D (41개)
+python tests/test_time_safety.py           # 시간누수 감사 3-F (21개)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)
 python tools/probe_sources.py --browser    # 소스 구조 점검

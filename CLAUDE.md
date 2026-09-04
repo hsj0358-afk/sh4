@@ -1013,6 +1013,39 @@ toto/sources/whoscored.py:415 _LEAGUE_CACHE_VERSION = 2
 한 소스가 실패해도 나머지는 계속 진행한다 (`toto/cli.py` 의 소스별
 `try/except`). 실패가 실행 전체를 죽이지 않는다.
 
+### 1-6-1. 조용히 빈 값을 돌려주지 않는다 — 사유는 언제나 남긴다
+
+260050 재실행에서 **28개 팀 전부** 매칭에 실패했다. 화면에 보인 것은
+`팀명 매칭 실패: '첼시'` 같은 28줄뿐인데, 그 이름들은 전부
+`data/teams.yaml` 에 그대로 들어 있다. 이름이 이상한 게 아니라 **테이블이
+안 읽힌 것**이었고, 그 사실을 말해 주는 줄이 한 줄도 없었다.
+
+침묵이 두 군데였다.
+
+  · `settings.load_yaml()` 이 네 가지 실패(파일 없음 · PyYAML 없음 ·
+    인코딩 · 파싱)를 **전부 삼키고** `{}` 를 돌려줬다.
+  · `TeamResolver._load()` 가 적재 결과를 `log.debug` 로만 남겨, 테이블이
+    통째로 비어도 보통 실행에서는 보이지 않았다.
+
+**돌려주는 값은 그대로다** — 실패해도 `{}` 이고 프로그램은 계속 돈다.
+바뀐 것은 사유가 보이는가 하나뿐이다.
+
+  · 파일이 **없는** 것은 정상일 수 있다(`teams.learned.yaml`·
+    `teams.league.yaml`은 없는 게 기본) → DEBUG.
+  · **깨진 파일은 언제나 WARNING** 이다. 정상인 적이 없다. 특히 한국어
+    윈도우에서 cp949 로 저장되면 `UnicodeDecodeError` 가 나는데, 예전에는
+    그것도 조용히 빈 dict 였다.
+  · 별칭 테이블이 비면 `log.error` 로 **파일 경로·존재 여부·크기**를 함께
+    적는다. 정상일 때도 `팀 별칭 N개 / 정규명 M개 로드` 를 INFO 로 남긴다 —
+    숫자가 보여야 "안 읽혔다"를 즉시 안다.
+
+**베트맨은 팀명을 폭에 맞춰 자른다** (`브렌트퍼`·`맨체스C`·`노팅엄F`·
+`A빌라`·`리즈U`). 잘린 표기는 이미 `data/teams.yaml` 에 별칭으로 들어 있고
+회귀 테스트가 260050 회차의 28개 이름을 그대로 검사한다. 잘린 이름이
+실패하면 테이블이 아니라 **적재**를 먼저 의심한다.
+
+회귀 테스트: `python tests/test_alias_table_loading.py` (12개).
+
 ### 1-7. Windows 운영 규칙 — 보존한다
 
 `.gitattributes` 에 이유와 함께 고정돼 있다. 세 가지 모두 실제로 사용자
@@ -1602,6 +1635,7 @@ python tests/test_moderator.py             # 사회자 3-C (57개)
 python tests/test_panel_render.py          # 패널 리포트 출력 3-D (41개)
 python tests/test_time_safety.py           # 시간누수 감사 3-F (21개)
 python tests/test_whoscored_characteristics.py  # 팀 특성 파싱 §3-1 (22개)
+python tests/test_alias_table_loading.py   # 별칭 테이블 적재 진단 §1-6-1 (12개)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)
 python tools/probe_sources.py --browser    # 소스 구조 점검

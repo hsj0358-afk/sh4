@@ -5,9 +5,12 @@ briefing/settings.py 의 로더 패턴을 그대로 따른다 — PyYAML 이나 
 """
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -154,16 +157,38 @@ def _load_dotenv(path: Path) -> None:
 
 
 def load_yaml(path: Path) -> dict:
-    """YAML 로드. PyYAML 이 없거나 파일이 깨져도 빈 dict 를 돌려준다."""
+    """YAML 로드. PyYAML 이 없거나 파일이 깨져도 빈 dict 를 돌려준다.
+
+    **빈 dict 를 돌려주더라도 왜 비었는지는 반드시 남긴다.** 예전에는 네 가지
+    실패(파일 없음·PyYAML 없음·인코딩·파싱)를 전부 조용히 삼켰다. 그러면
+    `data/teams.yaml` 이 안 읽혀도 아무도 말하지 않고, 결과는 저 아래에서
+    '팀명 매칭 실패' 28줄로만 나타나 원인을 찾을 수 없다 (§1-6).
+
+    파일이 없는 것은 정상일 수 있어(학습 별칭·승강 반영분) DEBUG 로 남기고,
+    **깨진 파일은 언제나 WARNING** 이다 — 그건 정상인 적이 없다.
+    """
     if not path.exists():
+        log.debug("YAML 없음: %s", path)
         return {}
     try:
         import yaml  # type: ignore
     except Exception:
+        log.warning("PyYAML 이 없어 %s 를 읽지 못했습니다 "
+                    "(pip install -r requirements-toto.txt)", path.name)
         return {}
     try:
-        return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except Exception:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        log.warning("%s 를 UTF-8 로 읽지 못했습니다 — 파일 인코딩을 확인하세요: %s",
+                    path, exc)
+        return {}
+    except OSError as exc:
+        log.warning("%s 를 열지 못했습니다: %s", path, exc)
+        return {}
+    try:
+        return yaml.safe_load(text) or {}
+    except Exception as exc:                            # noqa: BLE001
+        log.warning("%s 를 파싱하지 못했습니다: %s", path, exc)
         return {}
 
 

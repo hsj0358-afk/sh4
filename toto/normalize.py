@@ -123,7 +123,19 @@ class TeamResolver:
         for canonical, league in (load_yaml(self.league_file) or {}).items():
             self._league[str(canonical)] = str(league)
 
-        log.debug("팀 별칭 %d개 / 정규명 %d개 로드", len(self._index), len(self._canonicals))
+        # 별칭 테이블이 비면 **모든 팀이 매칭에 실패한다.** 그때 화면에 보이는
+        # 것은 저 아래의 '팀명 매칭 실패' 수십 줄뿐이고, 원인은 여기인데
+        # 아무도 말하지 않았다. 조용히 지나가지 않는다 (§1-6).
+        if not self._index:
+            exists = self.teams_file.exists()
+            size = self.teams_file.stat().st_size if exists else 0
+            log.error("팀 별칭 테이블이 비었습니다 — 모든 팀명이 매칭에 "
+                      "실패합니다. 파일: %s (존재 %s, %d bytes). "
+                      "위에 YAML 경고가 있으면 그것이 원인입니다.",
+                      self.teams_file, "예" if exists else "아니오", size)
+        else:
+            log.info("팀 별칭 %d개 / 정규명 %d개 로드",
+                     len(self._index), len(self._canonicals))
 
     # ---- 해석 -----------------------------------------------------------
     def resolve(self, name: str, learn: bool = True,

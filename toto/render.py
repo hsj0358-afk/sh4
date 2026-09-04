@@ -366,6 +366,163 @@ def _traits_block(match: Match) -> str:
             + '</div>')
 
 
+# --------------------------------------------------------------------------
+# 경기력 분석 (Phase 2-A 시간축 · 2-B 기회의 질 · 2-C 수비의 질)
+#
+# 세 축은 진작 계산돼 있었지만 리포트에 나가는 길이 없었다 — `match.analysis`
+# 를 읽는 블록이 장소(2-E) · 상대 강도(2-F) · 근거(2-G) 셋뿐이었고, 시즌 초에는
+# 그 셋이 전부 표본에 걸려 비어 있다. 실제로 260050 실행에서 2-C 는 28/28팀
+# 만들어졌는데 화면에는 한 줄도 나오지 않았다.
+#
+# **여기서 계산하지 않는다.** 축이 이미 담고 있는 값을 읽어서 놓을 뿐이다.
+# 지표를 합치거나 점수로 바꾸지 않고, 승무패를 고르지 않는다 (§1-3).
+_AXES_SECTIONS = (
+    ("결과", "time_context",
+     ("points", "goals", "goals_against", "goal_diff", "xg", "xga",
+      "xgd", "npxgd")),
+    ("공격 — 기회를 얼마나·어떤 질로 만드나", "chance_quality",
+     ("shots", "shots_on_target", "shots_inside_box", "big_chances",
+      "xg", "npxg", "xgot", "xg_per_shot", "npxg_per_shot",
+      "on_target_rate", "box_shot_share",
+      "goals", "goals_minus_xg", "goals_minus_npxg", "goals_minus_xgot")),
+    ("수비 — 어떤 기회를 얼마나 허용하나", "defensive_quality",
+     ("shots_against", "shots_on_target_against", "shots_inside_box_against",
+      "xga", "npxga", "xgot_against", "npxga_per_shot_against",
+      "goals_against", "goals_against_minus_npxga",
+      "goals_against_minus_xgot_against")),
+)
+
+# 부호를 함께 보여 줄 지표. 차이·득실차는 방향(+/−)이 값의 일부다.
+# **방향이 좋다/나쁘다는 뜻이 아니다** — 득점−xG 를 '결정력' 으로 읽으면
+# 안 된다는 §1-1-8 의 규칙은 그대로다. 여기서는 표시만 한다.
+_AXES_SIGNED = frozenset((
+    "goal_diff", "xgd", "npxgd",
+    "goals_minus_xg", "goals_minus_npxg", "goals_minus_xgot",
+    "goals_against_minus_npxga", "goals_against_minus_xgot_against"))
+
+
+def _axis_label_fmt(name: str) -> tuple[str, str]:
+    """지표 이름 → (표시 라벨, 숫자 서식). 둘 다 `SPECS` 에서 끌어온다.
+
+    라벨과 단위를 render 에 다시 적지 않는다 — 두 곳에 두면 어긋난다.
+    """
+    from . import analysis
+
+    spec = analysis.SPECS.get(name) or (name, "")
+    label = spec[0]
+    unit = spec[1] if len(spec) > 1 else ""
+    if unit == "%":
+        return f"{label} (%)", "{:.0f}"
+    if unit == "per_shot":
+        return label, "{:.3f}"
+    return label, "{:.2f}"
+
+
+def _axes_table(title: str, attr: str, names, home_team, away_team,
+                home_label: str, away_label: str) -> str:
+    """한 갈래(결과·공격·수비)를 홈/원정 나란히 놓은 표.
+
+    값이 양쪽 네 칸 모두 없는 줄은 내지 않는다. 빈 줄을 남기면 '수집은 됐는데
+    0 이다' 처럼 보인다 (§1-5).
+    """
+    def metric(team, period, name):
+        axis = getattr(team, attr, None) if team else None
+        if axis is None:
+            return None
+        return axis.metrics.get(f"{period}.{name}")
+
+    def cell(m, fmt, signed):
+        if m is None or m.value is None:
+            return '<td class="num"><span class="nodata">—</span></td>'
+        text = fmt.format(m.value)
+        if signed and m.value > 0:
+            text = "+" + text
+        n = "" if m.sample_count is None else f" n={m.sample_count}"
+        return f'<td class="num">{esc(text)}<small>{esc(n)}</small></td>'
+
+    from . import analysis
+
+    windows = []
+    for team in (home_team, away_team):
+        axis = getattr(team, attr, None) if team else None
+        if axis is not None and axis.requested_matches:
+            windows.append(int(axis.requested_matches))
+    if not windows:
+        return ""
+    window = max(windows)
+
+    # 기간(시즌 · 최근 N)마다 값이 하나라도 있는지 먼저 본다. 한쪽 기간이
+    # 통째로 비면 그 열을 아예 내지 않는다 — `—` 만 채운 열은 자리만
+    # 차지하면서 '재 봤는데 없다' 처럼 보인다. (데모·시즌 초에 실제로 그랬다.)
+    periods = [(analysis.SEASON, "시즌"),
+               (analysis.period_name(window), f"최근 {window}")]
+    used = [p for p in periods
+            if any((m := metric(t, p[0], n)) is not None and m.value is not None
+                   for t in (home_team, away_team) for n in names)]
+    if not used:
+        return ""
+
+    rows = ""
+    for name in names:
+        cells = [metric(team, period, name)
+                 for team in (home_team, away_team)
+                 for period, _ in used]
+        if all(m is None or m.value is None for m in cells):
+            continue
+        label, fmt = _axis_label_fmt(name)
+        signed = name in _AXES_SIGNED
+        rows += (f'<tr><td>{esc(label)}</td>'
+                 + "".join(cell(m, fmt, signed) for m in cells) + '</tr>')
+    if not rows:
+        return ""
+    span = len(used)
+    if span == 1:
+        # 기간이 하나뿐이면 머리글 두 줄은 같은 말을 두 번 하는 것이 된다.
+        label = used[0][1]
+        head = (f'<tr><th>{esc(title)}</th>'
+                f'<th class="num">{esc(home_label)} {esc(label)}</th>'
+                f'<th class="num">{esc(away_label)} {esc(label)}</th></tr>')
+    else:
+        sub = "".join(f'<th class="num">{esc(t)}</th>' for _, t in used) * 2
+        head = (f'<tr><th rowspan="2">{esc(title)}</th>'
+                f'<th class="num" colspan="{span}">{esc(home_label)}</th>'
+                f'<th class="num" colspan="{span}">{esc(away_label)}</th></tr>'
+                f'<tr>{sub}</tr>')
+    return (f'<div class="tablewrap"><table class="mini">'
+            f'<thead>{head}</thead>'
+            f'<tbody>{rows}</tbody></table></div>')
+
+
+def _axes_block(match: Match) -> str:
+    """시즌 경기력과 최근 경기력을 홈/원정 나란히 (2-A · 2-B · 2-C).
+
+    두 값을 하나로 합치지 않는다 — 기간이 열로 나뉘어 있어 구조적으로 섞일
+    수 없다 (§1-1-7). 표본 수(n)를 칸마다 적어 적은 표본이 충분해 보이지
+    않게 한다. 승무패를 추천하지 않는다.
+    """
+    data = getattr(match, "analysis", None)
+    if data is None:
+        return ""
+    home_team = getattr(data, "home", None)
+    away_team = getattr(data, "away", None)
+    if home_team is None and away_team is None:
+        return ""
+
+    home_label = match.home.display
+    away_label = match.away.display
+    tables = "".join(
+        _axes_table(title, attr, names, home_team, away_team,
+                    home_label, away_label)
+        for title, attr, names in _AXES_SECTIONS)
+    if not tables:
+        return ""
+    return ('<div class="block"><h4>경기력 분석 (시즌 · 최근 경기)</h4>'
+            '<p class="meta">시즌과 최근은 <b>다른 피드에서 온 값</b>이라 '
+            '빼서 추세로 읽지 않습니다 · n 은 그 지표의 실제 표본 수 · '
+            '승무패를 추천하지 않습니다</p>'
+            f'{tables}</div>')
+
+
 _VENUE_ROWS = (
     ("points", "{:.2f}"), ("goals", "{:.2f}"), ("goals_against", "{:.2f}"),
     ("xg", "{:.2f}"), ("npxg", "{:.2f}"), ("xgot", "{:.2f}"),
@@ -795,6 +952,7 @@ def _match_card(match: Match, settings: Settings) -> str:
             f'{_compare_inner(match, settings)}'
             f'</div></div>'
             f'{_recent_block(match, settings)}'
+            f'{_axes_block(match)}'
             f'{_venue_block(match)}'
             f'{_sos_block(match)}'
             f'{_evidence_block(match)}'

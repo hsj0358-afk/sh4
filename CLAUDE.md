@@ -1044,7 +1044,27 @@ toto/sources/whoscored.py:415 _LEAGUE_CACHE_VERSION = 2
 회귀 테스트가 260050 회차의 28개 이름을 그대로 검사한다. 잘린 이름이
 실패하면 테이블이 아니라 **적재**를 먼저 의심한다.
 
-회귀 테스트: `python tests/test_alias_table_loading.py` (12개).
+**실제 원인은 PyYAML 미설치였다 (2026-09-04).** 가상환경을 켜지 않고
+시스템 파이썬으로 돌린 실행이었다. 파일은 멀쩡했고(15,819 bytes) 읽을
+도구가 없었다.
+
+```
+WARNING toto.settings: PyYAML 이 없어 config_toto.yaml 를 읽지 못했습니다
+ERROR   toto.normalize: 팀 별칭 테이블이 비었습니다 … (존재 예, 15819 bytes)
+```
+
+그래서 **PyYAML 은 시작할 때 확인하고 없으면 그 자리에서 멈춘다**
+(`cli._missing_required_deps()`, 종료코드 2). 없으면 config 도 별칭
+테이블도 통째로 안 읽혀 아무것도 제대로 못 하는데, 예전에는 10초를 돌려
+빈 리포트를 만들어 냈다(실측 52.3KB · 확인 필요 43건). 그건 결과가 아니라
+소음이다. 메시지에 **가상환경 활성화 명령과 지금 돌고 있는 파이썬 경로**를
+함께 적는다 — 윈도우에서 가장 잦은 원인이 그것이다.
+
+**목록을 늘리지 않는다.** `requests`·`bs4`·`playwright` 가 없으면 그 소스만
+`실패 (사유)` 가 되고 나머지는 간다 — 그건 §1-6 의 정상 동작이지 중단
+사유가 아니다. `_REQUIRED_MODULES` 는 `yaml` 하나뿐이고 테스트로 고정했다.
+
+회귀 테스트: `python tests/test_alias_table_loading.py` (16개).
 
 ### 1-7. Windows 운영 규칙 — 보존한다
 
@@ -1635,7 +1655,7 @@ python tests/test_moderator.py             # 사회자 3-C (57개)
 python tests/test_panel_render.py          # 패널 리포트 출력 3-D (41개)
 python tests/test_time_safety.py           # 시간누수 감사 3-F (21개)
 python tests/test_whoscored_characteristics.py  # 팀 특성 파싱 §3-1 (22개)
-python tests/test_alias_table_loading.py   # 별칭 테이블 적재 진단 §1-6-1 (12개)
+python tests/test_alias_table_loading.py   # 별칭 테이블 적재 진단 §1-6-1 (16개)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)
 python tools/probe_sources.py --browser    # 소스 구조 점검

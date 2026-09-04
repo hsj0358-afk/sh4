@@ -200,6 +200,61 @@ def test_c3_teams_file_is_utf8_readable():
     (ROOT / "data" / "teams.yaml").read_text(encoding="utf-8")
 
 
+# ------------------------------------------------------- 필수 의존성 확인
+# PyYAML 이 없으면 config 도 별칭 테이블도 통째로 안 읽혀 모든 팀명이
+# 실패한다. 그런데도 예전에는 10초를 돌려 빈 리포트를 만들어 냈다
+# (실측: 260050, 52.3KB, 확인 필요 43건). 그건 결과가 아니라 소음이다.
+def test_d1_deps_ok_in_this_environment():
+    from toto import cli
+    assert cli._missing_required_deps() is False
+
+
+def test_d2_missing_pyyaml_is_detected_and_explained():
+    import importlib.util
+
+    from toto import cli
+    logger, cap, saved = _capture("toto")   # cli 는 getLogger("toto") 를 쓴다
+    real = importlib.util.find_spec
+    try:
+        importlib.util.find_spec = (
+            lambda name, *a, **k: None if name == "yaml" else real(name, *a, **k))
+        assert cli._missing_required_deps() is True
+        msg = " ".join(cap.messages(logging.ERROR))
+    finally:
+        importlib.util.find_spec = real
+        _restore(logger, cap, saved)
+    assert "PyYAML" in msg, msg
+    assert "requirements-toto.txt" in msg, msg      # 무엇을 하면 되는지
+    assert "Activate.ps1" in msg, msg               # 윈도우에서 가장 잦은 원인
+    assert sys.executable in msg, msg               # 어느 파이썬으로 돌았나
+
+
+def test_d3_run_stops_before_doing_any_work():
+    """빈 리포트를 만들지 않고, 브라우저도 띄우지 않는다."""
+    from toto import cli
+    out = Path(tempfile.mkdtemp()) / "should_not_exist.html"
+    logger, cap, saved = _capture("toto")   # cli 는 getLogger("toto") 를 쓴다
+    real = cli._missing_required_deps
+    try:
+        cli._missing_required_deps = lambda: True
+        rc = cli.main(["--demo", "-o", str(out)])
+    finally:
+        cli._missing_required_deps = real
+        _restore(logger, cap, saved)
+    assert rc == 2, rc
+    assert not out.exists(), "필수 패키지가 없는데 리포트를 만들었다"
+
+
+def test_d4_optional_deps_are_not_required():
+    """requests·bs4·playwright 는 소스별 '실패 (사유)' 로 다룬다 (§1-6).
+
+    여기 목록을 늘리면 멀쩡히 돌던 설정이 통째로 막힌다.
+    """
+    from toto import cli
+    assert [mod for mod, _ in cli._REQUIRED_MODULES] == ["yaml"], \
+        cli._REQUIRED_MODULES
+
+
 # --------------------------------------------------------------------------
 def main() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]

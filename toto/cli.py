@@ -128,6 +128,36 @@ def _resolve_teams(matches, resolver: TeamResolver, report: Report,
                 f"배당률·순위 데이터가 없을 수 있습니다.")
 
 
+# 없으면 아무것도 제대로 할 수 없는 의존성. 선택 의존성(playwright·bs4)은
+# 소스별로 확인해 '실패 (사유)' 로 남기지만(§1-6), 아래 둘은 다르다 —
+# PyYAML 이 없으면 config_toto.yaml 과 data/teams.yaml 이 통째로 안 읽혀
+# **모든 팀명이 매칭에 실패하고**, 그런데도 10초를 돌려 빈 리포트를 만들어
+# 낸다(실측: 260050, 52.3KB, 확인 필요 43건). 그건 결과가 아니라 소음이다.
+#
+# **PyYAML 하나뿐이다.** requests 가 없으면 피나클만 실패하고 나머지는
+# 그대로 간다 — 그건 §1-6 의 '한 소스 실패, 나머지 진행' 이지 중단 사유가
+# 아니다. 여기 목록을 늘려 정상 실행을 막지 않는다.
+_REQUIRED_MODULES = (("yaml", "PyYAML"),)
+
+
+def _missing_required_deps() -> bool:
+    """필수 의존성이 빠졌으면 그 자리에서 알리고 True 를 돌려준다."""
+    import importlib.util
+
+    missing = [name for mod, name in _REQUIRED_MODULES
+               if importlib.util.find_spec(mod) is None]
+    if not missing:
+        return False
+    log.error("필수 패키지가 없습니다: %s", ", ".join(missing))
+    log.error("  가상환경을 켜지 않았을 수 있습니다:")
+    log.error("    PowerShell   .\\.venv\\Scripts\\Activate.ps1")
+    log.error("    cmd          .venv\\Scripts\\activate.bat")
+    log.error("    bash         source .venv/bin/activate")
+    log.error("  그래도 없으면:  pip install -r requirements-toto.txt")
+    log.error("  (%s 로 실행 중)", sys.executable)
+    return True
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
@@ -138,6 +168,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.menu:
         from .menu import main as menu_main
         return menu_main()
+
+    if _missing_required_deps():
+        return 2
 
     settings = load_settings()
 

@@ -536,6 +536,29 @@ def _extract_characteristics(soup) -> dict[str, list[str]]:
                         found[slot] = [str(v) for v in vals if isinstance(v, (str, int))][:8]
                     except Exception:
                         pass
+
+    # 강점/약점은 왔는데 스타일만 비는 경우가 실물에서 나온다(260050: 28팀
+    # 전부). 진단기는 'Style of play' 가 DOM 에 1회 있다고 했는데 제목 노드로는
+    # 잡히지 않았다 — 어떤 모양으로 있는지 추측하지 말고 그 자리를 그대로
+    # 찍어 둔다 (§1-4). 캐시가 날짜별이므로 다음 회차 수집에서 나온다.
+    if (found["strengths"] or found["weaknesses"]) and not found["style"]:
+        seen = []
+        for node in soup.find_all(string=re.compile(r"style\s*of\s*play", re.I)):
+            parent = getattr(node, "parent", None)
+            chain = []
+            cur = parent
+            for _ in range(3):
+                if cur is None or not getattr(cur, "name", None):
+                    break
+                cls = ".".join((cur.get("class") or [])[:2])
+                chain.append(cur.name + (f".{cls}" if cls else ""))
+                cur = cur.parent
+            text = re.sub(r"\s+", " ", str(node)).strip()
+            seen.append(f"{' < '.join(chain)} :: {text[:80]!r}")
+            if len(seen) >= 3:
+                break
+        log.debug("스타일 미검출 — 'Style of play' 가 나온 자리: %s",
+                  seen if seen else "(문서에 없음)")
     return found
 
 

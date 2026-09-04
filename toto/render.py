@@ -451,46 +451,34 @@ def _axes_table(title: str, attr: str, names, home_team, away_team,
         return ""
     window = max(windows)
 
-    # 기간(시즌 · 최근 N)마다 값이 하나라도 있는지 먼저 본다. 한쪽 기간이
-    # 통째로 비면 그 열을 아예 내지 않는다 — `—` 만 채운 열은 자리만
-    # 차지하면서 '재 봤는데 없다' 처럼 보인다. (데모·시즌 초에 실제로 그랬다.)
-    periods = [(analysis.SEASON, "시즌"),
-               (analysis.period_name(window), f"최근 {window}")]
-    used = [p for p in periods
-            if any((m := metric(t, p[0], n)) is not None and m.value is not None
-                   for t in (home_team, away_team) for n in names)]
-    if not used:
-        return ""
-
-    rows = ""
-    for name in names:
-        cells = [metric(team, period, name)
-                 for team in (home_team, away_team)
-                 for period, _ in used]
-        if all(m is None or m.value is None for m in cells):
+    # **기간마다 표를 따로 낸다.** 한 표에 시즌과 최근을 나란히 두면 두 가지
+    # 문제가 생긴다.
+    #   · 시즌에 없는 지표(npxG·xGOT·박스 안 슈팅 — §1-1-2)가 많아 실물에서
+    #     경기당 42칸이 `—` 였다.
+    #   · 나란히 놓는 배치 자체가 '빼서 비교하라' 고 말한다. 두 값은 다른
+    #     피드에서 오므로 그 뺄셈은 성립하지 않는다 (§1-1-9).
+    # 표 안에서 견주는 축은 **홈 ↔ 원정** 하나뿐이고, 그 비교는 성립한다.
+    out = ""
+    for period, span in ((analysis.SEASON, "시즌"),
+                         (analysis.period_name(window), f"최근 {window}경기")):
+        rows = ""
+        for name in names:
+            cells = [metric(home_team, period, name),
+                     metric(away_team, period, name)]
+            if all(m is None or m.value is None for m in cells):
+                continue
+            label, fmt = _axis_label_fmt(name)
+            signed = name in _AXES_SIGNED
+            rows += (f'<tr><td>{esc(label)}</td>'
+                     + "".join(cell(m, fmt, signed) for m in cells) + '</tr>')
+        if not rows:
             continue
-        label, fmt = _axis_label_fmt(name)
-        signed = name in _AXES_SIGNED
-        rows += (f'<tr><td>{esc(label)}</td>'
-                 + "".join(cell(m, fmt, signed) for m in cells) + '</tr>')
-    if not rows:
-        return ""
-    span = len(used)
-    if span == 1:
-        # 기간이 하나뿐이면 머리글 두 줄은 같은 말을 두 번 하는 것이 된다.
-        label = used[0][1]
-        head = (f'<tr><th>{esc(title)}</th>'
-                f'<th class="num">{esc(home_label)} {esc(label)}</th>'
-                f'<th class="num">{esc(away_label)} {esc(label)}</th></tr>')
-    else:
-        sub = "".join(f'<th class="num">{esc(t)}</th>' for _, t in used) * 2
-        head = (f'<tr><th rowspan="2">{esc(title)}</th>'
-                f'<th class="num" colspan="{span}">{esc(home_label)}</th>'
-                f'<th class="num" colspan="{span}">{esc(away_label)}</th></tr>'
-                f'<tr>{sub}</tr>')
-    return (f'<div class="tablewrap"><table class="mini">'
-            f'<thead>{head}</thead>'
-            f'<tbody>{rows}</tbody></table></div>')
+        out += (f'<div class="tablewrap"><table class="mini"><thead><tr>'
+                f'<th>{esc(title)} · {esc(span)}</th>'
+                f'<th class="num">{esc(home_label)}</th>'
+                f'<th class="num">{esc(away_label)}</th></tr></thead>'
+                f'<tbody>{rows}</tbody></table></div>')
+    return out
 
 
 def _axes_block(match: Match) -> str:
@@ -517,9 +505,9 @@ def _axes_block(match: Match) -> str:
     if not tables:
         return ""
     return ('<div class="block"><h4>경기력 분석 (시즌 · 최근 경기)</h4>'
-            '<p class="meta">시즌과 최근은 <b>다른 피드에서 온 값</b>이라 '
-            '빼서 추세로 읽지 않습니다 · n 은 그 지표의 실제 표본 수 · '
-            '승무패를 추천하지 않습니다</p>'
+            '<p class="meta">시즌과 최근은 <b>다른 피드에서 온 값</b>이라 표를 '
+            '나눴습니다 — 빼서 추세로 읽지 않습니다 · 최근 표의 창은 설정값이고 '
+            '실제 표본은 각 칸의 n 입니다 · 승무패를 추천하지 않습니다</p>'
             f'{tables}</div>')
 
 
@@ -953,13 +941,16 @@ def _match_card(match: Match, settings: Settings) -> str:
             f'</div></div>'
             f'{_recent_block(match, settings)}'
             f'{_axes_block(match)}'
+            # 정성(강점/약점·상성)을 정량 바로 뒤에 둔다. 예전에는 카드의
+            # 맨 아래(10번째)였는데, 강점/약점이 처음 들어오면서 이 블록이
+            # 실제로 값을 갖는 몇 안 되는 자리가 됐다.
+            f'{_traits_block(match)}'
             f'{_venue_block(match)}'
             f'{_sos_block(match)}'
             f'{_evidence_block(match)}'
             f'{_panel_block(match)}'
             f'{_form_block(match)}'
             f'{_h2h_block(match)}'
-            f'{_traits_block(match)}'
             f'<p style="margin:18px 0 0"><a class="top-link" href="#top">↑ 목록으로</a></p>'
             f'</article>')
 

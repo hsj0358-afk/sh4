@@ -76,9 +76,12 @@ def _match(*, season_only: bool = False, analysis: bool = True) -> Match:
               home=TeamRef(display="홈팀", canonical="Home"),
               away=TeamRef(display="원정팀", canonical="Away"))
     if analysis:
-        m.analysis = MatchAnalysis(
-            home=_team("Home", season_only=season_only),
-            away=_team("Away", season_only=season_only))
+        away = _team("Away", season_only=season_only)
+        # 한쪽만 값이 있는 경우를 만든다 — 상대 슛맵을 못 이은 팀이 실제로
+        # 이렇게 된다. 그 칸은 0 이 아니라 `—` 여야 한다 (§1-5).
+        away.time_context.metrics.pop(f"{SEASON}.goal_diff", None)
+        m.analysis = MatchAnalysis(home=_team("Home", season_only=season_only),
+                                   away=away)
     return m
 
 
@@ -152,10 +155,22 @@ def test_c2_empty_period_column_is_dropped():
         assert "nodata" not in head, head
 
 
-def test_c3_single_period_header_is_one_row():
-    html = _html(season_only=True)
-    assert 'rowspan="2"' not in html, html
-    assert "홈팀 시즌" in html, html
+def test_c3_period_is_named_in_the_table_head():
+    """표마다 어느 기간인지 머리글에 적는다 — 표를 나눴으므로 필수다."""
+    html = _html()
+    heads = re.findall(r"<thead>.*?</thead>", html, re.S)
+    assert heads, html
+    for head in heads:
+        assert ("시즌" in head) or ("최근" in head), head
+    assert 'rowspan' not in html, html
+
+
+def test_c3b_periods_are_separate_tables():
+    """한 표에 시즌과 최근을 나란히 두지 않는다 (§1-1-9 — 빼면 안 되는 값이다)."""
+    html = _html()
+    heads = re.findall(r"<thead>.*?</thead>", html, re.S)
+    for head in heads:
+        assert not ("시즌" in head and "최근" in head), head
 
 
 def test_c4_season_only_metric_still_shows():

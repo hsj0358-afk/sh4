@@ -3169,6 +3169,13 @@ def attach_time_context(matches: list[Match], settings: Settings,
                        + len(patterns_in(s.defensive_quality))
                        + len(patterns_in(s.sustainability))
                        + len(patterns_in(s.venue_context)) for s in sides)
+        # 2-A·2-B 도 센다. 예전에는 2-C 부터만 세어서, 앞의 두 축이 몇 팀에서
+        # 만들어졌는지 로그로 알 수 없었다 — 값이 없는 것이 정상인지 뭔가
+        # 잘못된 것인지 구분이 안 된다 (§1-6).
+        with_time = sum(1 for s in sides
+                        if s.time_context and s.time_context.metrics)
+        with_chance = sum(1 for s in sides
+                          if s.chance_quality and s.chance_quality.metrics)
         with_defense = sum(
             1 for s in sides
             if s.defensive_quality
@@ -3196,9 +3203,11 @@ def attach_time_context(matches: list[Match], settings: Settings,
         log.info("팀 분석(2-A 시간축 · 2-B 기회의 질 · 2-C 수비의 질 · "
                  "2-D 지속성 · 2-E 장소 문맥 · 2-F 상대 강도): "
                  "%d경기 · 창 %s · 시즌 색인 %d경기 · 패턴 %d건 · "
+                 "시간축을 만든 팀 %d/%d · 기회의 질을 만든 팀 %d/%d · "
                  "상대 집계로 수비 지표를 만든 팀 %d/%d · "
                  "실제↔기대 차이를 만든 팀 %d/%d · 장소차를 만든 팀 %d/%d · "
                  "상대 강도를 만든 팀 %d/%d",
-                 built, windows, len(season), patterns, with_defense,
-                 len(sides), with_gap, len(sides), with_venue, len(sides),
-                 with_sos, len(sides))
+                 built, windows, len(season), patterns,
+                 with_time, len(sides), with_chance, len(sides),
+                 with_defense, len(sides), with_gap, len(sides),
+                 with_venue, len(sides), with_sos, len(sides))

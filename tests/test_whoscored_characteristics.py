@@ -32,7 +32,7 @@ from bs4 import BeautifulSoup                                   # noqa: E402
 from toto.analyze import _topics_of                             # noqa: E402
 from toto.sources.whoscored import (                            # noqa: E402
     _TEAM_CACHE_VERSION, _extract_characteristics, _heading_label,
-    _soup as _prod_soup)
+    _soup as _prod_soup, status_line)
 
 
 def _soup(html: str):
@@ -236,6 +236,44 @@ def test_e3_old_cache_entry_is_rejected():
     """판 번호가 없거나 다른 캐시는 무시하고 다시 읽어야 한다."""
     for cached in ({}, {"strengths": []}, {"_v": _TEAM_CACHE_VERSION - 1}):
         assert cached.get("_v") != _TEAM_CACHE_VERSION, cached
+
+
+# ---------------------------------------------------------------- 상태 문자열
+def test_f1_form_only_is_not_reported_as_ok():
+    """폼만 왔는데 'ok' 로 적으면 강점/약점 실패를 또 놓친다 (§3-1)."""
+    s = status_line(stats_done=28, teams_done=28, chars_done=0, total=28)
+    assert not s.startswith("ok"), s
+    assert "강점/약점 없음" in s, s
+
+
+def test_f2_ok_states_how_many_have_characteristics():
+    s = status_line(stats_done=28, teams_done=28, chars_done=28, total=28)
+    assert s.startswith("ok"), s
+    assert "강점/약점 28팀" in s, s
+
+
+def test_f3_partial_characteristics_is_partial():
+    s = status_line(stats_done=28, teams_done=28, chars_done=20, total=28)
+    assert s.startswith("부분"), s
+    assert "강점/약점 20팀" in s, s
+
+
+def test_f4_no_teams_at_all_is_failure():
+    assert status_line(0, 0, 0, 28).startswith("실패")
+
+
+def test_f5_stats_only_keeps_its_old_wording():
+    s = status_line(stats_done=28, teams_done=0, chars_done=0, total=28)
+    assert "순위·지표만" in s, s
+    assert "강점/약점 없음" in s, s
+
+
+def test_f6_every_state_uses_the_four_words():
+    """§1-6 의 어휘(ok/부분/실패/생략) 밖으로 나가지 않는다."""
+    for args in ((0, 0, 0, 28), (28, 0, 0, 28), (28, 28, 0, 28),
+                 (28, 28, 20, 28), (28, 28, 28, 28), (21, 20, 20, 28)):
+        s = status_line(*args)
+        assert s.split()[0] in ("ok", "부분", "실패", "생략"), s
 
 
 # ---------------------------------------------------------------- 하류 연결

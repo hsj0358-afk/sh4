@@ -17,7 +17,7 @@ Arsenal:
   league: epl
 Aston Villa:
   ko: [아스톤빌라, 아스톤 빌라, 애스턴빌라, A빌라]
-  en: [Aston Villa FC]
+  en: [Aston Villa FC, A. Villa]
   league: epl
 Bournemouth:
   ko: [본머스, 에이에프씨 본머스]
@@ -61,7 +61,7 @@ Liverpool:
   league: epl
 Manchester City:
   ko: [맨체스터시티, 맨체스터 시티, 맨시티, 맨체스C]
-  en: [Man City, Manchester City FC]
+  en: [Man City, M. City, Manchester City FC]
   league: epl
 Manchester United:
   ko: [맨체스터유나이티드, 맨체스터 유나이티드, 맨유, 맨체스U]
@@ -73,7 +73,7 @@ Newcastle:
   league: epl
 Nottingham Forest:
   ko: [노팅엄포레스트, 노팅엄 포레스트, 노팅엄]
-  en: [Nott'm Forest, Nottm Forest]
+  en: [Nott'm Forest, Nottm Forest, N. Forest]
   league: epl
 Sunderland:
   ko: [선덜랜드]

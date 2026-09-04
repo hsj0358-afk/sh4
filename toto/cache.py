@@ -67,13 +67,27 @@ class Cache:
         except Exception as exc:
             log.warning("캐시 저장 실패 %s: %s", path, exc)
 
-    def save_debug(self, source: str, key: str, html: str) -> Path | None:
-        """파싱 실패 시 원본 HTML 을 남긴다 (셀렉터 수정용)."""
+    def save_debug(self, source: str, key: str, html: str,
+                   *, failed: bool = True) -> Path | None:
+        """원본 HTML 을 남긴다 (셀렉터 수정용).
+
+        `failed=False` 는 **실패하지 않았는데도 보관하는 경우**다. 리그
+        페이지는 '값이 이상한' 어정쩡한 경우를 대비해 성공해도 남기는데,
+        그때까지 "파싱 실패 원본 저장" 이라고 적어 왔다. 수집이 정상인
+        실행에서 경고가 뜨면(실측 2026-09-04: 21팀·20팀 정상 수집 중 2줄)
+        진짜 경고를 흘려보게 된다 (§1-6).
+
+        파일 이름의 `FAILED_` 접두사는 그대로 둔다 — 진단 도구와 문서가
+        그 이름으로 찾는다.
+        """
         path = self._path(source, f"FAILED_{key}", ext="html")
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(html, encoding="utf-8")
-            log.warning("파싱 실패 원본 저장 → %s", path)
+            if failed:
+                log.warning("파싱 실패 원본 저장 → %s", path)
+            else:
+                log.debug("원본 보관 → %s", path)
             return path
         except Exception:
             return None

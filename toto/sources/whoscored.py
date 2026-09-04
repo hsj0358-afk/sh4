@@ -348,7 +348,8 @@ def read_league(browser: WhoScoredBrowser, settings: Settings,
     # (실패했을 때만 남기면, 이번처럼 "표는 찾았는데 값이 전부 0" 인
     #  어정쩡한 경우에 정작 볼 자료가 없다.)
     if cache is not None:
-        cache.save_debug("whoscored", f"page_league_{league_key}", html)
+        cache.save_debug("whoscored", f"page_league_{league_key}", html,
+                         failed=False)
 
     if not out:
         # 왜 실패했는지 구분되도록 구조 정보를 남긴다.
@@ -761,6 +762,27 @@ def _revive_h2h(data: dict) -> H2H:
 # --------------------------------------------------------------------------
 # 오케스트레이션
 # --------------------------------------------------------------------------
+def status_line(stats_done: int, teams_done: int, chars_done: int,
+                total: int) -> str:
+    """소스 상태 문자열 (§1-6 의 네 상태 어휘).
+
+    **`teams_done` 만으로 'ok' 를 적지 않는다.** 그 수는 특성이든 폼이든
+    하나만 있어도 오르므로, 폼만 온 상태가 '상세 데이터 정상' 으로 보인다.
+    실제로 2026-09-04 실행에서 `ok (28/28팀)` 만 보고는 강점/약점이 왔는지
+    알 수 없었다 — 이 소스를 계속 쓸지가 바로 그 숫자에 달려 있는데(§3-1).
+    """
+    if stats_done == 0:
+        return "실패 (수집 0팀)"
+    if teams_done == 0:
+        return f"부분 ({stats_done}/{total}팀 순위·지표만, 강점/약점 없음)"
+    if chars_done == 0:
+        return f"부분 ({stats_done}/{total}팀 지표, {teams_done}팀 폼, 강점/약점 없음)"
+    if teams_done < stats_done or chars_done < teams_done:
+        return (f"부분 ({stats_done}/{total}팀 지표, {teams_done}팀 상세, "
+                f"강점/약점 {chars_done}팀)")
+    return f"ok ({teams_done}/{total}팀, 강점/약점 {chars_done}팀)"
+
+
 def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None) -> str:
     """모든 경기에 후스코어드 데이터를 붙인다. 반환값은 상태 문자열."""
     try:
@@ -772,6 +794,8 @@ def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None) -> s
     leagues = sorted({m.league for m in matches if m.league})
     teams_done = 0          # 팀 페이지(강점/약점/폼)까지 받은 팀 수
     stats_done = 0          # 리그 순위표 지표만이라도 확보한 팀 수
+    chars_done = 0          # 강점 또는 약점을 실제로 읽은 팀 수
+    style_done = 0          # 플레이 스타일을 읽은 팀 수
 
     with WhoScoredBrowser(settings, cache=cache) as browser:
         if not browser.available:
@@ -811,6 +835,13 @@ def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None) -> s
                             profile.form = form
                         profile.missing_players = payload.get("missing") or []
                         teams_done += 1
+                        # 특성과 폼을 따로 센다. teams_done 은 둘 중 하나만
+                        # 있어도 오르므로, 그것만 보면 '강점/약점이 실제로
+                        # 왔는가' 를 알 수 없다 (§1-6).
+                        if profile.strengths or profile.weaknesses:
+                            chars_done += 1
+                        if profile.style_of_play:
+                            style_done += 1
                 else:
                     match.notes.append(
                         f"{ref.display}: 후스코어드에서 팀을 찾지 못했습니다.")
@@ -827,10 +858,9 @@ def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None) -> s
                                      match.league, cache=cache)
 
     total = len(matches) * 2
-    if stats_done == 0:
-        return "실패 (수집 0팀)"
-    if teams_done == 0:
-        return f"부분 ({stats_done}/{total}팀 순위·지표만, 강점/약점 없음)"
-    if teams_done < stats_done:
-        return f"부분 ({stats_done}/{total}팀 지표, {teams_done}팀 상세)"
-    return f"ok ({teams_done}/{total}팀)"
+    # 무엇이 왔고 무엇이 안 왔는지 로그에 숫자로 남긴다. 후스코어드에서
+    # 정성 데이터가 오는지가 이 소스를 계속 쓸지의 판단 근거다 (§3-1).
+    log.info("후스코어드 요약: 지표 %d/%d팀 · 팀 페이지 %d팀 · "
+             "강점/약점 %d팀 · 스타일 %d팀",
+             stats_done, total, teams_done, chars_done, style_done)
+    return status_line(stats_done, teams_done, chars_done, total)

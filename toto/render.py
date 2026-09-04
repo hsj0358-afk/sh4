@@ -318,6 +318,12 @@ def _h2h_block(match: Match) -> str:
                  f'{esc(e.away_team)}</td></tr>')
     table = (f'<table class="mini"><thead><tr><th>날짜</th><th>결과</th></tr></thead>'
              f'<tbody>{rows}</tbody></table>') if rows else ""
+    # 맞대결이 하나도 없으면 블록을 내지 않는다. 실물에서 제목만 있는 42바이트
+    # 껍데기가 14경기에 전부 붙어 있었다 — 제목만 있는 자리는 '재 봤는데
+    # 없다' 처럼 보이는데, 후스코어드 H2H 는 기본으로 꺼져 있어(§3-1) 실제로는
+    # 찾아보지도 않은 것이다. 둘을 같은 모양으로 보이게 하지 않는다 (§1-6).
+    if not h2h.entries:
+        return ""
     return f'<div class="block"><h4>상대전적</h4>{bar}{table}</div>'
 
 
@@ -395,6 +401,10 @@ _AXES_SECTIONS = (
 # 부호를 함께 보여 줄 지표. 차이·득실차는 방향(+/−)이 값의 일부다.
 # **방향이 좋다/나쁘다는 뜻이 아니다** — 득점−xG 를 '결정력' 으로 읽으면
 # 안 된다는 §1-1-8 의 규칙은 그대로다. 여기서는 표시만 한다.
+# 트렌드 밴드의 표시 문구. **좋다/나쁘다가 아니라 방향이다** — 밴드를 점수로
+# 바꾸거나 여러 지표를 합산하지 않는다는 §1-1-7 의 규칙은 그대로다.
+_TREND_KO = {"higher": "높음", "lower": "낮음", "similar": "비슷"}
+
 _AXES_SIGNED = frozenset((
     "goal_diff", "xgd", "npxgd",
     "goals_minus_xg", "goals_minus_npxg", "goals_minus_xgot",
@@ -431,14 +441,14 @@ def _axes_table(title: str, attr: str, names, home_team, away_team,
             return None
         return axis.metrics.get(f"{period}.{name}")
 
-    def cell(m, fmt, signed):
+    def cell(m, fmt, signed, tail=""):
         if m is None or m.value is None:
             return '<td class="num"><span class="nodata">—</span></td>'
         text = fmt.format(m.value)
         if signed and m.value > 0:
             text = "+" + text
         n = "" if m.sample_count is None else f" n={m.sample_count}"
-        return f'<td class="num">{esc(text)}<small>{esc(n)}</small></td>'
+        return f'<td class="num">{esc(text)}<small>{esc(n)}</small>{tail}</td>'
 
     from . import analysis
 
@@ -458,9 +468,26 @@ def _axes_table(title: str, attr: str, names, home_team, away_team,
     #   · 나란히 놓는 배치 자체가 '빼서 비교하라' 고 말한다. 두 값은 다른
     #     피드에서 오므로 그 뺄셈은 성립하지 않는다 (§1-1-9).
     # 표 안에서 견주는 축은 **홈 ↔ 원정** 하나뿐이고, 그 비교는 성립한다.
+    def trend(team, name, fmt):
+        """최근 값 옆에 붙일 '시즌 대비' 꼬리표. 없으면 빈 문자열.
+
+        **2-A 가 이미 계산해 둔 것을 읽을 뿐이다.** 여기서 빼지 않는다 —
+        시즌과 최근은 대부분 다른 피드에서 오므로 그 뺄셈이 성립하는지는
+        `trend_allowed()` 만 알고, 그 판정 결과가 이 지표의 유무다 (§1-1-9).
+        """
+        m = metric(team, f"trend{window}", name)
+        if m is None or m.value is None:
+            return ""
+        band = _TREND_KO.get(analysis.parse_trend_band(m), "")
+        text = fmt.format(m.value)
+        if m.value > 0:
+            text = "+" + text
+        return f'<small> 시즌 대비 {esc(text)}{" " + band if band else ""}</small>'
+
     out = ""
     for period, span in ((analysis.SEASON, "시즌"),
                          (analysis.period_name(window), f"최근 {window}경기")):
+        recent = period != analysis.SEASON
         rows = ""
         for name in names:
             cells = [metric(home_team, period, name),
@@ -469,8 +496,11 @@ def _axes_table(title: str, attr: str, names, home_team, away_team,
                 continue
             label, fmt = _axis_label_fmt(name)
             signed = name in _AXES_SIGNED
+            tails = ([trend(home_team, name, fmt), trend(away_team, name, fmt)]
+                     if recent else ["", ""])
             rows += (f'<tr><td>{esc(label)}</td>'
-                     + "".join(cell(m, fmt, signed) for m in cells) + '</tr>')
+                     + "".join(cell(m, fmt, signed, tail)
+                               for m, tail in zip(cells, tails)) + '</tr>')
         if not rows:
             continue
         out += (f'<div class="tablewrap"><table class="mini"><thead><tr>'
@@ -504,11 +534,37 @@ def _axes_block(match: Match) -> str:
         for title, attr, names in _AXES_SECTIONS)
     if not tables:
         return ""
+
+    # 축이 남긴 사유를 한 번만 보여 준다. 지금까지는 어디에도 나오지 않아
+    # '시즌 대비' 가 왜 없는지 화면에서 알 수 없었다 — 값이 없으면 이유를
+    # 남긴다는 §1-1-9·§1-1-10 의 사유가 여기서 처음 화면에 닿는다.
+    # 패턴(`패턴 …`)은 다른 블록 소관이라 빼고, 팀 간 중복은 합친다.
+    seen, notes = set(), []
+    for team in (home_team, away_team):
+        for attr in ("time_context", "chance_quality", "defensive_quality"):
+            axis = getattr(team, attr, None) if team else None
+            for note in (axis.notes if axis else []):
+                if note.startswith("패턴 ") or note in seen:
+                    continue
+                seen.add(note)
+                notes.append(note)
+    note_html = ""
+    if notes:
+        shown, rest = notes[:8], notes[8:]
+        items = "".join(f"<li>{esc(n)}</li>" for n in shown)
+        more = f'<li>… 그 밖 {len(rest)}건</li>' if rest else ""
+        # `.lbl` 은 `.traits` 안에서만 스타일이 잡혀 있어 여기서는 쓰지 않는다.
+        # 제목은 '값이 없는 이유' 가 아니다 — 축의 notes 에는 표본 수 안내와
+        # '합치지 마십시오' 같은 주의도 함께 들어 있다. 실물을 보고 고쳤다.
+        note_html = (f'<p class="meta">표본·수집 메모 (분석 축이 남긴 것)</p>'
+                     f'<ul class="mnotes">{items}{more}</ul>')
+
     return ('<div class="block"><h4>경기력 분석 (시즌 · 최근 경기)</h4>'
             '<p class="meta">시즌과 최근은 <b>다른 피드에서 온 값</b>이라 표를 '
-            '나눴습니다 — 빼서 추세로 읽지 않습니다 · 최근 표의 창은 설정값이고 '
-            '실제 표본은 각 칸의 n 입니다 · 승무패를 추천하지 않습니다</p>'
-            f'{tables}</div>')
+            '나눴습니다 — 뺄 수 있는 지표에만 <b>시즌 대비</b>가 붙습니다 · '
+            '최근 표의 창은 설정값이고 실제 표본은 각 칸의 n 입니다 · '
+            '승무패를 추천하지 않습니다</p>'
+            f'{tables}{note_html}</div>')
 
 
 _VENUE_ROWS = (

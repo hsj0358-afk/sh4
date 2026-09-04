@@ -52,6 +52,11 @@ def _team(name: str, *, season_only: bool = False) -> TeamAnalysis:
     tc.update(both("points", (1.80, 20), (2.00, 6)))
     tc.update(both("goals", (2.10, 20), (2.50, 6)))
     tc.update(both("goal_diff", (1.20, 20), (-0.50, 6)))
+    if not season_only:
+        # 2-A 가 만든 트렌드. 뺄 수 있는 지표에만 붙는다 (§1-1-9) — 여기서는
+        # 득점·승점처럼 실제로 붙는 경우와, 축이 남긴 사유를 함께 재현한다.
+        tc[("trend6", "points")] = (0.20, 6)
+        tc[("trend6", "goals")] = (-0.35, 6)
     cq.update(both("shots", (16.0, 20), (14.0, 6)))
     cq.update(both("xg", (2.05, 20), (1.70, 4)))
     cq.update(both("on_target_rate", (41.5, 20), (38.0, 4)))
@@ -65,8 +70,15 @@ def _team(name: str, *, season_only: bool = False) -> TeamAnalysis:
         cq[(RECENT, "xg_per_shot")] = (0.121, 4)
         dq[(RECENT, "npxga")] = (1.12, 5)
         dq[(RECENT, "npxga_per_shot_against")] = (0.102, 5)
+    tc_axis = _axis("time_context", tc)
+    if not season_only:
+        # 밴드는 note 앞의 토큰으로 실려 온다 (analysis.parse_trend_band).
+        tc_axis.metrics["trend6.points"].note = "higher 문턱 0.40"
+        tc_axis.metrics["trend6.goals"].note = "lower 문턱 0.30"
+        tc_axis.notes.append("xg: 시즌과 최근의 산출 방식이 달라 뺄 수 없음")
+        tc_axis.notes.append("패턴 A — 이 줄은 다른 블록 소관이라 빼야 한다")
     return TeamAnalysis(team=name, is_home=None,
-                        time_context=_axis("time_context", tc),
+                        time_context=tc_axis,
                         chance_quality=_axis("chance_quality", cq),
                         defensive_quality=_axis("defensive_quality", dq))
 
@@ -184,6 +196,58 @@ def test_c5_recent_only_metric_shows_in_two_period_table():
     assert "npxG" in html, html
 
 
+# ------------------------------------------------------- 시즌 대비 (트렌드)
+def test_t1_trend_is_shown_next_to_the_recent_value():
+    """2-A 가 계산한 트렌드가 지금까지 화면에 없었다."""
+    html = _html()
+    assert "시즌 대비" in html, html
+
+
+def test_t2_trend_band_is_worded_not_scored():
+    html = _html()
+    assert "높음" in html and "낮음" in html, html
+    for word in ("상승세", "전력", "우세", "점수"):
+        assert word not in html, word
+
+
+def test_t3_trend_keeps_its_sign():
+    html = _html()
+    assert "+0.20" in html, html
+    assert "-0.35" in html, html
+
+
+def test_t4_trend_only_on_the_recent_table():
+    """시즌 표에는 붙지 않는다 — 시즌 대비의 기준이 시즌 자신이 된다."""
+    html = _html()
+    for tm in re.finditer(r"<table class=\"mini\">(.*?)</table>", html, re.S):
+        t = tm.group(1)
+        if "· 시즌" in t.split("</thead>")[0]:
+            assert "시즌 대비" not in t, t
+
+
+def test_t5_metric_without_trend_gets_no_tail():
+    """뺄 수 없는 지표(xG 등)에는 붙지 않는다 (§1-1-9)."""
+    html = _html()
+    row = re.search(r"<tr><td>xG</td>(.*?)</tr>", html, re.S)
+    assert row and "시즌 대비" not in row.group(1), row
+
+
+def test_t6_reasons_are_shown_once():
+    html = _html()
+    assert "표본·수집 메모" in html, html
+    assert html.count("산출 방식이 달라 뺄 수 없음") == 1, "팀마다 반복되면 안 된다"
+
+
+def test_t7_pattern_notes_belong_to_another_block():
+    html = _html()
+    assert "패턴 A" not in html, html
+
+
+def test_t8_no_reasons_no_section():
+    html = _html(season_only=True)
+    assert "표본·수집 메모" not in html, html
+
+
 # ---------------------------------------------------------------- 표시 규칙
 def test_d1_signed_metrics_keep_their_sign():
     html = _html()
@@ -245,7 +309,7 @@ def test_e4_no_new_css_class():
     """기존 CSS 만 쓴다 — .tablewrap · table.mini · .num · .nodata · .meta."""
     html = _html()
     classes = set(re.findall(r'class="([^"]+)"', html))
-    allowed = {"block", "meta", "tablewrap", "mini", "num", "nodata"}
+    allowed = {"block", "meta", "tablewrap", "mini", "num", "nodata", "mnotes"}
     for c in classes:
         for token in c.split():
             assert token in allowed, f"새 CSS 클래스: {token}"

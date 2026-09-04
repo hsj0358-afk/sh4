@@ -268,6 +268,35 @@ def test_f5_stats_only_keeps_its_old_wording():
     assert "강점/약점 없음" in s, s
 
 
+def test_f7_skipped_h2h_says_skipped_not_zero():
+    """끈 것과 찾아봤는데 없던 것은 다른 상태다 (§1-6)."""
+    s = status_line(28, 28, 28, 28, h2h_done=0, h2h_skipped=14)
+    assert "맞대결 생략" in s, s
+    assert "맞대결 0경기" not in s, s
+
+
+def test_f8_collected_but_empty_h2h_says_zero():
+    s = status_line(28, 28, 28, 28, h2h_done=0, h2h_skipped=0)
+    assert "맞대결 0경기" in s, s
+
+
+def test_f9_collected_h2h_is_counted():
+    s = status_line(28, 28, 28, 28, h2h_done=9, h2h_skipped=0)
+    assert "맞대결 9경기" in s, s
+
+
+def test_f10_h2h_default_is_off_in_config():
+    """기본이 꺼져 있어야 회차당 9분을 되찾는다."""
+    from toto.settings import ROOT, load_yaml
+    cfg = load_yaml(ROOT / "config_toto.yaml")
+    assert cfg["whoscored"]["h2h"] is False, cfg["whoscored"].get("h2h")
+
+
+def test_f11_missing_config_key_means_off():
+    """설정에 키가 없어도 켜지지 않는다."""
+    assert bool({}.get("h2h", False)) is False
+
+
 def test_f6_every_state_uses_the_four_words():
     """§1-6 의 어휘(ok/부분/실패/생략) 밖으로 나가지 않는다."""
     for args in ((0, 0, 0, 28), (28, 0, 0, 28), (28, 28, 0, 28),

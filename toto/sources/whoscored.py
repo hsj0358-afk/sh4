@@ -763,24 +763,35 @@ def _revive_h2h(data: dict) -> H2H:
 # 오케스트레이션
 # --------------------------------------------------------------------------
 def status_line(stats_done: int, teams_done: int, chars_done: int,
-                total: int) -> str:
+                total: int, *, h2h_done: int = 0,
+                h2h_skipped: int = 0) -> str:
     """소스 상태 문자열 (§1-6 의 네 상태 어휘).
 
     **`teams_done` 만으로 'ok' 를 적지 않는다.** 그 수는 특성이든 폼이든
     하나만 있어도 오르므로, 폼만 온 상태가 '상세 데이터 정상' 으로 보인다.
     실제로 2026-09-04 실행에서 `ok (28/28팀)` 만 보고는 강점/약점이 왔는지
     알 수 없었다 — 이 소스를 계속 쓸지가 바로 그 숫자에 달려 있는데(§3-1).
+
+    맞대결도 **'생략' 과 '0건' 을 구분해서** 적는다. 끈 것과 찾아봤는데
+    없던 것은 다른 상태이고, 섞이면 다음 회차에 무엇을 볼지 알 수 없다.
     """
+    h2h = ""
+    if h2h_skipped:
+        h2h = ", 맞대결 생략"
+    elif h2h_done or teams_done:
+        h2h = f", 맞대결 {h2h_done}경기"
+
     if stats_done == 0:
         return "실패 (수집 0팀)"
     if teams_done == 0:
         return f"부분 ({stats_done}/{total}팀 순위·지표만, 강점/약점 없음)"
     if chars_done == 0:
-        return f"부분 ({stats_done}/{total}팀 지표, {teams_done}팀 폼, 강점/약점 없음)"
+        return (f"부분 ({stats_done}/{total}팀 지표, {teams_done}팀 폼, "
+                f"강점/약점 없음{h2h})")
     if teams_done < stats_done or chars_done < teams_done:
         return (f"부분 ({stats_done}/{total}팀 지표, {teams_done}팀 상세, "
-                f"강점/약점 {chars_done}팀)")
-    return f"ok ({teams_done}/{total}팀, 강점/약점 {chars_done}팀)"
+                f"강점/약점 {chars_done}팀{h2h})")
+    return f"ok ({teams_done}/{total}팀, 강점/약점 {chars_done}팀{h2h})"
 
 
 def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None) -> str:
@@ -796,6 +807,13 @@ def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None) -> s
     stats_done = 0          # 리그 순위표 지표만이라도 확보한 팀 수
     chars_done = 0          # 강점 또는 약점을 실제로 읽은 팀 수
     style_done = 0          # 플레이 스타일을 읽은 팀 수
+    h2h_done = 0            # 맞대결을 실제로 받은 경기 수
+    h2h_skipped = 0         # 설정으로 건너뛴 경기 수
+
+    # 맞대결 수집 여부. 기본은 끔 — 실측 두 번 모두 14/14 가 0건이었고
+    # 경기당 40초(회차당 9분)를 썼다. 켜려면 config 에 `h2h: true`.
+    # '수집했는데 없었다' 와 '아예 안 했다' 는 다른 상태다 (§1-6).
+    h2h_enabled = bool(settings.whoscored.get("h2h", False))
 
     with WhoScoredBrowser(settings, cache=cache) as browser:
         if not browser.available:
@@ -848,19 +866,25 @@ def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None) -> s
                 setattr(match, f"{side}_profile", profile)
 
             # FotMob 이 이미 맞대결을 채웠으면 건너뛴다. 후스코어드 H2H 는
-            # 경기당 20초 넘게 걸리는데(일정 검색 → 프리뷰), 실측에서 14경기
-            # 전부 '일정에서 경기를 찾지 못함' 이었다. 있는 데이터를 두고
-            # 5분을 버릴 이유가 없다.
-            if (match.home.canonical and match.away.canonical
+            # 경기당 40초가 걸리는데(일정 검색 → 프리뷰), 실측 두 번 모두
+            # 14/14 경기가 '일정에서 경기를 찾지 못함' 이었다 — 9분에 0건.
+            # 그래서 **기본으로 끈다** (config_toto.yaml 의 whoscored.h2h).
+            if not h2h_enabled:
+                h2h_skipped += 1
+            elif (match.home.canonical and match.away.canonical
                     and not match.h2h.entries):
                 match.h2h = read_h2h(browser, settings, match.home.canonical,
                                      match.away.canonical, resolver,
                                      match.league, cache=cache)
+                if match.h2h.entries:
+                    h2h_done += 1
 
     total = len(matches) * 2
     # 무엇이 왔고 무엇이 안 왔는지 로그에 숫자로 남긴다. 후스코어드에서
     # 정성 데이터가 오는지가 이 소스를 계속 쓸지의 판단 근거다 (§3-1).
     log.info("후스코어드 요약: 지표 %d/%d팀 · 팀 페이지 %d팀 · "
-             "강점/약점 %d팀 · 스타일 %d팀",
-             stats_done, total, teams_done, chars_done, style_done)
-    return status_line(stats_done, teams_done, chars_done, total)
+             "강점/약점 %d팀 · 스타일 %d팀 · 맞대결 %s",
+             stats_done, total, teams_done, chars_done, style_done,
+             f"생략({h2h_skipped}경기)" if h2h_skipped else f"{h2h_done}경기")
+    return status_line(stats_done, teams_done, chars_done, total,
+                       h2h_done=h2h_done, h2h_skipped=h2h_skipped)

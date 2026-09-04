@@ -1535,13 +1535,23 @@ ok (28/28팀, 강점/약점 28팀)                     특성까지 정상
 (2026-09-04 실측). 관측한 것만 넣는다. 유사도 문턱을 낮춰 자동으로 맞히려
 하지 않는다 — 엉뚱한 팀에 붙는 편이 비어 있는 것보다 나쁘다(§1-1-1).
 
+**맞대결(H2H)은 기본으로 끈다 — `config_toto.yaml` 의 `whoscored.h2h: false`.**
+실측 두 번(2026-09-03·09-04) 모두 14/14 경기가 `일정에서 경기를 찾지 못함`
+이었고 경기당 40초, 회차당 9분을 썼다 — 전체 15분의 60%다. 0건에 9분을
+쓰지 않는다. **FotMob 의 `build_h2h()` 는 그대로 돈다** — 맞대결 자체를
+버린 것이 아니라 후스코어드 폴백만 끈 것이다. 파서를 고쳐 실제로 받아지는
+것을 확인한 뒤에 `true` 로 되돌린다.
+
+상태 문자열이 **`생략` 과 `0경기` 를 구분한다** — 끈 것과 찾아봤는데 없던
+것은 다른 상태이고, 섞이면 다음 회차에 무엇을 볼지 알 수 없다.
+
 **리그 페이지 원본은 성공해도 남긴다 — 그건 경고가 아니다.**
 `save_debug(..., failed=False)` 가 그 경우 DEBUG 로 적는다. 예전에는 정상
 수집(21팀·20팀) 중에도 `파싱 실패 원본 저장` 이 WARNING 으로 떠서 진짜
 경고를 흘려보게 했다. 파일 이름의 `FAILED_` 접두사는 그대로 둔다 — 진단
 도구와 문서가 그 이름으로 찾는다.
 
-회귀 테스트: `python tests/test_whoscored_characteristics.py` (28개).
+회귀 테스트: `python tests/test_whoscored_characteristics.py` (33개).
 
 `tools/diagnose_whoscored.py` 가 넷을 갈라 준다. `FAILED_team_*` 이면
 `summarize_team()` 으로 분기해 (1) 문구가 DOM 에 있나 script 에 있나,
@@ -1678,7 +1688,7 @@ python tests/test_panel.py                 # 두 전문가 패널 3-B (70개)
 python tests/test_moderator.py             # 사회자 3-C (57개)
 python tests/test_panel_render.py          # 패널 리포트 출력 3-D (41개)
 python tests/test_time_safety.py           # 시간누수 감사 3-F (21개)
-python tests/test_whoscored_characteristics.py  # 팀 특성 파싱 §3-1 (28개)
+python tests/test_whoscored_characteristics.py  # 팀 특성 파싱 §3-1 (33개)
 python tests/test_alias_table_loading.py   # 별칭 테이블 적재 진단 §1-6-1 (16개)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)

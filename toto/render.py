@@ -429,8 +429,8 @@ def _axis_label_fmt(name: str) -> tuple[str, str]:
 
 
 def _axes_table(title: str, attr: str, names, home_team, away_team,
-                home_label: str, away_label: str) -> str:
-    """한 갈래(결과·공격·수비)를 홈/원정 나란히 놓은 표.
+                home_label: str, away_label: str, want: str) -> str:
+    """한 갈래(결과·공격·수비)를 홈/원정 나란히 놓은 표. `want` 기간만 낸다.
 
     값이 양쪽 네 칸 모두 없는 줄은 내지 않는다. 빈 줄을 남기면 '수집은 됐는데
     0 이다' 처럼 보인다 (§1-5).
@@ -485,8 +485,9 @@ def _axes_table(title: str, attr: str, names, home_team, away_team,
         return f'<small> 시즌 대비 {esc(text)}{" " + band if band else ""}</small>'
 
     out = ""
-    for period, span in ((analysis.SEASON, "시즌"),
-                         (analysis.period_name(window), f"최근 {window}경기")):
+    periods = ((analysis.SEASON, "시즌"),) if want == analysis.SEASON else (
+        (analysis.period_name(window), f"최근 {window}경기"),)
+    for period, span in periods:
         recent = period != analysis.SEASON
         rows = ""
         for name in names:
@@ -511,34 +512,14 @@ def _axes_table(title: str, attr: str, names, home_team, away_team,
     return out
 
 
-def _axes_block(match: Match) -> str:
-    """시즌 경기력과 최근 경기력을 홈/원정 나란히 (2-A · 2-B · 2-C).
+def _axes_notes(home_team, away_team) -> str:
+    """축이 남긴 사유를 한 번만 보여 준다.
 
-    두 값을 하나로 합치지 않는다 — 기간이 열로 나뉘어 있어 구조적으로 섞일
-    수 없다 (§1-1-7). 표본 수(n)를 칸마다 적어 적은 표본이 충분해 보이지
-    않게 한다. 승무패를 추천하지 않는다.
+    지금까지는 어디에도 나오지 않아 '시즌 대비' 가 왜 없는지 화면에서 알 수
+    없었다 — 값이 없으면 이유를 남긴다는 §1-1-9·§1-1-10 의 사유가 여기서
+    처음 화면에 닿는다. 패턴(`패턴 …`)은 다른 블록 소관이라 빼고, 팀 간
+    중복은 합친다.
     """
-    data = getattr(match, "analysis", None)
-    if data is None:
-        return ""
-    home_team = getattr(data, "home", None)
-    away_team = getattr(data, "away", None)
-    if home_team is None and away_team is None:
-        return ""
-
-    home_label = match.home.display
-    away_label = match.away.display
-    tables = "".join(
-        _axes_table(title, attr, names, home_team, away_team,
-                    home_label, away_label)
-        for title, attr, names in _AXES_SECTIONS)
-    if not tables:
-        return ""
-
-    # 축이 남긴 사유를 한 번만 보여 준다. 지금까지는 어디에도 나오지 않아
-    # '시즌 대비' 가 왜 없는지 화면에서 알 수 없었다 — 값이 없으면 이유를
-    # 남긴다는 §1-1-9·§1-1-10 의 사유가 여기서 처음 화면에 닿는다.
-    # 패턴(`패턴 …`)은 다른 블록 소관이라 빼고, 팀 간 중복은 합친다.
     seen, notes = set(), []
     for team in (home_team, away_team):
         for attr in ("time_context", "chance_quality", "defensive_quality"):
@@ -548,23 +529,68 @@ def _axes_block(match: Match) -> str:
                     continue
                 seen.add(note)
                 notes.append(note)
-    note_html = ""
-    if notes:
-        shown, rest = notes[:8], notes[8:]
-        items = "".join(f"<li>{esc(n)}</li>" for n in shown)
-        more = f'<li>… 그 밖 {len(rest)}건</li>' if rest else ""
-        # `.lbl` 은 `.traits` 안에서만 스타일이 잡혀 있어 여기서는 쓰지 않는다.
-        # 제목은 '값이 없는 이유' 가 아니다 — 축의 notes 에는 표본 수 안내와
-        # '합치지 마십시오' 같은 주의도 함께 들어 있다. 실물을 보고 고쳤다.
-        note_html = (f'<p class="meta">표본·수집 메모 (분석 축이 남긴 것)</p>'
-                     f'<ul class="mnotes">{items}{more}</ul>')
+    if not notes:
+        return ""
+    shown, rest = notes[:8], notes[8:]
+    items = "".join(f"<li>{esc(n)}</li>" for n in shown)
+    more = f'<li>… 그 밖 {len(rest)}건</li>' if rest else ""
+    # `.lbl` 은 `.traits` 안에서만 스타일이 잡혀 있어 여기서는 쓰지 않는다.
+    # 제목은 '값이 없는 이유' 가 아니다 — 축의 notes 에는 표본 수 안내와
+    # '합치지 마십시오' 같은 주의도 함께 들어 있다. 실물을 보고 고쳤다.
+    return (f'<p class="meta">표본·수집 메모 (분석 축이 남긴 것)</p>'
+            f'<ul class="mnotes">{items}{more}</ul>')
 
-    return ('<div class="block"><h4>경기력 분석 (시즌 · 최근 경기)</h4>'
-            '<p class="meta">시즌과 최근은 <b>다른 피드에서 온 값</b>이라 표를 '
-            '나눴습니다 — 뺄 수 있는 지표에만 <b>시즌 대비</b>가 붙습니다 · '
-            '최근 표의 창은 설정값이고 실제 표본은 각 칸의 n 입니다 · '
-            '승무패를 추천하지 않습니다</p>'
-            f'{tables}{note_html}</div>')
+
+def _axes_blocks(match: Match) -> tuple[str, str]:
+    """(시즌 블록, 최근 블록). **기간마다 따로 낸다.**
+
+    카드가 이 둘을 각자의 차트 **바로 뒤에** 놓는다 — 시즌 표는 다이버징
+    바 뒤, 최근 표는 슈팅·xG 프로필 뒤. 차트와 그 표가 떨어져 있으면 대조가
+    안 되고, 같은 지표를 두 곳에서 따로 읽게 된다.
+
+    표본 수(n)를 칸마다 적어 적은 표본이 충분해 보이지 않게 한다.
+    승무패를 추천하지 않는다.
+    """
+    from . import analysis
+
+    data = getattr(match, "analysis", None)
+    if data is None:
+        return "", ""
+    home_team = getattr(data, "home", None)
+    away_team = getattr(data, "away", None)
+    if home_team is None and away_team is None:
+        return "", ""
+
+    home_label, away_label = match.home.display, match.away.display
+    made = []
+    for want, title, hint in (
+            (analysis.SEASON, "경기력 분석 · 시즌",
+             "순위표와 시즌 통계 피드에서 온 값입니다"),
+            ("recent", "경기력 분석 · 최근 경기",
+             "슛맵에서 온 값이라 시즌 값과 <b>다른 피드</b>입니다 — 뺄 수 있는 "
+             "지표에만 <b>시즌 대비</b>가 붙습니다 · 표의 창은 설정값이고 "
+             "실제 표본은 각 칸의 n 입니다")):
+        tables = "".join(
+            _axes_table(t, attr, names, home_team, away_team,
+                        home_label, away_label, want)
+            for t, attr, names in _AXES_SECTIONS)
+        made.append((tables, title, hint))
+
+    # 메모는 **마지막으로 나오는 블록 하나에만** 붙인다. 두 블록에 같은 목록을
+    # 두 번 적으면 근거를 두 번 세는 꼴이 된다.
+    notes = _axes_notes(home_team, away_team)
+    last = max((i for i, (t, _, _) in enumerate(made) if t), default=None)
+
+    out = []
+    for i, (tables, title, hint) in enumerate(made):
+        if not tables:
+            out.append("")
+            continue
+        tail = notes if i == last else ""
+        out.append(f'<div class="block"><h4>{esc(title)}</h4>'
+                   f'<p class="meta">{hint} · n 은 그 지표의 실제 표본 수 · '
+                   f'승무패를 추천하지 않습니다</p>{tables}{tail}</div>')
+    return out[0], out[1]
 
 
 _VENUE_ROWS = (
@@ -981,6 +1007,7 @@ def _match_card(match: Match, settings: Settings) -> str:
     if match.notes:
         notes = ('<div class="notebox">'
                  + "<br>".join(esc(n) for n in match.notes) + "</div>")
+    season_axes, recent_axes = _axes_blocks(match)
 
     return (f'<article class="match" id="m{match.no}">'
             f'<h3><span class="no">{match.no}</span>'
@@ -990,13 +1017,17 @@ def _match_card(match: Match, settings: Settings) -> str:
             f'{_standing_row(match)}'
             f'{notes}'
             f'{_odds_block(match)}'
+            # 차트와 그 표를 붙여 놓는다. 예전에는 다이버징 바(시즌)와
+            # 슈팅·xG 프로필(최근)이 먼저 나오고 대응하는 표가 한참 뒤에
+            # 따로 있어, 같은 지표를 두 곳에서 따로 읽어야 했다.
             f'<div class="block"><h4>리그 내 위치 · 지표 비교</h4>'
             f'<div class="cols3">'
             f'{charts.radar((match.radar or {}).get("axes") or [], match.home.display, match.away.display)}'
             f'{_compare_inner(match, settings)}'
             f'</div></div>'
+            f'{season_axes}'
             f'{_recent_block(match, settings)}'
-            f'{_axes_block(match)}'
+            f'{recent_axes}'
             # 정성(강점/약점·상성)을 정량 바로 뒤에 둔다. 예전에는 카드의
             # 맨 아래(10번째)였는데, 강점/약점이 처음 들어오면서 이 블록이
             # 실제로 값을 갖는 몇 안 되는 자리가 됐다.

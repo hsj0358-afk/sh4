@@ -98,7 +98,17 @@ def _match(*, season_only: bool = False, analysis: bool = True) -> Match:
 
 
 def _html(**kw) -> str:
-    return render._axes_block(_match(**kw))
+    """두 블록(시즌·최근)을 이어 붙인 것. 카드에서는 각자의 차트 뒤에 놓인다."""
+    season, recent = render._axes_blocks(_match(**kw))
+    return season + recent
+
+
+def _season_html(**kw) -> str:
+    return render._axes_blocks(_match(**kw))[0]
+
+
+def _recent_html(**kw) -> str:
+    return render._axes_blocks(_match(**kw))[1]
 
 
 # ---------------------------------------------------------------- 기본 동작
@@ -109,7 +119,7 @@ def test_a1_block_is_rendered_when_axes_exist():
 
 def test_a2_no_analysis_means_no_block():
     """--demo 이전 · 수집 실패 시 빈 블록을 만들지 않는다."""
-    assert render._axes_block(_match(analysis=False)) == ""
+    assert render._axes_blocks(_match(analysis=False)) == ("", "")
 
 
 def test_a3_all_three_axes_appear():
@@ -287,7 +297,8 @@ def test_e2_block_does_not_compute():
     """읽어서 놓기만 한다 — 산술 연산도 합산도 없다."""
     src = Path(render.__file__).read_text(encoding="utf-8")
     tree = ast.parse(src)
-    targets = {"_axes_block", "_axes_table", "_axis_label_fmt"}
+    targets = {"_axes_blocks", "_axes_table", "_axis_label_fmt",
+               "_axes_notes"}
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef) and node.name in targets:
             for n in ast.walk(node):
@@ -317,7 +328,11 @@ def test_e4_no_new_css_class():
 
 # ---------------------------------------------------------------- 구조
 def test_f1_html_is_well_formed():
-    ElementTree.fromstring(_html())
+    # 두 블록을 이어 붙였으므로 뿌리가 둘이다. 감싸서 검사한다.
+    ElementTree.fromstring(f"<div>{_html()}</div>")
+    for part in (_season_html(), _recent_html()):
+        if part:
+            ElementTree.fromstring(part)
 
 
 def test_f2_wide_table_can_scroll():
@@ -325,13 +340,22 @@ def test_f2_wide_table_can_scroll():
     assert 'class="tablewrap"' in _html()
 
 
-def test_f3_block_is_in_the_match_card():
+def test_f3_each_table_sits_next_to_its_chart():
+    """차트와 그 표가 떨어져 있으면 같은 지표를 두 곳에서 따로 읽게 된다.
+
+    시즌 표는 다이버징 바 뒤, 최근 표는 슈팅·xG 프로필 뒤여야 한다.
+    """
     src = Path(render.__file__).read_text(encoding="utf-8")
     card = src[src.index("def _match_card"):]
-    card = card[:card.index("\ndef ")]
-    assert "_axes_block(match)" in card, "카드에 블록이 붙지 않았다"
-    assert card.index("_recent_block") < card.index("_axes_block")
-    assert card.index("_axes_block") < card.index("_venue_block")
+    card = card[:card.index("\ndef ", 10)]
+    for name in ("season_axes", "recent_axes"):
+        assert name in card, f"카드에 {name} 가 없다"
+    # 대입문이 아니라 카드에 **끼워 넣은 자리**를 본다.
+    order = [card.index(x) for x in ("_compare_inner", "{season_axes}",
+                                     "_recent_block(match, settings)",
+                                     "{recent_axes}",
+                                     "_traits_block", "_venue_block")]
+    assert order == sorted(order), order
 
 
 # --------------------------------------------------------------------------

@@ -512,17 +512,21 @@ def _axes_table(title: str, attr: str, names, home_team, away_team,
     return out
 
 
-def _axes_notes(home_team, away_team) -> str:
+def _axis_notes(teams, attrs, limit: int = 8) -> str:
     """축이 남긴 사유를 한 번만 보여 준다.
 
-    지금까지는 어디에도 나오지 않아 '시즌 대비' 가 왜 없는지 화면에서 알 수
-    없었다 — 값이 없으면 이유를 남긴다는 §1-1-9·§1-1-10 의 사유가 여기서
-    처음 화면에 닿는다. 패턴(`패턴 …`)은 다른 블록 소관이라 빼고, 팀 간
-    중복은 합친다.
+    **값이 없으면 이유를 남긴다** 는 §1-1-9·§1-1-10 의 사유는 지금까지
+    `AnalysisAxis.notes` 에만 있고 화면 어디에도 나오지 않았다. 그래서
+    '시즌 대비' 와 '장소차' 가 왜 없는지 알 수 없었다.
+
+    `_put()` 이 값이 없을 때 **지표를 아예 만들지 않으므로**(§1-1-10) 사유를
+    지표의 `note` 에서 찾을 수 없다 — 여기가 유일한 자리다.
+
+    패턴(`패턴 …`)은 다른 블록 소관이라 빼고, 팀 간 중복은 합친다.
     """
     seen, notes = set(), []
-    for team in (home_team, away_team):
-        for attr in ("time_context", "chance_quality", "defensive_quality"):
+    for team in teams:
+        for attr in attrs:
             axis = getattr(team, attr, None) if team else None
             for note in (axis.notes if axis else []):
                 if note.startswith("패턴 ") or note in seen:
@@ -531,8 +535,12 @@ def _axes_notes(home_team, away_team) -> str:
                 notes.append(note)
     if not notes:
         return ""
-    shown, rest = notes[:8], notes[8:]
-    items = "".join(f"<li>{esc(n)}</li>" for n in shown)
+    shown, rest = notes[:limit], notes[limit:]
+    # 분석 축의 메모에는 강조용 `**…**` 가 섞여 있다. 화면에 처음 나오면서
+    # 별표가 그대로 보였다. **해석하지 않고 표시만 걷어낸다** — markdown 을
+    # 해석하기 시작하면 §1-11 의 '모델 문장을 해석하지 않는다' 와 어긋나는
+    # 선례가 된다. 굵게 만들지 않고 별표만 지운다.
+    items = "".join(f"<li>{esc(n.replace('**', ''))}</li>" for n in shown)
     more = f'<li>… 그 밖 {len(rest)}건</li>' if rest else ""
     # `.lbl` 은 `.traits` 안에서만 스타일이 잡혀 있어 여기서는 쓰지 않는다.
     # 제목은 '값이 없는 이유' 가 아니다 — 축의 notes 에는 표본 수 안내와
@@ -578,7 +586,9 @@ def _axes_blocks(match: Match) -> tuple[str, str]:
 
     # 메모는 **마지막으로 나오는 블록 하나에만** 붙인다. 두 블록에 같은 목록을
     # 두 번 적으면 근거를 두 번 세는 꼴이 된다.
-    notes = _axes_notes(home_team, away_team)
+    notes = _axis_notes((home_team, away_team),
+                        ("time_context", "chance_quality",
+                         "defensive_quality"))
     last = max((i for i, (t, _, _) in enumerate(made) if t), default=None)
 
     out = []
@@ -630,35 +640,40 @@ def _venue_table(axis, venue: str, window: int) -> str:
     label = analysis.VENUE_LABELS.get(venue, venue)
     out = ""
     for overall_period, venue_period, span in blocks:
+        # 장소차 열을 낼지 먼저 본다. 표본이 모자라면 `comparison_allowed`
+        # 가 막고, 그때 `_put` 은 **지표를 아예 만들지 않는다** — 사유는
+        # `axis.notes` 로 간다(§1-1-10). 그래서 이 열이 통째로 `—` 인 일이
+        # 흔한데(실물 260050: 경기당 29칸), 사유 없는 `—` 만 늘어놓으면
+        # '재 봤는데 없다' 처럼 보인다. 없으면 열을 빼고, 이유는 블록의
+        # 메모 목록에서 한 번 보여 준다.
+        gaps = [cell(venue_period, f"{n}{analysis.VENUE_GAP_SUFFIX}")
+                for n, _ in _VENUE_ROWS]
+        show_gap = any(g is not None and g.value is not None for g in gaps)
         rows = ""
         for name, fmt in _VENUE_ROWS:
             o = cell(overall_period, name)
             v = cell(venue_period, name)
             if o is None and v is None:
                 continue
-            gap = cell(venue_period, f"{name}{analysis.VENUE_GAP_SUFFIX}")
             o_txt, o_n = num(o, fmt)
             v_txt, v_n = num(v, fmt)
-            g_txt, _g_n = num(gap, fmt, sign=True)
-            if gap is None or gap.value is None:
-                blocked = ""
-                for m in (v, o):
-                    if m is not None and m.note:
-                        blocked = m.note
-                        break
-                g_txt = (f'<span class="nodata">{esc(blocked)}</span>'
-                         if blocked else '<span class="nodata">—</span>')
+            gap_td = ""
+            if show_gap:
+                gap = cell(venue_period, f"{name}{analysis.VENUE_GAP_SUFFIX}")
+                g_txt, _g_n = num(gap, fmt, sign=True)
+                gap_td = f'<td class="num">{g_txt}</td>'
             spec = analysis.SPECS.get(name, (name,))
             rows += (f'<tr><td>{esc(spec[0])}</td>'
                      f'<td class="num">{o_txt}<small> {esc(o_n)}</small></td>'
                      f'<td class="num">{v_txt}<small> {esc(v_n)}</small></td>'
-                     f'<td class="num">{g_txt}</td></tr>')
+                     f'{gap_td}</tr>')
         if not rows:
             continue
+        gap_th = '<th class="num">장소차</th>' if show_gap else ""
         out += (f'<table class="mini"><thead><tr>'
                 f'<th>{esc(span)}</th><th class="num">전체</th>'
                 f'<th class="num">{esc(label)}</th>'
-                f'<th class="num">장소차</th></tr></thead>'
+                f'{gap_th}</tr></thead>'
                 f'<tbody>{rows}</tbody></table>')
     return out
 
@@ -694,11 +709,17 @@ def _venue_block(match: Match) -> str:
                  + (f'<ul>{notes}</ul>' if notes else "") + '</div>')
     if not cols:
         return ""
+    # 장소차가 왜 없는지는 지표가 아니라 축의 notes 에 있다 (§1-1-10 —
+    # `_put` 이 값 없는 지표를 만들지 않으므로 그것이 유일한 자리다).
+    memo = _axis_notes((getattr(analysis_data, "home", None),
+                        getattr(analysis_data, "away", None)),
+                       ("venue_context",))
     return ('<div class="block"><h4>홈/원정 문맥 (같은 장소의 과거 표본)</h4>'
             '<p class="meta">장소차 = 장소 − 전체 · 같은 지표를 같은 방식으로 '
-            '재고 표본만 좁힌 값입니다 · n 은 그 지표의 실제 표본 수 · '
+            '재고 표본만 좁힌 값입니다 · 표본이 모자라 장소차를 만들지 못하면 '
+            '그 열이 아예 나오지 않습니다 · n 은 그 지표의 실제 표본 수 · '
             '승무패를 추천하지 않습니다</p>'
-            f'<div class="traits">{cols}</div></div>')
+            f'<div class="traits">{cols}</div>{memo}</div>')
 
 
 _SOS_ROWS = (("opponent_points", "{:.2f}"),

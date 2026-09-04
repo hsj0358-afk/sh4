@@ -733,6 +733,22 @@ homeN           최근 N경기 중 홈 ← awayN
 캐시는 **올리지 않았다.** `MatchAnalysis` 는 캐시되지 않고 소스 응답의
 저장 형식도 바뀌지 않았다.
 
+**장소차가 없으면 그 열을 내지 않고, 이유를 메모로 보여 준다 (2-E 교정).**
+`comparison_allowed` 가 막으면 `_put` 은 **지표를 아예 만들지 않고**(§1-1-10)
+사유는 `axis.notes` 로 간다. 그런데 렌더러는 그 사유를 **값 지표의 `note`**
+에서 찾고 있어 언제나 못 찾았고, 결과는 사유 없는 `—` 였다 — 실물 260050
+에서 경기당 29칸(전체 406칸). 두 가지를 고쳤다.
+
+  · 한 표의 장소차가 **전부 비면 그 열을 통째로 뺀다.** 사유 없는 `—` 를
+    늘어놓으면 '재 봤는데 없다' 처럼 보인다 (§1-1-15 의 기간 열과 같은 규칙).
+  · 사유는 **`_axis_notes()` 로 블록 끝에 한 번** 보여 준다. 경기력 분석
+    블록과 **같은 헬퍼**를 쓴다 (§1-8) — 실측 픽스처에서 빈 칸이 29 → 0 이
+    되고 `값 없음 (최근 3경기 중 홈): 공통 표본 부족 (1경기, 최소 3) — 실점
+    장소차, …` 가 화면에 나온다.
+  · 축 메모의 `**…**` 는 **표시만 걷어낸다.** 굵게 만들지 않는다 —
+    markdown 을 해석하기 시작하면 §1-11 의 '모델 문장을 해석하지 않는다' 와
+    어긋나는 선례가 된다.
+
 회귀 테스트: `python tests/test_venue_context.py` (58개).
 
 ### 1-1-13. 상대 강도 (Phase 2-F) — `build_schedule_strength()`
@@ -1813,7 +1829,7 @@ python tests/test_panel.py                 # 두 전문가 패널 3-B (70개)
 python tests/test_moderator.py             # 사회자 3-C (57개)
 python tests/test_panel_render.py          # 패널 리포트 출력 3-D (41개)
 python tests/test_time_safety.py           # 시간누수 감사 3-F (21개)
-python tests/test_axes_render.py           # 경기력 분석 블록 §1-1-15 (33개)
+python tests/test_axes_render.py           # 경기력 분석 블록 §1-1-15 (36개)
 python tests/test_whoscored_characteristics.py  # 팀 특성 파싱 §3-1 (33개)
 python tests/test_alias_table_loading.py   # 별칭 테이블 적재 진단 §1-6-1 (16개)
 python tests/test_roundlog.py              # 회차 기록 축적 §1-6-2 (23개)

@@ -689,10 +689,17 @@ def test_report_never_recommends():
     report, s = _one_match_report()
     html = render_report(report, s)
     i = html.find("홈/원정 문맥")
-    end = html.find("</article>", i)
+    # **이 블록만** 본다. `</article>` 까지 자르면 뒤따르는 다른 블록의 문구를
+    # 이 축의 것으로 오인한다.
+    end = html.find('<div class="block"><h4>', i)
+    if end < 0:
+        end = html.find("</article>", i)
     block = html[i:end if end > i else i + 6000]
     # 고정 문구(부정문)는 빼고 본다 — 이 축이 하지 않는 일을 밝히는 자리다.
-    block = block.replace("승무패를 추천하지 않습니다", "")
+    # 축이 notes 에 남기는 부정문도 이제 화면에 나오므로 함께 뺀다.
+    for fixed in ("승무패를 추천하지 않습니다",
+                  "우위 점수나 승무패 추천이 아닙니다"):
+        block = block.replace(fixed, "")
     for word in ("추천", "우위", "베팅", "홈승", "원정승"):
         assert word not in block, word
 

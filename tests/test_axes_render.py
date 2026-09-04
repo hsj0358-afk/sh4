@@ -326,6 +326,38 @@ def test_e4_no_new_css_class():
             assert token in allowed, f"새 CSS 클래스: {token}"
 
 
+# ------------------------------------------------- 메모 (2-E 와 공용 헬퍼)
+def test_n1_notes_helper_is_shared_with_the_venue_block():
+    """§1-8 — 같은 일을 하는 코드를 두 벌 만들지 않는다."""
+    src = Path(render.__file__).read_text(encoding="utf-8")
+    assert src.count("def _axis_notes(") == 1, "메모 헬퍼가 둘이다"
+    venue = src[src.index("def _venue_block"):]
+    venue = venue[:venue.index("\n_SOS_ROWS")]
+    assert "_axis_notes(" in venue, "장소 블록이 메모를 보여 주지 않는다"
+
+
+def test_n2_markdown_markers_are_stripped_not_interpreted():
+    """축 메모의 `**…**` 가 별표로 새어 나오면 안 된다.
+
+    그렇다고 굵게 만들지도 않는다 — markdown 을 해석하기 시작하면 §1-11 의
+    '모델 문장을 해석하지 않는다' 와 어긋나는 선례가 된다.
+    """
+    m = _match()
+    axis = m.analysis.home.time_context
+    axis.notes.append("이것은 **강조** 문구입니다")
+    html = render._axis_notes((m.analysis.home,), ("time_context",))
+    assert "**" not in html, html
+    assert "<b>" not in html, html
+    assert "이것은 강조 문구입니다" in html, html
+
+
+def test_n3_pattern_notes_stay_out_of_the_memo():
+    m = _match()
+    m.analysis.home.time_context.notes.append("패턴 B — 다른 블록 소관")
+    html = render._axis_notes((m.analysis.home,), ("time_context",))
+    assert "패턴 B" not in html, html
+
+
 # ---------------------------------------------------------------- 구조
 def test_f1_html_is_well_formed():
     # 두 블록을 이어 붙였으므로 뿌리가 둘이다. 감싸서 검사한다.

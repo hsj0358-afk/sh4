@@ -1132,6 +1132,39 @@ ERROR   toto.normalize: 팀 별칭 테이블이 비었습니다 … (존재 예,
 
 회귀 테스트: `python tests/test_alias_table_loading.py` (16개).
 
+### 1-6-2. 회차 기록 축적 — `toto/roundlog.py`
+
+**지나간 회차는 되돌릴 수 없다.** 이 프로그램은 회차마다 독립적으로 그 시점의
+자료를 가져오고 리포트는 그 회차의 상태만 담는다. 지침 §8 의 회차로그 한 줄도
+화면에 찍히기만 하고 저장되지 않았다 — 그래서 "이 배당에 이 확률이었고 실제로는
+이렇게 끝났다" 를 되짚을 방법이 없었다. 이제 **매 실행이 그 회차를 남긴다.**
+
+```
+data/rounds.csv          회차 1줄  (§8 스키마 + 승산 + 정산 결과)
+data/round_matches.csv   경기 14줄 (배당 · 내재확률 · argmax 픽 · 결과)
+```
+
+**결과를 새로 수집하지 않는다.** 다음 회차를 돌릴 때 이미 받아 온 시즌 경기
+색인(`Report.season_matches`)에 지난 회차의 경기가 종료된 채로 들어 있다.
+그것으로 채운다 — 새 소스를 붙이지 않는다(AST 로 검사).
+
+- **재실행이 중복을 만들지 않는다.** 같은 회차 행은 교체한다.
+- **없는 값은 빈칸**이다. 0 으로 채우지 않는다 (§1-5).
+- **자동 정산은 확실할 때만.** 팀 짝이 맞고 종료됐고 날짜가 `±4일` 안일 때만
+  채운다. 같은 팀 짝이 시즌에 두 번(홈/원정) 나오므로 날짜로 갈라야 하고,
+  가릴 수 없으면 비워 둔다 — **틀린 결과가 빈칸보다 나쁘다.**
+  이미 정산된 행은 덮어쓰지 않는다.
+- **픽을 다시 구하지 않는다.** `MatchProb.pick`(predict.py 의 argmax)을 읽는다.
+  `recommendation`·`confidence`·`lean` 같은 칸을 두지 않는다 (§1-3).
+- `--demo` 는 기록하지 않는다 — 난수 표본이라 축적할 값이 아니다.
+- **UTF-8 BOM 으로 쓴다.** 한국어 윈도우의 엑셀이 BOM 없는 UTF-8 을 cp949 로
+  읽어 깨뜨린다 (§1-7 과 같은 계열의 함정).
+- 기록이 실패해도 실행을 죽이지 않는다. 리포트는 이미 나와 있다 (§1-6).
+- **`.gitignore` 에 넣지 않았다.** 축적이 목적인 파일이라 새로 클론하면
+  사라지는 자리에 두면 안 된다. 커밋할지는 사용자가 정한다.
+
+회귀 테스트: `python tests/test_roundlog.py` (23개).
+
 ### 1-7. Windows 운영 규칙 — 보존한다
 
 `.gitattributes` 에 이유와 함께 고정돼 있다. 세 가지 모두 실제로 사용자
@@ -1763,6 +1796,7 @@ python tests/test_time_safety.py           # 시간누수 감사 3-F (21개)
 python tests/test_axes_render.py           # 경기력 분석 블록 §1-1-15 (33개)
 python tests/test_whoscored_characteristics.py  # 팀 특성 파싱 §3-1 (33개)
 python tests/test_alias_table_loading.py   # 별칭 테이블 적재 진단 §1-6-1 (16개)
+python tests/test_roundlog.py              # 회차 기록 축적 §1-6-2 (23개)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)
 python tools/probe_sources.py --browser    # 소스 구조 점검

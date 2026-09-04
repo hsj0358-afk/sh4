@@ -332,6 +332,15 @@ def main(argv: list[str] | None = None) -> int:
         log.info("회차로그 1줄 (지침 §8):")
         log.info("  %s", _log_line(report))
 
+    # 회차 기록 축적. 지나간 회차는 되돌릴 수 없으므로 매 실행이 남긴다.
+    # 실패해도 리포트는 이미 나왔으므로 실행을 죽이지 않는다 (§1-6).
+    try:
+        from . import roundlog
+        log.info("회차 기록: %s", roundlog.record(report))
+    except Exception as exc:                            # noqa: BLE001
+        log.warning("회차 기록 실패: %s", exc)
+        log.debug("회차 기록 traceback", exc_info=True)
+
     if args.open:
         webbrowser.open(out.resolve().as_uri())
     if args.serve:

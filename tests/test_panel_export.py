@@ -22,8 +22,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from toto import moderator, panel, panelexport                  # noqa: E402
 from toto.models import (                                       # noqa: E402
-    EvidenceItem, Match, MatchAnalysis, MatchProb, Report, Signal,
-    TeamAnalysis, TeamRef)
+    AnalysisAxis, EvidenceItem, Match, MatchAnalysis, MatchProb, Metric,
+    Report, Signal, TeamAnalysis, TeamRef)
+
+
+def _axis(name="chance_quality") -> AnalysisAxis:
+    """값이 든 축 하나. **근거와 무관하게** payload 에 실리는 자료다."""
+    return AnalysisAxis(
+        name=name, requested_matches=6, available_matches=4,
+        metrics={
+            "recent6.npxg": Metric(name="npxg", label="npxG", value=1.84,
+                                   period="recent6", sample_count=4,
+                                   unit="per_match", source="shotmap",
+                                   measurement_basis="shot_events"),
+            "recent6.shots": Metric(name="shots", label="슈팅", value=13.5,
+                                    period="recent6", sample_count=4,
+                                    unit="per_match", source="shotmap",
+                                    measurement_basis="shot_events"),
+        })
 
 
 def _ev(team="Arsenal", metric="npxg", value=2.42, n=6,
@@ -36,15 +52,22 @@ def _ev(team="Arsenal", metric="npxg", value=2.42, n=6,
                         source=src, measurement_basis=basis)
 
 
-def _match(no=1, evidence=True) -> Match:
+def _match(no=1, evidence=True, axes=False) -> Match:
+    """`axes=True` 는 **근거는 없지만 축 지표는 있는** 상태다.
+
+    시즌 초의 실제 상태가 이것이다 — 2-G 의 패턴 게이트가 표본 부족으로
+    막혀 근거만 0건이 되고, 축 지표는 그대로 실린다.
+    """
     m = Match(no=no, home=TeamRef(display="아스널", canonical="Arsenal"),
               away=TeamRef(display="첼시", canonical="Chelsea"))
     m.league_ko, m.kickoff_kst = "프리미어리그", "2026-09-06 20:00"
     m.probs = MatchProb(home=0.52, draw=0.26, away=0.22,
                         overround=1.04, margin_per_option=0.013)
     m.analysis = MatchAnalysis(
-        home=TeamAnalysis(team="Arsenal", is_home=True),
-        away=TeamAnalysis(team="Chelsea", is_home=False),
+        home=TeamAnalysis(team="Arsenal", is_home=True,
+                          chance_quality=_axis() if axes else None),
+        away=TeamAnalysis(team="Chelsea", is_home=False,
+                          chance_quality=_axis() if axes else None),
         evidence=[_ev(), _ev(team="Chelsea", metric="npxga", value=1.61, n=5,
                              basis="opponent_shot_events")] if evidence else [],
         conflicts=[Signal(name="npxg", lean="UNKNOWN", strength="",
@@ -59,9 +82,9 @@ def _report(matches=None) -> Report:
     return r
 
 
-def _run(matches=None):
+def _run(matches=None, **kw):
     out = Path(tempfile.mkdtemp()) / "panel"
-    status = panelexport.export(_report(matches), outdir=out)
+    status = panelexport.export(_report(matches), outdir=out, **kw)
     return status, out
 
 
@@ -185,6 +208,103 @@ def test_c3_mixed_round_skips_only_the_empty_ones():
     assert status.startswith("ok"), status
     assert "건너뜀 1경기" in status, status
     assert len(list((out / "경기별").glob("*.md"))) == 1
+
+
+# ------------------------------------------------ 근거 0건을 열어 주는 경로
+#
+# 게이트의 이유는 "줄 것이 팀 이름뿐" 인데, 그것은 **축 지표까지 비었을
+# 때만** 참이다. 시즌 초에는 2-G 의 패턴 게이트만 막혀 근거가 0건이고 축
+# 지표는 그대로 실린다 — 그동안 채팅 경로가 통째로 막혀 있었다.
+def test_c4_axis_metrics_survive_zero_evidence():
+    """전제 확인. 근거가 0건이어도 payload 에 축 지표가 남는다."""
+    payload = panel.build_panel_payload(_match(evidence=False, axes=True))
+    assert payload.evidence_ids == ()
+    assert panelexport._axis_metric_count(payload) == 4, payload.home
+
+
+def test_c5_default_still_skips_even_with_axis_metrics():
+    """플래그 없이는 동작이 **한 글자도** 바뀌지 않는다."""
+    status, out = _run([_match(evidence=False, axes=True)])
+    assert status.startswith("부분"), status
+    assert sorted(f.name for f in out.iterdir()) == ["00_프로젝트_지침.md"]
+
+
+def test_c6_status_names_the_way_out():
+    """막힌 그 자리에서 여는 방법을 알려 준다."""
+    status, _out = _run([_match(evidence=False, axes=True)])
+    assert "--panel-export-all" in status, status
+
+
+def test_c7_flag_writes_the_sheets():
+    status, out = _run([_match(evidence=False, axes=True)],
+                       include_without_evidence=True)
+    assert status.startswith("ok"), status
+    assert "근거 0건인 채로 실은 1경기" in status, status
+    names = sorted(f.name for f in out.glob("*.md"))
+    assert names == ["00_프로젝트_지침.md", "01_1단계_데이터분석가.md",
+                     "02_2단계_맞대결분석가.md", "03_3단계_사회자.md"], names
+
+
+def test_c8_sheets_carry_the_warning():
+    _st, out = _run([_match(evidence=False, axes=True)],
+                    include_without_evidence=True)
+    for prefix in ("01_", "02_", "03_"):
+        text = _round(out, prefix)
+        assert "근거(evidence)가 없습니다" in text, prefix
+        # 모델이 근거 ID 를 지어내지 않게 못 박는다.
+        assert "지어내지 마십시오" in text, prefix
+        assert '"evidence_ids"' in text, prefix
+        # `--panel` 실행과 같은 결과가 아니라고 밝힌다.
+        assert "같은 것이 아닙니다" in text, prefix
+    assert "근거(evidence)가 없습니다" in _sheet(out)
+
+
+def test_c9_no_axis_metrics_stays_shut():
+    """열어 달라고 해도 **정말로** 줄 것이 없으면 만들지 않는다."""
+    status, out = _run([_match(evidence=False)], include_without_evidence=True)
+    assert status.startswith("부분"), status
+    assert "축 지표도 없어" in status, status
+    assert sorted(f.name for f in out.iterdir()) == ["00_프로젝트_지침.md"]
+
+
+def test_c10_flag_does_not_touch_matches_that_have_evidence():
+    """근거가 있는 경기의 시트는 플래그 유무와 **바이트까지** 같다."""
+    plain = _round(_run([_match(no=1)])[1], "01_")
+    wide = _round(_run([_match(no=1)], include_without_evidence=True)[1], "01_")
+    assert plain == wide
+
+
+def test_c11_api_path_gate_is_unchanged():
+    """돈이 드는 경로(`panel.run_match`)는 그대로 닫혀 있다."""
+    run = panel.run_match(_match(evidence=False, axes=True),
+                          settings=None, client=None)
+    assert run.status == "생략 (근거 없음)", run.status
+    assert run.opinions == ()
+
+
+def test_c12_cli_flag_implies_the_export():
+    """`--panel-export-all` 만 적어도 내보내진다 — 둘을 함께 적게 하면
+    하나만 적고 아무것도 안 나오는 일이 생긴다."""
+    src = (Path(__file__).resolve().parent.parent / "toto" / "cli.py"
+           ).read_text(encoding="utf-8")
+    assert "--panel-export-all" in src, "플래그가 없다"
+    # `args.panel_export or args.panel_export_all` 로 켠다.
+    assert re.search(r"args\.panel_export\s+or\s+args\.panel_export_all", src)
+    assert re.search(r"include_without_evidence\s*=\s*args\.panel_export_all",
+                     src)
+
+
+def test_c13_menu_offers_it_before_the_run():
+    """다 돌린 뒤에 알게 하지 않는다. `[3]` 이 시작할 때 묻는다."""
+    src = (Path(__file__).resolve().parent.parent / "toto" / "menu.py"
+           ).read_text(encoding="utf-8")
+    assert "--panel-export-all" in src, src[-400:]
+    from test_menu_flow import drive
+    # [3] → 회차 비움 → 'y' → 종료
+    _code, calls, _out = drive(["3", "", "y", "", "0"])
+    assert calls == [["--panel-export-all", "--open"]], calls
+    _code, calls, _out = drive(["3", "", "", "", "0"])
+    assert calls == [["--panel-export", "--open"]], calls
 
 
 # ---------------------------------------------------------------- 시트 내용

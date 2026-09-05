@@ -73,6 +73,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--panel-export", action="store_true",
                    help="패널·사회자를 클로드 채팅에서 손으로 돌릴 자료를 "
                         "파일로 냅니다 (API 를 부르지 않습니다).")
+    p.add_argument("--panel-export-all", action="store_true",
+                   help="--panel-export 를 켜고, 근거 0건 경기도 축 지표만으로 "
+                        "냅니다 (시즌 초). 시트에 경고가 붙고 --panel 실행과 "
+                        "같은 결과가 아닙니다.")
     p.add_argument("--no-cache", action="store_true",
                    help="캐시를 무시하고 새로 수집")
     p.add_argument("--open", action="store_true",
@@ -336,10 +340,13 @@ def main(argv: list[str] | None = None) -> int:
         log.info("  %s", _log_line(report))
 
     # 패널 자료 내보내기. API 를 부르지 않으므로 리포트가 나온 뒤에 한다.
-    if args.panel_export:
+    # `--panel-export-all` 은 `--panel-export` 를 켠다 — 둘을 함께 적게
+    # 하면 하나만 적고 아무것도 안 나오는 일이 생긴다.
+    if args.panel_export or args.panel_export_all:
         try:
             from . import panelexport
-            log.info("패널 자료 내보내기: %s", panelexport.export(report))
+            log.info("패널 자료 내보내기: %s", panelexport.export(
+                report, include_without_evidence=args.panel_export_all))
         except Exception as exc:                        # noqa: BLE001
             log.warning("패널 자료 내보내기 실패: %s", exc)
             log.debug("패널 자료 내보내기 traceback", exc_info=True)

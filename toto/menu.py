@@ -214,7 +214,20 @@ def run_menu() -> int | None:
             return 1
         args = (["--round", rnd] if rnd else []) + extra
 
-    if "--serve" in args:                  # 공유만 하는 항목 (리포트를 만들지 않음)
+    # 근거 0건이면 채팅용 시트가 통째로 안 나온다 — 시즌 초에는 그게
+    # 정상 상태다. 다 돌린 뒤 지침 파일 하나만 남은 것을 보고서야 알게
+    # 하지 않으려고, 시작할 때 한 번 묻는다. 기본은 아니오다.
+    if "--panel-export" in args:
+        wide = _ask("근거가 없는 경기도 축 지표만으로 낼까요? "
+                    "(시즌 초에 필요합니다) (y/N): ")
+        if wide is None:
+            print("입력이 끝나 실행하지 않았습니다.")
+            return 1
+        if wide.lower().startswith("y"):
+            args = [a for a in args if a != "--panel-export"]
+            args.append("--panel-export-all")
+
+    if "--serve" in args:                # 공유만 하는 항목 (리포트를 만들지 않음)
         from .cli import main as cli_main
         return ("serve", cli_main(list(args)))
 

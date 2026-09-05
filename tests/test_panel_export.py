@@ -66,9 +66,17 @@ def _run(matches=None):
 
 
 def _sheet(out: Path) -> str:
-    files = [f for f in out.iterdir() if not f.name.startswith("00_")]
-    assert files, list(out.iterdir())
+    """경기별 시트 하나 (대체 경로). 회차 시트는 `_round()` 로 본다."""
+    files = sorted((out / "경기별").glob("*.md"))
+    assert files, list(out.rglob("*"))
     return files[0].read_text(encoding="utf-8")
+
+
+def _round(out: Path, prefix: str) -> str:
+    """회차 단위 시트를 이어 붙인 것 (여러 부로 나뉘었을 수 있다)."""
+    files = sorted(f for f in out.glob(f"{prefix}*.md"))
+    assert files, sorted(f.name for f in out.glob("*.md"))
+    return "\n".join(f.read_text(encoding="utf-8") for f in files)
 
 
 # ------------------------------------------------- 프롬프트가 두 벌이 아니다
@@ -176,7 +184,7 @@ def test_c3_mixed_round_skips_only_the_empty_ones():
     status, out = _run([_match(no=1), _match(no=2, evidence=False)])
     assert status.startswith("ok"), status
     assert "건너뜀 1경기" in status, status
-    assert len([f for f in out.iterdir() if not f.name.startswith("00_")]) == 1
+    assert len(list((out / "경기별").glob("*.md"))) == 1
 
 
 # ---------------------------------------------------------------- 시트 내용
@@ -219,6 +227,82 @@ def test_d6_no_pick_is_produced():
     text = panelexport.project_instructions() + _sheet(_run()[1])
     for word in ("추천합니다", "픽:", "베팅하십시오"):
         assert word not in text, word
+
+
+# ------------------------------------------------- 회차 단위 (3개 대화)
+def _round_matches(n=3, evidence=True):
+    return [_match(no=i, evidence=evidence) for i in range(1, n + 1)]
+
+
+def test_r1_one_file_per_step_covers_the_whole_round():
+    """경기마다 대화를 열지 않는다 — 단계마다 회차 전체가 한 파일이다."""
+    _st, out = _run(_round_matches(3))
+    for prefix in ("01_", "02_", "03_"):
+        assert list(out.glob(f"{prefix}*.md")), sorted(
+            f.name for f in out.glob("*.md"))
+    text = _round(out, "01_")
+    for no in (1, 2, 3):
+        assert f'<panel_payload no="{no}">' in text, no
+
+
+def test_r2_both_analyst_steps_carry_identical_payloads():
+    """불변조건 2 는 회차 단위에서도 지켜져야 한다."""
+    _st, out = _run(_round_matches(3))
+    a = re.findall(r"<panel_payload[^>]*>\n(.*?)\n</panel_payload>",
+                   _round(out, "01_"), re.S)
+    b = re.findall(r"<panel_payload[^>]*>\n(.*?)\n</panel_payload>",
+                   _round(out, "02_"), re.S)
+    assert a and a == b, "두 단계가 다른 자료를 받는다"
+
+
+def test_r3_batch_output_schema_is_documented():
+    """단일 객체 스키마를 배열로 감싸는 것이 유일한 차이다. 적어 둔다."""
+    text = panelexport.project_instructions()
+    assert "match_no" in text, text[-1200:]
+    assert "배열" in text
+    assert "유일한 점" in text, "API 판과의 차이를 밝히지 않았다"
+
+
+def test_r4_moderator_round_sheet_takes_both_arrays():
+    _st, out = _run(_round_matches(3))
+    mod = (out / "03_3단계_사회자.md").read_text(encoding="utf-8")
+    assert "[A]" in mod and "[B]" in mod, mod[:400]
+    assert mod.count('<moderator_input no="') == 3, mod.count("moderator_input")
+    assert '"home":{' not in mod, "사회자에게 축 지표가 갔다"
+
+
+def test_r5_large_round_is_split_into_parts():
+    """한 대화에 안 들어갈 크기면 나눈다 — 실패를 겪은 뒤 알게 하지 않는다."""
+    out = Path(tempfile.mkdtemp()) / "panel"
+    status = panelexport.export(_report(_round_matches(4)), outdir=out,
+                                max_bytes=1_000)
+    assert "나눔" in status, status
+    parts = sorted(f.name for f in out.glob("01_*.md"))
+    assert len(parts) > 1, parts
+    assert all("of" in n for n in parts), parts
+
+
+def test_r6_split_is_even_not_front_loaded():
+    """앞에서부터 채우면 13+1 처럼 치우쳐 대화 하나가 거의 빈다."""
+    payloads = [panel.build_panel_payload(m) for m in _round_matches(8)]
+    one = len(panel.serialize_payload(payloads[0]).encode("utf-8"))
+    groups = panelexport._chunks(payloads, one * 4)
+    sizes = [len(g) for g in groups]
+    assert len(groups) == 2, sizes
+    assert max(sizes) - min(sizes) <= 1, sizes
+
+
+def test_r7_small_round_is_not_split():
+    _st, out = _run(_round_matches(2))
+    assert sorted(f.name for f in out.glob("01_*.md")) == \
+        ["01_1단계_데이터분석가.md"], sorted(f.name for f in out.glob("*.md"))
+
+
+def test_r8_per_match_sheets_remain_as_the_fallback():
+    """회차 파일이 너무 크면 경기별로 나눠 쓸 수 있어야 한다."""
+    _st, out = _run(_round_matches(3))
+    assert len(list((out / "경기별").glob("*.md"))) == 3
+    assert "경기별" in panelexport.project_instructions()
 
 
 # ---------------------------------------------------------------- CLI 연결

@@ -70,6 +70,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--panel", action="store_true",
                    help="두 전문가 패널의 해석을 붙입니다 (Anthropic API 필요·"
                         "유료). 지정하지 않으면 호출하지 않습니다.")
+    p.add_argument("--panel-export", action="store_true",
+                   help="패널·사회자를 클로드 채팅에서 손으로 돌릴 자료를 "
+                        "파일로 냅니다 (API 를 부르지 않습니다).")
     p.add_argument("--no-cache", action="store_true",
                    help="캐시를 무시하고 새로 수집")
     p.add_argument("--open", action="store_true",
@@ -331,6 +334,15 @@ def main(argv: list[str] | None = None) -> int:
             log.warning("  배당 미수집 경기가 있어 %d경기만으로 계산했습니다.", v.n)
         log.info("회차로그 1줄 (지침 §8):")
         log.info("  %s", _log_line(report))
+
+    # 패널 자료 내보내기. API 를 부르지 않으므로 리포트가 나온 뒤에 한다.
+    if args.panel_export:
+        try:
+            from . import panelexport
+            log.info("패널 자료 내보내기: %s", panelexport.export(report))
+        except Exception as exc:                        # noqa: BLE001
+            log.warning("패널 자료 내보내기 실패: %s", exc)
+            log.debug("패널 자료 내보내기 traceback", exc_info=True)
 
     # 회차 기록 축적. 지나간 회차는 되돌릴 수 없으므로 매 실행이 남긴다.
     # 실패해도 리포트는 이미 나왔으므로 실행을 죽이지 않는다 (§1-6).

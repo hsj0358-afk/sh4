@@ -1460,6 +1460,46 @@ traceback·프롬프트·API 키는 화면에 내지 않는다. 사유는 사람
 
 회귀 테스트: `python tests/test_panel_render.py` (41개).
 
+### 1-11-1. 채팅용 자료 내보내기 — `toto/panelexport.py`
+
+`--panel` 은 Anthropic API 를 부른다(키·비용). 같은 분석을 **클로드 채팅
+프로젝트**에서 손으로 돌리려면 지침과 자료가 파일로 있어야 한다.
+`--panel-export` (메뉴 `[11]`)가 `reports/panel_<회차>/` 에 만든다.
+
+```
+00_프로젝트_지침.md          채팅 프로젝트에 넣을 지침
+NN_<홈>_vs_<원정>.md         경기별 붙여넣기 시트 (1·2·3단계)
+```
+
+**프롬프트를 여기에 베끼지 않는다.** `panel.SYSTEM_COMMON` ·
+`panel.ROLE_PROMPTS` · `moderator.SYSTEM` 을 그대로 실어 낸다 — 베껴 두면
+API 판과 채팅 판이 조용히 갈라지고, 그 뒤로는 "왜 결과가 다르지" 를 영원히
+묻게 된다. **자료도 같은 함수로 만든다** — `build_panel_payload()` ·
+`serialize_payload()` · `moderator.build_input()`. 회귀 테스트가 프롬프트
+문장이 이 모듈의 문자열 상수에 없는지, 직렬화가 API 판과 같은지 검사한다.
+
+**대화를 셋으로 나눈다.** 불변조건이 그렇게 요구한다.
+
+  · 두 분석가는 **서로의 의견을 보지 않는다** (§1-9). 한 대화에서 이어
+    시키면 두 번째가 첫 번째를 읽는다.
+  · 두 분석가는 **같은 자료**를 받는다 — 시트에 자료를 한 번만 싣고 두
+    대화에 같은 것을 붙여넣게 한다(테스트가 두 블록의 동일성을 본다).
+  · 사회자는 **축 지표 덤프를 다시 받지 않는다** (§1-10). `build_input()`
+    이 줄인 그대로 내고 `opinions` 자리만 비운다.
+
+**한계를 숨기지 않는다.** 채팅에는 이 격리를 강제하는 장치가 없다 —
+한 대화에서 세 단계를 다 하면 조건이 깨지고 `--panel` 실행과 다른 것이
+된다. 지침 본문에 그렇게 적어 두었고 테스트가 그 문장을 고정한다.
+
+**근거 게이트는 `run_match()` 와 같다.** 근거 0건이면 시트를 만들지 않는다 —
+분석가에게 줄 것이 팀 이름뿐이라 지어낼 수밖에 없는 것은 채팅이라고
+달라지지 않는다. 그때도 지침 파일은 내고 상태를 `부분 (…)` 으로 적는다.
+
+`opinions` 자리표시자에 **대괄호를 넣지 않는다** — 이미 `"opinions":[…]`
+안에 들어가므로 겹친다(실물에서 `[[[…]]]` 가 나와 고쳤다).
+
+회귀 테스트: `python tests/test_panel_export.py` (20개).
+
 ### 1-12. 패널 방어선은 두 층이고 세기가 다르다 (Phase 3-E 검증)
 
 실제 LLM 을 부를 수 없는 환경(SDK·키 없음)에서 **모델이 규칙을 어기는 상황을
@@ -1809,6 +1849,7 @@ python -m toto --round 260044      # 회차 지정 수집
 python -m toto --skip-whoscored    # 배당 + 순위·폼만 (빠름)
 python -m toto --skip-match-details        # 경기 상세(npxG·xGOT…) 생략
 python -m toto --panel                     # 두 전문가 패널 (Claude API 필요·유료)
+python -m toto --panel-export              # 채팅용 지침·자료 파일 (API 불필요)
 python tests/test_league_matching.py       # 리그·팀 매칭 회귀 (15개)
 python tests/test_match_details.py         # 경기 상세 파싱 회귀 (36개)
 python tests/test_shot_events.py           # 슛 이벤트 계층 (46개)
@@ -1828,6 +1869,7 @@ python tests/test_menu_flow.py             # 메뉴 루프·예외·로그 3-A (
 python tests/test_panel.py                 # 두 전문가 패널 3-B (70개)
 python tests/test_moderator.py             # 사회자 3-C (57개)
 python tests/test_panel_render.py          # 패널 리포트 출력 3-D (41개)
+python tests/test_panel_export.py          # 채팅용 자료 내보내기 §1-11-1 (20개)
 python tests/test_time_safety.py           # 시간누수 감사 3-F (21개)
 python tests/test_axes_render.py           # 경기력 분석 블록 §1-1-15 (36개)
 python tests/test_whoscored_characteristics.py  # 팀 특성 파싱 §3-1 (33개)
@@ -1840,4 +1882,4 @@ python tools/probe_sources.py --analyze    # 저장본 재분석 (접속 없음)
 python tools/diagnose_whoscored.py         # 실패 원본 진단
 ```
 
-메뉴(바탕화면 바로가기 / `toto_menu.bat`)에 같은 기능이 `[1]`~`[10]` 으로 있다.
+메뉴(바탕화면 바로가기 / `toto_menu.bat`)에 같은 기능이 `[1]`~`[11]` 으로 있다.

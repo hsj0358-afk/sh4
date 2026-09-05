@@ -267,7 +267,9 @@ def test_r4_moderator_round_sheet_takes_both_arrays():
     _st, out = _run(_round_matches(3))
     mod = (out / "03_3단계_사회자.md").read_text(encoding="utf-8")
     assert "[A]" in mod and "[B]" in mod, mod[:400]
-    assert mod.count('<moderator_input no="') == 3, mod.count("moderator_input")
+    # 안내 문장에도 태그 이름이 나오므로 자료 절만 센다.
+    body = mod.split("## 자료")[1]
+    assert body.count('<moderator_input no="') == 3, body.count("moderator_input")
     assert '"home":{' not in mod, "사회자에게 축 지표가 갔다"
 
 
@@ -303,6 +305,49 @@ def test_r8_per_match_sheets_remain_as_the_fallback():
     _st, out = _run(_round_matches(3))
     assert len(list((out / "경기별").glob("*.md"))) == 3
     assert "경기별" in panelexport.project_instructions()
+
+
+# --------------------------------------------- 첨부할 때 채팅에 적을 말
+def test_m1_every_step_file_carries_a_ready_message():
+    """파일을 첨부하면 채팅에 뭘 적어야 하는지가 파일 안에 있어야 한다."""
+    _st, out = _run(_round_matches(3))
+    for f in sorted(out.glob("0*.md")):
+        if f.name.startswith("00_"):
+            continue
+        text = f.read_text(encoding="utf-8")
+        assert "채팅에 적을 말" in text, f.name
+        assert "첨부한 파일은" in text, f.name
+
+
+def test_m2_message_names_the_role_and_forbids_the_other():
+    _st, out = _run(_round_matches(2))
+    a = _round(out, "01_")
+    b = _round(out, "02_")
+    assert "역할 A — 데이터 분석가" in a and "다른 역할은 하지 마십시오" in a
+    assert "역할 B — 맞대결·전술 분석가" in b and "다른 역할은 하지 마십시오" in b
+    assert "역할 B" not in a.split("## 자료")[0], "1단계 메시지에 B 가 섞였다"
+
+
+def test_m3_message_asks_for_the_batch_array():
+    _st, out = _run(_round_matches(2))
+    for prefix in ("01_", "02_"):
+        head = _round(out, prefix).split("## 자료")[0]
+        assert "match_no" in head and "배열 하나로" in head, prefix
+
+
+def test_m4_moderator_message_has_two_slots_to_fill():
+    _st, out = _run(_round_matches(2))
+    head = (out / "03_3단계_사회자.md").read_text(
+        encoding="utf-8").split("## 자료")[0]
+    # 안내 문장에도 `◀ … ▶` 가 한 번 나오므로 채울 자리를 문구로 센다.
+    for step in ("1단계 응답 배열을 통째로", "2단계 응답 배열을 통째로"):
+        assert head.count(step) == 1, (step, head.count(step))
+    assert "[A]" in head and "[B]" in head
+
+
+def test_m5_instructions_point_at_the_ready_message():
+    text = panelexport.project_instructions()
+    assert "채팅에 적을 말" in text, text[:1500]
 
 
 # ---------------------------------------------------------------- CLI 연결

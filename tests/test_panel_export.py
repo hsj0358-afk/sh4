@@ -397,11 +397,12 @@ def test_e1_cli_flag_exists_and_does_not_need_a_key():
 
 
 def test_e2_menu_item_does_not_call_the_api():
-    from toto.menu import ITEMS
-    entry = [i for i in ITEMS if i[0] == "11"]
+    from toto.menu import ITEMS, ROUND
+    entry = [i for i in ITEMS
+             if isinstance(i[3], tuple) and "--panel-export" in i[3][1]]
     assert entry, [i[0] for i in ITEMS]
-    flags = entry[0][3]
-    assert "--panel-export" in flags, flags
+    kind, flags = entry[0][3]
+    assert kind == ROUND, "회차를 묻지 않는다"
     assert "--panel" not in flags, flags
     assert "--skip-match-details" not in flags, "슛맵이 없으면 근거가 없다"
 

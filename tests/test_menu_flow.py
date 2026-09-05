@@ -341,8 +341,14 @@ def test_g24_operational_menu_maps_to_the_right_flags():
     by_key = {k: a for k, _t, _d, a in menu.ITEMS}
     assert list(by_key) == ["1", "2", "3", "4", "9"], list(by_key)
     assert by_key["1"] == (menu.ROUND, [])
-    assert by_key["2"] == (menu.ROUND, ["--skip-whoscored", "--panel"])
-    assert by_key["3"] == (menu.ROUND, ["--skip-whoscored", "--panel-export"])
+    # [2]·[3] 은 [1] 에 **더하는** 것이다. 후스코어드를 끄면 리포트에서
+    # 강점/약점·상성이 빠지고, 그 값(shots_pg)이 축을 거쳐 패널 자료에도
+    # 실리므로 패널에게 줄 자료가 오히려 줄었다.
+    assert by_key["2"] == (menu.ROUND, ["--panel"])
+    assert by_key["3"] == (menu.ROUND, ["--panel-export"])
+    for key in ("2", "3"):
+        assert "--skip-whoscored" not in by_key[key][1], key
+        assert "--skip-match-details" not in by_key[key][1], key
     assert by_key["4"] == ["--serve"]
     assert by_key["9"] == "tools"
 
@@ -397,14 +403,12 @@ def test_g27_serve_and_diagnose_still_tagged():
 def test_h28_round_is_prepended_before_the_item_flags():
     """`--round` 가 먼저 오고 항목 인자가 뒤에 붙는다."""
     _code, calls, _out = drive(["3", "260050", "", "0"])
-    assert calls == [["--round", "260050",
-                      "--skip-whoscored", "--panel-export", "--open"]], calls
+    assert calls == [["--round", "260050", "--panel-export", "--open"]], calls
 
 
 def test_h29_panel_item_also_asks_for_the_round():
     _code, calls, _out = drive(["2", "260051", "", "0"])
-    assert calls == [["--round", "260051",
-                      "--skip-whoscored", "--panel", "--open"]], calls
+    assert calls == [["--round", "260051", "--panel", "--open"]], calls
 
 
 def test_h30_eof_at_the_round_prompt_does_not_run():

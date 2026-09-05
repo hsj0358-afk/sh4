@@ -1498,6 +1498,14 @@ API 판과 채팅 판이 조용히 갈라지고, 그 뒤로는 "왜 결과가 �
     이 줄인 그대로 낸다 — 실측에서 회차 전체 사회자 파일이 **10.7KB** 다
     (분석가 파일 347KB 대비 3%).
 
+**지침은 한 번만 넣는다 — 지문으로 낡음을 알린다.** 지침은 매 회차 같은
+내용이라 프로젝트에 한 번만 붙여넣으면 되는데, 이 글은 코드의 프롬프트에서
+만들어지므로 **프롬프트가 바뀌면 붙여넣은 사본이 조용히 낡는다.**
+`instructions_fingerprint()`(8자)가 지침 맨 위와 실행 로그에 함께 찍히므로,
+두 값이 다르면 다시 넣으면 된다 — 프로그램만이 그것을 알려 줄 수 있다.
+파일은 회차마다 계속 낸다(9KB). 회차 폴더가 그것만으로 완결되고, 지문이
+바뀌었는지도 그 파일로 확인한다.
+
 **첨부할 때 채팅에 적을 말이 파일 안에 있다.** 시트를 처음엔 붙여넣기
 전제로 썼는데, 첨부하면 채팅 메시지에 무엇을 적어야 할지가 어디에도 없었다.
 각 단계 파일 맨 위에 `채팅에 적을 말` 블록을 두어 그대로 복사하게 한다 —
@@ -1531,7 +1539,7 @@ bytes 이고 14경기면 약 730KB — 한국어 JSON 은 대략 2~3바이트당
 `opinions` 자리표시자에 **대괄호를 넣지 않는다** — 이미 `"opinions":[…]`
 안에 들어가므로 겹친다(실물에서 `[[[…]]]` 가 나와 고쳤다).
 
-회귀 테스트: `python tests/test_panel_export.py` (33개).
+회귀 테스트: `python tests/test_panel_export.py` (38개).
 
 ### 1-12. 패널 방어선은 두 층이고 세기가 다르다 (Phase 3-E 검증)
 
@@ -1902,7 +1910,7 @@ python tests/test_menu_flow.py             # 메뉴 루프·예외·로그 3-A (
 python tests/test_panel.py                 # 두 전문가 패널 3-B (70개)
 python tests/test_moderator.py             # 사회자 3-C (57개)
 python tests/test_panel_render.py          # 패널 리포트 출력 3-D (41개)
-python tests/test_panel_export.py          # 채팅용 자료 내보내기 §1-11-1 (33개)
+python tests/test_panel_export.py          # 채팅용 자료 내보내기 §1-11-1 (38개)
 python tests/test_time_safety.py           # 시간누수 감사 3-F (21개)
 python tests/test_axes_render.py           # 경기력 분석 블록 §1-1-15 (36개)
 python tests/test_whoscored_characteristics.py  # 팀 특성 파싱 §3-1 (33개)

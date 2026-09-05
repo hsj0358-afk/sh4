@@ -350,6 +350,44 @@ def test_m5_instructions_point_at_the_ready_message():
     assert "채팅에 적을 말" in text, text[:1500]
 
 
+# ------------------------------------------------------------- 지침 지문
+def test_f1_fingerprint_is_in_the_instructions_and_the_status():
+    """붙여넣은 지침이 낡았는지는 지문으로만 알 수 있다."""
+    fp = panelexport.instructions_fingerprint()
+    assert len(fp) == 8, fp
+    assert fp in panelexport.project_instructions()
+    status, _out = _run(_round_matches(2))
+    assert fp in status, status
+
+
+def test_f2_fingerprint_changes_when_a_prompt_changes():
+    before = panelexport.instructions_fingerprint()
+    real = panel.SYSTEM_COMMON
+    try:
+        panel.SYSTEM_COMMON = real + "\n추가된 규칙.\n"
+        assert panelexport.instructions_fingerprint() != before
+    finally:
+        panel.SYSTEM_COMMON = real
+    assert panelexport.instructions_fingerprint() == before
+
+
+def test_f3_fingerprint_is_stable_across_rounds():
+    """회차가 달라도 지침은 같다 — 매번 다시 넣게 만들지 않는다."""
+    a = panelexport.project_instructions()
+    b = panelexport.project_instructions()
+    assert a == b
+
+
+def test_f4_placeholder_is_not_left_in_the_output():
+    assert panelexport._FINGERPRINT_SLOT not in \
+        panelexport.project_instructions()
+
+
+def test_f5_instructions_say_it_is_pasted_once():
+    text = panelexport.project_instructions()
+    assert "한 번만" in text and "다시 넣으십시오" in text, text[:900]
+
+
 # ---------------------------------------------------------------- CLI 연결
 def test_e1_cli_flag_exists_and_does_not_need_a_key():
     from toto.cli import build_parser

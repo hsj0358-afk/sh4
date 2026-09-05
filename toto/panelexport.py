@@ -38,6 +38,7 @@ API 판의 불변조건 셋이 채팅에서도 지켜지려면 대화를 나눠�
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 from pathlib import Path
@@ -90,8 +91,31 @@ def _slug(text: str) -> str:
     return _UNSAFE.sub("_", (text or "").strip()).strip("_") or "team"
 
 
+def instructions_fingerprint() -> str:
+    """지침 본문의 지문 8자.
+
+    **왜 필요한가.** 지침은 매 회차 같은 내용이라 사용자가 한 번만 프로젝트에
+    붙여넣으면 된다. 그런데 이 글은 코드의 프롬프트(`panel.SYSTEM_COMMON` 등)
+    에서 만들어지므로 **프롬프트가 바뀌면 붙여넣은 사본이 조용히 낡는다.**
+    지문이 지침 맨 위와 실행 로그에 함께 찍히므로, 두 값이 다르면 다시
+    붙여넣으면 된다 — 프로그램만이 그것을 알려 줄 수 있다.
+    """
+    return hashlib.sha256(
+        _instructions_body().encode("utf-8")).hexdigest()[:8]
+
+
 def project_instructions() -> str:
     """클로드 채팅 **프로젝트 지침**. 코드의 프롬프트를 그대로 싣는다."""
+    return _instructions_body().replace(
+        _FINGERPRINT_SLOT, instructions_fingerprint(), 1)
+
+
+# 지문은 본문을 해시해서 만들므로, 본문 안에서는 자리표시자로 둔다
+# (자기 자신을 해시할 수 없다).
+_FINGERPRINT_SLOT = "{지문}"
+
+
+def _instructions_body() -> str:
     return f"""\
 # 축구토토 승무패 — 패널/사회자 지침
 
@@ -99,6 +123,10 @@ def project_instructions() -> str:
 **두 전문가의 해석**과 **사회자의 종합**을 만드는 곳입니다.
 
 승/무/패를 고르지 않습니다. 최종 판단은 사용자가 합니다.
+
+> **지침 지문 `{_FINGERPRINT_SLOT}`** — 이 글은 프로그램이 코드의 프롬프트에서
+> 만든 것입니다. 매 회차 같으므로 **한 번만** 프로젝트 지침에 넣으면 됩니다.
+> 실행 로그의 지문이 이 값과 다르면 프롬프트가 바뀐 것이니 다시 넣으십시오.
 
 ---
 
@@ -442,8 +470,12 @@ def export(report: Report, outdir: Path | None = None,
 
     if not payloads:
         return (f"부분 (지침만 → {target}, 근거 0건이라 경기 자료 없음 — "
-                f"표본이 쌓이면 만들어집니다)")
+                f"표본이 쌓이면 만들어집니다, "
+                f"지침 지문 {instructions_fingerprint()})")
     note = f", 근거 없어 건너뜀 {len(skipped)}경기" if skipped else ""
     split = f", 자료가 커서 1·2단계를 {parts}부로 나눔" if parts > 1 else ""
+    # 지문을 함께 적는다 — 프로젝트에 붙여넣은 지침이 낡았는지 이것으로만
+    # 알 수 있다. 지침 맨 위에도 같은 값이 찍혀 있다.
     return (f"ok ({len(payloads)}경기 → {target}, 파일 "
-            f"{written / 1024:.0f}KB{split}{note})")
+            f"{written / 1024:.0f}KB{split}{note}, "
+            f"지침 지문 {instructions_fingerprint()})")

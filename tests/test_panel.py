@@ -46,9 +46,10 @@ GOOD = json.dumps({"predicted_home": 2, "predicted_away": 1,
 MODERATOR_OK = json.dumps(
     {"common_points": ["두 의견 모두 표본이 작다고 본다"],
      "differences": ["예상 스코어가 다르다"],
-     "counterpoints": [], "score_comparison": "홈 득점 예상이 1골 다르다",
+     "counterpoints": [],
      "adopted_home": 2, "adopted_away": 1,
-     "score_rationale": "두 의견의 스코어가 같아 그대로 채택했습니다",
+     "conclusion": "토론 결과 예상 스코어는 2-1 입니다. 두 의견이 같은 "
+                   "스코어를 냈습니다. 표본이 1경기라 확실하지 않습니다.",
      "market_relation": "", "uncertainty": ["표본 1경기"],
      "evidence_ids": []}, ensure_ascii=False)
 

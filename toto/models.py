@@ -879,13 +879,19 @@ class ModeratorResult:
     common_points: tuple[str, ...] = ()
     differences: tuple[str, ...] = ()
     counterpoints: tuple[str, ...] = ()
-    score_comparison: str = ""      # 두 예상 스코어의 차이 설명 (승패 아님)
     # 종합 예상 스코어. **두 의견이 낸 스코어 중 하나 그대로**이고, 고르지
     # 못했으면 둘 다 None 이다. 0 은 실제 예측이라 None 과 다르다.
     adopted_home: int | None = None
     adopted_away: int | None = None
     adopted_from: tuple[str, ...] = ()   # 그 스코어를 낸 역할(들)
-    score_rationale: str = ""            # 왜 그 쪽인가 / 왜 고르지 못했나
+    # 사람이 가장 먼저 읽는 칸. "토론 결과 예상 스코어는 X-Y 이고 이유는 …"
+    # 을 2~4문장으로. 고르지 못했으면 왜 고를 수 없었는지가 들어간다.
+    #
+    # 예전에는 `score_comparison`("두 스코어의 차이 설명")도 함께 있었는데,
+    # 채택이 생긴 뒤로는 같은 말을 두 번 하는 칸이 됐다 — 실물에서
+    # "두 의견이 낸 스코어는 2-1로 같으며 홈·원정 값 모두 일치합니다" 처럼
+    # `conclusion` 이 이미 말한 것을 되풀이했다. 그래서 없앴다.
+    conclusion: str = ""
     market_relation: str = ""       # 시장 기준선과의 관계 (투표가 아님)
     uncertainty: tuple[str, ...] = ()
     model: str = ""

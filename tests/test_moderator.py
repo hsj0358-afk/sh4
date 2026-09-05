@@ -49,8 +49,8 @@ def payload_of(n=8):
 def _mod_json(**over) -> str:
     """사회자 응답 한 벌. 스코어 칸만 바꿔 가며 파서를 시험한다."""
     body = {"common_points": ["표본이 작다"], "differences": ["스코어가 다르다"],
-            "counterpoints": [], "score_comparison": "1골 차이",
-            "market_relation": "", "uncertainty": [], "evidence_ids": []}
+            "counterpoints": [], "market_relation": "",
+            "uncertainty": [], "evidence_ids": []}
     body.update(over)
     return json.dumps(body, ensure_ascii=False)
 
@@ -107,7 +107,7 @@ def test_b5_same_id_is_counted_once():
 def test_b6_split_is_computed_not_asked_of_the_model():
     """모델이 보낸 분류를 쓰지 않는다 — 집합 연산은 코드가 한다."""
     text = json.dumps({"common_points": ["a"], "differences": ["b"],
-                       "counterpoints": [], "score_comparison": "",
+                       "counterpoints": [],
                        "market_relation": "", "uncertainty": [],
                        "evidence_ids": [],
                        "shared_evidence_ids": ["E999"],       # 무시돼야 한다
@@ -264,7 +264,7 @@ def test_g23_moderator_failure_does_not_fake_a_result():
 # --------------------------------------------------------------------------
 def test_h24_fake_evidence_id_is_rejected():
     text = json.dumps({"common_points": ["a"], "differences": ["b"],
-                       "counterpoints": [], "score_comparison": "",
+                       "counterpoints": [],
                        "market_relation": "", "uncertainty": [],
                        "evidence_ids": ["E999"]})
     try:
@@ -279,7 +279,7 @@ def test_h24_fake_evidence_id_is_rejected():
 
 def test_h25_empty_synthesis_is_rejected():
     text = json.dumps({"common_points": [], "differences": [],
-                       "counterpoints": [], "score_comparison": "",
+                       "counterpoints": [],
                        "market_relation": "", "uncertainty": [],
                        "evidence_ids": []})
     try:
@@ -338,7 +338,7 @@ def test_i29_the_adopted_score_is_one_of_the_proposals():
         settings=S, client=FakeClient())
     assert (res.adopted_home, res.adopted_away) == (2, 1)
     assert set(res.adopted_from) == {DATA, MATCHUP}
-    assert res.score_rationale
+    assert res.conclusion
 
 
 def test_i29b_averaged_score_is_rejected():
@@ -371,7 +371,7 @@ def test_i29c_both_proposals_are_selectable():
     for home, away, who in ((2, 1, DATA), (1, 1, MATCHUP)):
         res = moderator.parse_result(
             _mod_json(adopted_home=home, adopted_away=away,
-                      adopted_from=[who], score_rationale="표본이 큰 쪽"),
+                      adopted_from=[who], conclusion="표본이 큰 쪽"),
             panels_seen=(), shared=(), data_only=(), matchup_only=(),
             allowed_ids=(), allowed_scores=allowed)
         assert (res.adopted_home, res.adopted_away) == (home, away)
@@ -395,7 +395,7 @@ def test_i29d_adopted_from_must_match_the_score():
 def test_i29e_missing_adopted_from_is_filled_from_the_proposals():
     """어디서 왔는지 빼먹으면 **제안 집합에서 채운다** (새로 만들지 않는다)."""
     res = moderator.parse_result(
-        _mod_json(adopted_home=1, adopted_away=1),
+        _mod_json(adopted_home=1, adopted_away=1, conclusion="1-1 을 택했다"),
         panels_seen=(), shared=(), data_only=(), matchup_only=(),
         allowed_ids=(), allowed_scores={DATA: (2, 1), MATCHUP: (1, 1)})
     assert res.adopted_from == (MATCHUP,)
@@ -406,13 +406,13 @@ def test_i29f_declining_needs_a_reason():
     kw = dict(panels_seen=(), shared=(), data_only=(), matchup_only=(),
               allowed_ids=(), allowed_scores={DATA: (2, 1), MATCHUP: (1, 1)})
     ok = moderator.parse_result(
-        _mod_json(score_rationale="두 읽기 중 하나를 고를 근거가 없습니다"), **kw)
+        _mod_json(conclusion="두 읽기 중 하나를 고를 근거가 없습니다"), **kw)
     assert ok.adopted_home is None and ok.adopted_away is None
     assert ok.adopted_from == ()
     try:
         moderator.parse_result(_mod_json(), **kw)
     except moderator.ValidationError as exc:
-        assert "score_rationale" in str(exc), exc
+        assert "conclusion" in str(exc), exc
         return
     raise AssertionError("이유 없이 비웠는데 통과했다")
 
@@ -451,7 +451,7 @@ def test_i29j_no_representative_score_field():
                    "average_home", "average_away"):
         assert banned not in names, banned
     assert {"adopted_home", "adopted_away", "adopted_from",
-            "score_rationale"} <= names
+            "conclusion"} <= names
 
 
 def test_i29k_retry_tells_the_model_what_was_wrong():

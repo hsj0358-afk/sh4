@@ -50,10 +50,10 @@ def mod(**kw):
                 common_points=("두 의견 모두 표본이 작다고 본다",),
                 differences=("최근 구간 해석이 갈린다",),
                 counterpoints=("표본 1경기로는 확정할 수 없다",),
-                score_comparison="홈 득점 예상이 1골 다르다",
                 # `op(DATA)` 의 2-1 을 채택한 상태 (`op(MATCHUP, 1, 1)` 아님)
                 adopted_home=2, adopted_away=1, adopted_from=(DATA,),
-                score_rationale="표본이 더 큰 근거를 든 쪽을 택했습니다",
+                conclusion="토론 결과 예상 스코어는 2-1 입니다. "
+                           "표본이 더 큰 근거를 든 쪽을 택했습니다.",
                 market_relation="시장 기준선은 원정 쪽이 약간 높다",
                 uncertainty=("표본 1경기",), model="m", prompt_version="1")
     base.update(kw)
@@ -129,7 +129,7 @@ def test_b4_all_four_areas_render():
 def test_b5_moderator_items_render():
     html = carded(full_run())
     for token in ("공통점", "차이", "반론·제약", "불확실성",
-                  "예상 스코어 차이", "시장 기준선과의 관계"):
+                  "종합 예상 스코어", "시장 기준선과의 관계"):
         assert token in html, token
     assert "두 의견 모두 표본이 작다고 본다" in html
 
@@ -142,16 +142,16 @@ def test_b5a_adopted_score_is_the_headline():
     # 어느 의견에서 왔는지, 그리고 평균이 아니라는 것.
     assert "데이터 분석가의 예상 스코어를 그대로 채택" in html
     assert "평균내지 않습니다" in html
-    assert "표본이 더 큰 근거를 든 쪽을 택했습니다" in html
-    # 비교 문장보다 먼저 나온다.
-    assert html.index("종합 예상 스코어") < html.index("예상 스코어 차이")
+    assert "표본이 더 큰 근거를 든 쪽을 택했습니다." in html
+    # 사회자 블록에서 가장 먼저 나온다 — 3단계에서 얻으려는 답이다.
+    assert html.index("종합 예상 스코어") < html.index("공통점")
 
 
 def test_b5b_no_adopted_score_says_why():
     """못 골랐으면 0 으로 채우지 않고 이유를 보여 준다 (§1-5)."""
     html = carded(full_run(moderator=mod(
         adopted_home=None, adopted_away=None, adopted_from=(),
-        score_rationale="두 읽기 중 하나를 고를 근거가 자료에 없습니다")))
+        conclusion="두 읽기 중 하나를 고를 근거가 자료에 없습니다")))
     assert "종합 예상 스코어" in html
     assert "0 : 0" not in html
     assert "고를 근거가 자료에 없었습니다" in html
@@ -372,7 +372,7 @@ def test_k27_opinion_text_is_escaped():
 
 def test_k28_moderator_text_is_escaped():
     html = carded(full_run(moderator=mod(common_points=(EVIL,),
-                                         score_comparison=EVIL)))
+                                         conclusion=EVIL)))
     assert "<script>" not in html
     assert html.count("&lt;script&gt;") >= 2
 

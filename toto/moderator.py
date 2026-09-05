@@ -69,7 +69,8 @@ from .models import MarketReference, ModeratorResult, PanelOpinion
 
 log = logging.getLogger(__name__)
 
-MODERATOR_PROMPT_VERSION = "2"      # 2: 종합 예상 스코어 채택 (3-C 보강)
+# 2: 종합 예상 스코어 채택. 3: 결론 문장(`conclusion`)을 앞으로, 중복 칸 제거
+MODERATOR_PROMPT_VERSION = "3"
 # 사회자 캐시 형식 버전. **패널 캐시(1)·소스 캐시(fotmob 9)와 무관한
 # 독립 번호다.**
 MODERATOR_CACHE_VERSION = 1
@@ -222,11 +223,11 @@ SYSTEM = """\
   적으십시오. 스코어가 같다는 것이 그 스코어가 확실하다는 뜻은 아닙니다 —
   두 의견이 같은 자료를 봤기 때문일 수 있습니다.
 - 스코어가 다르면 **어느 쪽 읽기가 제공된 자료에 더 잘 뒷받침되는지**로
-  하나를 고르고, 그 이유를 `score_rationale` 에 적으십시오. 표본이 더 큰
+  하나를 고르고, 그 이유를 `conclusion` 에 적으십시오. 표본이 더 큰
   근거를 든 쪽, 결과 계열과 기저 계열의 어긋남을 함께 설명한 쪽처럼
   **자료 안에서 말할 수 있는 이유**만 쓰십시오.
 - 고를 근거가 자료 안에 없으면 `adopted_home`·`adopted_away` 를 null 로
-  두고 왜 고를 수 없었는지 `score_rationale` 에 적으십시오. 억지로 고르지
+  두고 왜 고를 수 없었는지 `conclusion` 에 적으십시오. 억지로 고르지
   마십시오.
 - 시장 확률이 어느 쪽에 가깝다는 이유로 고르지 마십시오. 시장은 의견이
   아니라 외부 기준선입니다.
@@ -253,18 +254,32 @@ SYSTEM = """\
 마십시오. 한국어로 작성하십시오.
 
 {
-  "common_points": ["두 의견이 함께 말하는 것", "..."],
-  "differences": ["갈리는 지점과 그 이유", "..."],
-  "counterpoints": ["한쪽 주장에 대한 자료 기반 반론·제약", "..."],
-  "score_comparison": "두 예상 스코어의 차이를 설명하는 1~2문장 (승패 판정 금지)",
   "adopted_home": 정수(0 이상) 또는 null,
   "adopted_away": 정수(0 이상) 또는 null,
   "adopted_from": ["스코어를 채택한 의견의 role 값", "..."],
-  "score_rationale": "그 스코어를 채택한 이유 1~3문장 (못 골랐으면 그 이유)",
+  "conclusion": "토론 결과를 사람이 읽을 2~4문장으로",
+  "common_points": ["두 의견이 함께 말하는 것", "최대 3개"],
+  "differences": ["갈리는 지점과 그 이유", "최대 3개"],
+  "counterpoints": ["결론을 약하게 만드는 자료상의 제약", "최대 2개"],
   "market_relation": "시장 기준값과 두 의견의 관계 1~2문장 (없으면 빈 문자열)",
-  "uncertainty": ["표본·자료의 한계", "..."],
+  "uncertainty": ["표본·자료의 한계", "최대 3개"],
   "evidence_ids": ["언급한 근거 ID", "..."]
 }
+
+**`conclusion` 이 이 응답에서 사람이 가장 먼저 읽는 칸입니다.** 아래 형태로
+쓰십시오.
+
+  "두 분석가의 토론 결과 예상 스코어는 <홈>-<원정> 입니다. <어느 의견의
+   스코어를 왜 받아들였는지>. <그 판단을 약하게 만드는 것 한 가지>."
+
+  · 첫 문장에 **채택한 스코어를 숫자로** 적으십시오.
+  · 스코어를 고르지 못했으면 "예상 스코어를 채택하지 않았습니다" 로 시작하고
+    왜 고를 수 없었는지 적으십시오.
+  · 승/무/패·추천·베팅 조언을 쓰지 마십시오.
+
+목록 칸은 **한 항목에 한 문장**으로, 위에 적은 개수를 넘기지 마십시오.
+같은 내용을 `conclusion` 과 목록에 두 번 적지 마십시오. 자료에 없는 칸은
+빈 배열로 두십시오 — 채우려고 늘리지 마십시오.
 
 `adopted_from` 에는 자료의 `opinions[].role` 값을 그대로 적으십시오
 (예: `"data_analyst"`). 스코어를 못 골랐으면 빈 배열입니다.
@@ -357,11 +372,11 @@ def proposed_scores(opinions) -> dict:
 
 
 def _adopted(data: dict, allowed: dict, has_proposal: bool):
-    """(홈, 원정, 채택한 역할들, 이유). 제안에 없는 스코어는 거부한다."""
+    """(홈, 원정, 채택한 역할들, 결론). 제안에 없는 스코어는 거부한다."""
     home = _goals(data.get("adopted_home"), "adopted_home")
     away = _goals(data.get("adopted_away"), "adopted_away")
     roles = _strings(data.get("adopted_from", ()), "adopted_from")
-    why = _text(data.get("score_rationale"), "score_rationale")
+    why = _text(data.get("conclusion"), "conclusion")
 
     if (home is None) != (away is None):
         raise ValidationError("adopted_home/adopted_away: 한쪽만 있습니다")
@@ -371,7 +386,7 @@ def _adopted(data: dict, allowed: dict, has_proposal: bool):
         # 비웠다면 이유를 적어야 한다.
         if has_proposal and not why:
             raise ValidationError(
-                "스코어를 고르지 않았으면 score_rationale 에 이유를 적으십시오")
+                "스코어를 고르지 않았으면 conclusion 에 이유를 적으십시오")
         return None, None, (), why
 
     pair = (home, away)
@@ -424,6 +439,9 @@ def parse_result(text: str, *, panels_seen, shared, data_only, matchup_only,
 
     allowed = dict(allowed_scores or {})
     home, away, from_roles, why = _adopted(data, allowed, bool(allowed))
+    if home is not None and not why:
+        # 스코어만 있고 이유가 없으면 사용자가 얻는 것이 숫자 하나뿐이다.
+        raise ValidationError("conclusion 에 채택 이유를 적으십시오")
 
     return ModeratorResult(
         status="ok",
@@ -434,10 +452,8 @@ def parse_result(text: str, *, panels_seen, shared, data_only, matchup_only,
         common_points=common,
         differences=diffs,
         counterpoints=_strings(data.get("counterpoints", ()), "counterpoints"),
-        score_comparison=_text(data.get("score_comparison"),
-                               "score_comparison"),
         adopted_home=home, adopted_away=away, adopted_from=from_roles,
-        score_rationale=why,
+        conclusion=why,
         market_relation=_text(data.get("market_relation"), "market_relation"),
         uncertainty=_strings(data.get("uncertainty", ()), "uncertainty"),
         model=model, prompt_version=prompt_version)

@@ -96,10 +96,20 @@ def _sheet(out: Path) -> str:
 
 
 def _round(out: Path, prefix: str) -> str:
-    """회차 단위 시트를 이어 붙인 것 (여러 부로 나뉘었을 수 있다)."""
+    """회차 단위 파일을 이어 붙인 것 (여러 부로 나뉘었을 수 있다)."""
     files = sorted(f for f in out.glob(f"{prefix}*.md"))
     assert files, sorted(f.name for f in out.glob("*.md"))
     return "\n".join(f.read_text(encoding="utf-8") for f in files)
+
+
+def _says(out: Path) -> str:
+    """`01_채팅에_적을_말.md` — 지시는 전부 여기에 있다."""
+    return (out / "01_채팅에_적을_말.md").read_text(encoding="utf-8")
+
+
+def _data(out: Path) -> str:
+    """`02_경기자료*.md` — 1·2단계가 같이 쓰는 자료 파일."""
+    return _round(out, "02_")
 
 
 # ------------------------------------------------- 프롬프트가 두 벌이 아니다
@@ -150,12 +160,17 @@ def test_a4_moderator_input_uses_build_input():
 
 # ---------------------------------------------------------------- 불변조건
 def test_b1_both_analysts_get_the_same_payload_string():
-    """불변조건 2 — 두 역할이 같은 자료를 본다 (§1-9)."""
-    sheet = _sheet(_run()[1])
-    blocks = re.findall(r"<panel_payload>\n(.*?)\n</panel_payload>",
-                        sheet, re.S)
-    assert len(blocks) == 2, len(blocks)
-    assert blocks[0] == blocks[1], "두 역할이 다른 자료를 받는다"
+    """불변조건 2 — 두 역할이 같은 자료를 본다 (§1-9).
+
+    예전에는 역할마다 파일을 내고 두 파일의 payload 가 같은지 봤다. 지금은
+    **한 파일을 두 대화에 첨부**하므로 확인할 것이 없다 — 그 사실을 고정한다.
+    """
+    _st, out = _run()
+    files = sorted(f.name for f in out.glob("0*.md"))
+    assert files == ["00_프로젝트_지침.md", "01_채팅에_적을_말.md",
+                     "02_경기자료.md", "03_사회자자료.md"], files
+    says = _says(out)
+    assert says.count("첨부: `02_경기자료.md`") == 2, "두 단계가 같은 파일이 아니다"
 
 
 def test_b2_moderator_does_not_get_the_axis_dump():
@@ -241,22 +256,22 @@ def test_c7_flag_writes_the_sheets():
     assert status.startswith("ok"), status
     assert "근거 0건인 채로 실은 1경기" in status, status
     names = sorted(f.name for f in out.glob("*.md"))
-    assert names == ["00_프로젝트_지침.md", "01_1단계_데이터분석가.md",
-                     "02_2단계_맞대결분석가.md", "03_3단계_사회자.md"], names
+    assert names == ["00_프로젝트_지침.md", "01_채팅에_적을_말.md",
+                     "02_경기자료.md", "03_사회자자료.md"], names
 
 
 def test_c8_sheets_carry_the_warning():
     _st, out = _run([_match(evidence=False, axes=True)],
                     include_without_evidence=True)
-    for prefix in ("01_", "02_", "03_"):
-        text = _round(out, prefix)
-        assert "근거(evidence)가 없습니다" in text, prefix
-        # 모델이 근거 ID 를 지어내지 않게 못 박는다.
-        assert "지어내지 마십시오" in text, prefix
-        assert '"evidence_ids"' in text, prefix
-        # `--panel` 실행과 같은 결과가 아니라고 밝힌다.
-        assert "같은 것이 아닙니다" in text, prefix
-    assert "근거(evidence)가 없습니다" in _sheet(out)
+    # 경고는 **지시가 있는 곳**에 붙는다 — 자료 파일에는 지시문이 없다.
+    says = _says(out)
+    assert "근거(evidence)가 없습니다" in says
+    assert "지어내지 마십시오" in says
+    assert '"evidence_ids"' in says
+    assert "같은 것이 아닙니다" in says, "--panel 과 같은 결과가 아님을 안 밝혔다"
+    # 세 단계 메시지 전부에 한 줄씩 들어간다.
+    assert says.count("이 회차는 근거(evidence)가 없습니다.") == 3, says.count(
+        "이 회차는 근거(evidence)가 없습니다.")
 
 
 def test_c9_no_axis_metrics_stays_shut():
@@ -360,19 +375,20 @@ def test_r1_one_file_per_step_covers_the_whole_round():
     for prefix in ("01_", "02_", "03_"):
         assert list(out.glob(f"{prefix}*.md")), sorted(
             f.name for f in out.glob("*.md"))
-    text = _round(out, "01_")
+    text = _data(out)
     for no in (1, 2, 3):
         assert f'<panel_payload no="{no}">' in text, no
 
 
-def test_r2_both_analyst_steps_carry_identical_payloads():
-    """불변조건 2 는 회차 단위에서도 지켜져야 한다."""
+def test_r2_the_two_steps_share_one_data_file():
+    """불변조건 2 를 **파일 하나**로 표현한다 — 비교할 두 벌이 없다."""
     _st, out = _run(_round_matches(3))
-    a = re.findall(r"<panel_payload[^>]*>\n(.*?)\n</panel_payload>",
-                   _round(out, "01_"), re.S)
-    b = re.findall(r"<panel_payload[^>]*>\n(.*?)\n</panel_payload>",
-                   _round(out, "02_"), re.S)
-    assert a and a == b, "두 단계가 다른 자료를 받는다"
+    assert not list(out.glob("*단계*.md")), "역할별 자료 파일이 남아 있다"
+    blocks = re.findall(r"<panel_payload[^>]*>\n(.*?)\n</panel_payload>",
+                        _data(out), re.S)
+    assert len(blocks) == 3, len(blocks)
+    for step in ("1단계 — 데이터 분석가", "2단계 — 맞대결·전술 분석가"):
+        assert step in _says(out), step
 
 
 def test_r3_batch_output_schema_is_documented():
@@ -385,11 +401,11 @@ def test_r3_batch_output_schema_is_documented():
 
 def test_r4_moderator_round_sheet_takes_both_arrays():
     _st, out = _run(_round_matches(3))
-    mod = (out / "03_3단계_사회자.md").read_text(encoding="utf-8")
-    assert "[A]" in mod and "[B]" in mod, mod[:400]
-    # 안내 문장에도 태그 이름이 나오므로 자료 절만 센다.
-    body = mod.split("## 자료")[1]
-    assert body.count('<moderator_input no="') == 3, body.count("moderator_input")
+    says, mod = _says(out), (out / "03_사회자자료.md").read_text(
+        encoding="utf-8")
+    assert "[A]" in says and "[B]" in says, says[:400]
+    # 파일 머리글이 태그 이름을 설명하므로 실제 태그만 센다.
+    assert len(re.findall(r'<moderator_input no="\d+">', mod)) == 3, mod[:300]
     assert '"home":{' not in mod, "사회자에게 축 지표가 갔다"
 
 
@@ -399,9 +415,12 @@ def test_r5_large_round_is_split_into_parts():
     status = panelexport.export(_report(_round_matches(4)), outdir=out,
                                 max_bytes=1_000)
     assert "나눔" in status, status
-    parts = sorted(f.name for f in out.glob("01_*.md"))
+    parts = sorted(f.name for f in out.glob("02_*.md"))
     assert len(parts) > 1, parts
     assert all("of" in n for n in parts), parts
+    # 채팅 메시지도 부수만큼 나온다 (1·2단계 × 부수 + 사회자).
+    says = _says(out)
+    assert says.count("첨부: `02_경기자료_1of") == 2, says
 
 
 def test_r6_split_is_even_not_front_loaded():
@@ -416,8 +435,8 @@ def test_r6_split_is_even_not_front_loaded():
 
 def test_r7_small_round_is_not_split():
     _st, out = _run(_round_matches(2))
-    assert sorted(f.name for f in out.glob("01_*.md")) == \
-        ["01_1단계_데이터분석가.md"], sorted(f.name for f in out.glob("*.md"))
+    assert sorted(f.name for f in out.glob("02_*.md")) == \
+        ["02_경기자료.md"], sorted(f.name for f in out.glob("*.md"))
 
 
 def test_r8_per_match_sheets_remain_as_the_fallback():
@@ -428,41 +447,42 @@ def test_r8_per_match_sheets_remain_as_the_fallback():
 
 
 # --------------------------------------------- 첨부할 때 채팅에 적을 말
-def test_m1_every_step_file_carries_a_ready_message():
-    """파일을 첨부하면 채팅에 뭘 적어야 하는지가 파일 안에 있어야 한다."""
+def test_m1_the_messages_live_in_one_file_not_in_the_data():
+    """자료 파일에는 **자료만** 있다. 채팅에 적을 말은 한 파일에 모인다."""
     _st, out = _run(_round_matches(3))
-    for f in sorted(out.glob("0*.md")):
-        if f.name.startswith("00_"):
-            continue
-        text = f.read_text(encoding="utf-8")
-        assert "채팅에 적을 말" in text, f.name
-        assert "첨부한 파일은" in text, f.name
+    says = _says(out)
+    assert says.count("첨부한 파일은") == 3, says.count("첨부한 파일은")
+    for name in ("02_경기자료.md", "03_사회자자료.md"):
+        text = (out / name).read_text(encoding="utf-8")
+        for banned in ("첨부한 파일은", "프로젝트 지침의 \"역할",
+                       "답하십시오", "수행하십시오"):
+            assert banned not in text, f"{name} 에 지시문이 있다: {banned}"
 
 
 def test_m2_message_names_the_role_and_forbids_the_other():
     _st, out = _run(_round_matches(2))
-    a = _round(out, "01_")
-    b = _round(out, "02_")
-    assert "역할 A — 데이터 분석가" in a and "다른 역할은 하지 마십시오" in a
-    assert "역할 B — 맞대결·전술 분석가" in b and "다른 역할은 하지 마십시오" in b
-    assert "역할 B" not in a.split("## 자료")[0], "1단계 메시지에 B 가 섞였다"
+    says = _says(out)
+    step1 = says.split("## 2단계")[0]
+    step2 = says.split("## 2단계")[1].split("## 3단계")[0]
+    assert "역할 A — 데이터 분석가" in step1
+    assert "역할 B" not in step1, "1단계 메시지에 B 가 섞였다"
+    assert "역할 B — 맞대결·전술 분석가" in step2
+    assert step1.count("다른 역할은 하지 마십시오") >= 1
+    assert step2.count("다른 역할은 하지 마십시오") >= 1
 
 
 def test_m3_message_asks_for_the_batch_array():
-    _st, out = _run(_round_matches(2))
-    for prefix in ("01_", "02_"):
-        head = _round(out, prefix).split("## 자료")[0]
-        assert "match_no" in head and "배열 하나로" in head, prefix
+    says = _says(_run(_round_matches(2))[1])
+    assert says.count("배열 하나로") == 3, says.count("배열 하나로")
+    assert "match_no" in says
 
 
 def test_m4_moderator_message_has_two_slots_to_fill():
-    _st, out = _run(_round_matches(2))
-    head = (out / "03_3단계_사회자.md").read_text(
-        encoding="utf-8").split("## 자료")[0]
-    # 안내 문장에도 `◀ … ▶` 가 한 번 나오므로 채울 자리를 문구로 센다.
+    says = _says(_run(_round_matches(2))[1])
+    third = says.split("## 3단계")[1]
     for step in ("1단계 응답 배열을 통째로", "2단계 응답 배열을 통째로"):
-        assert head.count(step) == 1, (step, head.count(step))
-    assert "[A]" in head and "[B]" in head
+        assert third.count(step) == 1, (step, third.count(step))
+    assert "[A]" in third and "[B]" in third
 
 
 def test_m5_instructions_point_at_the_ready_message():
@@ -530,12 +550,12 @@ def test_e2_menu_item_does_not_call_the_api():
 # ------------------------------------------------ 3단계는 스코어까지 간다
 def test_s1_moderator_sheet_asks_for_the_adopted_score():
     """비교로 끝나면 3단계가 할 일을 안 한 것이다."""
-    _st, out = _run()
-    text = _round(out, "03_")
-    assert "종합 예상 스코어 하나를 채택" in text
-    for key in ('"adopted_home"', '"adopted_away"', '"score_rationale"'):
-        assert key in text, key
-    assert "평균내" in text, "평균 금지가 안 적혀 있다"
+    says = _says(_run()[1])
+    for key in ('"adopted_home"', '"adopted_away"', '"conclusion"'):
+        assert key in says, key
+    assert "예상 스코어\n하나를 채택" in says or "예상 스코어 하나를 채택" in says
+    assert "평균내지 마십시오" in says, "평균 금지가 안 적혀 있다"
+    assert "토론 결과 예상 스코어는 X-Y 입니다" in says, "결론 형태를 안 알려 준다"
 
 
 def test_s2_instructions_carry_the_adoption_rules_verbatim():
@@ -550,8 +570,11 @@ def test_s2_instructions_carry_the_adoption_rules_verbatim():
         assert line not in src, f"프롬프트를 베껴 뒀다: {line}"
 
 
-def test_s3_per_match_sheet_says_it_too():
-    assert "종합 예상 스코어 하나를\n채택" in _sheet(_run()[1])
+def test_s3_conclusion_is_the_first_field_in_the_schema():
+    """모델은 스키마 순서를 따라간다 — 결론 칸이 앞에 있어야 한다."""
+    schema = moderator.SYSTEM.split("{")[-1]
+    assert schema.index('"adopted_home"') < schema.index('"common_points"')
+    assert schema.index('"conclusion"') < schema.index('"common_points"')
 
 
 # --------------------------------------------------------------------------

@@ -945,8 +945,8 @@ def _adopted_block(result) -> str:
     않는다 — 채택은 사회자가 이미 했고, 값은 두 의견이 낸 것 중 하나다.
     """
     home, away = result.adopted_home, result.adopted_away
-    why = (f'<p class="ptext">{_ptext(result.score_rationale)}</p>'
-           if result.score_rationale else "")
+    why = (f'<p class="ptext">{_ptext(result.conclusion)}</p>'
+           if result.conclusion else "")
     if home is None or away is None:
         # 0 은 실제 예측이라 다르다. 못 골랐으면 이유가 그 자리를 채운다.
         return ('<p class="lbl">종합 예상 스코어</p>'
@@ -985,8 +985,7 @@ def _moderator_block(result) -> str:
         lis = "".join(f'<li>{_ptext(x)}</li>' for x in items)
         parts += (f'<p class="lbl">{esc(label)}</p>'
                   f'<ul class="mnotes">{lis}</ul>')
-    for field, label in (("score_comparison", "예상 스코어 차이"),
-                         ("market_relation", "시장 기준선과의 관계")):
+    for field, label in (("market_relation", "시장 기준선과의 관계"),):
         text = getattr(result, field, "") or ""
         if text:
             parts += (f'<p class="lbl">{esc(label)}</p>'

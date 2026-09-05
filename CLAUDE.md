@@ -1068,8 +1068,8 @@ toto/render.py:536
 | `tools/probe_sources.py --analyze` | 접속 없이 저장된 응답을 다시 분석 |
 | `tools/diagnose_whoscored.py` | 저장된 실패 원본(`FAILED_*.html`)에서 원인을 짚는다 |
 
-메뉴에서도 부를 수 있다 (`toto/menu.py`): `[6]` 진단 · `[7]` 점검 ·
-`[8]` 저장본 재분석. 원본 응답은 `cache/probe/` 와
+메뉴에서도 부를 수 있다 (`toto/menu.py`): `[9] 개발·진단 도구` 안의
+`[3]` 진단 · `[4]` 점검 · `[5]` 저장본 재분석. 원본 응답은 `cache/probe/` 와
 `cache/<날짜>/<소스>/FAILED_*.html` 에 남는다.
 
 파서를 쓸 때는 **경로를 박지 말고 모양으로 찾는다.** FotMob 순위표가
@@ -1253,6 +1253,35 @@ traceback 이 남는다. 다만 메뉴 안의 각 기능은 자기 인자로 다
 `--menu -v` 의 DEBUG 는 **메뉴 계층에만** 적용된다.
 
 회귀 테스트: `python tests/test_menu_flow.py` (27개).
+
+### 1-7-2. 메뉴는 실제로 쓰는 것만 앞에 둔다
+
+실사용에서 도는 것은 **회차를 지정한 수집**뿐이고, 데모·캐시 비우기·진단·
+점검은 개발 중에 쓰던 것이다. 그것들이 번호 앞자리를 차지하고 있으면 매번
+지나쳐야 한다. 그래서 운영 항목을 앞으로 내고 나머지는 `[9]` 하위 메뉴로
+내렸다.
+
+```
+[1] 회차 지정해서 수집
+[2] 패널 분석까지 (Claude API 필요·유료)
+[3] 패널 자료 내보내기 (클로드 채팅용·API 불필요)
+[4] 폰에서 열기
+[9] 개발·진단 도구 → 데모 · 캐시 비우기 · 진단 · 점검 · 재분석
+[0] 종료
+```
+
+- **수집하는 항목은 전부 회차를 먼저 묻는다** (`ROUND` 표시). 예전에는
+  `[3]` 하나만 물었고 나머지는 자동 탐지로 돌았다. 회차를 **비우면** 예전
+  `[1]` 처럼 판매중 회차를 탐지하므로 그 기능이 사라진 것은 아니다.
+- 그냥 Enter 의 기본값이 `[1]` 인 것은 그대로인데, 이제 그것이 10~20분짜리
+  전체 수집이 아니라 **회차를 묻는 항목**이라 사고가 나지 않는다.
+- **개발 도구를 지우지 않았다.** 후스코어드 진단은 §3-1(스타일 0팀)의
+  유일한 도구이고, 소스 점검은 §1-4('실물을 먼저 본다')를 지키는 자리다.
+- 하위 메뉴의 `[0]` 은 **뒤로**이고 프로그램을 끝내지 않는다. `_choose()`
+  가 `None`(종료) · `BACK`(뒤로) · `()`(없는 번호) 셋을 구분한다 — 하나로
+  뭉뚱그리면 하위 메뉴에서 나가려다 프로그램이 종료된다.
+
+회귀 테스트: `python tests/test_menu_flow.py` (36개).
 
 ### 1-8. 새 기능은 기존 모듈을 먼저 재사용한다
 
@@ -1453,7 +1482,7 @@ import 하지 않는다(AST 테스트). 순환을 피하려고 역할 이름을 
 
 traceback·프롬프트·API 키는 화면에 내지 않는다. 사유는 사람이 읽을 한 줄만.
 
-메뉴 `[10] 패널 분석까지` 는 `--skip-whoscored --panel` 이다. 후스코어드는
+메뉴 `[2] 패널 분석까지` 는 `--skip-whoscored --panel` 이다. 후스코어드는
 정성 데이터가 한 번도 수집된 적이 없고(§3-1) 10~20분을 더 쓰는데 패널에
 들어갈 자료가 늘지 않는다. **`--skip-match-details` 는 붙일 수 없다** —
 슛맵이 없으면 근거가 없고 근거가 없으면 패널을 부르지 않는다.
@@ -1464,7 +1493,7 @@ traceback·프롬프트·API 키는 화면에 내지 않는다. 사유는 사람
 
 `--panel` 은 Anthropic API 를 부른다(키·비용). 같은 분석을 **클로드 채팅
 프로젝트**에서 손으로 돌리려면 지침과 자료가 파일로 있어야 한다.
-`--panel-export` (메뉴 `[11]`)가 `reports/panel_<회차>/` 에 만든다.
+`--panel-export` (메뉴 `[3]`)가 `reports/panel_<회차>/` 에 만든다.
 
 ```
 00_프로젝트_지침.md          채팅 프로젝트에 넣을 지침
@@ -1906,7 +1935,7 @@ python tests/test_sustainability.py        # 지속성 2-D (51개)
 python tests/test_venue_context.py         # 장소 문맥 2-E (58개)
 python tests/test_schedule_strength.py     # 상대 강도 2-F (40개)
 python tests/test_evidence.py              # 근거 생성 2-G (57개)
-python tests/test_menu_flow.py             # 메뉴 루프·예외·로그 3-A (27개)
+python tests/test_menu_flow.py             # 메뉴 루프·예외·로그 3-A (36개)
 python tests/test_panel.py                 # 두 전문가 패널 3-B (70개)
 python tests/test_moderator.py             # 사회자 3-C (57개)
 python tests/test_panel_render.py          # 패널 리포트 출력 3-D (41개)
@@ -1923,4 +1952,4 @@ python tools/probe_sources.py --analyze    # 저장본 재분석 (접속 없음)
 python tools/diagnose_whoscored.py         # 실패 원본 진단
 ```
 
-메뉴(바탕화면 바로가기 / `toto_menu.bat`)에 같은 기능이 `[1]`~`[11]` 으로 있다.
+메뉴(바탕화면 바로가기 / `toto_menu.bat`) 구성은 §1-7-2 참고.

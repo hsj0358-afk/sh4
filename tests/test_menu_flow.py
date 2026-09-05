@@ -102,9 +102,10 @@ def test_a2_menu_is_reprinted_after_each_run():
 
 
 def test_a3_different_items_in_one_session():
-    code, calls, _ = drive(["4", "", "2", "", "0"])
-    assert calls[0] == ["--demo", "--open"]
-    assert calls[1] == ["--skip-whoscored", "--skip-match-details", "--open"]
+    # [1] 수집(회차 입력) → [9]→[1] 데모 → 종료
+    code, calls, _ = drive(["1", "260050", "", "9", "1", "", "0"])
+    assert calls[0] == ["--round", "260050", "--open"], calls
+    assert calls[1] == ["--demo", "--open"], calls
     assert code == 0
 
 
@@ -193,10 +194,10 @@ def test_c11_unknown_number_returns_to_the_menu():
     assert out.count("[0] 종료") == 2, "메뉴로 돌아오지 않았다"
 
 
-def test_c12_cancelled_round_input_returns_to_the_menu():
-    code, calls, out = drive(["3", "", "", "0"])
-    assert calls == []
-    assert "취소했습니다" in out
+def test_c12_blank_round_falls_back_to_auto_detection():
+    """빈 회차는 취소가 아니라 **자동 탐지**다 (예전 [1] 의 자리)."""
+    code, calls, out = drive(["1", "", "", "0"])
+    assert calls == [["--open"]], calls
     assert out.count("[0] 종료") == 2
 
 
@@ -335,22 +336,32 @@ def inspect_source(fn) -> str:
 # --------------------------------------------------------------------------
 # G. 기존 메뉴 회귀
 # --------------------------------------------------------------------------
-def test_g24_existing_menu_numbers_are_unchanged():
-    """기존 번호는 **자리까지** 그대로고, 새 항목은 뒤에만 붙는다.
-
-    예전에는 `keys == [1..9]` 로 확인했는데, 그러면 3-D 의 `[10]` 처럼
-    규칙을 지켜 뒤에 붙인 항목까지 실패로 잡힌다. 지키려는 것은 '기존
-    번호가 밀리지 않는다' 이므로 접두사와 인자 매핑을 함께 본다 — 원래보다
-    강한 검사다.
-    """
-    keys = [k for k, _t, _d, _a in menu.ITEMS]
-    original = ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
-    assert keys[:len(original)] == original, "기존 번호의 자리가 바뀌었다"
+def test_g24_operational_menu_maps_to_the_right_flags():
+    """운영 메뉴는 넷 + 도구. 번호와 인자가 어긋나면 엉뚱한 실행이 된다."""
     by_key = {k: a for k, _t, _d, a in menu.ITEMS}
-    assert by_key["1"] == [] and by_key["4"] == ["--demo"]
-    assert by_key["2"] == ["--skip-whoscored", "--skip-match-details"]
-    assert by_key["9"] == ["--serve"]
-    assert by_key["3"] is None and by_key["5"] == "clear-cache"
+    assert list(by_key) == ["1", "2", "3", "4", "9"], list(by_key)
+    assert by_key["1"] == (menu.ROUND, [])
+    assert by_key["2"] == (menu.ROUND, ["--skip-whoscored", "--panel"])
+    assert by_key["3"] == (menu.ROUND, ["--skip-whoscored", "--panel-export"])
+    assert by_key["4"] == ["--serve"]
+    assert by_key["9"] == "tools"
+
+
+def test_g24b_every_collecting_item_asks_for_the_round():
+    """수집하는 항목은 전부 회차를 먼저 묻는다."""
+    for key, _t, _d, args in menu.ITEMS:
+        collects = isinstance(args, tuple) or args in ("tools", ["--serve"])
+        assert collects, (key, args)
+        if isinstance(args, list):
+            assert "--round" not in args, key
+
+
+def test_g24c_dev_tools_are_kept_not_deleted():
+    """§3-1 조사와 §1-4 실물 확인의 도구다. 하위 메뉴로 내렸을 뿐이다."""
+    tags = [a for _k, _t, _d, a in menu.TOOLS]
+    assert ["--demo"] in tags
+    for tag in ("clear-cache", "diagnose", "probe", "probe-analyze"):
+        assert tag in tags, tag
 
 
 def test_g25_menu_never_recommends():
@@ -375,9 +386,57 @@ def test_g26_run_menu_still_runs_one_iteration():
 
 
 def test_g27_serve_and_diagnose_still_tagged():
-    code, calls, out = drive(["9", "", "0"])
-    assert calls == [["--serve"]]
+    code, calls, out = drive(["4", "", "0"])
+    assert calls == [["--serve"]], calls
     assert "공유를 마쳤습니다" in out
+
+
+# --------------------------------------------------------------------------
+# H. 회차 지정 · 하위 메뉴
+# --------------------------------------------------------------------------
+def test_h28_round_is_prepended_before_the_item_flags():
+    """`--round` 가 먼저 오고 항목 인자가 뒤에 붙는다."""
+    _code, calls, _out = drive(["3", "260050", "", "0"])
+    assert calls == [["--round", "260050",
+                      "--skip-whoscored", "--panel-export", "--open"]], calls
+
+
+def test_h29_panel_item_also_asks_for_the_round():
+    _code, calls, _out = drive(["2", "260051", "", "0"])
+    assert calls == [["--round", "260051",
+                      "--skip-whoscored", "--panel", "--open"]], calls
+
+
+def test_h30_eof_at_the_round_prompt_does_not_run():
+    """회차를 묻는 중에 입력이 끝나면 실행하지 않는다."""
+    _code, calls, out = drive(["1"])
+    assert calls == [], calls
+    assert "실행하지 않았습니다" in out, out
+
+
+def test_h31_tools_submenu_reaches_the_diagnostics():
+    _code, calls, out = drive(["9", "3", "", "0"])
+    assert calls == [], "진단 도구는 cli.main 을 부르지 않는다"
+    assert "개발·진단 도구" in out, out
+
+
+def test_h32_back_from_the_submenu_returns_to_the_menu():
+    """하위 메뉴의 [0] 은 프로그램을 끝내지 않는다."""
+    code, calls, out = drive(["9", "0", "", "0"])
+    assert code == 0 and calls == [], (code, calls)
+    assert "메뉴로 돌아갑니다" in out, out
+    assert out.count("[0] 종료") == 2, "메인 메뉴가 다시 나오지 않았다"
+
+
+def test_h33_submenu_shows_back_not_exit():
+    _code, _calls, out = drive(["9", "0", "", "0"])
+    assert "[0] 뒤로" in out, out
+
+
+def test_h34_unknown_number_in_the_submenu_is_not_fatal():
+    code, calls, out = drive(["9", "77", "", "0"])
+    assert calls == [] and code == 1, (code, calls)
+    assert "없는 번호입니다" in out
 
 
 # --------------------------------------------------------------------------

@@ -22,42 +22,50 @@ BANNER = """
 ╚══════════════════════════════════════════════════════╝
 """
 
+# 회차를 먼저 묻는 항목. 수집하는 기능은 **전부** 이 표시를 단다 —
+# 실제 사용에서 회차를 지정하지 않고 도는 일이 없기 때문이다(자동 탐지는
+# 회차를 비워서 고를 수 있다).
+ROUND = "round"
+
 ITEMS = [
-    ("1", "전체 수집 (배당률 + 순위·폼 + 후스코어드 상세)",
-     "10~20분 소요. 가장 상세한 리포트.", []),
-    ("2", "빠른 수집 (배당률 + 순위·폼)",
-     "1~2분. 순위·홈원정 승점·최근 폼까지 나옵니다 "
-     "(경기 상세와 후스코어드는 생략).",
-     ["--skip-whoscored", "--skip-match-details"]),
-    ("3", "회차 지정해서 수집",
-     "회차 번호를 직접 입력합니다.", None),          # None = 추가 입력 필요
-    ("4", "데모 보기 (네트워크 불필요)",
-     "샘플 데이터로 화면만 확인합니다.", ["--demo"]),
-    ("5", "캐시 지우고 처음부터 다시 수집",
-     "저장된 응답을 삭제하고 전부 새로 받습니다.", "clear-cache"),
-    ("6", "후스코어드 수집 실패 진단",
-     "저장된 실패 원본을 분석해 원인을 출력합니다.", "diagnose"),
-    ("7", "데이터 소스 점검 (FBref · FotMob · Sofascore)",
-     "새 소스에 접속해 구조를 확인합니다. 파싱은 하지 않습니다.", "probe"),
-    ("8", "저장된 점검 응답 다시 분석",
-     "접속하지 않고 [7]이 저장해 둔 응답에서 지표 위치를 찾습니다.",
-     "probe-analyze"),
-    ("9", "폰에서 열기 (같은 와이파이)",
-     "이미 만든 리포트를 폰으로 볼 수 있게 주소를 띄웁니다. 클라우드 계정 불필요.",
-     ["--serve"]),
+    ("1", "회차 지정해서 수집",
+     "배당률 + 순위·폼 + 경기 상세까지. 리포트를 만듭니다.",
+     (ROUND, [])),
     # 경기 상세(슛맵)가 있어야 근거가 생기고, 근거가 없으면 패널을 부르지
-    # 않는다 — 그래서 [2] 빠른 수집(--skip-match-details)에는 붙일 수 없다.
-    # 후스코어드는 뺀다: 정성 데이터가 한 번도 수집된 적이 없고(§3-1)
-    # 10~20분을 더 쓰는데 패널에 들어갈 자료가 늘지 않는다.
-    ("10", "패널 분석까지 (Claude API 필요 · 유료)",
+    # 않는다 — 그래서 `--skip-match-details` 를 붙일 수 없다. 후스코어드는
+    # 뺀다: 10~20분을 더 쓰는데 패널에 들어갈 자료가 늘지 않는다(§3-1).
+    ("2", "패널 분석까지 (Claude API 필요 · 유료)",
      "수집 + 분석 후 두 전문가의 해석과 사회자 종합을 리포트에 붙입니다. "
      "ANTHROPIC_API_KEY 가 필요하고 경기마다 API 를 부릅니다.",
-     ["--skip-whoscored", "--panel"]),
+     (ROUND, ["--skip-whoscored", "--panel"])),
     # API 를 부르지 않는다. 같은 자료를 파일로 내서 클로드 채팅에 붙여넣는다.
-    ("11", "패널 자료 내보내기 (클로드 채팅용 · API 불필요)",
-     "수집 + 분석 후, 채팅 프로젝트에 넣을 지침과 경기별 붙여넣기 시트를 "
-     "reports/panel_<회차>/ 에 만듭니다. API 를 부르지 않습니다.",
-     ["--skip-whoscored", "--panel-export"]),
+    ("3", "패널 자료 내보내기 (클로드 채팅용 · API 불필요)",
+     "수집 + 분석 후, 채팅에 넣을 지침과 단계별 시트를 "
+     "reports/panel_<회차>/ 에 만듭니다.",
+     (ROUND, ["--skip-whoscored", "--panel-export"])),
+    ("4", "폰에서 열기 (같은 와이파이)",
+     "이미 만든 리포트를 폰으로 볼 수 있게 주소를 띄웁니다. 클라우드 계정 불필요.",
+     ["--serve"]),
+    ("9", "개발·진단 도구",
+     "데모·캐시 비우기·수집 실패 진단·소스 점검. 평소에는 쓰지 않습니다.",
+     "tools"),
+]
+
+# 평소 운영에는 쓰지 않지만 **지우지는 않는다.** 후스코어드 진단은 아직
+# 남은 조사(§3-1 스타일 0팀)의 유일한 도구이고, 소스 점검은 새 지표를
+# 붙일 때 "실물을 먼저 본다"(§1-4)를 지키는 자리다.
+TOOLS = [
+    ("1", "데모 보기 (네트워크 불필요)",
+     "샘플 데이터로 화면만 확인합니다.", ["--demo"]),
+    ("2", "캐시 지우고 다시 수집",
+     "저장된 응답을 삭제하고 전부 새로 받습니다.", "clear-cache"),
+    ("3", "후스코어드 수집 실패 진단",
+     "저장된 원본을 분석해 원인을 출력합니다.", "diagnose"),
+    ("4", "데이터 소스 점검 (FBref · FotMob · Sofascore)",
+     "새 소스에 접속해 구조를 확인합니다. 파싱은 하지 않습니다.", "probe"),
+    ("5", "저장된 점검 응답 다시 분석",
+     "접속하지 않고 [4]가 저장해 둔 응답에서 지표 위치를 찾습니다.",
+     "probe-analyze"),
 ]
 
 
@@ -87,6 +95,40 @@ def _pause() -> bool:
     return _ask("[Enter] 를 누르면 메뉴로 돌아갑니다: ") is not None
 
 
+# 하위 메뉴에서 `[0]` 을 골랐을 때. `None`(종료)과 구분해야 한다.
+BACK = object()
+
+
+def _choose(items, prompt: str, default: str):
+    """목록을 보여 주고 고른 항목을 돌려준다.
+
+    돌려주는 값 셋을 구분한다 — `None` 은 종료(입력 끝 또는 `[0]`),
+    `BACK` 은 하위 메뉴에서 뒤로, `()` 는 없는 번호다. 하나로 뭉뚱그리면
+    하위 메뉴의 `[0]` 이 프로그램을 끝내 버린다.
+    """
+    for key, title, desc, _ in items:
+        print(f"  [{key}] {title}")
+        print(f"      {desc}")
+    print("  [0] 뒤로" if items is TOOLS else "  [0] 종료")
+    print()
+
+    choice = _ask(prompt)
+    if choice is None:                     # 입력이 끝났다 — 루프를 돌지 않는다
+        print("입력이 끝나 종료합니다.")
+        return None
+    choice = choice or default
+    if choice == "0":
+        if items is TOOLS:
+            return BACK
+        print("종료합니다.")
+        return None
+    entry = next((e for e in items if e[0] == choice), None)
+    if entry is None:
+        print(f"'{choice}' 는 없는 번호입니다.")
+        return ()
+    return entry
+
+
 def run_menu() -> int | None:
     """메뉴를 **한 번** 띄우고 선택에 맞는 인자를 만들어 실행한다.
 
@@ -96,27 +138,27 @@ def run_menu() -> int | None:
     Returns: 실행 결과 코드. 종료를 고르거나 입력이 끝나면 None.
     """
     print(BANNER)
-    for key, title, desc, _ in ITEMS:
-        print(f"  [{key}] {title}")
-        print(f"      {desc}")
-    print("  [0] 종료")
-    print()
-
-    choice = _ask("번호를 고르고 Enter (그냥 Enter 면 1번): ")
-    if choice is None:                     # 입력이 끝났다 — 루프를 돌지 않는다
-        print("입력이 끝나 종료합니다.")
-        return None
-    choice = choice or "1"
-    if choice == "0":
-        print("종료합니다.")
-        return None
-
-    entry = next((e for e in ITEMS if e[0] == choice), None)
+    entry = _choose(ITEMS, "번호를 고르고 Enter (그냥 Enter 면 1번): ", "1")
     if entry is None:
-        print(f"'{choice}' 는 없는 번호입니다.")
+        return None
+    if entry == ():                        # 없는 번호
         return 1
 
     _, title, _, args = entry
+
+    # 개발·진단 도구는 하위 메뉴로 내렸다. 평소 운영에 쓰지 않지만
+    # 지우지는 않는다 — §3-1 조사와 §1-4 실물 확인의 도구다.
+    if args == "tools":
+        print()
+        print("  — 개발·진단 도구 —")
+        entry = _choose(TOOLS, "번호를 고르고 Enter (0 이면 뒤로): ", "0")
+        if entry is None:
+            return None
+        if entry == ():
+            return 1
+        if entry is BACK:
+            return ("back", 0)
+        _, title, _, args = entry
 
     # 캐시를 실제로 지운다. --no-cache 는 읽기만 건너뛰고 낡은 파일은
     # 그대로 남아서, 파서를 고쳐도 옛 결과가 계속 쓰이는 일이 있었다.
@@ -153,12 +195,15 @@ def run_menu() -> int | None:
         extra = ["--browser"] if (use_browser or "").lower().startswith("y") else []
         return ("diagnose", tool_main(extra))
 
-    if args is None:                       # 회차 직접 입력
-        rnd = _ask("회차 번호 (예: 260043): ")
-        if not rnd:
-            print("회차를 입력하지 않아 취소했습니다.")
+    # 수집하는 항목은 **회차를 먼저 묻는다.** 실제 사용에서 회차를 지정하지
+    # 않고 도는 일이 없다. 비워 두면 예전 [1] 처럼 판매중 회차를 탐지한다.
+    if isinstance(args, tuple) and args and args[0] == ROUND:
+        extra = list(args[1])
+        rnd = _ask("회차 번호 (예: 260050 · 비우면 자동 탐지): ")
+        if rnd is None:
+            print("입력이 끝나 실행하지 않았습니다.")
             return 1
-        args = ["--round", rnd]
+        args = (["--round", rnd] if rnd else []) + extra
 
     if "--serve" in args:                  # 공유만 하는 항목 (리포트를 만들지 않음)
         from .cli import main as cli_main
@@ -181,6 +226,8 @@ def _report(result) -> int:
     print()
     if code != 0:
         print(f"오류로 끝났습니다 (코드 {code}). 위 로그를 확인하세요.")
+    elif kind == "back":
+        print("메뉴로 돌아갑니다.")
     elif kind == "diagnose":
         print("진단을 마쳤습니다. 위 출력을 복사해서 전달하세요.")
     elif kind == "serve":

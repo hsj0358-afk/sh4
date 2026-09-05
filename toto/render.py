@@ -865,6 +865,8 @@ PANEL_CSS = """
 .pscore{font-size:13px;font-weight:700;margin:2px 0 8px;
   font-variant-numeric:tabular-nums}
 .ptext{font-size:12.5px;line-height:1.65;margin:0 0 8px;overflow-wrap:anywhere}
+.mscore{font-size:20px;font-weight:700;margin:2px 0 4px;
+  font-variant-numeric:tabular-nums;letter-spacing:.5px}
 """
 
 
@@ -936,8 +938,33 @@ _MODERATOR_ROWS = (("common_points", "공통점"),
                    ("uncertainty", "불확실성"))
 
 
+def _adopted_block(result) -> str:
+    """사회자가 채택한 종합 예상 스코어.
+
+    **읽어서 놓기만 한다.** 여기서 두 수를 견주지 않고 승/무/패로 바꾸지
+    않는다 — 채택은 사회자가 이미 했고, 값은 두 의견이 낸 것 중 하나다.
+    """
+    home, away = result.adopted_home, result.adopted_away
+    why = (f'<p class="ptext">{_ptext(result.score_rationale)}</p>'
+           if result.score_rationale else "")
+    if home is None or away is None:
+        # 0 은 실제 예측이라 다르다. 못 골랐으면 이유가 그 자리를 채운다.
+        return ('<p class="lbl">종합 예상 스코어</p>'
+                '<p class="nodata">두 의견 중 하나를 고를 근거가 자료에 '
+                '없었습니다.</p>' + why)
+    who = " · ".join(_ROLE_KO.get(r, r) for r in result.adopted_from)
+    src = (f'<p class="vs">{esc(who)}의 예상 스코어를 그대로 채택했습니다 '
+           f'(평균내지 않습니다)</p>' if who else "")
+    return (f'<p class="lbl">종합 예상 스코어</p>'
+            f'<p class="mscore">{esc(home)} : {esc(away)}</p>{src}{why}')
+
+
 def _moderator_block(result) -> str:
-    """사회자. 두 의견의 **관계**만 적는다 — 최종 선택을 만들지 않는다."""
+    """사회자. 두 의견의 관계와 **채택한 종합 예상 스코어**를 적는다.
+
+    스코어는 사회자가 고른 값을 **그대로** 옮길 뿐이다 — 여기서 평균내거나
+    승/무/패로 바꾸지 않는다.
+    """
     if result is None:
         return ""
     if not (result.common_points or result.differences):
@@ -949,7 +976,8 @@ def _moderator_block(result) -> str:
     if len(result.panels_seen) < 2:
         note = (f'<p class="vs">분석가 한 명({esc(seen)})의 의견만으로 '
                 f'정리한 것입니다.</p>')
-    parts = ""
+    # 사용자가 3단계에서 얻으려는 답이므로 맨 앞에 놓는다.
+    parts = _adopted_block(result)
     for field, label in _MODERATOR_ROWS:
         items = getattr(result, field, ()) or ()
         if not items:

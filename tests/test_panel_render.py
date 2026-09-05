@@ -51,6 +51,9 @@ def mod(**kw):
                 differences=("최근 구간 해석이 갈린다",),
                 counterpoints=("표본 1경기로는 확정할 수 없다",),
                 score_comparison="홈 득점 예상이 1골 다르다",
+                # `op(DATA)` 의 2-1 을 채택한 상태 (`op(MATCHUP, 1, 1)` 아님)
+                adopted_home=2, adopted_away=1, adopted_from=(DATA,),
+                score_rationale="표본이 더 큰 근거를 든 쪽을 택했습니다",
                 market_relation="시장 기준선은 원정 쪽이 약간 높다",
                 uncertainty=("표본 1경기",), model="m", prompt_version="1")
     base.update(kw)
@@ -129,6 +132,37 @@ def test_b5_moderator_items_render():
                   "예상 스코어 차이", "시장 기준선과의 관계"):
         assert token in html, token
     assert "두 의견 모두 표본이 작다고 본다" in html
+
+
+def test_b5a_adopted_score_is_the_headline():
+    """3단계의 답이 화면에 나온다 — 비교로 끝나지 않는다."""
+    html = carded(full_run())
+    assert "종합 예상 스코어" in html
+    assert "2 : 1" in html
+    # 어느 의견에서 왔는지, 그리고 평균이 아니라는 것.
+    assert "데이터 분석가의 예상 스코어를 그대로 채택" in html
+    assert "평균내지 않습니다" in html
+    assert "표본이 더 큰 근거를 든 쪽을 택했습니다" in html
+    # 비교 문장보다 먼저 나온다.
+    assert html.index("종합 예상 스코어") < html.index("예상 스코어 차이")
+
+
+def test_b5b_no_adopted_score_says_why():
+    """못 골랐으면 0 으로 채우지 않고 이유를 보여 준다 (§1-5)."""
+    html = carded(full_run(moderator=mod(
+        adopted_home=None, adopted_away=None, adopted_from=(),
+        score_rationale="두 읽기 중 하나를 고를 근거가 자료에 없습니다")))
+    assert "종합 예상 스코어" in html
+    assert "0 : 0" not in html
+    assert "고를 근거가 자료에 없었습니다" in html
+    assert "두 읽기 중 하나를 고를 근거가 자료에 없습니다" in html
+
+
+def test_b5c_adopted_score_is_not_turned_into_a_pick():
+    html = carded(full_run())
+    tail = html[html.index("종합 예상 스코어"):]
+    for banned in ("홈승", "원정승", "승리 예상", "추천"):
+        assert banned not in tail, banned
 
 
 def test_b6_evidence_ids_render_as_ids():
@@ -250,29 +284,46 @@ def test_h20_scores_render_verbatim():
 
 
 def test_h21_no_synthesized_score():
+    """화면의 스코어는 **의견이 낸 것 중 하나**다. 합성값이 없다.
+
+    `"평균"` 을 문자열로 금지하지 않는다 — 화면에 나오는 것은 "평균내지
+    않습니다" 라는 **부정문**이라 그대로 걸린다 (CLAUDE.md §1-1-15 와 같은
+    함정). 대신 실제로 그려진 수를 본다.
+    """
     html = carded(full_run(opinions=(op(DATA, 2, 1), op(MATCHUP, 1, 1))))
-    for banned in ("1.5", "대표 예상", "합의 예상", "최종 예상", "평균"):
+    for banned in ("1.5", "대표 예상", "합의 예상", "최종 예상", "평균 스코어"):
         assert banned not in html, banned
+    shown = re.search(r'class="mscore">([^<]+)<', html)
+    assert shown, "종합 스코어가 없다"
+    assert shown.group(1).strip() in ("2 : 1", "1 : 1"), shown.group(1)
 
 
 # --------------------------------------------------------------------------
 # I~J. 승무패·합성 금지 (렌더러 구조)
 # --------------------------------------------------------------------------
 def test_i22_renderer_never_compares_scores():
-    """`predicted_home > predicted_away` 같은 판정이 없어야 한다."""
+    """`predicted_home > predicted_away` 같은 판정이 없어야 한다.
+
+    사회자가 채택한 스코어(`adopted_*`)도 같다 — 값이 있는지 보는 것과
+    두 수를 견주는 것은 다르다.
+    """
     tree = ast.parse(inspect.getsource(render))
     for node in ast.walk(tree):
         if isinstance(node, ast.Compare):
             blob = ast.dump(node)
             assert not ("predicted_home" in blob and "predicted_away" in blob),\
                 "렌더러가 스코어를 비교해 승패를 만들고 있다"
+            assert not ("adopted_home" in blob and "adopted_away" in blob
+                        and any(isinstance(o, (ast.Lt, ast.Gt, ast.LtE,
+                                               ast.GtE)) for o in node.ops)),\
+                "렌더러가 채택 스코어를 비교하고 있다"
 
 
 def test_i23_no_arithmetic_on_panel_values():
     """패널 렌더 함수들에 나눗셈·평균·반올림이 없어야 한다."""
     for fn in (render._panel_block, render._opinion_card,
                render._moderator_block, render._market_table,
-               render._score_line):
+               render._score_line, render._adopted_block):
         tree = ast.parse(inspect.getsource(fn))
         for node in ast.walk(tree):
             if isinstance(node, ast.BinOp) and isinstance(

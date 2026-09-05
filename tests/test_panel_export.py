@@ -527,6 +527,33 @@ def test_e2_menu_item_does_not_call_the_api():
     assert "--skip-match-details" not in flags, "슛맵이 없으면 근거가 없다"
 
 
+# ------------------------------------------------ 3단계는 스코어까지 간다
+def test_s1_moderator_sheet_asks_for_the_adopted_score():
+    """비교로 끝나면 3단계가 할 일을 안 한 것이다."""
+    _st, out = _run()
+    text = _round(out, "03_")
+    assert "종합 예상 스코어 하나를 채택" in text
+    for key in ('"adopted_home"', '"adopted_away"', '"score_rationale"'):
+        assert key in text, key
+    assert "평균내" in text, "평균 금지가 안 적혀 있다"
+
+
+def test_s2_instructions_carry_the_adoption_rules_verbatim():
+    """규칙을 여기 베끼지 않는다 — `moderator.SYSTEM` 을 그대로 싣는다."""
+    text = panelexport.project_instructions()
+    assert moderator.SYSTEM.strip() in text
+    src = (Path(__file__).resolve().parent.parent / "toto"
+           / "panelexport.py").read_text(encoding="utf-8")
+    for line in ("두 의견이 제시한 스코어 중 하나를 그대로",
+                 "억지로 고르지"):
+        assert line in moderator.SYSTEM, line
+        assert line not in src, f"프롬프트를 베껴 뒀다: {line}"
+
+
+def test_s3_per_match_sheet_says_it_too():
+    assert "종합 예상 스코어 하나를\n채택" in _sheet(_run()[1])
+
+
 # --------------------------------------------------------------------------
 def main() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]

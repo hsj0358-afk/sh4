@@ -848,13 +848,24 @@ class ModeratorResult:
     **세 번째 분석가가 아니다.** 누가 맞는지 고르지 않고, 두 전문가가 왜
     같고 왜 다른지·어떤 근거를 공유하고 어디서 갈리는지를 정리한다.
 
-    **예상 스코어 칸을 두지 않는다.** `predicted_home`·`predicted_away` 가
-    여기 있으면 두 패널 스코어를 평균·반올림해 '대표 스코어' 를 만드는 길이
-    열린다. 그 유혹을 구조로 막고, 스코어 차이는 `score_comparison` 에
-    문장으로만 적는다.
+    **종합 예상 스코어는 '채택' 이지 '평균' 이 아니다.** 예전에는 스코어 칸을
+    아예 두지 않아 `2-1` 과 `1-1` 을 `1.5-1` 로 만드는 길을 막았는데, 그러면
+    사회자가 A·B 를 견주기만 하고 끝나 "그래서 이 경기는 몇 대 몇인가" 에
+    닿지 못했다. 지금은 칸을 두되 **두 의견이 제시한 스코어 중 하나를 그대로**
+    받게 하고, 그 제약을 `moderator.parse_result()` 가 **구조로 강제한다** —
+    제안에 없는 조합은 응답으로 들어오지 못하므로 평균값은 애초에 만들어질 수
+    없다(`1.5` 는 정수도 아니고, `(2,1)`·`(1,1)` 의 중간인 `(1,1)`~`(2,1)`
+    밖의 값은 전부 거부된다).
+
+    `adopted_from` 은 **어느 역할의 스코어를 받았나**다. 둘이 같은 스코어를
+    냈으면 둘 다 들어간다. 고를 근거가 없으면 스코어는 `None` 이고
+    `score_rationale` 에 왜 고르지 못했는지가 남는다 — 억지로 고른 값보다
+    빈 칸이 낫다 (§1-5).
 
     `winner`·`wdl`·`pick`·`lean`·`recommendation`·`confidence`·`strength`·
-    `favorite`·`probability` 칸도 없다 — 있으면 그 자체가 추천이 된다.
+    `favorite`·`probability` 칸은 **여전히 없다** — 있으면 그 자체가 추천이
+    된다. 채택한 스코어는 예상 스코어일 뿐이고, 그것을 승/무/패로 바꾸는
+    코드가 이 프로젝트에 없다(테스트로 고정).
     """
     status: str = ""                # 생략 / 실패(사유) / ok
     # **실제로 본 역할**. 하나만 봤으면 하나만 들어간다 — 둘을 본 것처럼
@@ -869,6 +880,12 @@ class ModeratorResult:
     differences: tuple[str, ...] = ()
     counterpoints: tuple[str, ...] = ()
     score_comparison: str = ""      # 두 예상 스코어의 차이 설명 (승패 아님)
+    # 종합 예상 스코어. **두 의견이 낸 스코어 중 하나 그대로**이고, 고르지
+    # 못했으면 둘 다 None 이다. 0 은 실제 예측이라 None 과 다르다.
+    adopted_home: int | None = None
+    adopted_away: int | None = None
+    adopted_from: tuple[str, ...] = ()   # 그 스코어를 낸 역할(들)
+    score_rationale: str = ""            # 왜 그 쪽인가 / 왜 고르지 못했나
     market_relation: str = ""       # 시장 기준선과의 관계 (투표가 아님)
     uncertainty: tuple[str, ...] = ()
     model: str = ""
@@ -901,7 +918,7 @@ class PanelRun:
 _MODERATOR_TUPLES = ("panels_seen", "shared_evidence_ids",
                      "data_only_evidence_ids", "matchup_only_evidence_ids",
                      "common_points", "differences", "counterpoints",
-                     "uncertainty")
+                     "adopted_from", "uncertainty")
 
 
 def revive_moderator(d: Any) -> ModeratorResult | None:

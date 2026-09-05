@@ -42,10 +42,13 @@ GOOD = json.dumps({"predicted_home": 2, "predicted_away": 1,
                    "evidence_ids": ["E001"]}, ensure_ascii=False)
 
 
+# 채택 스코어는 `GOOD`(2-1)과 같아야 한다 — 두 의견이 낸 조합만 통과한다.
 MODERATOR_OK = json.dumps(
     {"common_points": ["두 의견 모두 표본이 작다고 본다"],
      "differences": ["예상 스코어가 다르다"],
      "counterpoints": [], "score_comparison": "홈 득점 예상이 1골 다르다",
+     "adopted_home": 2, "adopted_away": 1,
+     "score_rationale": "두 의견의 스코어가 같아 그대로 채택했습니다",
      "market_relation": "", "uncertainty": ["표본 1경기"],
      "evidence_ids": []}, ensure_ascii=False)
 

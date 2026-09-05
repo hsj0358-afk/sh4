@@ -6,8 +6,9 @@
    세지 않으며, 누가 맞는지 고르지 않는다.
 2. **같은 근거는 하나다.** 둘이 같은 ID 를 인용해도 공통 근거 하나이고,
    근거 개수를 세기로 쓰지 않는다.
-3. **평균내지 않는다.** 두 예상 스코어로 대표 스코어를 만들지 않는다 —
-   `ModeratorResult` 에 스코어 칸이 아예 없다.
+3. **스코어는 채택이지 평균이 아니다.** 종합 예상 스코어 칸은 있지만
+   **두 의견이 실제로 낸 조합**만 들어갈 수 있다 — 파서가 그 밖의 값을
+   거부하므로 `1.5-1` 도 `2-2` 도 만들어질 수 없다.
 4. **승무패를 만들지 않는다.** 관련 필드도 property 도 없다.
 5. **읽기만 한다.** 자료와 의견을 바꾸지 않고, 축·근거·확률을 다시
    계산하지 않는다.
@@ -43,6 +44,15 @@ def opinion(role, ids=(), home=2, away=1):
 
 def payload_of(n=8):
     return panel.build_panel_payload(make_match([ev(i) for i in range(1, n + 1)]))
+
+
+def _mod_json(**over) -> str:
+    """사회자 응답 한 벌. 스코어 칸만 바꿔 가며 파서를 시험한다."""
+    body = {"common_points": ["표본이 작다"], "differences": ["스코어가 다르다"],
+            "counterpoints": [], "score_comparison": "1골 차이",
+            "market_relation": "", "uncertainty": [], "evidence_ids": []}
+    body.update(over)
+    return json.dumps(body, ensure_ascii=False)
 
 
 DATA = moderator.DATA_ROLE
@@ -316,12 +326,140 @@ def test_i28_no_wdl_fields():
         assert banned not in attrs, f"property 로 {banned} 가 있다"
 
 
-def test_i29_no_representative_score_field():
-    """대표 스코어 칸 자체가 없다 — 평균낼 자리를 두지 않는다."""
+def test_i29_the_adopted_score_is_one_of_the_proposals():
+    """종합 스코어 칸은 있다. 다만 **제안 집합 안에서만** 채워진다.
+
+    예전에는 칸 자체를 두지 않아 평균값을 막았는데, 그러면 사회자가 비교로
+    끝나 "그래서 몇 대 몇인가" 에 닿지 못했다. 지금은 값의 출처를 제약해
+    같은 결과를 얻는다 — 제안에 없는 조합은 파서가 거부한다.
+    """
+    res = moderator.run_moderator(
+        payload_of(), [opinion(DATA, ["E001"]), opinion(MATCHUP, ["E002"])],
+        settings=S, client=FakeClient())
+    assert (res.adopted_home, res.adopted_away) == (2, 1)
+    assert set(res.adopted_from) == {DATA, MATCHUP}
+    assert res.score_rationale
+
+
+def test_i29b_averaged_score_is_rejected():
+    """`2-1` 과 `1-1` 에서 `1.5-1`·`2-2` 는 들어올 수 없다."""
+    allowed = {DATA: (2, 1), MATCHUP: (1, 1)}
+    for bad in (1.5, 2.0, "2", True, -1):
+        with_score = _mod_json(adopted_home=bad, adopted_away=1)
+        try:
+            moderator.parse_result(with_score, panels_seen=(), shared=(),
+                                   data_only=(), matchup_only=(),
+                                   allowed_ids=(), allowed_scores=allowed)
+        except moderator.ValidationError:
+            continue
+        raise AssertionError(f"{bad!r} 가 통과했다")
+    # 정수이지만 아무도 제안하지 않은 조합
+    try:
+        moderator.parse_result(_mod_json(adopted_home=2, adopted_away=2),
+                               panels_seen=(), shared=(), data_only=(),
+                               matchup_only=(), allowed_ids=(),
+                               allowed_scores=allowed)
+    except moderator.ValidationError as exc:
+        assert "낸 의견이 없습니다" in str(exc), exc
+        return
+    raise AssertionError("제안에 없는 2-2 가 통과했다")
+
+
+def test_i29c_both_proposals_are_selectable():
+    """갈렸을 때 **어느 쪽이든** 고를 수 있다 — 한쪽으로 몰지 않는다."""
+    allowed = {DATA: (2, 1), MATCHUP: (1, 1)}
+    for home, away, who in ((2, 1, DATA), (1, 1, MATCHUP)):
+        res = moderator.parse_result(
+            _mod_json(adopted_home=home, adopted_away=away,
+                      adopted_from=[who], score_rationale="표본이 큰 쪽"),
+            panels_seen=(), shared=(), data_only=(), matchup_only=(),
+            allowed_ids=(), allowed_scores=allowed)
+        assert (res.adopted_home, res.adopted_away) == (home, away)
+        assert res.adopted_from == (who,)
+
+
+def test_i29d_adopted_from_must_match_the_score():
+    """"B 의 스코어를 채택했다" 면서 A 의 숫자를 적을 수 없다."""
+    allowed = {DATA: (2, 1), MATCHUP: (1, 1)}
+    try:
+        moderator.parse_result(
+            _mod_json(adopted_home=2, adopted_away=1, adopted_from=[MATCHUP]),
+            panels_seen=(), shared=(), data_only=(), matchup_only=(),
+            allowed_ids=(), allowed_scores=allowed)
+    except moderator.ValidationError as exc:
+        assert "내지 않았습니다" in str(exc), exc
+        return
+    raise AssertionError("출처가 어긋났는데 통과했다")
+
+
+def test_i29e_missing_adopted_from_is_filled_from_the_proposals():
+    """어디서 왔는지 빼먹으면 **제안 집합에서 채운다** (새로 만들지 않는다)."""
+    res = moderator.parse_result(
+        _mod_json(adopted_home=1, adopted_away=1),
+        panels_seen=(), shared=(), data_only=(), matchup_only=(),
+        allowed_ids=(), allowed_scores={DATA: (2, 1), MATCHUP: (1, 1)})
+    assert res.adopted_from == (MATCHUP,)
+
+
+def test_i29f_declining_needs_a_reason():
+    """고르지 않는 것은 정직한 답이다 — 다만 이유를 적어야 한다."""
+    kw = dict(panels_seen=(), shared=(), data_only=(), matchup_only=(),
+              allowed_ids=(), allowed_scores={DATA: (2, 1), MATCHUP: (1, 1)})
+    ok = moderator.parse_result(
+        _mod_json(score_rationale="두 읽기 중 하나를 고를 근거가 없습니다"), **kw)
+    assert ok.adopted_home is None and ok.adopted_away is None
+    assert ok.adopted_from == ()
+    try:
+        moderator.parse_result(_mod_json(), **kw)
+    except moderator.ValidationError as exc:
+        assert "score_rationale" in str(exc), exc
+        return
+    raise AssertionError("이유 없이 비웠는데 통과했다")
+
+
+def test_i29g_no_proposal_means_no_reason_needed():
+    """두 의견 다 스코어가 없으면 빈 칸이 정답이고 변명을 요구하지 않는다."""
+    res = moderator.parse_result(
+        _mod_json(), panels_seen=(), shared=(), data_only=(),
+        matchup_only=(), allowed_ids=(), allowed_scores={})
+    assert res.adopted_home is None
+
+
+def test_i29h_half_a_score_is_rejected():
+    try:
+        moderator.parse_result(
+            _mod_json(adopted_home=2), panels_seen=(), shared=(),
+            data_only=(), matchup_only=(), allowed_ids=(),
+            allowed_scores={DATA: (2, 1)})
+    except moderator.ValidationError as exc:
+        assert "한쪽만" in str(exc), exc
+        return
+    raise AssertionError("홈 득점만 있는데 통과했다")
+
+
+def test_i29i_proposed_scores_skips_opinions_without_one():
+    got = moderator.proposed_scores(
+        [opinion(DATA, home=2, away=1), opinion(MATCHUP, home=None, away=1)])
+    assert got == {DATA: (2, 1)}
+
+
+def test_i29j_no_representative_score_field():
+    """평균·합의를 뜻하는 이름은 여전히 없다 — `adopted_*` 만 있다."""
     names = {f.name for f in fields(ModeratorResult)}
     for banned in ("predicted_home", "predicted_away", "final_home",
-                   "final_away", "consensus_home", "consensus_away"):
+                   "final_away", "consensus_home", "consensus_away",
+                   "average_home", "average_away"):
         assert banned not in names, banned
+    assert {"adopted_home", "adopted_away", "adopted_from",
+            "score_rationale"} <= names
+
+
+def test_i29k_retry_tells_the_model_what_was_wrong():
+    """고칠 수 있는 오류인데 같은 답을 되풀이하게 두지 않는다."""
+    hint = moderator.retry_hint("채택한 스코어 2-2 를 낸 의견이 없습니다")
+    assert moderator.RETRY_HINT in hint
+    assert "2-2" in hint
+    assert moderator.retry_hint("") == moderator.RETRY_HINT
 
 
 def test_j30_differing_scores_produce_no_verdict():
@@ -629,11 +767,18 @@ def test_49_renderer_reads_the_moderator_without_deciding():
     import ast as _ast
 
     from toto import render
-    src = inspect.getsource(render._moderator_block)
+    src = "\n".join(inspect.getsource(fn) for fn in
+                    (render._moderator_block, render._adopted_block))
     tree = _ast.parse(src)
     for node in _ast.walk(tree):
         if isinstance(node, _ast.Compare):
-            assert "predicted_" not in _ast.dump(node)
+            dump = _ast.dump(node)
+            assert "predicted_" not in dump
+            # 채택한 스코어를 견주어 승패를 만들지 않는다. `is None` 검사는
+            # 값의 유무를 보는 것이라 크기 비교와 다르다.
+            for op in node.ops:
+                if isinstance(op, (_ast.Lt, _ast.Gt, _ast.LtE, _ast.GtE)):
+                    assert "adopted" not in dump, "채택 스코어를 비교하고 있다"
         if isinstance(node, _ast.BinOp) and isinstance(
                 node.op, (_ast.Div, _ast.FloorDiv)):
             raise AssertionError("사회자 렌더링에 나눗셈이 있다")

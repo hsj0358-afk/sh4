@@ -151,9 +151,10 @@ function build(ev) {
       const bd = el('div', 'breakdown');
       for (const b of ev.breakdown) {
         const sign = b.value >= 0 ? '+' : '';
-        bd.appendChild(
-          el('span', `chip ${b.value < 0 ? 'minus' : 'plus'}`, `${b.label} ${sign}${b.value}`),
-        );
+        // 통찰 칩만 청록이다. 통찰 카드와 같은 색이라 눈이 둘을 잇는다 —
+        // 「아까 알아낸 그것이 지금 이 판정에 붙었다」가 색으로 읽힌다.
+        const kind = b.insight ? 'insight' : b.value < 0 ? 'minus' : 'plus';
+        bd.appendChild(el('span', `chip ${kind}`, `${b.label} ${sign}${b.value}`));
       }
       if (!ev.breakdown.length) bd.appendChild(el('span', 'chip', '보정 없음'));
       card.appendChild(bd);
@@ -200,6 +201,16 @@ function build(ev) {
         wrap.appendChild(chip);
       });
       return wrap;
+    }
+
+    case 'insight': {
+      // 단서는 발견이고 통찰은 추론이다. 단서 카드가 금빛이면 이쪽은 청록이다 —
+      // 주운 것이 아니라 이어 붙인 것이라는 표시.
+      const card = el('div', 'insight-card');
+      card.appendChild(el('span', 'in-tag', '두 줄이 만났다'));
+      card.appendChild(el('h4', null, ev.title));
+      paragraphs(card, ev.text, false);
+      return card;
     }
 
     case 'clue': {

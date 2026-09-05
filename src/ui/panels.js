@@ -4,6 +4,7 @@
 import { STATS } from '../content/stats.js';
 import { ITEMS } from '../content/items.js';
 import { CLUES } from '../content/clues.js';
+import { INSIGHTS, heldInsights } from '../content/insight.js';
 import { COMPANIONS } from '../content/companions.js';
 import { ENCOUNTERS } from '../content/encounters.js';
 import { ENDINGS } from '../content/endings.js';
@@ -151,6 +152,17 @@ export function codexPanel(state) {
     frag.appendChild(el('p', 'empty', '아직 적어둔 것이 없다.\n전부 머릿속에만 있다.'));
     return frag;
   }
+
+  // 통찰이 단서보다 먼저 온다. 이것이 지금 판정에 실제로 붙고 있는 것이므로.
+  const held = heldInsights(state);
+  if (held.length) {
+    frag.appendChild(el('p', 'type-head', `통찰 ${held.length} / ${INSIGHTS.length}`));
+    for (const i of held) {
+      const node = item(i.title, `${i.tags.join('·')} +${i.value}`, i.text);
+      node.classList.add('insight-line');
+      frag.appendChild(node);
+    }
+  }
   const tiers = [
     ['core', '중심 미스터리'],
     ['field', '현장 단서'],
@@ -245,6 +257,7 @@ const RELIC_TYPES = ['relic', 'special'];
 
 export const ARCHIVE_TOTALS = {
   clues: Object.keys(CLUES).length,
+  insights: INSIGHTS.length,
   items: Object.keys(ITEMS).length,
   endings: ENDINGS.length,
   companions: Object.keys(COMPANIONS).length,
@@ -318,6 +331,7 @@ export function archivePanel(archive) {
   frag.appendChild(el('p', 'type-head', '수집 진행률'));
   const bars = el('div', 'arc-bars');
   bars.appendChild(progressRow('단서', p.clues));
+  bars.appendChild(progressRow('통찰', p.insights));
   bars.appendChild(
     progressRow('유물', {
       have: foundRelics.length,
@@ -382,6 +396,20 @@ export function archivePanel(archive) {
       })),
       archive.encounters,
       '아직 마주치지 않은 상대.',
+    ),
+  );
+
+  frag.appendChild(el('p', 'type-head', '통찰'));
+  frag.appendChild(
+    collectedList(
+      INSIGHTS.map((i) => ({
+        id: i.id,
+        title: i.title,
+        meta: `${i.tags.join('·')} +${i.value}`,
+        text: i.text,
+      })),
+      archive.insights || [],
+      '아직 이어 붙이지 못한 두 줄.',
     ),
   );
 

@@ -993,6 +993,11 @@ input::placeholder {
   border-color: rgba(200, 162, 74, 0.35);
   color: #e2c887;
 }
+.chip.insight {
+  border-color: var(--verdigris);
+  color: #a8d3c2;
+  background: rgba(90, 133, 119, 0.12);
+}
 .check-card .ct-target {
   font-size: 13px;
   color: var(--ink-dim);
@@ -1101,6 +1106,40 @@ input::placeholder {
   line-height: 1.8;
   color: var(--ink-dim);
 }
+
+/* 통찰 카드 — 수첩의 두 줄이 만나는 순간.
+   단서(금빛)는 주운 것이고 이것(청록)은 이어 붙인 것이다. */
+.insight-card {
+  margin: 4px 0 18px;
+  border: 1px solid var(--verdigris);
+  border-radius: 10px;
+  padding: 13px 15px;
+  background: linear-gradient(180deg, rgba(90, 133, 119, 0.1), transparent);
+}
+.insight-card .in-tag {
+  font-size: 10.5px;
+  letter-spacing: 0.2em;
+  color: var(--verdigris);
+}
+.insight-card h4 {
+  margin: 5px 0 6px;
+  font-family: var(--serif);
+  font-size: 16px;
+  color: #cfe6dc;
+}
+.insight-card p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--ink-dim);
+}
+
+/* 수첩 안의 통찰 줄 */
+.insight-line {
+  padding-left: 10px;
+  border-left: 2px solid var(--verdigris);
+}
+.insight-line .li-name { color: #cfe6dc; }
 
 /* 종료 카드 */
 .end-card {

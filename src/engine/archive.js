@@ -5,8 +5,10 @@
 // 도감이 이 위에 선다. 죽어서 끝난 판도 본 것은 도감에 남는다 —
 // 그래야 실패한 회차가 버려지는 시간이 아니게 된다.
 //
-// 계승되는 것은 지식뿐이다. 능력치도 장비도 넘어가지 않는다.
+// 계승되는 것은 지식뿐이다. 능력치도 장비도, 통찰도 넘어가지 않는다.
 // 넘겨주면 회차가 쌓일수록 쉬워지고, 쉬워지면 1897년이 아니게 된다.
+
+import { heldInsights } from '../content/insight.js';
 
 const KEY = 'lostworldmap.archive.v1';
 
@@ -19,6 +21,7 @@ export function emptyArchive() {
     runs: 0,
     finished: 0,
     clues: [],
+    insights: [],
     items: [],
     endings: [],
     encounters: [],
@@ -78,14 +81,19 @@ export function record(archive, state, { ended = false, completed = false } = {}
   const companionIds = Object.keys(state.companions);
   const endingId = state.ended?.ending || null;
 
+  const held = heldInsights(state).map((i) => i.id);
   const firsts = {
     clues: state.clues.filter((c) => !archive.clues.includes(c)),
+    insights: held.filter((i) => !(archive.insights || []).includes(i)),
     items: items.filter((n) => !archive.items.includes(n)),
     companions: companionIds.filter((c) => !archive.companions.includes(c)),
     ending: endingId && !archive.endings.includes(endingId) ? endingId : null,
   };
 
   next.clues = merge(archive.clues, state.clues);
+  // 통찰은 도감에 쌓이지만 다음 회차로 넘어가지는 않는다.
+  // 계승되는 것은 「무엇을 봤는가」이지 「얼마나 유리한가」가 아니다.
+  next.insights = merge(archive.insights || [], held);
   next.items = merge(archive.items, items);
   next.companions = merge(archive.companions, companionIds);
   next.episodes = merge(archive.episodes, [
@@ -146,6 +154,7 @@ export function progress(archive, totals) {
   };
   return {
     clues: row('clues'),
+    insights: row('insights'),
     items: row('items'),
     endings: row('endings'),
     companions: row('companions'),

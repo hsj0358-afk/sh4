@@ -455,6 +455,7 @@ const PACING = {
   roll: 260,
   notes: 160,
   clue: 240,
+  insight: 460,
   end: 300,
 };
 
@@ -554,10 +555,11 @@ function attachControls() {
 //
 // 그래서 '이번에 처음 본 것'은 판이 끝나는 순간에는 이미 전부 아카이브에 들어가 있다.
 // 마지막에 물어보면 늘 빈손이 나온다. 매 턴 나온 것을 여기 모아 두었다가 끝에 한 번 읽는다.
-const runFirsts = { clues: [], items: [], companions: [], ending: null };
+const runFirsts = { clues: [], insights: [], items: [], companions: [], ending: null };
 
 function resetFirsts() {
   runFirsts.clues = [];
+  runFirsts.insights = [];
   runFirsts.items = [];
   runFirsts.companions = [];
   runFirsts.ending = null;
@@ -575,7 +577,7 @@ function syncArchive() {
   archive = next;
   saveArchive(archive);
 
-  for (const key of ['clues', 'items', 'companions']) {
+  for (const key of ['clues', 'insights', 'items', 'companions']) {
     runFirsts[key] = [...new Set([...runFirsts[key], ...firsts[key]])];
   }
   if (firsts.ending) runFirsts.ending = firsts.ending;
@@ -591,6 +593,7 @@ function announceFirsts() {
   const lines = [];
   if (runFirsts.ending) lines.push('새로운 결말을 기록했다.');
   if (runFirsts.clues.length) lines.push(`처음 보는 단서 ${runFirsts.clues.length}개.`);
+  if (runFirsts.insights.length) lines.push(`처음 이어 붙인 통찰 ${runFirsts.insights.length}가지.`);
   if (runFirsts.items.length) lines.push(`처음 손에 넣은 물건 ${runFirsts.items.length}개.`);
   if (runFirsts.companions.length) {
     lines.push(`처음 만난 사람 ${runFirsts.companions.length}명.`);

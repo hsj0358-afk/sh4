@@ -10,6 +10,7 @@ import { applyEffects, formatClock, isDead, isBroken } from './state.js';
 import { interpret, hallucination } from './freeform.js';
 import { createRng } from './rng.js';
 import { rivalCrossing } from './rival.js';
+import { heldInsights } from '../content/insight.js';
 import { getItem } from '../content/items.js';
 import { getEncounter } from '../content/encounters.js';
 import { COMPANIONS } from '../content/companions.js';
@@ -304,6 +305,25 @@ export function createGM({ state, episode }) {
   }
 
   /**
+   * 수첩의 두 줄이 만나는 순간을 알려 준다.
+   *
+   * 통찰은 어디에서도 주지 않는다 — 단서가 모이면 저절로 생긴다. 그래서
+   * 조용히 붙으면 자란 줄도 모른다. 판정 카드의 칩으로 처음 보는 것과
+   * 「알아냈다」는 한 장면으로 보는 것은 다른 일이다.
+   *
+   * 한 번만 말한다. 상태에 저장하지 않고 단서에서 매번 읽으므로,
+   * 말했다는 사실만 플래그로 남긴다.
+   */
+  function noteInsights(events) {
+    for (const ins of heldInsights(state)) {
+      const key = `insight:${ins.id}`;
+      if (state.flags[key]) continue;
+      state.flags[key] = true;
+      events.push({ type: 'insight', id: ins.id, title: ins.title, text: [ins.text] });
+    }
+  }
+
+  /**
    * 경쟁자가 문턱을 넘으면 그때 알려 준다.
    *
    * 배신과 같은 원칙이다 — 예고된다. 장이 끝나고 나서야 "빼앗겼습니다"라고
@@ -457,6 +477,7 @@ export function createGM({ state, episode }) {
     if (enterNotes.length) events.push({ type: 'notes', notes: enterNotes });
     noteRelations(events);
     noteRival(events);
+    noteInsights(events);
 
     // 장면이 조우를 걸고 있으면 바로 전투로 들어간다.
     if (s.combat && !state.combat && !state.flags[`combatDone:${id}`]) {
@@ -534,6 +555,7 @@ export function createGM({ state, episode }) {
 
     noteRelations(events);
     noteRival(events);
+    noteInsights(events);
     if (checkVitals(events)) return;
 
     // 값나가는 것이 가방에 들어온 직후는 흔들리는 사람에게 가장 선명한 순간이다.

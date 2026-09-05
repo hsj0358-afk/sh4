@@ -2,6 +2,7 @@
 // 플레이어가 "왜 이 숫자인가"를 항상 확인할 수 있어야 한다는 원칙(기획서 7-3).
 
 import { itemBonus, hasLight } from '../content/items.js';
+import { insightsFor } from '../content/insight.js';
 import { companionAssist } from '../content/companions.js';
 import { getDifficulty } from '../content/difficulty.js';
 import { conditionPenalty, dangerPressure } from './state.js';
@@ -18,6 +19,18 @@ export const MAX_PENALTY_STACK = 4;
 
 /** 어두운 곳에서 빛 없이 하는 일의 대가. */
 export const DARK_PENALTY = 2;
+
+/**
+ * 통찰이 한 판정에 줄 수 있는 최대치.
+ *
+ * 불이익에 천장(MAX_PENALTY_STACK)이 있으면 이익에도 천장이 있어야 한다.
+ * 이것이 없으면 단서를 많이 모은 사람의 3장 판정이 전부 자동 성공이 되고,
+ * 그러면 성장을 넣은 대가로 긴장을 잃는다.
+ *
+ * 3 은 통찰 두세 개가 겹칠 때 닿는 값이다 — 세 번째부터는 판정이 아니라
+ * 수첩이 두꺼워지는 보람으로 남는다.
+ */
+export const MAX_INSIGHT = 3;
 
 // 빛이 있는지는 소지품이 안다. 규칙은 그 답을 쓸 뿐이다.
 export { hasLight };
@@ -75,6 +88,22 @@ export function buildCheck(state, check, opts = {}) {
   // 그리고 그 사실이 판정마다 화면에 뜬다.
   if (opts.dark && !hasLight(state)) {
     breakdown.push({ label: '빛이 없다', value: -DARK_PENALTY });
+  }
+
+  // 4.7 통찰 — 이 게임에서 자라는 유일한 수치.
+  //
+  //     장비는 사면 되고 동료는 만나면 되지만 이것은 읽어야만 는다.
+  //     능력치를 올리지 않는 이유는 content/insight.js 에 적어 두었다.
+  //     여러 개가 걸리면 더하되, 천장이 있다.
+  const insights = insightsFor(state, tags);
+  if (insights.length) {
+    const raw = insights.reduce((sum, i) => sum + i.value, 0);
+    const value = Math.min(raw, MAX_INSIGHT);
+    // 「통찰 2가지」라고 뭉뚱그리면 어느 둘인지 알 수 없다. 이 게임의 규칙은
+    // 「왜 이 숫자인가를 항상 확인할 수 있어야 한다」이므로 이름을 밝힌다.
+    const label =
+      insights.map((i) => i.title).join(' · ') + (raw > value ? ' (상한)' : '');
+    breakdown.push({ label, value, insight: insights.map((i) => i.id) });
   }
 
   // 5. 상황 보정 — 콘텐츠가 직접 지정한다.

@@ -1,0 +1,444 @@
+# =========================================================================
+# 축구토토 승무패 분석기 설정
+#   - 비밀값은 여기 두지 말 것 (.env 사용)
+#   - 승무패에 새 리그가 나오면 leagues 에 항목만 추가하면 된다
+# =========================================================================
+
+# 베트맨 -------------------------------------------------------------------
+betman:
+  # 축구토토 승무패 게임 ID (게임슬립 URL 의 gmId 파라미터)
+  game_id: "G011"
+  # 게임슬립 URL 템플릿. {round} 자리에 회차 코드(gmTs)가 들어간다.
+  # 예: .../gameSlip.do?frameType=typeA&gmId=G011&gmTs=260043
+  slip_url: "https://www.betman.co.kr/main/mainPage/gamebuy/gameSlip.do?frameType=typeA&gmId={game_id}&gmTs={round}"
+  # 회차 목록/판매중 회차 확인용 페이지
+  buy_url: "https://www.betman.co.kr/main/mainPage/gamebuy/gameBuyList.do"
+  expected_matches: 14
+
+# 피나클 -------------------------------------------------------------------
+pinnacle:
+  # SPA 페이지가 읽는 공개 guest API (웹앱에 내장된 공개 키)
+  api_base: "https://guest.api.arcadia.pinnacle.com/0.1"
+  api_key: "CmX2KcMrXuFmNg6YFbmTxE0y9CIrOi0R"
+  soccer_sport_id: 29
+  timeout_sec: 20
+  # guest API 가 막히면 아래 리그별 웹 페이지를 Playwright 로 열어 XHR 을 가로챈다
+  fallback_to_browser: true
+
+# 후스코어드 ---------------------------------------------------------------
+whoscored:
+  base: "https://www.whoscored.com"
+  # 봇 차단(Incapsula) 통과율을 높이는 옵션
+  headless: true
+  # 요청 간 대기(초). 너무 짧으면 차단당한다.
+  delay_sec: 4.0
+  timeout_ms: 45000
+  # 브라우저 프로필을 유지해 통과 쿠키를 재사용 (권장)
+  persistent_profile: true
+  recent_form_count: 6      # 제안서의 '최근 6경기 기세'
+  h2h_count: 10
+  # 맞대결(H2H) 수집. **기본 꺼짐.**
+  # 실측 두 번(260050, 2026-09-03·09-04) 모두 14/14 경기가 '일정에서 경기를
+  # 찾지 못함' 이었고 경기당 40초, 회차당 9분을 썼다 — 전체 실행시간의 60%다.
+  # 파서를 고쳐 실제로 받아지는 것을 확인한 뒤에 true 로 되돌린다.
+  h2h: false
+
+# FotMob -------------------------------------------------------------------
+# 순위표(홈/원정 분리) · 최근 폼 · 시즌 내 맞대결을 리그당 요청 1회로 가져온다.
+# requests 로는 404 라서 실제 브라우저가 필요하다(점검 도구로 확인).
+fotmob:
+  base: "https://www.fotmob.com"
+  headless: true
+  delay_sec: 1.5
+  timeout_ms: 45000
+  persistent_profile: true
+  # 시즌 팀 통계 피드. 리그 응답의 stats.teams[] 가 알려주는 29종 중
+  # 레이더·비교표에 실제로 쓰는 것만 고른다. 지표 1개당 요청 1회지만
+  # 한 번에 그 리그 전 팀 값이 오므로 팀별 페이지보다 훨씬 싸다.
+  #   feed  : stats.teams[].name (FotMob 이 준 URL 조각)
+  #   field : TeamStats 속성명
+  # 비우면 소스의 기본 목록을 쓴다. 항목을 줄이면 그만큼 빨라진다.
+  team_stats:
+    - {feed: "possession_percentage_team", field: "possession"}
+    - {feed: "ontarget_scoring_att_team",  field: "shots_on_target_pg"}
+    - {feed: "big_chance_team",            field: "big_chances_pg"}
+    - {feed: "big_chance_missed_team",     field: "big_chances_missed_pg"}
+    - {feed: "touches_in_opp_box_team",    field: "touches_opp_box_pg"}
+    - {feed: "accurate_pass_team",         field: "accurate_passes_pg"}
+    - {feed: "poss_won_att_3rd_team",      field: "poss_won_att_3rd_pg"}
+    - {feed: "saves_team",                 field: "saves_pg"}
+    - {feed: "interception_team",          field: "interceptions_pg"}
+    - {feed: "total_tackle_team",          field: "tackles_pg"}
+    - {feed: "effective_clearance_team",   field: "clearances_pg"}
+    - {feed: "corner_taken_team",          field: "corners_pg"}
+    - {feed: "clean_sheet_team",           field: "clean_sheets"}
+    - {feed: "fk_foul_lost_team",          field: "fouls_pg"}
+    - {feed: "rating_team",                field: "rating"}
+    # --- Phase 1-B: 세트피스 · PK · 카드 · 전개 --------------------------
+    # 전부 시즌 통계 피드에 실재하는 항목이다(29종 카탈로그에서 확인).
+    - {feed: "_set_piece_goals_team",           field: "set_piece_goals"}
+    - {feed: "_set_piece_goals_conceded_team",  field: "set_piece_goals_conceded"}
+    - {feed: "penalty_won_team",                field: "penalties_won"}
+    - {feed: "penalty_conceded_team",           field: "penalties_conceded"}
+    - {feed: "total_yel_card_team",             field: "yellow_cards"}
+    - {feed: "total_red_card_team",             field: "red_cards"}
+    - {feed: "accurate_cross_team",             field: "accurate_crosses_pg"}
+    - {feed: "accurate_long_balls_team",        field: "accurate_long_balls_pg"}
+
+  # 경기 상세 (matchDetails) ------------------------------------------------
+  # npxG · xGOT · 총슈팅 · 피슈팅 · 박스 안팎 슈팅은 **시즌 통계 29종에 없고
+  # 경기 상세에만 있다**. 팀당 최근 N경기를 받아 합산한다.
+  #   0 이면 이 단계를 건너뛴다. 경기당 요청 1회가 들지만 같은 경기를 두 팀이
+  #   공유하므로 실제 요청 수는 (팀수 x N / 2) 안팎이다.
+  #   20팀 리그 x 6경기 = 약 60요청 = 1.5초 간격으로 1분 30초.
+  # 빠른 수집(메뉴 [2])은 --skip-match-details 로 이 단계를 건너뛴다.
+  match_detail_matches: 6
+
+  # 슛 이벤트 계층(Phase 1-C)이 만들 최근 N경기 집계 창.
+  # 전체 / 홈 / 원정 세 갈래로 각각 만든다. 여기 적은 N 이
+  # match_detail_matches 보다 크면 받아 온 경기 수까지만 집계되고,
+  # available_matches 에 실제 경기 수가 남는다 (모자란 것을 감추지 않는다).
+  shot_recent_windows: [3, 5, 6, 10]
+
+# 리그 정의 ----------------------------------------------------------------
+# key: 내부 식별자
+#   ko           : 리포트 표시명
+#   aliases      : 베트맨 리그 표기 변형 (부분일치로 매칭)
+#   pinnacle_url : 사용자가 지정한 매치업 페이지 (브라우저 폴백 시 사용)
+#   pinnacle_name: guest API 의 리그명 — **완전일치**로만 비교한다.
+#                  부분일치를 쓰면 "England - Premier League" 가
+#                  "England - Premier League 2 U21" 에 걸린다(실측).
+#   pinnacle_aliases: 이름이 바뀌었을 때 쓰는 추가 후보 (선택, 완전일치)
+#   country      : 국가명. FotMob 에 동명 리그가 16개까지 있어
+#                  후보를 좁히는 데 쓴다(실측).
+#   fotmob_name  : FotMob 리그명. 같은 이름이 여러 나라에 있으므로
+#                  후보가 여럿이면 순위표의 팀 구성으로 가린다.
+#   fotmob_id    : 확인된 ID 가 있으면 여기에. 탐색보다 우선한다.
+#   whoscored    : 리그 메인 페이지 경로 (순위표/일정)
+leagues:
+  epl:
+    ko: "프리미어리그"
+    aliases: ["프리미어", "EPL", "잉글랜드"]
+    pinnacle_url: "https://www.pinnacle.com/en/soccer/england-premier-league/matchups/#all"
+    pinnacle_name: "England - Premier League"
+    country: "England"
+    fotmob_name: "Premier League"
+    fotmob_id: 47            # 실행 로그 확인: 이 ID 로 EPL 20팀 일치
+    whoscored: "/Regions/252/Tournaments/2/England-Premier-League"
+    whoscored_slug: ["england", "premier-league"]
+  laliga:
+    ko: "라리가"
+    aliases: ["라리가", "프리메라", "스페인"]
+    pinnacle_url: "https://www.pinnacle.com/en/soccer/spain-la-liga/matchups/#all"
+    pinnacle_name: "Spain - La Liga"
+    country: "Spain"
+    fotmob_name: "LaLiga"
+    whoscored: "/Regions/206/Tournaments/4/Spain-LaLiga"
+    whoscored_slug: ["spain", "laliga"]
+  bundesliga:
+    ko: "분데스리가"
+    aliases: ["분데스", "독일"]
+    pinnacle_url: "https://www.pinnacle.com/en/soccer/germany-bundesliga/matchups/#all"
+    pinnacle_name: "Germany - Bundesliga"
+    country: "Germany"
+    fotmob_name: "Bundesliga"
+    whoscored: "/Regions/81/Tournaments/3/Germany-Bundesliga"
+    whoscored_slug: ["germany", "bundesliga"]
+  seriea:
+    ko: "세리에A"
+    aliases: ["세리에", "이탈리아"]
+    pinnacle_url: "https://www.pinnacle.com/en/soccer/italy-serie-a/matchups/#all"
+    pinnacle_name: "Italy - Serie A"
+    country: "Italy"
+    fotmob_name: "Serie A"
+    fotmob_id: 55            # 실행 로그 확인: 이 ID 로 세리에A 17팀 일치
+    whoscored: "/Regions/108/Tournaments/5/Italy-Serie-A"
+    whoscored_slug: ["italy", "serie-a"]
+  ligue1:
+    ko: "리그앙"
+    aliases: ["리그앙", "리그 1", "프랑스"]
+    pinnacle_url: "https://www.pinnacle.com/en/soccer/france-ligue-1/matchups/#all"
+    pinnacle_name: "France - Ligue 1"
+    country: "France"
+    fotmob_name: "Ligue 1"
+    whoscored: "/Regions/74/Tournaments/22/France-Ligue-1"
+    whoscored_slug: ["france", "ligue-1"]
+  kleague1:
+    ko: "K리그1"
+    aliases: ["K리그1", "K리그 1", "케이리그1"]
+    pinnacle_url: "https://www.pinnacle.com/en/soccer/korea-republic-k-league-1/matchups/#all"
+    pinnacle_name: "Korea Republic - K League 1"
+    country: "South Korea"
+    fotmob_name: "K League 1"
+    fotmob_id: 9080          # 점검 도구로 실물 확인
+    whoscored: "/Regions/260/Tournaments/387/South-Korea-K-League-1"
+    whoscored_slug: ["south-korea", "k-league-1"]
+  kleague2:
+    ko: "K리그2"
+    aliases: ["K리그2", "K리그 2", "케이리그2"]
+    pinnacle_url: "https://www.pinnacle.com/en/soccer/korea-republic-k-league-2/matchups/#all"
+    pinnacle_name: "Korea Republic - K League 2"
+    country: "South Korea"
+    fotmob_name: "K League 2"
+    fotmob_id: 9116          # 실행 로그 확인: 이 ID 로 K리그2 16팀 일치
+    whoscored: "/Regions/260/Tournaments/418/South-Korea-K-League-2"
+    whoscored_slug: ["south-korea", "k-league-2"]
+  jleague:
+    ko: "J리그"
+    aliases: ["J리그", "제이리그", "일본"]
+    pinnacle_url: "https://www.pinnacle.com/en/soccer/japan-j-league/matchups/#all"
+    pinnacle_name: "Japan - J League"
+    country: "Japan"
+    fotmob_name: "J1 League"
+    whoscored: "/Regions/110/Tournaments/150/Japan-J-League"
+    whoscored_slug: ["japan", "j-league"]
+
+# 레이더 차트 항목 ---------------------------------------------------------
+# key      : TeamStats 의 속성명
+# label    : 표시명
+# invert   : true 면 값이 낮을수록 좋음 (실점 등) → 백분위를 뒤집는다
+radar_metrics:
+  # 제안서의 6개 개념을 '지금 실제로 채울 수 있는' 지표로 옮긴 것.
+  # 총 슈팅·키패스·피슈팅은 FotMob 시즌 통계 29종에 없어서 대체했다.
+  #   공격 창출력  → 결정적 기회 + 유효슈팅
+  #   공격 효율성  → 경기당 득점 (유효슈팅 대비 전환은 비교표에서 본다)
+  #   수비 견고함  → 피xG (피슈팅의 상위 호환. 맞은 슈팅의 질까지 반영한다)
+  #   경기 지배력  → 점유율 + 상대 박스 터치
+  #   장소 특화도  → 홈/원정 경기당 승점
+  # 값이 없는 축은 자동으로 빠지므로, 수집이 덜 돼도 차트는 그려진다.
+  - {key: "big_chances_pg",     label: "결정적 기회",    invert: false}
+  - {key: "shots_on_target_pg", label: "유효슈팅",       invert: false}
+  - {key: "goals_for_pg",       label: "경기당 득점",    invert: false}
+  - {key: "xga_pg",             label: "피xG",           invert: true}
+  - {key: "possession",         label: "점유율",         invert: false}
+  - {key: "touches_opp_box_pg", label: "상대 박스 터치", invert: false}
+  - {key: "home_points_pg",     label: "홈 승점",        invert: false}
+  - {key: "away_points_pg",     label: "원정 승점",      invert: false}
+
+# 직접 비교(다이버징 바) 항목 ---------------------------------------------
+compare_metrics:
+  - {key: "points_pg",          label: "경기당 승점",    fmt: "{:.2f}"}
+  - {key: "goals_for_pg",       label: "경기당 득점",    fmt: "{:.2f}"}
+  - {key: "goals_against_pg",   label: "경기당 실점",    fmt: "{:.2f}"}
+  - {key: "xg_pg",              label: "경기당 xG",      fmt: "{:.2f}"}
+  - {key: "xga_pg",             label: "경기당 피xG",    fmt: "{:.2f}"}
+  - {key: "finishing_delta",    label: "결정력(득점−xG)", fmt: "{:+.1f}"}
+  - {key: "possession",         label: "점유율(%)",      fmt: "{:.1f}"}
+  - {key: "shots_on_target_pg", label: "유효슈팅",       fmt: "{:.1f}"}
+  - {key: "big_chances_pg",     label: "결정적 기회",    fmt: "{:.1f}"}
+  - {key: "rating",             label: "평점",           fmt: "{:.2f}"}
+  # 시즌 통계 피드에서 오는 항목. 누계로 오므로 경기당으로 나눠 비교한다
+  # (팀마다 소화 경기수가 다르면 누계는 그대로 비교할 수 없다).
+  - {key: "set_piece_goals_pg", label: "세트피스 득점",  fmt: "{:.2f}"}
+  - {key: "set_piece_goals_conceded_pg", label: "세트피스 실점", fmt: "{:.2f}"}
+  - {key: "yellow_cards_pg",    label: "경고",           fmt: "{:.2f}"}
+  - {key: "accurate_crosses_pg", label: "정확한 크로스",  fmt: "{:.1f}"}
+  - {key: "accurate_long_balls_pg", label: "정확한 롱볼", fmt: "{:.1f}"}
+
+# 최근 N경기 프로필(다이버징 바) 항목 ---------------------------------------
+# 위 compare_metrics 와 **표본이 다르다.** 여기 값은 시즌 누계가 아니라
+# `fotmob.match_detail_matches` 로 정한 최근 N경기의 경기당 평균이다.
+# 섞이면 안 되므로 리포트에서도 블록을 따로 두고 표본 크기를 함께 적는다.
+#
+# 이 지표들은 FotMob 시즌 통계 29종에 **없다.** 경기 상세
+# (api/data/matchDetails)에만 있어서 여기서만 나온다.
+# `--skip-match-details` 로 돌리면 값이 없어 블록 전체가 빠진다.
+recent_metrics:
+  - {key: "npxg_recent_pg",     label: "npxG(PK 제외)",  fmt: "{:.2f}"}
+  - {key: "npxga_recent_pg",    label: "피npxG",         fmt: "{:.2f}"}
+  - {key: "xgot_recent_pg",     label: "xGOT",           fmt: "{:.2f}"}
+  - {key: "xgot_against_recent_pg", label: "피xGOT",     fmt: "{:.2f}"}
+  - {key: "xgot_delta_recent",  label: "xGOT−npxG(합계)", fmt: "{:+.2f}"}
+  - {key: "xg_open_play_recent_pg", label: "오픈플레이 xG", fmt: "{:.2f}"}
+  - {key: "xg_set_play_recent_pg",  label: "세트피스 xG",   fmt: "{:.2f}"}
+  - {key: "shots_recent_pg",    label: "슈팅",           fmt: "{:.1f}"}
+  - {key: "shots_against_recent_pg", label: "피슈팅",    fmt: "{:.1f}"}
+  - {key: "shots_on_target_recent_pg", label: "유효슈팅", fmt: "{:.1f}"}
+  - {key: "shots_on_target_against_recent_pg", label: "피유효슈팅", fmt: "{:.1f}"}
+  - {key: "inside_box_shot_share", label: "박스 안 슈팅 비율(%)", fmt: "{:.0f}"}
+
+# 시간축 분석 (Phase 2-A) ---------------------------------------------------
+analysis:
+  # 분석할 최근 N경기 창. 비워 두면 fotmob.shot_recent_windows 를 그대로 쓴다.
+  # 여기 적은 창이 슛 계층에 없으면 그 창의 슛 지표는 비고, 득점·승점 같은
+  # 결과 지표만 시즌 경기 색인에서 계산된다.
+  periods: [10, 6, 5, 3]
+
+  # 트렌드를 만들 최소 표본 (시즌·최근 양쪽 모두 이 수 이상이어야 한다).
+  #
+  # 이보다 적으면 값을 빼지 않고 "not_meaningful" 로 남긴다. 1~2경기의 차이를
+  # 추세라고 적으면 안 된다.
+  #
+  # 표본 말고도 트렌드에는 조건이 더 있다 (toto/analysis.py trend_allowed):
+  # 두 기간의 **측정 원천과 산출 방식이 같아야 하고**, 두 기간이 **같은 경기
+  # 집합이면 안 된다.** 시즌 xG 는 경기 스탯 값이고 최근 xG 는 슛맵 합산이라
+  # 같은 경기에서도 0.06 쯤 다르다 — 그 차이를 빼면 측정 방식의 차이가
+  # 경기력 변화로 둔갑한다(실물 260048 풀럼에서 실제로 그랬다).
+  trend_min_sample: 3
+
+  # 트렌드 표시 문턱 ---------------------------------------------------------
+  #
+  #   ⚠ 운영용 기준이며 통계적으로 검증된 기준이 아님.
+  #
+  # "최근 값 − 시즌 값" 의 절댓값이 아래 숫자보다 작으면 화면에 "similar"
+  # 로 적고, 크면 "higher"/"lower" 로 적는다. 그게 전부다.
+  #
+  #   · 이 문턱을 넘었다고 해서 전력이 올랐다는 뜻이 아니다.
+  #   · 유의성 검정이 아니다. 표본 수(1~10경기)를 전혀 고려하지 않는다.
+  #   · 밴드를 점수로 바꾸거나 여러 지표의 밴드를 합산하지 않는다.
+  #
+  # 단위는 그 지표의 단위 그대로다 (대부분 경기당 값, 승/무/패는 경기 수).
+  trend_thresholds:
+    default: 0.20
+    goals: 0.30
+    goals_against: 0.30
+    goal_diff: 0.40
+    xg: 0.25
+    npxg: 0.25
+    xgot: 0.25
+    npxga: 0.25
+    xgot_against: 0.25
+    xgd: 0.35
+    npxgd: 0.35
+    shots: 2.0
+    shots_against: 2.0
+    shots_on_target: 1.0
+    shots_on_target_against: 1.0
+    shots_inside_box: 1.5
+    points: 0.40
+    big_chances: 0.8
+    wins: 1.0
+    draws: 1.0
+    losses: 1.0
+
+  # 기회의 질 / 공격 실행 (Phase 2-B) ---------------------------------------
+  #
+  #   슈팅 → xG·npxG → xGOT → 득점
+  #
+  # 아래 값은 그 흐름에서 **패턴을 화면에 적을지 말지**만 정한다. 지표 값
+  # 자체는 이 설정과 무관하다.
+  #
+  #   ⚠ 운영용 기준이며 통계적으로 검증된 기준이 아님.
+  #
+  #   · 리그·시즌·전술에 따라 적정 수준이 다르다. 리그 평균에서 도출한
+  #     값이 아니라 눈으로 정한 값이다.
+  #   · 패턴은 상태 설명이지 추천이 아니다. "반등한다"·"결정력이 좋다"
+  #     같은 예측으로 읽지 않는다.
+  #   · 패턴을 세어 점수로 만들지 않는다.
+  chance_quality:
+    # 이 경기 수에 못 미치는 표본에서는 패턴을 아예 만들지 않는다.
+    # 시즌 초 1~2경기로 "슈팅량 대비 기회 질이 낮다" 고 적으면 안 된다.
+    min_sample: 3
+    thresholds:
+      shots_high: 14.0          # 경기당 슈팅이 이보다 많으면 '많다'
+      shots_low: 10.0           # 이보다 적으면 '적다'
+      xg_per_shot_high: 0.12    # 슛당 xG. 리그 평균은 대체로 0.10 안팎
+      xg_per_shot_low: 0.09
+      xg_high: 1.60             # 경기당 xG
+      xgot_high: 1.40           # 경기당 xGOT
+      goals_gap_low: -0.30      # 득점 − xG 가 이보다 낮으면 '득점이 적다'
+
+  # 수비의 질 (Phase 2-C) ---------------------------------------------------
+  #
+  #   피슈팅 → npxGA → 피xGOT → 실점
+  #
+  # 위와 같은 성격의 표시용 문턱이다.
+  #
+  #   ⚠ 운영용 기준이며 통계적으로 검증된 기준이 아님.
+  #
+  #   · 패턴은 상태 설명이지 "좋은 수비" 점수가 아니다.
+  #   · 실점 − npxGA 를 골키퍼 능력으로 읽지 않는다.
+  #   · 패턴을 세어 점수로 만들거나 픽에 쓰지 않는다.
+  defensive_quality:
+    min_sample: 3
+    thresholds:
+      shots_against_high: 14.0    # 경기당 허용 슈팅이 이보다 많으면 '많다'
+      shots_against_low: 9.0
+      npxga_per_shot_high: 0.12   # 피슛당 npxGA
+      npxga_per_shot_low: 0.08
+      npxga_high: 1.50            # 경기당 npxGA
+      npxga_low: 0.90
+      xgot_against_high: 1.30     # 경기당 피xGOT
+      goals_against_gap_high: 0.30  # 실점 − npxGA 가 이보다 크면 '실점이 많다'
+
+  # 장소 문맥 (Phase 2-E) ---------------------------------------------------
+  #
+  #   이 경기와 같은 장소(홈팀은 홈, 원정팀은 원정)의 과거 표본을 전체와
+  #   나란히 두고, 그 차이(장소차 = 장소 − 전체)를 적는다.
+  #
+  # 기간은 새로 만들지 않는다 — 2-A 의 최근 N경기를 먼저 잡고 그중 그 장소의
+  # 경기만 고른다. 그래서 '최근 6경기 중 홈' 이 1경기일 수 있다.
+  #
+  #   ⚠ 운영용 기준이며 통계적으로 검증된 기준이 아님.
+  #
+  #   · 장소차는 방향을 정하지 않는다. 홈 승점이 전체보다 높다는 것은 홈이
+  #     좋다는 뜻일 수도, 원정이 나쁘다는 뜻일 수도 있다.
+  #   · 패턴은 상태 설명이지 홈 우위 점수나 승무패 추천이 아니다.
+  #   · 상대 강도(SoS)는 여기서 보지 않는다 (Phase 2-F).
+  venue_context:
+    # 장소 경기가 이 수에 못 미치면 장소차를 만들지 않는다.
+    min_sample: 3
+    thresholds:
+      points_gap_high: 0.40     # 경기당 승점 장소차가 이보다 크면 적는다
+      attack_gap_high: 0.25     # 경기당 npxG(없으면 xG) 장소차
+      defense_gap_high: 0.25    # 경기당 npxGA 장소차
+      points_gap_large: 0.80    # 여러 갈래가 같은 방향일 때만 함께 본다
+
+  # 상대 강도 (Phase 2-F) ---------------------------------------------------
+  #
+  #   그 기간의 **상대 구성**을 적는다. 성과를 보정하지 않는다.
+  #
+  # 상대의 성적은 **그 경기 이전**만 세고, **이 팀과의 경기는 뺀다.**
+  # 빼지 않으면 "우리가 그 상대를 이겼다" 가 그 상대의 강도로 들어가고, 그
+  # 강도로 다시 우리 성과를 설명하는 순환이 생긴다.
+  #
+  #   ⚠ 운영용 기준이며 통계적으로 검증된 기준이 아님.
+  #
+  #   · thresholds 를 비워 두었다. **상대 강도의 실제 분산을 아직 관측하지
+  #     못했다** — 2026-08-30 실측 시점이 2라운드라 상대 표본이 0/40팀이었다.
+  #     숫자를 지금 적으면 분산을 모르는 채 눈으로 찍는 것이므로 비워 둔다.
+  #     리그 라운드가 쌓이면(대략 6~8라운드) 실물을 보고 채운다.
+  #   · 문턱이 비어 있는 동안에는 패턴을 만들지 않는다. 값은 그대로 나온다.
+  schedule_strength:
+    # 이 수에 못 미치는 기간은 값을 만들지 않는다.
+    min_sample: 3
+    # 상대의 '그 경기 이전' 경기가 이보다 적으면 그 경기를 표본에서 뺀다.
+    # 1경기 치른 상대를 강팀/약팀으로 세지 않기 위해서다.
+    opponent_min_matches: 3
+    thresholds: {}
+
+# 패널 (Phase 3-B) ----------------------------------------------------------
+# 두 전문가(데이터 분석가 · 맞대결·전술 분석가)가 **같은 분석 자료**를 서로
+# 다른 관점에서 해석한다. 시장 확률은 분석가가 아니라 외부 기준값이고,
+# 예상 스코어에서 승무패를 만들지 않는다.
+#
+# **`--panel` 을 붙였을 때만 호출한다.** 유료 API 이고 경기마다 2회 부른다.
+# API 키는 여기 적지 않는다 — `.env` 의 ANTHROPIC_API_KEY 를 쓴다.
+panel:
+  # 모델. 환경변수 ANTHROPIC_MODEL 이 있으면 그쪽이 우선이다.
+  model: "claude-sonnet-5"
+  max_tokens: 1200
+  timeout_sec: 60
+
+# 출력 ---------------------------------------------------------------------
+output:
+  dir: "reports"
+  filename: "toto_{round}.html"
+
+  # 폰에서 보기 --------------------------------------------------------------
+  # 리포트는 외부 참조가 없는 자체 완결 HTML 이라 파일 하나만 폰으로 넘어가면
+  # 그대로 열린다. 아래 폴더에 사본을 두면 클라우드 앱이 알아서 폰까지 옮긴다.
+  #
+  # copy_to 를 비워 두면 OneDrive / 구글드라이브 / Dropbox 를 자동으로 찾아
+  # 그 안에 cloud_folder 이름의 폴더를 만든다. 직접 지정하려면 이렇게:
+  #   copy_to:
+  #     - "C:/Users/hsj03/OneDrive/축구토토"
+  copy_to: []
+  # 자동 탐색에서 빼고 싶은 폴더 (경로에 이 문구가 들어가면 건너뛴다).
+  # 회사 계정 OneDrive 에 개인 파일을 쌓지 않으려고 기본으로 제외해 뒀다.
+  # 개인 OneDrive 를 쓰고 싶으면 이 줄을 비우면 된다.
+  copy_to_exclude: ["OneDrive"]
+  cloud_folder: "축구토토"
+  # 회차 파일과 별개로 항상 같은 이름의 사본을 하나 더 둔다.
+  # 폰에서 즐겨찾기를 한 번만 걸어두면 늘 최신 리포트가 열린다.
+  latest_name: "최신리포트.html"

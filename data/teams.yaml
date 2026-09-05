@@ -1,0 +1,632 @@
+# =========================================================================
+# 팀명 별칭 테이블 — 베트맨(한글) ↔ 피나클/후스코어드(영문)
+#
+# 형식:
+#   <영문 정규명>:
+#     ko: [한글 표기 변형들]        # 베트맨/국내 매체 표기
+#     en: [영문 표기 변형들]        # 피나클/후스코어드 표기 차이
+#
+# 매칭 순서: ko/en 정확일치 → 학습된 별칭(data/teams.learned.yaml) → 토큰 유사도.
+# 새 팀이 승무패에 나오면 여기에 한 줄 추가하는 게 가장 확실하다.
+# =========================================================================
+
+# --- 프리미어리그 --------------------------------------------------------
+Arsenal:
+  ko: [아스날, 아스널]
+  en: [Arsenal FC]
+  league: epl
+Aston Villa:
+  ko: [아스톤빌라, 아스톤 빌라, 애스턴빌라, A빌라]
+  en: [Aston Villa FC, A. Villa]
+  league: epl
+Bournemouth:
+  ko: [본머스, 에이에프씨 본머스]
+  en: [AFC Bournemouth]
+  league: epl
+Brentford:
+  ko: [브렌트포드, 브렌트퍼]
+  en: [Brentford FC]
+  league: epl
+Brighton:
+  ko: [브라이튼, 브라이턴]
+  en: [Brighton & Hove Albion, Brighton and Hove Albion]
+  league: epl
+Burnley:
+  ko: [번리]
+  en: [Burnley FC]
+  league: epl
+Chelsea:
+  ko: [첼시]
+  en: [Chelsea FC]
+  league: epl
+Crystal Palace:
+  ko: [크리스탈팰리스, 크리스탈 팰리스, 크리스털팰리스]
+  en: [Crystal Palace FC]
+  league: epl
+Everton:
+  ko: [에버튼, 에버턴]
+  en: [Everton FC]
+  league: epl
+Fulham:
+  ko: [풀럼, 풀햄]
+  en: [Fulham FC]
+  league: epl
+Leeds:
+  ko: [리즈, 리즈유나이티드, 리즈U]
+  en: [Leeds United]
+  league: epl
+Liverpool:
+  ko: [리버풀]
+  en: [Liverpool FC]
+  league: epl
+Manchester City:
+  ko: [맨체스터시티, 맨체스터 시티, 맨시티, 맨체스C]
+  en: [Man City, M. City, Manchester City FC]
+  league: epl
+Manchester United:
+  ko: [맨체스터유나이티드, 맨체스터 유나이티드, 맨유, 맨체스U]
+  en: [Man Utd, Man United, Manchester Utd]
+  league: epl
+Newcastle:
+  ko: [뉴캐슬, 뉴캐슬유나이티드]
+  en: [Newcastle United, Newcastle Utd]
+  league: epl
+Nottingham Forest:
+  ko: [노팅엄포레스트, 노팅엄 포레스트, 노팅엄]
+  en: [Nott'm Forest, Nottm Forest, N. Forest]
+  league: epl
+Sunderland:
+  ko: [선덜랜드]
+  en: [Sunderland AFC]
+  league: epl
+Tottenham:
+  ko: [토트넘, 토트넘홋스퍼]
+  en: [Tottenham Hotspur, Spurs]
+  league: epl
+West Ham:
+  ko: [웨스트햄, 웨스트햄유나이티드]
+  en: [West Ham United, West Ham Utd]
+  league: epl
+Wolves:
+  ko: [울버햄튼, 울버햄프턴, 울브스]
+  en: [Wolverhampton Wanderers, Wolverhampton]
+  league: epl
+
+# --- 라리가 --------------------------------------------------------------
+Alaves:
+  ko: [알라베스]
+  en: [Deportivo Alaves, Deportivo Alavés]
+  league: laliga
+Athletic Club:
+  ko: [아틀레틱빌바오, 아틀레틱 빌바오, 빌바오]
+  en: [Athletic Bilbao, Athletic Club Bilbao]
+  league: laliga
+Atletico Madrid:
+  ko: [아틀레티코마드리드, 아틀레티코 마드리드, 아틀레티코]
+  en: [Atlético Madrid, Atletico de Madrid, Atl. Madrid]
+  league: laliga
+Barcelona:
+  ko: [바르셀로나, 바르사]
+  en: [FC Barcelona]
+  league: laliga
+Celta Vigo:
+  ko: [셀타비고, 셀타 비고]
+  en: [Celta de Vigo, RC Celta]
+  league: laliga
+Elche:
+  ko: [엘체]
+  en: [Elche CF]
+  league: laliga
+Espanyol:
+  ko: [에스파뇰]
+  en: [RCD Espanyol]
+  league: laliga
+Getafe:
+  ko: [헤타페]
+  en: [Getafe CF]
+  league: laliga
+Girona:
+  ko: [지로나]
+  en: [Girona FC]
+  league: laliga
+Levante:
+  ko: [레반테]
+  en: [Levante UD]
+  league: laliga
+Mallorca:
+  ko: [마요르카, 마조르카]
+  en: [RCD Mallorca]
+  league: laliga
+Osasuna:
+  ko: [오사수나]
+  en: [CA Osasuna]
+  league: laliga
+Rayo Vallecano:
+  ko: [라요바예카노, 라요 바예카노]
+  en: [Rayo]
+  league: laliga
+Real Betis:
+  ko: [레알베티스, 레알 베티스, 베티스]
+  en: [Betis]
+  league: laliga
+Real Madrid:
+  ko: [레알마드리드, 레알 마드리드]
+  en: [Real Madrid CF]
+  league: laliga
+Real Oviedo:
+  ko: [레알오비에도, 오비에도]
+  en: [Oviedo]
+  league: laliga
+Real Sociedad:
+  ko: [레알소시에다드, 레알 소시에다드, 소시에다드]
+  en: [Sociedad]
+  league: laliga
+Sevilla:
+  ko: [세비야]
+  en: [Sevilla FC]
+  league: laliga
+Valencia:
+  ko: [발렌시아]
+  en: [Valencia CF]
+  league: laliga
+Villarreal:
+  ko: [비야레알, 비아레알]
+  en: [Villarreal CF]
+  league: laliga
+
+# --- 분데스리가 ----------------------------------------------------------
+Augsburg:
+  ko: [아우크스부르크, 아우그스부르크]
+  en: [FC Augsburg]
+  league: bundesliga
+Bayer Leverkusen:
+  ko: [레버쿠젠, 바이어레버쿠젠]
+  en: [Leverkusen]
+  league: bundesliga
+Bayern Munich:
+  ko: [바이에른뮌헨, 바이에른 뮌헨, 바이언뮌헨, 뮌헨]
+  en: [FC Bayern München, Bayern Munchen, Bayern München]
+  league: bundesliga
+Borussia Dortmund:
+  ko: [도르트문트, 보루시아도르트문트]
+  en: [Dortmund, BVB]
+  league: bundesliga
+Borussia M.Gladbach:
+  ko: [묀헨글라드바흐, 글라드바흐, 보루시아묀헨글라드바흐]
+  en: [Borussia Monchengladbach, Borussia Mönchengladbach, Gladbach]
+  league: bundesliga
+Eintracht Frankfurt:
+  ko: [프랑크푸르트, 아인트라흐트프랑크푸르트]
+  en: [Frankfurt]
+  league: bundesliga
+Freiburg:
+  ko: [프라이부르크]
+  en: [SC Freiburg]
+  league: bundesliga
+Hamburger SV:
+  ko: [함부르크, 함부르크SV]
+  en: [Hamburg, HSV]
+  league: bundesliga
+Heidenheim:
+  ko: [하이덴하임]
+  en: [1. FC Heidenheim, FC Heidenheim]
+  league: bundesliga
+Hoffenheim:
+  ko: [호펜하임]
+  en: [TSG Hoffenheim, TSG 1899 Hoffenheim]
+  league: bundesliga
+FC Koln:
+  ko: [쾰른]
+  en: [FC Köln, 1. FC Köln, Cologne, FC Cologne]
+  league: bundesliga
+Mainz:
+  ko: [마인츠]
+  en: [Mainz 05, 1. FSV Mainz 05]
+  league: bundesliga
+RB Leipzig:
+  ko: [라이프치히, 아르베라이프치히]
+  en: [Leipzig]
+  league: bundesliga
+St. Pauli:
+  ko: [장크트파울리, 상파울리]
+  en: [FC St. Pauli, St Pauli]
+  league: bundesliga
+Stuttgart:
+  ko: [슈투트가르트, 슈트트가르트]
+  en: [VfB Stuttgart]
+  league: bundesliga
+Union Berlin:
+  ko: [우니온베를린, 우니온 베를린]
+  en: [1. FC Union Berlin]
+  league: bundesliga
+Werder Bremen:
+  ko: [베르더브레멘, 브레멘]
+  en: [Bremen]
+  league: bundesliga
+Wolfsburg:
+  ko: [볼프스부르크]
+  en: [VfL Wolfsburg]
+  league: bundesliga
+
+# --- 세리에A -------------------------------------------------------------
+Atalanta:
+  ko: [아탈란타]
+  en: [Atalanta BC]
+  league: seriea
+Bologna:
+  ko: [볼로냐]
+  en: [Bologna FC]
+  league: seriea
+Cagliari:
+  ko: [칼리아리]
+  en: [Cagliari Calcio]
+  league: seriea
+Como:
+  ko: [코모, 코모1907]
+  en: [Como 1907]
+  league: seriea
+Cremonese:
+  ko: [크레모네세]
+  en: [US Cremonese]
+  league: seriea
+Fiorentina:
+  ko: [피오렌티나]
+  en: [ACF Fiorentina]
+  league: seriea
+Genoa:
+  ko: [제노아]
+  en: [Genoa CFC]
+  league: seriea
+Hellas Verona:
+  ko: [베로나, 엘라스베로나]
+  en: [Verona]
+  league: seriea
+Inter:
+  ko: [인터밀란, 인터 밀란, 인테르]
+  en: [Inter Milan, Internazionale, FC Internazionale]
+  league: seriea
+Juventus:
+  ko: [유벤투스]
+  en: [Juventus FC]
+  league: seriea
+Lazio:
+  ko: [라치오]
+  en: [SS Lazio]
+  league: seriea
+Lecce:
+  ko: [레체, US레체]
+  en: [US Lecce]
+  league: seriea
+AC Milan:
+  ko: [AC밀란, 밀란, 에이씨밀란]
+  en: [Milan]
+  league: seriea
+Napoli:
+  ko: [나폴리]
+  en: [SSC Napoli]
+  league: seriea
+Parma:
+  ko: [파르마]
+  en: [Parma Calcio]
+  league: seriea
+Pisa:
+  ko: [피사]
+  en: [Pisa SC]
+  league: seriea
+Roma:
+  ko: [로마, AS로마]
+  en: [AS Roma]
+  league: seriea
+Sassuolo:
+  ko: [사수올로]
+  en: [US Sassuolo]
+  league: seriea
+Torino:
+  ko: [토리노]
+  en: [Torino FC]
+  league: seriea
+Udinese:
+  ko: [우디네세]
+  en: [Udinese Calcio]
+  league: seriea
+
+# --- 리그앙 --------------------------------------------------------------
+Angers:
+  ko: [앙제]
+  en: [Angers SCO]
+  league: ligue1
+Auxerre:
+  ko: [오세르]
+  en: [AJ Auxerre]
+  league: ligue1
+Brest:
+  ko: [브레스트]
+  en: [Stade Brestois]
+  league: ligue1
+Le Havre:
+  ko: [르아브르, 르 아브르]
+  en: [Havre AC]
+  league: ligue1
+Lens:
+  ko: [랑스]
+  en: [RC Lens]
+  league: ligue1
+Lille:
+  ko: [릴]
+  en: [LOSC Lille, LOSC]
+  league: ligue1
+Lorient:
+  ko: [로리앙]
+  en: [FC Lorient]
+  league: ligue1
+Lyon:
+  ko: [리옹, 올림피크리옹]
+  en: [Olympique Lyonnais, OL]
+  league: ligue1
+Marseille:
+  ko: [마르세유, 올림피크마르세유]
+  en: [Olympique Marseille, Olympique de Marseille, OM]
+  league: ligue1
+Metz:
+  ko: [메스]
+  en: [FC Metz]
+  league: ligue1
+Monaco:
+  ko: [모나코]
+  en: [AS Monaco]
+  league: ligue1
+Nantes:
+  ko: [낭트]
+  en: [FC Nantes]
+  league: ligue1
+Nice:
+  ko: [니스]
+  en: [OGC Nice]
+  league: ligue1
+Paris FC:
+  ko: [파리FC, 파리에프씨]
+  en: [Paris]
+  league: ligue1
+Paris Saint-Germain:
+  ko: [파리생제르맹, 파리 생제르맹, PSG]
+  en: [PSG, Paris SG]
+  league: ligue1
+Rennes:
+  ko: [렌]
+  en: [Stade Rennais]
+  league: ligue1
+Strasbourg:
+  ko: [스트라스부르]
+  en: [RC Strasbourg]
+  league: ligue1
+Toulouse:
+  ko: [툴루즈]
+  en: [Toulouse FC]
+  league: ligue1
+
+# --- K리그1 --------------------------------------------------------------
+Daegu FC:
+  ko: [대구FC, 대구]
+  en: [Daegu]
+  league: kleague2
+Daejeon Citizen:
+  ko: [대전하나시티즌, 대전, 대전시티즌, 대전하나]
+  en: [Daejeon Hana Citizen, Daejeon]
+  league: kleague1
+FC Anyang:
+  ko: [FC안양, 안양]
+  en: [Anyang]
+  league: kleague1
+FC Seoul:
+  ko: [FC서울, 서울]
+  en: [Seoul]
+  league: kleague1
+Gangwon FC:
+  ko: [강원FC, 강원]
+  en: [Gangwon]
+  league: kleague1
+Gimcheon Sangmu:
+  ko: [김천상무, 김천]
+  en: [Gimcheon]
+  league: kleague1
+Gwangju FC:
+  ko: [광주FC, 광주]
+  en: [Gwangju]
+  league: kleague1
+Jeju SK:
+  ko: [제주SK, 제주, 제주유나이티드, 제주SKFC]
+  en: [Jeju United, Jeju]
+  league: kleague1
+Jeonbuk Hyundai Motors:
+  ko: [전북현대, 전북]
+  en: [Jeonbuk Motors, Jeonbuk]
+  league: kleague1
+Pohang Steelers:
+  ko: [포항스틸러스, 포항, 포항스틸]
+  en: [Pohang]
+  league: kleague1
+Suwon FC:
+  ko: [수원FC]
+  en: [Suwon City]
+  league: kleague2
+Ulsan HD:
+  ko: [울산HD, 울산, 울산현대, 울산HDFC]
+  en: [Ulsan Hyundai, Ulsan]
+  league: kleague1
+
+# --- K리그2 --------------------------------------------------------------
+Ansan Greeners:
+  ko: [안산그리너스, 안산]
+  en: [Ansan]
+  league: kleague2
+Bucheon FC 1995:
+  ko: [부천FC, 부천]
+  en: [Bucheon]
+  league: kleague1
+Busan IPark:
+  ko: [부산아이파크, 부산]
+  en: [Busan]
+  league: kleague2
+Chungbuk Cheongju:
+  ko: [충북청주, 청주]
+  en: [Cheongju]
+  league: kleague2
+Chungnam Asan:
+  ko: [충남아산, 아산]
+  en: [Asan]
+  league: kleague2
+Gimpo FC:
+  ko: [김포FC, 김포]
+  en: [Gimpo]
+  league: kleague2
+Gyeongnam FC:
+  ko: [경남FC, 경남]
+  en: [Gyeongnam]
+  league: kleague2
+Gimhae FC:
+  ko: [김해FC, 김해]
+  en: [Gimhae, Gimhae FC]
+  league: kleague2
+Incheon United:
+  ko: [인천유나이티드, 인천]
+  en: [Incheon]
+  league: kleague1
+Jeonnam Dragons:
+  ko: [전남드래곤즈, 전남]
+  en: [Jeonnam]
+  league: kleague2
+Seongnam FC:
+  ko: [성남FC, 성남]
+  en: [Seongnam]
+  league: kleague2
+Seoul E-Land:
+  ko: [서울이랜드, 이랜드]
+  en: [Seoul E Land]
+  league: kleague2
+Suwon Samsung Bluewings:
+  ko: [수원삼성, 수원]
+  en: [Suwon Bluewings, Suwon Samsung]
+  league: kleague2
+Hwaseong FC:
+  ko: [화성FC, 화성]
+  en: [Hwaseong]
+  league: kleague2
+
+# --- J리그 ---------------------------------------------------------------
+Albirex Niigata:
+  ko: [알비렉스니가타, 니가타]
+  en: [Niigata]
+  league: jleague
+Avispa Fukuoka:
+  ko: [아비스파후쿠오카, 후쿠오카, 아비스파]
+  en: [Fukuoka]
+  league: jleague
+Cerezo Osaka:
+  ko: [세레소오사카, 세레소, C오사카, 세레소오사카C]
+  en: [C-Osaka]
+  league: jleague
+FC Tokyo:
+  ko: [FC도쿄, 도쿄]
+  en: [Tokyo]
+  league: jleague
+Fagiano Okayama:
+  ko: [파지아노오카야마, 오카야마, 파지아노]
+  en: [Okayama]
+  league: jleague
+Gamba Osaka:
+  ko: [감바오사카, 감바]
+  en: [G-Osaka]
+  league: jleague
+Kashima Antlers:
+  ko: [가시마앤틀러스, 가시마]
+  en: [Kashima]
+  league: jleague
+Kashiwa Reysol:
+  ko: [가시와레이솔, 가시와]
+  en: [Kashiwa]
+  league: jleague
+Kawasaki Frontale:
+  ko: [가와사키프론탈레, 가와사키, 가와사키F]
+  en: [Kawasaki]
+  league: jleague
+Kyoto Sanga:
+  ko: [교토상가, 교토, 교토상가FC]
+  en: [Kyoto]
+  league: jleague
+Machida Zelvia:
+  ko: [마치다젤비아, 마치다, 마치다Z]
+  en: [Machida]
+  league: jleague
+Nagoya Grampus:
+  ko: [나고야그램퍼스, 나고야, 나고야G]
+  en: [Nagoya]
+  league: jleague
+Sanfrecce Hiroshima:
+  ko: [산프레체히로시마, 히로시마, 산프히로]
+  en: [Hiroshima]
+  league: jleague
+Shimizu S-Pulse:
+  ko: [시미즈에스펄스, 시미즈, 시미즈S]
+  en: [Shimizu]
+  league: jleague
+Shonan Bellmare:
+  ko: [쇼난벨마레, 쇼난]
+  en: [Shonan]
+  league: jleague
+Urawa Red Diamonds:
+  ko: [우라와레즈, 우라와]
+  en: [Urawa Reds, Urawa]
+  league: jleague
+Vissel Kobe:
+  ko: [비셀고베, 고베, 비셀고베K]
+  en: [Kobe]
+  league: jleague
+Yokohama F.Marinos:
+  ko: [요코하마마리노스, 요코하마]
+  en: [Yokohama F Marinos, Yokohama Marinos]
+  league: jleague
+
+# --- 2026 신규/추가 팀 ---------------------------------------------------
+# 승무패 회차에 등장했으나 위 목록에 없던 팀들.
+Paju Frontier:
+  ko: [파주프런, 파주프런티어, 파주, 파주시민축구단]
+  en: [Paju Frontier FC, Paju Citizen, Paju]
+  league: kleague2
+Cheonan City:
+  ko: [천안시티, 천안, 천안시티FC]
+  en: [Cheonan City FC, Cheonan]
+  league: kleague2
+Tokyo Verdy:
+  ko: [도쿄베르, 도쿄베르디, 베르디]
+  en: [Tokyo Verdy 1969, Verdy]
+  league: jleague
+JEF United Chiba:
+  ko: [제프유나, 제프유나이티드, 지바, 제프치바]
+  en: [JEF United, JEF United Ichihara Chiba, JEF Chiba]
+  league: jleague
+V-Varen Nagasaki:
+  ko: [V바렌나, V바렌나가사키, 브이바렌나가사키, 나가사키]
+  en: [V Varen Nagasaki, VVaren Nagasaki, Nagasaki]
+  league: jleague
+
+# --- 2026 회차에서 베트맨 표기로 등장했으나 표에 없던 팀 -----------------
+# league: 를 비워 둔다. 이 팀들의 소속 리그를 실측으로 확인하지 못했고,
+# 순위표를 권위로 삼아 normalize.set_league() 가 채우도록 남긴다.
+Ipswich:
+  ko: [입스위치, 입스위치타운]
+  en: [Ipswich Town, Ipswich Town FC]
+Frosinone:
+  ko: [프로시노, 프로시노네]
+  en: [Frosinone Calcio]
+Venezia:
+  ko: [베네치아]
+  en: [Venezia FC]
+Coventry City:
+  ko: [코번트리, 코번트리시티]
+  en: [Coventry, Coventry City FC]
+Hull City:
+  ko: [헐시티, 헐]
+  en: [Hull, Hull City AFC]
+Monza:
+  ko: [AC몬차, 몬차]
+  en: [AC Monza, Monza 1912]

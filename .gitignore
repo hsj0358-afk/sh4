@@ -11,3 +11,9 @@ venv/
 # 생성물
 reports/
 *.log
+
+# 토토 분석기 생성물
+cache/
+data/teams.learned.yaml
+data/last_round.txt
+data/teams.league.yaml

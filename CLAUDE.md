@@ -1983,13 +1983,98 @@ import 하지 않는다(AST). 저쪽은 프로그램이 API 를 부르던 구조
 
 회귀 테스트: `python tests/test_panel_import.py` (54개).
 
-#### 후속 Phase 권고 (4-C 이후에서 결정)
-
-  · **독립 실행이 아직 안 된다.** `Report` 가 디스크에 저장되지 않아
-    검증하려면 그 회차를 한 번 돌려야 한다(캐시가 있으면 빠르다). 회차
-    분석 결과를 저장하는 자리가 생기면 수집 없이 검증할 수 있다.
   · `rationale`·`uncertainty` 는 **배열**이다 (Phase 3 계약 그대로). 문자열로
     오면 ERROR 다 — 채팅 지침이 배열을 요구하므로 지침대로 답하면 맞는다.
+  · **독립 실행은 4-C 에서 풀렸다** (`toto/artifact.py`, §1-16).
+
+### 1-16. 회차 분석 저장 (Phase 4-C) — `toto/artifact.py`
+
+**왜 필요한가.** 4-B 까지는 패널 결과를 붙이려면 그 회차를 **다시 돌려야**
+했다. 그런데 클로드 채팅 작업은 며칠 걸릴 수 있고, 그 사이에 다시 돌리면
+**자료가 달라진다** — 순위표는 수집 시점 스냅샷이고(§1-1-7) 배당도 움직인다.
+그러면 경기자료 MD 를 만든 분석과 패널 결과를 붙이는 분석이 서로 다른 것이
+된다.
+
+```
+① 회차 분석 ─→ data/artifacts/260050.json  (매 실행 자동 저장)
+             ─→ 260050_경기자료.md
+② 클로드 채팅에서 패널 (며칠 걸려도 된다)
+③ python -m toto --round 260050 --import-panel-result F.json --audit-panel-result F.json
+   → **수집하지 않는다.** 저장본을 읽어 붙이고 감사하고 리포트를 갱신한다
+```
+
+  · `Report.to_dict()`(=`asdict`)를 그대로 쓰고 `models.revive_report()` 가
+    되감는다. **새로 계산하지 않는다.**
+  · **슛 계층은 저장하지 않는다** (`shot_aggregates`·`shot_matches`·
+    `opponent_matches`). 그것은 Phase 2 분석의 **입력**이고 분석은 이미 끝나
+    `Match.analysis` 에 있다. 리포트 렌더링도 쓰지 않는다(테스트로 확인).
+    실측: 데모 14경기 789KB → 36KB.
+  · **되살린 리포트는 원본과 바이트까지 같다** (테스트로 고정). 분석값·
+    Evidence·DataQuality·match_id·경기 순서가 전부 같다.
+  · `datetime` 은 ISO 문자열로 저장하고 `fromisoformat` 으로 되살린다 —
+    **시간대를 지어내지 않는다.** naive 는 naive 로, aware 는 aware 로.
+  · `artifact_version` 이 다르면 **읽지 않는다.** 조용히 다른 것을 되살리는
+    편보다 못 읽는 편이 낫다.
+  · `--demo` 는 저장하지 않는다 (`roundlog` 와 같은 이유).
+  · `.gitignore` 에 넣었다 — 재실행으로 다시 만들 수 있고 회차당 수십 KB 다.
+    축적이 목적인 `data/rounds.csv`(§1-6-2)와 다르다.
+
+### 1-17. Panel Audit (Phase 4-C) — `toto/panelaudit.py`
+
+패널이 **어떤 과정을 거쳤는지** 구조적으로 기록한다. 묻는 것은 하나다 —
+**무슨 일이 있었는가?**
+
+    Panel Result → 4-B ImportResult → 4-C AuditResult
+
+**4-B 를 다시 검증하지 않는다.** `panelimport` 가 이미 schema·round·
+match_id·팀·역할·스코어·근거·`adopted_from` 을 검증했고, 여기서는 그 결과를
+읽어 **회차 단위로 집계**할 뿐이다. `parse_opinion`·`parse_result` 라는
+낱말이 이 모듈에 없다(테스트).
+
+**반드시 나누는 두 가지.** `participation`(분석가가 있었나)과
+`origin`(분포에 그 원안이 나왔나)은 **다른 것**이다. 260050 에서 맞대결
+분석가의 origin 이 0회였는데, 그것은 참여하지 않았다는 뜻이 **아니다** —
+두 분석가가 늘 같은 스코어를 냈으면 그럴 수 있다. 커버리지와 origin 을 따로
+세고, 경고 문구에 그 사실을 적는다. 실측(재현 픽스처):
+
+```
+- 맞대결·전술 분석가: 14/14          ← 참여
+- data_analyst: 420                  ← origin (맞대결 줄이 아예 없다)
+WARNING MATCHUP_ORIGIN_ZERO … 분석가가 참여하지 않은 것과는 다른 상태입니다
+```
+
+**`decision_type` 은 `adopted_from` 을 되읽지 않는다.** 실제 스코어끼리
+견줘 정한다 — 원본 필드가 비어 있어도(절충) 옳게 나오고 4-B 의 재계산과
+어긋날 수 없다. `ADOPTED_DATA_ANALYST` · `ADOPTED_MATCHUP_ANALYST` ·
+`ADOPTED_BOTH` · `MODIFIED_OR_COMPROMISE` · `NOT_ADOPTED` 다섯이고,
+**파생 감사 필드**라 원본 `adopted_from` 과 자리를 나눈다.
+
+**감사는 패널 위에 있지 않다.** "데이터 분석가가 더 신뢰할 만하다" ·
+"30회 중 19회니 2-1 이 유력하다" · 합의도 · 확신도 · 패널 확률 · 승무패를
+만들지 않는다. 나눗셈이 모듈에 없고(AST), 요약문에 `%`·`최빈`·`가장 유력`·
+`신뢰도`·`합의도`·`추천` 이 없다(테스트). "확률" 은 **부정문**으로만 나온다.
+
+**없는 것을 추론하지 않는다.** 지금 schema 는 토론 30회의 **결과 분포만**
+담는다. 라운드별 대화 내용·출발 축·인용 근거·사회자 내부 추론은 자료에
+없고, 분포만으로 되짚지 않는다 — `UNOBSERVED` 로 적어 낸다.
+
+**4-B 오류가 있으면 COMPLETE 로 적지 않는다.** 상태는 `PASS`(문제 없음) ·
+`CONDITIONAL`(경고만) · `FAIL`(필수 연결이 깨짐)이고, 커버리지는
+`COMPLETE` · `PARTIAL` · `FAILED` 다.
+
+**CLI 세 명령의 뜻이 다르다.**
+
+| 명령 | 하는 일 |
+|---|---|
+| `--validate-panel-result` | 파일이 구조적으로 유효한지 검사 (붙이지 않는다) |
+| `--import-panel-result` | 검증 후 회차 분석에 붙이고 리포트를 갱신 |
+| `--audit-panel-result` | 가져온 결과의 회차 전체 구조를 감사 |
+
+셋 중 하나라도 주면 **저장본이 있을 때 수집하지 않는다** (§1-16).
+수집 경로와 저장본 경로는 `_handle_panel_file()` **한 함수**를 쓴다 —
+두 곳에 두면 한쪽만 고쳐져 결과가 달라진다(테스트가 호출 수를 센다).
+
+회귀 테스트: `python tests/test_panel_audit.py` (42개).
 
 ---
 
@@ -2261,6 +2346,7 @@ python -m toto --panel-export-all          # 근거 0건 경기도 축 지표만
 python -m toto --export-match-material     # 경기자료 MD 한 장 (Phase 4-A)
 python -m toto --import-panel-result F.json # 채팅 패널 결과 가져오기 (4-B)
 python -m toto --validate-panel-result F.json  # 검사만 (붙이지 않는다)
+python -m toto --audit-panel-result F.json  # 회차 구조 감사 (4-C)
 python tests/test_league_matching.py       # 리그·팀 매칭 회귀 (15개)
 python tests/test_match_details.py         # 경기 상세 파싱 회귀 (36개)
 python tests/test_shot_events.py           # 슛 이벤트 계층 (46개)
@@ -2288,6 +2374,7 @@ python tests/test_alias_table_loading.py   # 별칭 테이블 적재 진단 §1-
 python tests/test_roundlog.py              # 회차 기록 축적 §1-6-2 (23개)
 python tests/test_match_material.py        # 경기자료 MD 4-A §1-14 (37개)
 python tests/test_panel_import.py          # 패널 결과 가져오기 4-B §1-15 (54개)
+python tests/test_panel_audit.py           # 패널 감사·회차 저장 4-C §1-16·17 (42개)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)
 python tools/probe_sources.py --browser    # 소스 구조 점검

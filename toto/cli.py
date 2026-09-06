@@ -85,6 +85,10 @@ def build_parser() -> argparse.ArgumentParser:
                    metavar="FILE",
                    help="--import-panel-result 와 같은 검증을 하되 "
                         "리포트에 붙이지 않습니다 (검사만).")
+    p.add_argument("--audit-panel-result", type=Path, default=None,
+                   metavar="FILE",
+                   help="가져온 Panel Result 의 회차 전체 구조를 감사합니다 "
+                        "(커버리지·채택·분포·근거). 판정하지 않습니다.")
     p.add_argument("--panel-export-all", action="store_true",
                    help="--panel-export 를 켜고, 근거 0건 경기도 축 지표만으로 "
                         "냅니다 (시즌 초). 시트에 경고가 붙고 --panel 실행과 "
@@ -177,6 +181,56 @@ def _missing_required_deps() -> bool:
     return True
 
 
+def _handle_panel_file(report: Report, args, settings, panel_file) -> None:
+    """Panel Result 를 검증·부착하고(4-B) 회차 구조를 감사한다(4-C).
+
+    수집 경로와 저장본 경로가 **이 함수 하나**를 쓴다 — 두 곳에 두면
+    한쪽만 고쳐져 결과가 달라진다.
+    """
+    from . import panelimport
+    outcome = panelimport.run(
+        panel_file, report, settings,
+        attach_result=args.import_panel_result is not None)
+    report.source_status["패널 가져오기"] = outcome.status_line()
+    for line in panelimport.report_lines(outcome):
+        (log.warning if outcome.errors else log.info)("패널 가져오기: %s", line)
+
+    if args.audit_panel_result is None:
+        return
+    from . import panelaudit
+    result = panelaudit.audit(outcome, report)
+    report.source_status["패널 감사"] = (
+        f"{result.status} (커버리지 {result.coverage_status})")
+    for line in panelaudit.report_lines(result):
+        log.info("감사 | %s", line)
+
+
+def _panel_only(report: Report, args, settings, panel_file) -> int:
+    """저장된 회차 분석 결과에 패널 파일만 얹는다. **수집하지 않는다.**"""
+    try:
+        _handle_panel_file(report, args, settings, panel_file)
+    except Exception as exc:                            # noqa: BLE001
+        log.error("패널 처리 실패: %s", exc)
+        log.debug("패널 처리 traceback", exc_info=True)
+        return 1
+
+    if args.import_panel_result is None:
+        return 0                        # 검사·감사만 — 리포트를 다시 쓰지 않는다
+
+    html = render_report(report, settings)
+    out = args.output
+    if out is None:
+        name = settings.output.get("filename", "toto_{round}.html").format(
+            round=report.round_id or "latest")
+        out = settings.output_dir / name
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(html, encoding="utf-8")
+    log.info("리포트 갱신 → %s (%.1f KB)", out, len(html.encode("utf-8")) / 1024)
+    if args.open:
+        webbrowser.open(out.resolve().as_uri())
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
@@ -198,6 +252,22 @@ def main(argv: list[str] | None = None) -> int:
     if args.serve and not any((args.demo, args.round_id, args.matches_file)):
         from .publish import serve
         return serve(settings, port=args.serve_port)
+
+    # ---- 0. 저장된 회차 분석 결과로 되돌아가기 (Phase 4-C) ---------------
+    # 패널 파일만 주고 그 회차의 artifact 가 있으면 **수집을 다시 하지
+    # 않는다.** 클로드 채팅 작업이 며칠 걸려도 ① 을 다시 돌릴 필요가 없다.
+    # 다시 돌리면 순위표·배당이 그때와 달라져(§1-1-7) 경기자료 MD 를 만든
+    # 분석과 패널 결과를 붙이는 분석이 서로 다른 것이 된다.
+    panel_file = (args.import_panel_result or args.validate_panel_result
+                  or args.audit_panel_result)
+    if panel_file is not None and args.round_id and not args.demo:
+        from . import artifact
+        saved, why = artifact.load(args.round_id)
+        if saved is not None:
+            log.info("저장된 회차 분석 결과를 씁니다 (수집하지 않습니다) — "
+                     "%s", artifact.path_for(args.round_id))
+            return _panel_only(saved, args, settings, panel_file)
+        log.info("%s — 회차를 수집해서 진행합니다.", why)
 
     resolver = TeamResolver()
     cache = Cache(enabled=not args.no_cache)
@@ -314,17 +384,9 @@ def main(argv: list[str] | None = None) -> int:
     # ---- 5-C. Panel Result JSON 가져오기 (Phase 4-B) ----------------------
     # 클로드 채팅에서 손으로 만든 결과를 되받는 자리다. **API 를 부르지
     # 않는다.** 오류가 하나라도 있으면 붙이지 않는다(부분 import 금지).
-    panel_file = args.import_panel_result or args.validate_panel_result
     if panel_file is not None:
         try:
-            from . import panelimport
-            outcome = panelimport.run(
-                panel_file, report, settings,
-                attach_result=args.import_panel_result is not None)
-            report.source_status["패널 가져오기"] = outcome.status_line()
-            for line in panelimport.report_lines(outcome):
-                (log.warning if outcome.errors else log.info)(
-                    "패널 가져오기: %s", line)
+            _handle_panel_file(report, args, settings, panel_file)
         except Exception as exc:                        # noqa: BLE001
             report.source_status["패널 가져오기"] = f"실패 ({exc})"
             log.warning("패널 가져오기 실패: %s", exc)
@@ -393,6 +455,16 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as exc:                        # noqa: BLE001
             log.warning("패널 자료 내보내기 실패: %s", exc)
             log.debug("패널 자료 내보내기 traceback", exc_info=True)
+
+    # 회차 분석 결과 저장 (Phase 4-C). 나중에 패널 결과만 가져올 때 수집을
+    # 다시 하지 않기 위해서다 — 다시 돌리면 순위표·배당이 그때와 달라진다.
+    # 실패해도 리포트는 이미 나왔으므로 실행을 죽이지 않는다 (§1-6).
+    try:
+        from . import artifact
+        log.info("회차 분석 저장: %s", artifact.save(report))
+    except Exception as exc:                            # noqa: BLE001
+        log.warning("회차 분석 저장 실패: %s", exc)
+        log.debug("회차 분석 저장 traceback", exc_info=True)
 
     # 회차 기록 축적. 지나간 회차는 되돌릴 수 없으므로 매 실행이 남긴다.
     # 실패해도 리포트는 이미 나왔으므로 실행을 죽이지 않는다 (§1-6).

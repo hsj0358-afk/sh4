@@ -124,6 +124,10 @@ class PanelImportResult:
     imported_matches: int = 0
     issues: list[Issue] = field(default_factory=list)
     runs: dict[int, PanelRun] = field(default_factory=dict)   # 경기 번호 → 결과
+    # 검증을 통과한 경기 전부. `runs` 와 다르다 — `runs` 는 **회차 전체가
+    # 성공했을 때만** 채워지는 부착용 결과이고, 이쪽은 실패한 회차에서도
+    # "무엇이 읽혔나" 를 남긴다. 4-C 감사가 이것을 읽는다.
+    parsed: dict[int, PanelRun] = field(default_factory=dict)
     audit: dict = field(default_factory=dict)
 
     @property
@@ -569,6 +573,7 @@ def validate(data: dict, report: Report, settings=None) -> PanelImportResult:
             runs[m.no] = run
 
     result.imported_matches = len(runs)
+    result.parsed = dict(runs)          # 실패해도 남는다 (4-C 감사용)
     _audit(runs, result)
     # **부분 import 를 정상으로 취급하지 않는다.** 오류가 하나라도 있거나
     # 경기가 하나라도 빠지면 붙이지 않는다.

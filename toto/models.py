@@ -1154,6 +1154,110 @@ def matches_before(season: list[SeasonMatch], as_of: datetime | None,
     return out
 
 
+def _revive_dt(value) -> datetime | None:
+    """ISO 문자열 → datetime. **시간대를 지어내지 않는다** (§1-1-4).
+
+    문자열에 표시가 없으면 naive 로 되살아나고, `...+09:00` 이면 aware 로
+    되살아난다 — 저장 전과 같은 상태다.
+    """
+    if isinstance(value, datetime):
+        return value
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def revive_season_match(d: Any) -> SeasonMatch | None:
+    if not isinstance(d, dict):
+        return None
+    body = dict(d)
+    body["kickoff"] = _revive_dt(body.get("kickoff"))
+    return SeasonMatch(**body)
+
+
+def revive_match(d: Any) -> Match | None:
+    """dict → Match. **분석 결과를 다시 계산하지 않는다** — 되감기만 한다.
+
+    슛 계층(`TeamProfile.shot_aggregates`·`shot_matches`·`opponent_matches`)은
+    **되살리지 않는다.** 그것은 Phase 2 분석의 *입력*이고 분석은 이미 끝나
+    `Match.analysis` 에 들어 있다. 리포트 렌더링도 쓰지 않는다(테스트로
+    확인). 되살릴 수 없는 것을 되살린 척하지 않으려고 비운 채 둔다.
+    """
+    if not isinstance(d, dict):
+        return None
+    out = Match(no=d.get("no", 0), league=d.get("league", ""),
+                league_ko=d.get("league_ko", ""),
+                kickoff_kst=d.get("kickoff_kst", ""))
+    for side in ("home", "away"):
+        ref = d.get(side)
+        if isinstance(ref, dict):
+            setattr(out, side, TeamRef(**ref))
+    odds = d.get("odds")
+    out.odds = Odds(**odds) if isinstance(odds, dict) else Odds()
+    probs = d.get("probs")
+    out.probs = MatchProb(**probs) if isinstance(probs, dict) else None
+    for side in ("home_profile", "away_profile"):
+        setattr(out, side, _revive_profile(d.get(side)))
+    h2h = d.get("h2h")
+    if isinstance(h2h, dict):
+        out.h2h = H2H(
+            entries=[H2HEntry(**e) for e in (h2h.get("entries") or [])
+                     if isinstance(e, dict)],
+            home_wins=h2h.get("home_wins", 0), draws=h2h.get("draws", 0),
+            away_wins=h2h.get("away_wins", 0),
+            source_ok=h2h.get("source_ok", False))
+    out.radar = dict(d.get("radar") or {})
+    out.matchup_notes = [dict(n) for n in (d.get("matchup_notes") or [])
+                         if isinstance(n, dict)]
+    out.notes = list(d.get("notes") or [])
+    out.analysis = revive_match_analysis(d.get("analysis"))
+    if out.analysis is not None:
+        out.analysis.as_of = _revive_dt(out.analysis.as_of)
+    out.panel = revive_panel_run(d.get("panel"))
+    return out
+
+
+def _revive_profile(d: Any) -> TeamProfile | None:
+    if not isinstance(d, dict):
+        return None
+    ref = d.get("team")
+    out = TeamProfile(team=TeamRef(**ref) if isinstance(ref, dict)
+                      else TeamRef(), league=d.get("league", ""))
+    stats = d.get("stats")
+    out.stats = TeamStats(**stats) if isinstance(stats, dict) else TeamStats()
+    out.strengths = list(d.get("strengths") or [])
+    out.weaknesses = list(d.get("weaknesses") or [])
+    out.style_of_play = list(d.get("style_of_play") or [])
+    out.form = [FormEntry(**f) for f in (d.get("form") or [])
+                if isinstance(f, dict)]
+    out.missing_players = [dict(m) for m in (d.get("missing_players") or [])
+                           if isinstance(m, dict)]
+    out.rest_days = d.get("rest_days")
+    out.source_ok = bool(d.get("source_ok"))
+    return out
+
+
+def revive_report(d: Any) -> Report | None:
+    """dict → Report. 회차 분석 결과를 **다시 수집하지 않고** 되살린다."""
+    if not isinstance(d, dict):
+        return None
+    out = Report(round_id=d.get("round_id", ""),
+                 generated_at=d.get("generated_at", ""))
+    out.matches = [m for m in (revive_match(x) for x in
+                               (d.get("matches") or [])) if m is not None]
+    out.warnings = list(d.get("warnings") or [])
+    out.source_status = dict(d.get("source_status") or {})
+    verdict = d.get("verdict")
+    out.verdict = RoundVerdict(**verdict) if isinstance(verdict, dict) else None
+    out.season_matches = [s for s in (revive_season_match(x) for x in
+                                      (d.get("season_matches") or []))
+                          if s is not None]
+    return out
+
+
 def find_season_match(season: list[SeasonMatch], home: str, away: str,
                       kickoff: datetime | None, window: timedelta,
                       finished_only: bool = False) -> SeasonMatch | None:

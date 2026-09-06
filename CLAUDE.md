@@ -1914,6 +1914,83 @@ AST 로 검사한다.
 검토한다 — 다만 **npxGA 는 시즌 값이 없다**(§1-1-10). 시즌 레이더에 넣을 수
 있는 수비 지표는 실점과 xGA 뿐이다.
 
+### 1-15. Panel Result 가져오기 (Phase 4-B) — `toto/panelimport.py`
+
+4-A 가 프로그램 → 채팅 방향이라면 이쪽은 **반대 방향**이다.
+
+```
+클로드 채팅 → 260050_panel_result.json → 프로그램 (검증) → Match.panel
+
+python -m toto --round 260050 --import-panel-result 260050_panel_result.json
+python -m toto --round 260050 --validate-panel-result FILE   # 붙이지 않고 검사만
+```
+
+**검증을 새로 쓰지 않는다.** 경기 하나의 내용은 `panel.parse_opinion()` 과
+`moderator.parse_result()` 를 **그대로 부른다** — API 로 받든 파일로 받든
+같은 자료이므로 같은 문을 지나야 한다. dict 를 다시 JSON 문자열로 만들어
+넘기는 것이 돌아가는 것처럼 보이지만, 그래야 두 경로가 갈라지지 않는다.
+그 두 함수가 이미 막는 것: 정수가 아닌 스코어 · 없는 근거 ID ·
+`count` 합 ≠ `simulations` · 분포에 없는 스코어 채택 · `adopted_from` 불일치 ·
+스코어만 있고 `conclusion` 이 빔.
+
+이 모듈이 더하는 것은 **회차 단위**의 문이다.
+
+| 검사 | ERROR 코드 |
+|---|---|
+| schema_version 없음/미지원 | `SCHEMA_VERSION_*` |
+| 회차 불일치 (문자열/숫자 섞여도 판정) | `ROUND_MISMATCH` |
+| 경기 수 · 중복 · 누락 · 미상 match_id | `MATCH_COUNT_MISMATCH` · `DUPLICATE_MATCH_ID` · `MATCH_MISSING` · `UNKNOWN_MATCH_ID` |
+| 팀 정체성 | `TEAM_MISMATCH` |
+| 역할 이름 (시장은 분석가가 아니다) | `ROLE_MISMATCH` · `FORBIDDEN_ROLE` |
+| 승무패·추천·확신도 칸 | `FORBIDDEN_FIELD` |
+| 근거 0건인데 인용 | `EVIDENCE_ABSENT_BUT_CITED` |
+
+**`match_id` 가 primary key 이고 `match_number` 는 표시용**이다. 번호가
+어긋나도 `match_id` 를 버리고 다른 경기에 붙이지 않는다(경고만 남긴다).
+그 id 는 4-A 와 **같은 함수**(`match_material._status_of` → 시즌 색인)로
+찾는다 — 경기자료 MD 에 적힌 값과 달라지면 안 된다.
+
+**근거 ID 는 경기마다 다시 매겨진다.** 그래서 '이 회차에 있는 ID' 가 아니라
+**'이 경기에 있는 ID'** 여야 하고, 다른 경기의 ID 를 쓰면 잡힌다. 근거가
+0건인 경기에서 `E001` 을 인용하는 것이 260050 에서 실제로 나온 상태이고
+그것이 회귀 픽스처다(`test_g5`, 14경기 × 3역할 = 42건 검출).
+
+**부분 import 를 정상으로 취급하지 않는다.** 한 경기라도 깨지면 `runs` 가
+비고 아무것도 붙지 않는다 — 잘못된 패널 결과가 일부 경기만 리포트에 섞이는
+것을 막는다. 다만 어느 경기가 왜 문제인지는 전부 기록한다.
+
+**`adopted_from` 은 조용히 고치지 않는다.** `parse_result` 가 제안 집합에서
+다시 계산하므로 저장된 값은 언제나 옳지만, **모델이 보낸 원값과 다르면**
+`ADOPTED_FROM_RECOMPUTED` 경고를 남긴다. 모델이 적은 역할이 그 스코어를
+내지도 않았다면 그건 ERROR 다(Case 6).
+
+**감사는 세기만 하고 판정하지 않는다.** 두 분석가 원안 일치/불일치 ·
+채택 출처(데이터/맞대결/절충) · 분포 origin 줄 수를 낸다. 260050 의
+`맞대결 origin 0회` 는 **그 자체로 오류가 아니다** — 두 분석가가 늘 같은
+스코어를 냈다면 그럴 수 있다. 그래서 WARNING 으로 내되, **"분석가가 참여하지
+않은 것과는 다른 상태"** 라고 적고 일치/불일치 수를 함께 보여 준다(§9).
+
+**분포를 확률로 바꾸지 않는다.** `count / simulations` 를 계산하는 나눗셈이
+모듈에 없다(AST 테스트). `simulations` 가 빠져 있으면 **30 을 박지 않고**
+분포 합계로 대신하며 그 사실을 경고로 남긴다.
+
+**Phase 3 의 LLM 캐시를 저장소로 재사용하지 않는다.** `cache`·`llm` 을
+import 하지 않는다(AST). 저쪽은 프로그램이 API 를 부르던 구조이고 이쪽은
+사람이 채팅에서 만들어 온 외부 산출물이다.
+
+**원문을 고치지 않는다.** `summary`·`rationale`·`conclusion` 은 그대로
+보존되고 markdown 을 해석하지 않는다. 입력 dict 도 바꾸지 않는다.
+
+회귀 테스트: `python tests/test_panel_import.py` (54개).
+
+#### 후속 Phase 권고 (4-C 이후에서 결정)
+
+  · **독립 실행이 아직 안 된다.** `Report` 가 디스크에 저장되지 않아
+    검증하려면 그 회차를 한 번 돌려야 한다(캐시가 있으면 빠르다). 회차
+    분석 결과를 저장하는 자리가 생기면 수집 없이 검증할 수 있다.
+  · `rationale`·`uncertainty` 는 **배열**이다 (Phase 3 계약 그대로). 문자열로
+    오면 ERROR 다 — 채팅 지침이 배열을 요구하므로 지침대로 답하면 맞는다.
+
 ---
 
 ## 2. 작업 방식
@@ -2182,6 +2259,8 @@ python -m toto --panel                     # 두 전문가 패널 (Claude API �
 python -m toto --panel-export              # 채팅용 지침·자료 파일 (API 불필요)
 python -m toto --panel-export-all          # 근거 0건 경기도 축 지표만으로 (시즌 초)
 python -m toto --export-match-material     # 경기자료 MD 한 장 (Phase 4-A)
+python -m toto --import-panel-result F.json # 채팅 패널 결과 가져오기 (4-B)
+python -m toto --validate-panel-result F.json  # 검사만 (붙이지 않는다)
 python tests/test_league_matching.py       # 리그·팀 매칭 회귀 (15개)
 python tests/test_match_details.py         # 경기 상세 파싱 회귀 (36개)
 python tests/test_shot_events.py           # 슛 이벤트 계층 (46개)
@@ -2208,6 +2287,7 @@ python tests/test_whoscored_characteristics.py  # 팀 특성 파싱 §3-1 (33개
 python tests/test_alias_table_loading.py   # 별칭 테이블 적재 진단 §1-6-1 (16개)
 python tests/test_roundlog.py              # 회차 기록 축적 §1-6-2 (23개)
 python tests/test_match_material.py        # 경기자료 MD 4-A §1-14 (37개)
+python tests/test_panel_import.py          # 패널 결과 가져오기 4-B §1-15 (54개)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)
 python tools/probe_sources.py --browser    # 소스 구조 점검

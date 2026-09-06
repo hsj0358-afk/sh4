@@ -77,6 +77,14 @@ def build_parser() -> argparse.ArgumentParser:
                    help="회차 분석 결과를 클로드 채팅용 경기자료 MD 한 장으로 "
                         "냅니다 (reports/<회차>_경기자료.md). API 를 부르지 "
                         "않습니다.")
+    p.add_argument("--import-panel-result", type=Path, default=None,
+                   metavar="FILE",
+                   help="클로드 채팅에서 만든 Panel Result JSON 을 가져와 "
+                        "검증합니다. 오류가 있으면 붙이지 않습니다.")
+    p.add_argument("--validate-panel-result", type=Path, default=None,
+                   metavar="FILE",
+                   help="--import-panel-result 와 같은 검증을 하되 "
+                        "리포트에 붙이지 않습니다 (검사만).")
     p.add_argument("--panel-export-all", action="store_true",
                    help="--panel-export 를 켜고, 근거 0건 경기도 축 지표만으로 "
                         "냅니다 (시즌 초). 시트에 경고가 붙고 --panel 실행과 "
@@ -302,6 +310,25 @@ def main(argv: list[str] | None = None) -> int:
         from . import panel
         report.source_status["패널"] = panel.attach_panels(
             matches, settings, cache=cache)
+
+    # ---- 5-C. Panel Result JSON 가져오기 (Phase 4-B) ----------------------
+    # 클로드 채팅에서 손으로 만든 결과를 되받는 자리다. **API 를 부르지
+    # 않는다.** 오류가 하나라도 있으면 붙이지 않는다(부분 import 금지).
+    panel_file = args.import_panel_result or args.validate_panel_result
+    if panel_file is not None:
+        try:
+            from . import panelimport
+            outcome = panelimport.run(
+                panel_file, report, settings,
+                attach_result=args.import_panel_result is not None)
+            report.source_status["패널 가져오기"] = outcome.status_line()
+            for line in panelimport.report_lines(outcome):
+                (log.warning if outcome.errors else log.info)(
+                    "패널 가져오기: %s", line)
+        except Exception as exc:                        # noqa: BLE001
+            report.source_status["패널 가져오기"] = f"실패 ({exc})"
+            log.warning("패널 가져오기 실패: %s", exc)
+            log.debug("패널 가져오기 traceback", exc_info=True)
 
     # 회차 승산 (지침 §5)
     expected = int(settings.betman.get("expected_matches", 14))

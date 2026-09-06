@@ -346,7 +346,8 @@ def main(argv: list[str] | None = None) -> int:
         try:
             from . import panelexport
             log.info("패널 자료 내보내기: %s", panelexport.export(
-                report, include_without_evidence=args.panel_export_all))
+                report, include_without_evidence=args.panel_export_all,
+                settings=settings))
         except Exception as exc:                        # noqa: BLE001
             log.warning("패널 자료 내보내기 실패: %s", exc)
             log.debug("패널 자료 내보내기 traceback", exc_info=True)

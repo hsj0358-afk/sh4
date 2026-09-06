@@ -27,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from toto import fixtures, menu, panel, render                    # noqa: E402
 from toto.analyze import run_all                                  # noqa: E402
 from toto.models import (MarketReference, ModeratorResult,        # noqa: E402
-                         PanelOpinion, PanelRun, Report)
+                         PanelOpinion, PanelRun, Report, ScoreTally)
 from toto.settings import Settings                                # noqa: E402
 from test_panel import FakeClient, S, ev, make_match              # noqa: E402
 
@@ -54,6 +54,10 @@ def mod(**kw):
                 adopted_home=2, adopted_away=1, adopted_from=(DATA,),
                 conclusion="토론 결과 예상 스코어는 2-1 입니다. "
                            "표본이 더 큰 근거를 든 쪽을 택했습니다.",
+                simulations=30,
+                distribution=(ScoreTally(2, 1, 18, DATA),
+                              ScoreTally(1, 1, 9, MATCHUP),
+                              ScoreTally(2, 2, 3, "compromise")),
                 market_relation="시장 기준선은 원정 쪽이 약간 높다",
                 uncertainty=("표본 1경기",), model="m", prompt_version="1")
     base.update(kw)
@@ -129,7 +133,7 @@ def test_b4_all_four_areas_render():
 def test_b5_moderator_items_render():
     html = carded(full_run())
     for token in ("공통점", "차이", "반론·제약", "불확실성",
-                  "종합 예상 스코어", "시장 기준선과의 관계"):
+                  "최종 예상 스코어", "시장 기준선과의 관계"):
         assert token in html, token
     assert "두 의견 모두 표본이 작다고 본다" in html
 
@@ -137,14 +141,14 @@ def test_b5_moderator_items_render():
 def test_b5a_adopted_score_is_the_headline():
     """3단계의 답이 화면에 나온다 — 비교로 끝나지 않는다."""
     html = carded(full_run())
-    assert "종합 예상 스코어" in html
+    assert "최종 예상 스코어" in html
     assert "2 : 1" in html
     # 어느 의견에서 왔는지, 그리고 평균이 아니라는 것.
-    assert "데이터 분석가의 예상 스코어를 그대로 채택" in html
+    assert "데이터 분석가의 예상 스코어입니다" in html
     assert "평균내지 않습니다" in html
     assert "표본이 더 큰 근거를 든 쪽을 택했습니다." in html
     # 사회자 블록에서 가장 먼저 나온다 — 3단계에서 얻으려는 답이다.
-    assert html.index("종합 예상 스코어") < html.index("공통점")
+    assert html.index("최종 예상 스코어") < html.index("공통점")
 
 
 def test_b5b_no_adopted_score_says_why():
@@ -152,7 +156,7 @@ def test_b5b_no_adopted_score_says_why():
     html = carded(full_run(moderator=mod(
         adopted_home=None, adopted_away=None, adopted_from=(),
         conclusion="두 읽기 중 하나를 고를 근거가 자료에 없습니다")))
-    assert "종합 예상 스코어" in html
+    assert "최종 예상 스코어" in html
     assert "0 : 0" not in html
     assert "고를 근거가 자료에 없었습니다" in html
     assert "두 읽기 중 하나를 고를 근거가 자료에 없습니다" in html
@@ -160,9 +164,30 @@ def test_b5b_no_adopted_score_says_why():
 
 def test_b5c_adopted_score_is_not_turned_into_a_pick():
     html = carded(full_run())
-    tail = html[html.index("종합 예상 스코어"):]
+    tail = html[html.index("최종 예상 스코어"):]
     for banned in ("홈승", "원정승", "승리 예상", "추천"):
         assert banned not in tail, banned
+
+
+def test_b5d_debate_distribution_renders_as_counts():
+    """분포는 **횟수만** 적는다 — 확률이 아니므로 %·막대로 그리지 않는다."""
+    html = carded(full_run())
+    assert "토론 30회의 결론 분포" in html
+    assert "18회" in html and "9회" in html and "3회" in html
+    assert "양쪽 절충" in html, "절충 스코어의 출처가 안 보인다"
+    assert "확률이 아닙니다" in html
+    block = html[html.index("토론 30회"):html.index("공통점")]
+    assert "%" not in block, "분포를 백분율로 그렸다"
+    assert "<svg" not in block, "분포를 그림으로 그렸다"
+
+
+def test_b5e_compromise_score_says_it_is_not_an_average():
+    html = carded(full_run(moderator=mod(
+        adopted_home=2, adopted_away=2, adopted_from=(),
+        conclusion="30회 중 11회가 2-2 로 모였습니다")))
+    assert "2 : 2" in html
+    assert "절충" in html
+    assert "평균이 아니라" in html, "절충을 평균처럼 읽게 뒀다"
 
 
 def test_b6_evidence_ids_render_as_ids():
@@ -291,7 +316,7 @@ def test_h21_no_synthesized_score():
     함정). 대신 실제로 그려진 수를 본다.
     """
     html = carded(full_run(opinions=(op(DATA, 2, 1), op(MATCHUP, 1, 1))))
-    for banned in ("1.5", "대표 예상", "합의 예상", "최종 예상", "평균 스코어"):
+    for banned in ("1.5", "대표 예상", "합의 예상", "평균 스코어"):
         assert banned not in html, banned
     shown = re.search(r'class="mscore">([^<]+)<', html)
     assert shown, "종합 스코어가 없다"

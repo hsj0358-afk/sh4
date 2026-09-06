@@ -553,9 +553,10 @@ def test_s1_moderator_sheet_asks_for_the_adopted_score():
     says = _says(_run()[1])
     for key in ('"adopted_home"', '"adopted_away"', '"conclusion"'):
         assert key in says, key
-    assert "예상 스코어\n하나를 채택" in says or "예상 스코어 하나를 채택" in says
     assert "평균내지 마십시오" in says, "평균 금지가 안 적혀 있다"
+    assert '"distribution"' in says, "토론 분포를 요구하지 않는다"
     assert "토론 결과 예상 스코어는 X-Y 입니다" in says, "결론 형태를 안 알려 준다"
+    assert "절충 스코어" in says, "절충이 가능하다는 것을 안 알려 준다"
 
 
 def test_s2_instructions_carry_the_adoption_rules_verbatim():
@@ -564,15 +565,31 @@ def test_s2_instructions_carry_the_adoption_rules_verbatim():
     assert moderator.SYSTEM.strip() in text
     src = (Path(__file__).resolve().parent.parent / "toto"
            / "panelexport.py").read_text(encoding="utf-8")
-    for line in ("두 의견이 제시한 스코어 중 하나를 그대로",
+    for line in ("distribution` 에 실제로 나타난 스코어 중에서만",
                  "억지로 고르지"):
         assert line in moderator.SYSTEM, line
         assert line not in src, f"프롬프트를 베껴 뒀다: {line}"
 
 
+def test_s2b_simulation_count_flows_from_settings_to_both_files():
+    """지침과 채팅 메시지가 **같은 수**를 말해야 한다."""
+    from toto.settings import Settings
+    out = Path(tempfile.mkdtemp()) / "panel"
+    panelexport.export(_report(), outdir=out,
+                       settings=Settings(panel={"debate_simulations": 12}))
+    says, guide = _says(out), (out / "00_프로젝트_지침.md").read_text(
+        encoding="utf-8")
+    assert "토론을 12회" in guide, guide[:600]
+    assert "12회" in says.split("## 3단계")[1]
+    assert "30회" not in says.split("## 3단계")[1], "기본값이 섞였다"
+    # 지문도 라운드 수에 따라 달라진다 — 붙여넣은 지침이 낡은 줄 알 수 있다.
+    assert panelexport.instructions_fingerprint(12) != \
+        panelexport.instructions_fingerprint(30)
+
+
 def test_s3_conclusion_is_the_first_field_in_the_schema():
     """모델은 스키마 순서를 따라간다 — 결론 칸이 앞에 있어야 한다."""
-    schema = moderator.SYSTEM.split("{")[-1]
+    schema = moderator.SYSTEM.split('"simulations"')[-1]
     assert schema.index('"adopted_home"') < schema.index('"common_points"')
     assert schema.index('"conclusion"') < schema.index('"common_points"')
 

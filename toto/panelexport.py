@@ -151,7 +151,8 @@ def _slug(text: str) -> str:
     return _UNSAFE.sub("_", (text or "").strip()).strip("_") or "team"
 
 
-def instructions_fingerprint() -> str:
+def instructions_fingerprint(simulations: int = moderator.DEBATE_SIMULATIONS
+                            ) -> str:
     """지침 본문의 지문 8자.
 
     **왜 필요한가.** 지침은 매 회차 같은 내용이라 사용자가 한 번만 프로젝트에
@@ -161,13 +162,14 @@ def instructions_fingerprint() -> str:
     붙여넣으면 된다 — 프로그램만이 그것을 알려 줄 수 있다.
     """
     return hashlib.sha256(
-        _instructions_body().encode("utf-8")).hexdigest()[:8]
+        _instructions_body(simulations).encode("utf-8")).hexdigest()[:8]
 
 
-def project_instructions() -> str:
+def project_instructions(simulations: int = moderator.DEBATE_SIMULATIONS
+                         ) -> str:
     """클로드 채팅 **프로젝트 지침**. 코드의 프롬프트를 그대로 싣는다."""
-    return _instructions_body().replace(
-        _FINGERPRINT_SLOT, instructions_fingerprint(), 1)
+    return _instructions_body(simulations).replace(
+        _FINGERPRINT_SLOT, instructions_fingerprint(simulations), 1)
 
 
 # 지문은 본문을 해시해서 만들므로, 본문 안에서는 자리표시자로 둔다
@@ -175,7 +177,8 @@ def project_instructions() -> str:
 _FINGERPRINT_SLOT = "{지문}"
 
 
-def _instructions_body() -> str:
+def _instructions_body(simulations: int = moderator.DEBATE_SIMULATIONS
+                       ) -> str:
     return f"""\
 # 축구토토 승무패 — 패널/사회자 지침
 
@@ -197,16 +200,16 @@ def _instructions_body() -> str:
 
 | 단계 | 대화 | 첨부할 파일 | 받는 것 |
 |---|---|---|---|
-| 1 | 새 대화 | `01_1단계_데이터분석가.md` | 경기별 의견 **배열** |
-| 2 | **새** 대화 | `02_2단계_맞대결분석가.md` | 경기별 의견 **배열** |
-| 3 | **새** 대화 | `03_3단계_사회자.md` + 1·2단계 응답 | 경기별 종합 **배열** |
+| 1 | 새 대화 | `02_경기자료.md` | 경기별 의견 **배열** |
+| 2 | **새** 대화 | `02_경기자료.md` (1단계와 **같은 파일**) | 경기별 의견 **배열** |
+| 3 | **새** 대화 | `03_사회자자료.md` + 1·2단계 응답 | 경기별 종합 **배열** |
 
 파일은 **대화에 첨부**하십시오. 회차 전체 자료는 크기 때문에 붙여넣기가
 잘릴 수 있습니다.
 
-**채팅에 적을 말은 각 파일 맨 위의 `채팅에 적을 말` 에 그대로 들어 있습니다.**
-파일을 열어 그 블록을 복사해 붙이십시오. 3단계는 그 안의 `◀ … ▶` 두 자리에
-1·2단계 응답 배열을 채워야 합니다.
+**채팅에 적을 말은 `01_채팅에_적을_말.md` 에 단계별로 들어 있습니다.**
+그 블록을 복사해 붙이십시오 — 자료 파일에는 지시문이 없습니다. 3단계는
+그 안의 `◀ … ▶` 두 자리에 1·2단계 응답 배열을 채워야 합니다.
 
 > **한 번에 넣기 너무 크면** `경기별/` 폴더의 시트를 쓰십시오. 같은 자료를
 > 경기 하나씩 담고 있고, 단계 구분은 똑같습니다.
@@ -217,6 +220,10 @@ def _instructions_body() -> str:
    시키면 두 번째가 첫 번째를 읽고 그것에 맞춰 답합니다.
 2. 두 분석가는 **같은 자료**를 봅니다. 그래야 두 의견이 비교 가능합니다.
 3. 사회자는 원지표를 다시 받지 않습니다. 받으면 새 통계를 만들게 됩니다.
+
+**3단계는 토론을 {simulations}회 돌립니다.** 사회자가 두 의견을 그 횟수만큼
+부딪혀 보고, 라운드마다 도달한 스코어를 세어 최종 예상 스코어를 정합니다.
+어느 쪽도 처음에 내지 않은 **절충 스코어**가 나올 수 있습니다.
 
 > **이 지침의 한계**: 채팅에는 이 격리를 강제하는 장치가 없습니다.
 > 한 대화에서 세 단계를 다 하면 위 조건이 깨지고, 결과는 프로그램의
@@ -241,7 +248,7 @@ def _instructions_body() -> str:
 
 ## 사회자 (3단계)
 
-{moderator.SYSTEM}
+{moderator.system_prompt(simulations)}
 ---
 
 ## 회차 전체를 한 번에 할 때의 출력 형식
@@ -378,7 +385,8 @@ def _analyst_message(round_id: str, role: str, payloads, part: int,
 답하십시오. 배열 밖에는 아무것도 쓰지 마십시오."""
 
 
-def _moderator_message(round_id: str, count: int, warned: bool) -> str:
+def _moderator_message(round_id: str, count: int, warned: bool,
+                       sims: int = moderator.DEBATE_SIMULATIONS) -> str:
     warn_line = "" if not warned else (
         "\n이 회차는 근거(evidence)가 없습니다. 근거 ID 를 지어내지 말고\n"
         '"evidence_ids" 는 [] 로 두십시오.\n')
@@ -399,11 +407,16 @@ def _moderator_message(round_id: str, count: int, warned: bool) -> str:
 종합하십시오. 한쪽에만 있는 경기는 그 사실을 밝히고, 양쪽에 없는 경기는
 건너뛰십시오.
 {warn_line}
-경기마다 두 의견을 비교한 뒤 "adopted_home"·"adopted_away" 에 예상 스코어
-하나를 채택하고, "conclusion" 에 "토론 결과 예상 스코어는 X-Y 입니다.
-<왜 그 쪽인지>. <이 판단을 약하게 만드는 것>" 을 2~4문장으로 적으십시오.
-두 의견이 낸 스코어 중 하나를 그대로 쓰고 평균내지 마십시오. 고를 근거가
-없으면 null 로 두고 그 이유를 conclusion 에 적으십시오.
+경기마다 두 분석가의 토론을 {sims}회 돌리고, 라운드마다 도달한 스코어를
+"distribution" 에 세어 적으십시오 (count 합 = simulations = {sims}). 한쪽이
+설득해 그쪽 스코어로 끝날 수도, 둘이 양보해 절충 스코어에 이를 수도
+있습니다. 라운드마다 자료의 다른 축에서 출발하십시오.
+
+그 분포에서 최종 예상 스코어를 "adopted_home"·"adopted_away" 에 적으십시오.
+**분포에 나온 스코어만** 쓸 수 있고 평균내지 마십시오. "conclusion" 에는
+"{sims}회 토론 결과 예상 스코어는 X-Y 입니다(N회). <그 결론에 이른 이유>.
+<이 판단을 약하게 만드는 것>" 을 2~4문장으로 적으십시오. 고를 근거가 없으면
+null 로 두고 그 이유를 conclusion 에 적으십시오.
 
 목록 칸(common_points·differences·counterpoints·uncertainty)은 지침에 적힌
 개수를 넘기지 말고 한 항목에 한 문장으로 적으십시오.
@@ -412,7 +425,8 @@ def _moderator_message(round_id: str, count: int, warned: bool) -> str:
 답하십시오."""
 
 
-def chat_messages(round_id: str, groups, warned: bool = False) -> str:
+def chat_messages(round_id: str, groups, warned: bool = False,
+                  sims: int = moderator.DEBATE_SIMULATIONS) -> str:
     """`01_채팅에_적을_말.md`. 단계마다 그대로 복사할 블록 하나씩."""
     total = sum(len(g) for g in groups)
     parts = len(groups)
@@ -434,8 +448,9 @@ def chat_messages(round_id: str, groups, warned: bool = False) -> str:
                                           warned) + "\n```\n")
     blocks += ("\n## 3단계 — 사회자\n\n첨부: `03_사회자자료.md`\n\n"
                "`◀ … ▶` 두 자리에 1·2단계에서 받은 **JSON 배열을 통째로** "
-               "채운 뒤 보내십시오.\n\n```\n"
-               + _moderator_message(round_id, total, warned) + "\n```\n")
+               f"채운 뒤 보내십시오. 사회자는 토론을 {sims}회 돌립니다.\n\n```\n"
+               + _moderator_message(round_id, total, warned, sims)
+               + "\n```\n")
     # 경기별 대체 경로의 말도 여기 모은다 — 자료 파일에는 넣지 않는다.
     blocks += f"""
 ---
@@ -466,7 +481,7 @@ def chat_messages(round_id: str, groups, warned: bool = False) -> str:
 있습니다.
 
 > 프로젝트 지침(`00_프로젝트_지침.md`)은 **한 번만** 클로드 채팅 프로젝트의
-> 지침에 넣어 두면 됩니다. 지문 `{instructions_fingerprint()}` 가 실행 로그의
+> 지침에 넣어 두면 됩니다. 지문 `{instructions_fingerprint(sims)}` 가 실행 로그의
 > 값과 다르면 다시 넣으십시오.
 {split_note}{warn_block}
 ---
@@ -522,7 +537,7 @@ def match_sheet(match, payload) -> str:
 
 def export(report: Report, outdir: Path | None = None,
            max_bytes: int = DEFAULT_MAX_BYTES,
-           include_without_evidence: bool = False) -> str:
+           include_without_evidence: bool = False, settings=None) -> str:
     """회차 자료를 파일로 낸다. 상태 문자열을 돌려준다 (§1-6).
 
     `include_without_evidence` 는 근거 0건 경기도 내라는 **명시적 요청**이다
@@ -531,6 +546,8 @@ def export(report: Report, outdir: Path | None = None,
     if not report.matches:
         return "생략 (경기 없음)"
     round_id = report.round_id or "unknown"
+    sims = (moderator.simulations_of(settings) if settings is not None
+            else moderator.DEBATE_SIMULATIONS)
     target = Path(outdir) if outdir else (
         ROOT / "reports" / f"panel_{round_id}")
 
@@ -552,7 +569,7 @@ def export(report: Report, outdir: Path | None = None,
     try:
         target.mkdir(parents=True, exist_ok=True)
         (target / "00_프로젝트_지침.md").write_text(
-            project_instructions(), encoding="utf-8")
+            project_instructions(sims), encoding="utf-8")
         written, parts = 0, 1
         if payloads:
             # 회차 전체를 3개 대화로 처리하는 기본 경로. 자료가 한 대화에
@@ -562,7 +579,7 @@ def export(report: Report, outdir: Path | None = None,
             warned = bool(_warn(payloads))
             files: list[tuple[str, str]] = [
                 ("01_채팅에_적을_말.md",
-                 chat_messages(round_id, groups, warned))]
+                 chat_messages(round_id, groups, warned, sims))]
             for i, group in enumerate(groups, start=1):
                 suffix = f"_{i}of{parts}" if parts > 1 else ""
                 # 1단계와 2단계가 **같은 파일**을 쓴다 (불변조건 2).
@@ -595,7 +612,7 @@ def export(report: Report, outdir: Path | None = None,
         else:
             why = f"근거도 축 지표도 없어 만들 자료가 없음 ({len(barren)}경기)"
         return (f"부분 (지침만 → {target}, {why}, "
-                f"지침 지문 {instructions_fingerprint()})")
+                f"지침 지문 {instructions_fingerprint(sims)})")
     no_ev = sum(1 for p in payloads if not p.evidence_ids)
     note = f", 근거 없어 건너뜀 {len(skipped)}경기" if skipped else ""
     if no_ev:
@@ -607,4 +624,4 @@ def export(report: Report, outdir: Path | None = None,
     # 알 수 있다. 지침 맨 위에도 같은 값이 찍혀 있다.
     return (f"ok ({len(payloads)}경기 → {target}, 파일 "
             f"{written / 1024:.0f}KB{split}{note}, "
-            f"지침 지문 {instructions_fingerprint()})")
+            f"지침 지문 {instructions_fingerprint(sims)})")

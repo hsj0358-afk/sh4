@@ -856,6 +856,10 @@ def _evidence_block(match: Match) -> str:
 _ROLE_KO = {"data_analyst": "데이터 분석가",
             "matchup_tactical_analyst": "맞대결·전술 분석가"}
 
+# 토론 라운드가 도달한 스코어의 출처. `compromise` 는 두 의견 어느 쪽도
+# 처음에 내지 않았고 토론에서 나온 값이다.
+_ORIGIN_KO = dict(_ROLE_KO, compromise="양쪽 절충")
+
 # 패널이 실제로 있을 때만 내보낸다. 항상 실으면 `--panel` 없이 돌린 리포트의
 # 바이트가 달라져 회귀 기준(데모 HTML sha256)이 깨진다 — 실측으로 확인했다
 # (+310 bytes). 새 디자인 체계를 만들지 않고 `.traits`·`.mnotes` 를 그대로
@@ -938,25 +942,49 @@ _MODERATOR_ROWS = (("common_points", "공통점"),
                    ("uncertainty", "불확실성"))
 
 
+def _tally_table(result) -> str:
+    """토론 라운드가 도달한 스코어의 빈도표.
+
+    **횟수만 적는다.** 백분율·막대·게이지로 그리지 않는다 — 확률이 아니라
+    "같은 자료를 여러 각도에서 읽었을 때 결론이 얼마나 모이는가" 이고,
+    그림으로 그리면 확신도처럼 읽힌다 (§1-11).
+    """
+    rows = "".join(
+        f'<tr><td>{esc(t.home)} : {esc(t.away)}</td>'
+        f'<td class="num">{esc(t.count)}회</td>'
+        f'<td>{esc(_ORIGIN_KO.get(t.origin, t.origin))}</td></tr>'
+        for t in result.distribution)
+    if not rows:
+        return ""
+    return (f'<p class="lbl">토론 {esc(result.simulations)}회의 결론 분포</p>'
+            f'<table class="mini"><thead><tr><th>스코어</th><th>횟수</th>'
+            f'<th>어디서 나왔나</th></tr></thead><tbody>{rows}</tbody></table>'
+            f'<p class="vs">같은 자료를 서로 다른 축에서 읽었을 때 결론이 '
+            f'모인 정도입니다 · <b>확률이 아닙니다</b></p>')
+
+
 def _adopted_block(result) -> str:
-    """사회자가 채택한 종합 예상 스코어.
+    """사회자가 정한 최종 예상 스코어.
 
     **읽어서 놓기만 한다.** 여기서 두 수를 견주지 않고 승/무/패로 바꾸지
-    않는다 — 채택은 사회자가 이미 했고, 값은 두 의견이 낸 것 중 하나다.
+    않는다 — 값은 토론 분포에 실제로 나타난 스코어 중 하나다.
     """
     home, away = result.adopted_home, result.adopted_away
     why = (f'<p class="ptext">{_ptext(result.conclusion)}</p>'
            if result.conclusion else "")
+    tally = _tally_table(result)
     if home is None or away is None:
         # 0 은 실제 예측이라 다르다. 못 골랐으면 이유가 그 자리를 채운다.
-        return ('<p class="lbl">종합 예상 스코어</p>'
-                '<p class="nodata">두 의견 중 하나를 고를 근거가 자료에 '
-                '없었습니다.</p>' + why)
+        return ('<p class="lbl">최종 예상 스코어</p>'
+                '<p class="nodata">토론 결과에서 하나를 고를 근거가 자료에 '
+                '없었습니다.</p>' + why + tally)
     who = " · ".join(_ROLE_KO.get(r, r) for r in result.adopted_from)
-    src = (f'<p class="vs">{esc(who)}의 예상 스코어를 그대로 채택했습니다 '
-           f'(평균내지 않습니다)</p>' if who else "")
-    return (f'<p class="lbl">종합 예상 스코어</p>'
-            f'<p class="mscore">{esc(home)} : {esc(away)}</p>{src}{why}')
+    src = (f'<p class="vs">{esc(who)}의 예상 스코어입니다 '
+           f'(평균내지 않습니다)</p>' if who else
+           '<p class="vs">두 의견 어느 쪽도 처음에 내지 않은 <b>절충 '
+           '스코어</b>입니다 (평균이 아니라 토론에서 나온 값)</p>')
+    return (f'<p class="lbl">최종 예상 스코어</p>'
+            f'<p class="mscore">{esc(home)} : {esc(away)}</p>{src}{why}{tally}')
 
 
 def _moderator_block(result) -> str:

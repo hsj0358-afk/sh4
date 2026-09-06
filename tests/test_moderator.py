@@ -454,6 +454,164 @@ def test_i29j_no_representative_score_field():
             "conclusion"} <= names
 
 
+# ------------------------------------------------ 토론 시뮬레이션 (3-C 보강)
+#
+# 사용자가 요청한 것: "가상 토론을 30회 돌려 최적의 예상 스코어를 내라.
+# 한쪽이 이길 수도 있지만 절충 스코어가 나올 수도 있다."
+#
+# 그래서 값의 출처가 **제안 집합 → 토론 분포**로 옮겨졌다. 평균을 막는
+# 보증은 그대로다 — 분포에 없는 값은 들어오지 못한다.
+_SIM = dict(panels_seen=(), shared=(), data_only=(), matchup_only=(),
+            allowed_ids=())
+
+
+def _dist(*rows):
+    return [{"home": h, "away": a, "count": c} for h, a, c in rows]
+
+
+def test_s1_distribution_is_parsed_and_sorted():
+    res = moderator.parse_result(
+        _mod_json(simulations=30,
+                  distribution=_dist((1, 1, 9), (2, 1, 18), (2, 2, 3)),
+                  adopted_home=2, adopted_away=1, conclusion="30회 중 18회"),
+        allowed_scores={DATA: (2, 1), MATCHUP: (1, 1)}, **_SIM)
+    assert res.simulations == 30
+    # 많이 나온 순으로 줄 세운다 — 집합·사전 순서에 기대지 않는다.
+    assert [(t.home, t.away, t.count) for t in res.distribution] == [
+        (2, 1, 18), (1, 1, 9), (2, 2, 3)]
+
+
+def test_s2_counts_must_add_up_to_simulations():
+    """세지 않고 지어낸 표를 그대로 받으면 분포라고 부를 수 없다."""
+    try:
+        moderator.parse_result(
+            _mod_json(simulations=30, distribution=_dist((2, 1, 10)),
+                      adopted_home=2, adopted_away=1, conclusion="x"),
+            allowed_scores={DATA: (2, 1)}, **_SIM)
+    except moderator.ValidationError as exc:
+        assert "다릅니다" in str(exc), exc
+        return
+    raise AssertionError("합계가 안 맞는데 통과했다")
+
+
+def test_s3_compromise_score_is_allowed_when_it_appears():
+    """어느 쪽도 처음에 내지 않은 스코어라도 토론에서 나왔으면 채택된다."""
+    res = moderator.parse_result(
+        _mod_json(simulations=20,
+                  distribution=_dist((2, 2, 11), (3, 1, 5), (1, 1, 4)),
+                  adopted_home=2, adopted_away=2,
+                  conclusion="20회 중 11회가 2-2 로 모였습니다"),
+        allowed_scores={DATA: (3, 1), MATCHUP: (1, 1)}, **_SIM)
+    assert (res.adopted_home, res.adopted_away) == (2, 2)
+    assert res.adopted_from == (), "절충인데 출처가 붙었다"
+    origins = {(t.home, t.away): t.origin for t in res.distribution}
+    assert origins[(2, 2)] == moderator.COMPROMISE
+    assert origins[(3, 1)] == DATA and origins[(1, 1)] == MATCHUP
+
+
+def test_s4_a_score_no_round_reached_is_rejected():
+    """분포가 곧 값의 출처다 — 평균을 막는 보증이 여기로 옮겨졌다."""
+    try:
+        moderator.parse_result(
+            _mod_json(simulations=10,
+                      distribution=_dist((3, 1, 6), (1, 1, 4)),
+                      adopted_home=2, adopted_away=1, conclusion="x"),
+            allowed_scores={DATA: (3, 1), MATCHUP: (1, 1)}, **_SIM)
+    except moderator.ValidationError as exc:
+        assert "어느 토론 라운드에서도" in str(exc), exc
+        assert "3-1, 1-1" in str(exc), "고를 수 있는 값을 안 알려 준다"
+        return
+    raise AssertionError("분포에 없는 스코어가 통과했다")
+
+
+def test_s5_averaged_values_still_cannot_enter():
+    """`1.5` 는 정수가 아니라 분포에도 채택에도 들어가지 못한다."""
+    for bad in ({"distribution": [{"home": 1.5, "away": 1, "count": 5}],
+                 "simulations": 5},
+                {"distribution": _dist((2, 1, 5)), "simulations": 5,
+                 "adopted_home": 1.5, "adopted_away": 1}):
+        try:
+            moderator.parse_result(_mod_json(conclusion="x", **bad),
+                                   allowed_scores={DATA: (2, 1)}, **_SIM)
+        except moderator.ValidationError:
+            continue
+        raise AssertionError(f"{bad} 가 통과했다")
+
+
+def test_s6_origin_is_recomputed_not_believed():
+    """모델이 `origin` 을 틀리게 적어도 제안 집합으로 다시 정한다."""
+    res = moderator.parse_result(
+        _mod_json(simulations=6,
+                  distribution=[{"home": 2, "away": 1, "count": 6,
+                                 "origin": "matchup_tactical_analyst"}],
+                  adopted_home=2, adopted_away=1, conclusion="x"),
+        allowed_scores={DATA: (2, 1)}, **_SIM)
+    assert res.distribution[0].origin == DATA, "모델 말을 그대로 믿었다"
+
+
+def test_s7_duplicate_score_rows_are_rejected():
+    try:
+        moderator.parse_result(
+            _mod_json(simulations=8, distribution=_dist((2, 1, 5), (2, 1, 3)),
+                      adopted_home=2, adopted_away=1, conclusion="x"),
+            allowed_scores={DATA: (2, 1)}, **_SIM)
+    except moderator.ValidationError as exc:
+        assert "두 번 나옵니다" in str(exc), exc
+        return
+    raise AssertionError("같은 스코어가 두 줄인데 통과했다")
+
+
+def test_s8_too_few_rounds_is_not_a_distribution():
+    try:
+        moderator.parse_result(
+            _mod_json(simulations=2, distribution=_dist((2, 1, 2)),
+                      adopted_home=2, adopted_away=1, conclusion="x"),
+            allowed_scores={DATA: (2, 1)}, **_SIM)
+    except moderator.ValidationError as exc:
+        assert "최소" in str(exc), exc
+        return
+    raise AssertionError(f"{moderator.MIN_SIMULATIONS}회 미만인데 통과했다")
+
+
+def test_s9_no_distribution_falls_back_to_the_proposals():
+    """분포가 없으면(옛 형식) 예전 규칙으로 돌아간다 — 죽지 않는다."""
+    res = moderator.parse_result(
+        _mod_json(adopted_home=2, adopted_away=1, conclusion="x"),
+        allowed_scores={DATA: (2, 1)}, **_SIM)
+    assert res.simulations == 0 and res.distribution == ()
+    assert (res.adopted_home, res.adopted_away) == (2, 1)
+
+
+def test_s10_the_count_comes_from_settings():
+    cfg = Settings(panel={"debate_simulations": 12})
+    assert moderator.simulations_of(cfg) == 12
+    # 최소보다 작으면 기본값으로 돌아간다 — 분포라고 부를 수 없는 수다.
+    assert moderator.simulations_of(
+        Settings(panel={"debate_simulations": 1})) == \
+        moderator.DEBATE_SIMULATIONS
+    assert moderator.simulations_of(Settings()) == moderator.DEBATE_SIMULATIONS
+    assert str(12) in moderator.system_prompt(12)
+
+
+def test_s11_prompt_says_the_distribution_is_not_a_probability():
+    """가장 잘못 읽히기 쉬운 곳이다 — 확률이 아니라고 못 박는다."""
+    text = moderator.SYSTEM
+    assert "확률이 아닙니다" in text
+    assert "백분율로 바꾸거나" in text
+    assert "절충 스코어" in text, "절충이 가능하다는 것을 안 알려 준다"
+    assert "라운드마다 출발점을 바꾸십시오" in text
+
+
+def test_s12_tally_survives_a_cache_roundtrip():
+    res = moderator.parse_result(
+        _mod_json(simulations=6, distribution=_dist((2, 1, 4), (1, 1, 2)),
+                  adopted_home=2, adopted_away=1, conclusion="x"),
+        allowed_scores={DATA: (2, 1), MATCHUP: (1, 1)}, **_SIM)
+    back = revive_moderator(asdict(res))
+    assert back == res, "캐시를 거치면 분포가 달라진다"
+    assert back.distribution[0].label == "2-1"
+
+
 def test_i29k_retry_tells_the_model_what_was_wrong():
     """고칠 수 있는 오류인데 같은 답을 되풀이하게 두지 않는다."""
     hint = moderator.retry_hint("채택한 스코어 2-2 를 낸 의견이 없습니다")
@@ -504,8 +662,9 @@ def test_k32_no_score_comparison_operator():
 
 
 def test_k33_prompt_forbids_averaging_and_wdl():
-    for phrase in ("평균내거나", "승/무/패를 도출하지",
-                   "최종 판단은 사용자가", "근거 개수를 세기로"):
+    for phrase in ("두 스코어를 더해 반으로", "승/무/패를 도출하지",
+                   "최종 판단은 사용자가", "근거 개수를 세기로",
+                   "확률이 아닙니다"):
         assert phrase in moderator.SYSTEM, phrase
 
 

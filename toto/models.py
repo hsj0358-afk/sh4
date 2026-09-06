@@ -842,25 +842,49 @@ class PanelOpinion:
 
 
 @dataclass(frozen=True)
+class ScoreTally:
+    """토론 라운드 하나하나가 도달한 스코어와 그 횟수 (3-C 시뮬레이션).
+
+    **확률이 아니다.** 같은 자료를 서로 다른 축에서 출발해 여러 번 토론했을
+    때 결론이 얼마나 같은 곳에 모이는가를 센 것이고, 그 스코어가 실제로
+    나올 확률이 아니다. 백분율로 바꾸거나 확률처럼 부르지 않는다.
+    """
+    home: int = 0
+    away: int = 0
+    count: int = 0
+    # 그 스코어가 어디서 왔나. "data_analyst" · "matchup_tactical_analyst" ·
+    # "compromise"(두 의견 어느 쪽도 처음에 내지 않았고 토론에서 나온 것).
+    origin: str = ""
+
+    @property
+    def label(self) -> str:
+        return f"{self.home}-{self.away}"
+
+
+@dataclass(frozen=True)
 class ModeratorResult:
-    """두 의견을 **비교·종합**한 결과 (Phase 3-C).
+    """두 의견을 **토론시켜 종합**한 결과 (Phase 3-C).
 
-    **세 번째 분석가가 아니다.** 누가 맞는지 고르지 않고, 두 전문가가 왜
-    같고 왜 다른지·어떤 근거를 공유하고 어디서 갈리는지를 정리한다.
+    **세 번째 분석가가 아니다.** 새 통계를 만들지 않고, 두 전문가의 의견을
+    서로 부딪혀 이 경기의 예상 스코어 하나에 이른다.
 
-    **종합 예상 스코어는 '채택' 이지 '평균' 이 아니다.** 예전에는 스코어 칸을
-    아예 두지 않아 `2-1` 과 `1-1` 을 `1.5-1` 로 만드는 길을 막았는데, 그러면
-    사회자가 A·B 를 견주기만 하고 끝나 "그래서 이 경기는 몇 대 몇인가" 에
-    닿지 못했다. 지금은 칸을 두되 **두 의견이 제시한 스코어 중 하나를 그대로**
-    받게 하고, 그 제약을 `moderator.parse_result()` 가 **구조로 강제한다** —
-    제안에 없는 조합은 응답으로 들어오지 못하므로 평균값은 애초에 만들어질 수
-    없다(`1.5` 는 정수도 아니고, `(2,1)`·`(1,1)` 의 중간인 `(1,1)`~`(2,1)`
-    밖의 값은 전부 거부된다).
+    **스코어는 토론에서 나온 것이지 평균이 아니다.** 처음에는 스코어 칸을
+    아예 두지 않았고(평균을 막으려고), 다음에는 두 의견이 낸 조합으로만
+    제한했다. 그런데 토론에서는 **절충 스코어**가 나올 수 있다 — 어느 쪽도
+    처음에 내지 않았지만 서로의 근거를 받아들이면 도달하는 값이다. 그래서
+    제약을 한 겹 옮겼다.
 
-    `adopted_from` 은 **어느 역할의 스코어를 받았나**다. 둘이 같은 스코어를
-    냈으면 둘 다 들어간다. 고를 근거가 없으면 스코어는 `None` 이고
-    `score_rationale` 에 왜 고르지 못했는지가 남는다 — 억지로 고른 값보다
-    빈 칸이 낫다 (§1-5).
+        채택할 수 있는 값 = `distribution` 에 실제로 나타난 스코어
+
+    `distribution` 은 시뮬레이션한 토론 라운드들의 결과 빈도표이고, 각 항목은
+    **정수 스코어**다. 그래서 `1.5-1` 은 여전히 만들어질 수 없고(정수가 아님),
+    "두 값을 더해 반으로 나눈" 값도 어느 라운드에서도 도달하지 않았다면
+    분포에 없어 거부된다. 검증은 `moderator.parse_result()` 가 한다.
+
+    `adopted_from` 은 **어느 역할의 처음 스코어와 같은가**다. 둘 다 같은
+    스코어를 냈으면 둘 다 들어가고, **절충 스코어면 비어 있다.** 고를 근거가
+    없으면 스코어는 `None` 이고 `conclusion` 에 왜 고르지 못했는지가 남는다 —
+    억지로 고른 값보다 빈 칸이 낫다 (§1-5).
 
     `winner`·`wdl`·`pick`·`lean`·`recommendation`·`confidence`·`strength`·
     `favorite`·`probability` 칸은 **여전히 없다** — 있으면 그 자체가 추천이
@@ -883,7 +907,11 @@ class ModeratorResult:
     # 못했으면 둘 다 None 이다. 0 은 실제 예측이라 None 과 다르다.
     adopted_home: int | None = None
     adopted_away: int | None = None
-    adopted_from: tuple[str, ...] = ()   # 그 스코어를 낸 역할(들)
+    adopted_from: tuple[str, ...] = ()   # 그 스코어를 낸 역할(들). 절충이면 ()
+    # 토론 시뮬레이션. `simulations` 는 돌린 라운드 수이고 `distribution` 의
+    # count 합과 같아야 한다 (파서가 검사한다).
+    simulations: int = 0
+    distribution: tuple[ScoreTally, ...] = ()
     # 사람이 가장 먼저 읽는 칸. "토론 결과 예상 스코어는 X-Y 이고 이유는 …"
     # 을 2~4문장으로. 고르지 못했으면 왜 고를 수 없었는지가 들어간다.
     #
@@ -933,6 +961,9 @@ def revive_moderator(d: Any) -> ModeratorResult | None:
     body = dict(d)
     for key in _MODERATOR_TUPLES:
         body[key] = tuple(body.get(key) or ())
+    body["distribution"] = tuple(
+        ScoreTally(**t) for t in (d.get("distribution") or ())
+        if isinstance(t, dict))
     return ModeratorResult(**body)
 
 

@@ -73,6 +73,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--panel-export", action="store_true",
                    help="패널·사회자를 클로드 채팅에서 손으로 돌릴 자료를 "
                         "파일로 냅니다 (API 를 부르지 않습니다).")
+    p.add_argument("--export-match-material", action="store_true",
+                   help="회차 분석 결과를 클로드 채팅용 경기자료 MD 한 장으로 "
+                        "냅니다 (reports/<회차>_경기자료.md). API 를 부르지 "
+                        "않습니다.")
     p.add_argument("--panel-export-all", action="store_true",
                    help="--panel-export 를 켜고, 근거 0건 경기도 축 지표만으로 "
                         "냅니다 (시즌 초). 시트에 경고가 붙고 --panel 실행과 "
@@ -338,6 +342,17 @@ def main(argv: list[str] | None = None) -> int:
             log.warning("  배당 미수집 경기가 있어 %d경기만으로 계산했습니다.", v.n)
         log.info("회차로그 1줄 (지침 §8):")
         log.info("  %s", _log_line(report))
+
+    # 경기자료 MD (Phase 4-A). 프로그램과 클로드 채팅 사이의 인터페이스라
+    # 리포트가 나온 뒤 그대로 직렬화만 한다.
+    if args.export_match_material:
+        try:
+            from . import match_material
+            log.info("경기자료 MD: %s",
+                     match_material.export(report, settings))
+        except Exception as exc:                        # noqa: BLE001
+            log.warning("경기자료 MD 실패: %s", exc)
+            log.debug("경기자료 MD traceback", exc_info=True)
 
     # 패널 자료 내보내기. API 를 부르지 않으므로 리포트가 나온 뒤에 한다.
     # `--panel-export-all` 은 `--panel-export` 를 켠다 — 둘을 함께 적게

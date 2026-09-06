@@ -32,7 +32,7 @@ import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from .models import Report
+from .models import Report, find_season_match
 from .settings import ROOT
 
 log = logging.getLogger("toto")
@@ -166,12 +166,13 @@ def _settle(rows: list[dict], report: Report) -> int:
     **새로 수집하지 않는다** — 이번 실행이 받아 온 색인만 쓴다. 이번 회차의
     경기는 아직 안 끝났으므로 대개 지난 회차가 채워진다.
     """
-    index: dict[tuple[str, str], list] = {}
-    for sm in (report.season_matches or []):
-        if not sm.finished or sm.home_goals is None or sm.away_goals is None:
-            continue
-        index.setdefault((sm.home_team, sm.away_team), []).append(sm)
-    if not index:
+    # 스코어가 있는 종료 경기만 후보다. 짝 고르기 자체는
+    # `models.find_season_match()` 가 한다 — `match_material` 과 **같은
+    # 규칙**을 써야 해서 한 곳에 뒀다(두 벌이면 한쪽만 고쳐져 어긋난다).
+    season = [sm for sm in (report.season_matches or [])
+              if sm.finished and sm.home_goals is not None
+              and sm.away_goals is not None]
+    if not season:
         return 0
 
     stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -179,22 +180,14 @@ def _settle(rows: list[dict], report: Report) -> int:
     for row in rows:
         if row.get("result"):
             continue
-        key = (row.get("home_canon", ""), row.get("away_canon", ""))
-        candidates = index.get(key) or []
-        if not candidates:
-            continue
-        when = _kickoff_date(row.get("kickoff_kst", ""))
-        if when is not None:
-            near = [sm for sm in candidates
-                    if sm.kickoff is not None
-                    and abs(sm.kickoff.replace(tzinfo=None) - when) <= _SETTLE_WINDOW]
-            # 날짜를 아는데 맞는 것이 없으면 채우지 않는다.
-            candidates = near
-        if len(candidates) != 1:
+        sm = find_season_match(
+            season, row.get("home_canon", ""), row.get("away_canon", ""),
+            _kickoff_date(row.get("kickoff_kst", "")), _SETTLE_WINDOW,
+            finished_only=True)
+        if sm is None:
             # 같은 팀 짝이 둘 이상(홈/원정 두 경기)이고 날짜로 못 가리면
             # 비워 둔다. 틀린 결과를 채우는 것이 비어 있는 것보다 나쁘다.
             continue
-        sm = candidates[0]
         row["home_goals"] = str(sm.home_goals)
         row["away_goals"] = str(sm.away_goals)
         row["result"] = sm.result or ""

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from .predict import MatchProb, RoundVerdict
 from typing import Any
@@ -1152,6 +1152,27 @@ def matches_before(season: list[SeasonMatch], as_of: datetime | None,
             continue
     out.sort(key=lambda x: x.sort_key)
     return out
+
+
+def find_season_match(season: list[SeasonMatch], home: str, away: str,
+                      kickoff: datetime | None, window: timedelta,
+                      finished_only: bool = False) -> SeasonMatch | None:
+    """회차 경기 하나를 시즌 색인에서 찾는다. **못 가리면 None 이다.**
+
+    같은 팀 짝이 시즌에 두 번(홈/원정) 나오므로 팀명만으로는 가릴 수 없다.
+    날짜를 아는데 창 안에 맞는 것이 없으면 **비워 둔다** — 틀린 짝을 붙이는
+    것이 빈 것보다 나쁘다 (§1-6-2 의 자동 정산 규칙과 같다).
+
+    `roundlog._settle()` 과 `match_material` 이 **같은 규칙**을 써야 해서
+    여기에 둔다. 두 곳에 베껴 두면 한쪽만 고쳐져 조용히 어긋난다.
+    """
+    hits = [m for m in season
+            if m.home_team == home and m.away_team == away
+            and not (finished_only and not m.finished)]
+    if kickoff is not None:
+        hits = [m for m in hits if m.kickoff is not None
+                and abs(m.kickoff.replace(tzinfo=None) - kickoff) <= window]
+    return hits[0] if len(hits) == 1 else None
 
 
 @dataclass

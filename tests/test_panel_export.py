@@ -410,7 +410,12 @@ def test_r4_moderator_round_sheet_takes_both_arrays():
 
 
 def test_r5_large_round_is_split_into_parts():
-    """한 대화에 안 들어갈 크기면 나눈다 — 실패를 겪은 뒤 알게 하지 않는다."""
+    """한 대화에 안 들어갈 크기면 **파일을** 나눈다. 대화는 나누지 않는다.
+
+    예전에는 부수만큼 대화도 나눴다(`1단계 (1/5부)`). 260052 운영에서 여러
+    MD 를 한 대화에 함께 첨부하면 그대로 처리된다는 것이 확인됐고, 대화를
+    나누면 한 분석가가 회차 전체를 못 보게 된다.
+    """
     out = Path(tempfile.mkdtemp()) / "panel"
     status = panelexport.export(_report(_round_matches(4)), outdir=out,
                                 max_bytes=1_000)
@@ -418,9 +423,17 @@ def test_r5_large_round_is_split_into_parts():
     parts = sorted(f.name for f in out.glob("02_*.md"))
     assert len(parts) > 1, parts
     assert all("of" in n for n in parts), parts
-    # 채팅 메시지도 부수만큼 나온다 (1·2단계 × 부수 + 사회자).
+
     says = _says(out)
-    assert says.count("첨부: `02_경기자료_1of") == 2, says
+    # 단계 제목은 여전히 셋이다 — 부수만큼 늘지 않는다. 본문에도 `## 3단계
+    # 자료` 같은 말이 나오므로 **줄 첫머리의 제목만** 센다.
+    heads = re.findall(r"^## (\d)단계", says, re.M)
+    assert heads.count("1") == 1 and heads.count("2") == 1, heads
+    assert heads.count("3") == 2, heads      # 3단계 + 그 직후 JSON 절차
+    # 나뉜 파일이 **전부** 한 대화의 첨부 목록에 들어 있다 (1·2단계 두 번).
+    for name in parts:
+        assert says.count(f"`{name}`") == 2, (name, says)
+    assert "대화는 나누지 마십시오" in says
 
 
 def test_r6_split_is_even_not_front_loaded():

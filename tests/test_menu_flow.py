@@ -15,15 +15,17 @@ pytest 없이도 돈다:  python tests/test_menu_flow.py
 from __future__ import annotations
 
 import builtins
+import inspect
 import io
 import logging
 import sys
+import tempfile
 from contextlib import redirect_stdout
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from toto import cli, menu                                       # noqa: E402
+from toto import cli, menu, panelimport                                       # noqa: E402
 
 
 class _Input:
@@ -90,14 +92,14 @@ def drive(lines, result=0, quiet=True):
 # --------------------------------------------------------------------------
 def test_a1_two_runs_in_one_process():
     """실행 → pause → 메뉴 → 실행 → pause → 메뉴 → [0]."""
-    code, calls, out = drive(["4", "", "4", "", "0"])
+    code, calls, out = drive(["5", "", "5", "", "0"])
     assert len(calls) == 2, f"기능이 2번 실행돼야 한다: {calls}"
     assert code == 0
     assert out.count("축구토토 승무패 분석 리포트") == 3, "메뉴가 3번 떠야 한다"
 
 
 def test_a2_menu_is_reprinted_after_each_run():
-    _, _, out = drive(["4", "", "0"])
+    _, _, out = drive(["5", "", "0"])
     assert out.count("[0] 종료") == 2
 
 
@@ -111,7 +113,7 @@ def test_a3_different_items_in_one_session():
 
 def test_a4_exit_code_is_the_last_run():
     """한 번 쓰고 종료하면 루프가 없던 때와 같은 값이 나온다."""
-    code, _, _ = drive(["4", "", "0"], result=3)
+    code, _, _ = drive(["5", "", "0"], result=3)
     assert code == 3
 
 
@@ -145,7 +147,7 @@ def test_b7_zero_does_not_pause():
 
 def test_b8_pause_is_asked_only_after_a_run():
     """프롬프트는 `input()` 인자로 나가므로 stdout 이 아니라 물어본 기록을 본다."""
-    fake = _Input(["4", "", "0"])
+    fake = _Input(["5", "", "0"])
     real_input, real_cli = builtins.input, cli.main
     builtins.input, cli.main = fake, _Runner(0)
     try:
@@ -161,7 +163,7 @@ def test_b8_pause_is_asked_only_after_a_run():
 # C. 기능 예외
 # --------------------------------------------------------------------------
 def test_c9_exception_does_not_kill_the_program():
-    code, calls, out = drive(["4", "", "4", "", "0"],
+    code, calls, out = drive(["5", "", "5", "", "0"],
                              result=RuntimeError("수집 실패"))
     assert len(calls) == 2, "예외 뒤에도 메뉴를 계속 쓸 수 있어야 한다"
     assert "오류가 발생했습니다: 수집 실패" in out
@@ -180,7 +182,7 @@ def test_c10_exception_is_logged_with_traceback(capture=None):
     handler = Grab()
     menu.log.addHandler(handler)
     try:
-        drive(["4", "", "0"], result=ValueError("boom"))
+        drive(["5", "", "0"], result=ValueError("boom"))
     finally:
         menu.log.removeHandler(handler)
     assert records, "예외가 로그에 남지 않았다"
@@ -218,7 +220,7 @@ def test_d14_eof_does_not_run_the_default_item():
 
 
 def test_d15_eof_at_the_pause_prompt_exits():
-    code, calls, _ = drive(["4"])         # 실행 후 pause 대본 없음 → EOF
+    code, calls, _ = drive(["5"])         # 실행 후 pause 대본 없음 → EOF
     assert len(calls) == 1
     assert code == 0
 
@@ -231,14 +233,14 @@ def test_d16_ctrl_c_at_the_prompt_stops():
 
 
 def test_d17_ctrl_c_during_a_run_stops():
-    code, _, out = drive(["4", "", "0"], result=KeyboardInterrupt())
+    code, _, out = drive(["5", "", "0"], result=KeyboardInterrupt())
     assert code == 130
     assert "중단했습니다" in out
 
 
 def test_d18_ctrl_c_is_not_swallowed_into_a_loop():
     """Ctrl+C 를 일반 예외처럼 삼켜 루프를 계속 돌리지 않는다."""
-    fake = _Input([KeyboardInterrupt(), "4", "", "0"])
+    fake = _Input([KeyboardInterrupt(), "5", "", "0"])
     real_input = builtins.input
     builtins.input = fake
     try:
@@ -339,7 +341,7 @@ def inspect_source(fn) -> str:
 def test_g24_operational_menu_maps_to_the_right_flags():
     """운영 메뉴는 넷 + 도구. 번호와 인자가 어긋나면 엉뚱한 실행이 된다."""
     by_key = {k: a for k, _t, _d, a in menu.ITEMS}
-    assert list(by_key) == ["1", "2", "3", "4", "9"], list(by_key)
+    assert list(by_key) == ["1", "2", "3", "4", "5", "9"], list(by_key)
     assert by_key["1"] == (menu.ROUND, [])
     # [2]·[3] 은 [1] 에 **더하는** 것이다. 후스코어드를 끄면 리포트에서
     # 강점/약점·상성이 빠지고, 그 값(shots_pg)이 축을 거쳐 패널 자료에도
@@ -349,17 +351,179 @@ def test_g24_operational_menu_maps_to_the_right_flags():
     for key in ("2", "3"):
         assert "--skip-whoscored" not in by_key[key][1], key
         assert "--skip-match-details" not in by_key[key][1], key
-    assert by_key["4"] == ["--serve"]
+    # [4] 는 클로드 채팅에서 받은 Panel Result 를 되붙이는 자리다.
+    # 폰에서 열기는 [5] 로 내려갔다 (기능은 그대로).
+    assert by_key["4"] == "panel-apply"
+    assert by_key["5"] == ["--serve"]
     assert by_key["9"] == "tools"
 
 
 def test_g24b_every_collecting_item_asks_for_the_round():
     """수집하는 항목은 전부 회차를 먼저 묻는다."""
     for key, _t, _d, args in menu.ITEMS:
-        collects = isinstance(args, tuple) or args in ("tools", ["--serve"])
+        collects = isinstance(args, tuple) or args in (
+            "tools", "panel-apply", ["--serve"])
         assert collects, (key, args)
         if isinstance(args, list):
             assert "--round" not in args, key
+
+
+# --------------------------------------------------------------------------
+# H. [4] 패널 결과 반영 (Phase 4-B 운영 통합)
+# --------------------------------------------------------------------------
+def _inbox(tmp, names):
+    """`panel_results/` 를 흉내낸다. 파일 내용의 `round` 가 기준이다."""
+    import json as _json
+    folder = tmp.joinpath(panelimport.INBOX_DIRNAME)
+    folder.mkdir(parents=True, exist_ok=True)
+    for name, rnd in names:
+        folder.joinpath(name).write_text(
+            _json.dumps({"schema_version": "1.1", "round": rnd,
+                         "matches": []}), encoding="utf-8")
+    return folder
+
+
+def _with_inbox(tmp):
+    """`inbox_dir()` 를 임시 폴더로 돌린다 (원본을 건드리지 않는다)."""
+    real = panelimport.inbox_dir
+
+    def fake(base=None):
+        return tmp.joinpath(panelimport.INBOX_DIRNAME)
+    panelimport.inbox_dir = fake
+    real_find = panelimport.find_panel_files
+    panelimport.find_panel_files = lambda base=None: real_find(tmp)
+    return real, real_find
+
+
+def _restore(pair):
+    panelimport.inbox_dir, panelimport.find_panel_files = pair
+
+
+def test_h28_no_json_tells_the_user_where_to_put_it():
+    tmp = Path(tempfile.mkdtemp())
+    saved = _with_inbox(tmp)
+    try:
+        code, calls, out = drive(["4", "", "0"])
+    finally:
+        _restore(saved)
+    assert calls == [], "파일이 없는데 실행했다"
+    assert panelimport.INBOX_DIRNAME in out
+    assert "panel_result.json" in out
+    assert code == 1
+
+
+def test_h29_single_json_runs_without_asking_for_a_path():
+    tmp = Path(tempfile.mkdtemp())
+    _inbox(tmp, [("260052_panel_result.json", "260052")])
+    saved = _with_inbox(tmp)
+    try:
+        code, calls, _out = drive(["4", "", "0"])
+    finally:
+        _restore(saved)
+    assert len(calls) == 1, calls
+    argv = calls[0]
+    assert argv[:2] == ["--round", "260052"], argv
+    assert "--import-panel-result" in argv
+    assert "--audit-panel-result" in argv
+    assert code == 0
+
+
+def test_h30_several_json_files_are_not_picked_silently():
+    tmp = Path(tempfile.mkdtemp())
+    _inbox(tmp, [("260050_panel_result.json", "260050"),
+                 ("260052_panel_result.json", "260052")])
+    saved = _with_inbox(tmp)
+    try:
+        code, calls, out = drive(["4", "2", "", "0"])
+    finally:
+        _restore(saved)
+    assert "[1] 260050_panel_result.json" in out
+    assert "[2] 260052_panel_result.json" in out
+    assert calls[0][:2] == ["--round", "260052"], calls
+
+
+def test_h31_bad_choice_does_not_run_anything():
+    tmp = Path(tempfile.mkdtemp())
+    _inbox(tmp, [("a_panel_result.json", "260050"),
+                 ("b_panel_result.json", "260052")])
+    saved = _with_inbox(tmp)
+    try:
+        _code, calls, out = drive(["4", "9", "", "0"])
+    finally:
+        _restore(saved)
+    assert calls == [], "없는 번호인데 실행했다"
+    assert "없는 번호입니다" in out
+
+
+def test_h32_unreadable_round_is_asked_not_guessed():
+    tmp = Path(tempfile.mkdtemp())
+    folder = tmp.joinpath(panelimport.INBOX_DIRNAME)
+    folder.mkdir(parents=True)
+    folder.joinpath("broken.json").write_text("{oops", encoding="utf-8")
+    saved = _with_inbox(tmp)
+    try:
+        _code, calls, _out = drive(["4", "260052", "", "0"])
+    finally:
+        _restore(saved)
+    assert calls[0][:2] == ["--round", "260052"], calls
+
+
+def test_h33_menu_reuses_the_cli_path_instead_of_its_own():
+    """§43 — 메뉴와 CLI 가 다른 검증 결과를 만들면 안 된다.
+
+    메뉴는 인자를 만들어 `cli.main` 에 넘길 뿐이고, 검증·감사 함수를 직접
+    부르지 않는다.
+    """
+    src = inspect.getsource(menu)
+    for banned in ("panelimport.validate", "panelimport.run",
+                   "panelaudit.audit", "render_report"):
+        assert banned not in src, banned
+
+
+def test_h34_panel_menu_never_collects():
+    """§52 — artifact 가 있으면 다시 수집하지 않는다. 메뉴가 수집 플래그를
+    붙이지 않는다는 것부터 확인한다.
+    """
+    tmp = Path(tempfile.mkdtemp())
+    _inbox(tmp, [("260052_panel_result.json", "260052")])
+    saved = _with_inbox(tmp)
+    try:
+        _code, calls, _out = drive(["4", "", "0"])
+    finally:
+        _restore(saved)
+    argv = calls[0]
+    for banned in ("--panel", "--panel-export", "--no-cache", "--demo"):
+        assert banned not in argv, (banned, argv)
+
+
+def test_h35_exception_in_panel_menu_does_not_kill_the_loop():
+    tmp = Path(tempfile.mkdtemp())
+    _inbox(tmp, [("260052_panel_result.json", "260052")])
+    saved = _with_inbox(tmp)
+    try:
+        code, calls, out = drive(["4", "", "4", "", "0"],
+                                 result=RuntimeError("가져오기 실패"))
+    finally:
+        _restore(saved)
+    assert len(calls) == 2, "예외 뒤에도 메뉴를 계속 쓸 수 있어야 한다"
+    assert "다른 메뉴는 계속 사용할 수 있습니다" in out
+    assert code == 1
+
+
+def test_h36_eof_while_choosing_a_file_stops_cleanly():
+    tmp = Path(tempfile.mkdtemp())
+    _inbox(tmp, [("a_panel_result.json", "260050"),
+                 ("b_panel_result.json", "260052")])
+    saved = _with_inbox(tmp)
+    try:
+        code, calls, out = drive(["4"])        # 파일 선택에서 EOF
+    finally:
+        _restore(saved)
+    assert calls == [], "EOF 인데 실행했다"
+    # 회차 프롬프트에서 EOF 났을 때와 **같은 규칙**이다 — 실행하지 않았음을
+    # 알리고 1 로 끝낸다 (§1-7-1).
+    assert "입력이 끝나 실행하지 않았습니다" in out
+    assert code == 1
 
 
 def test_g24c_dev_tools_are_kept_not_deleted():
@@ -392,7 +556,7 @@ def test_g26_run_menu_still_runs_one_iteration():
 
 
 def test_g27_serve_and_diagnose_still_tagged():
-    code, calls, out = drive(["4", "", "0"])
+    code, calls, out = drive(["5", "", "0"])
     assert calls == [["--serve"]], calls
     assert "공유를 마쳤습니다" in out
 

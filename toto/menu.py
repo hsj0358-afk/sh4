@@ -52,7 +52,15 @@ ITEMS = [
      "[1] 과 같은 수집·리포트에 더해, 채팅에 넣을 지침과 단계별 시트를 "
      "reports/panel_<회차>/ 에 만듭니다. [1] 을 먼저 돌릴 필요 없습니다.",
      (ROUND, ["--panel-export"])),
-    ("4", "폰에서 열기 (같은 와이파이)",
+    # [3] 으로 낸 자료를 클로드 채팅에서 돌리고 받아 온 JSON 을 되붙이는
+    # 자리. 검증·가져오기·감사·리포트 갱신을 **한 번에** 한다 — 예전에는
+    # 그 넷을 사용자가 CLI 로 따로 실행해야 했다.
+    ("4", "패널 결과 반영 및 리포트 생성",
+     "클로드 채팅에서 받은 <회차>_panel_result.json 을 panel_results/ 에 "
+     "넣고 고르면, 검증·가져오기·감사·리포트 갱신을 한 번에 합니다. "
+     "저장된 회차 분석이 있으면 다시 수집하지 않습니다.",
+     "panel-apply"),
+    ("5", "폰에서 열기 (같은 와이파이)",
      "이미 만든 리포트를 폰으로 볼 수 있게 주소를 띄웁니다. 클라우드 계정 불필요.",
      ["--serve"]),
     ("9", "개발·진단 도구",
@@ -138,6 +146,51 @@ def _choose(items, prompt: str, default: str):
     return entry
 
 
+def _pick_panel_file():
+    """`panel_results/` 에서 쓸 파일을 고른다. (경로, 회차) 또는 None.
+
+    **임의로 하나를 고르지 않는다.** 여러 개면 사용자가 고르고, 회차를 알 수
+    없으면 물어본다 — 엉뚱한 회차에 붙이는 것이 안 붙이는 것보다 나쁘다.
+    """
+    from . import panelimport
+
+    folder = panelimport.inbox_dir()
+    files = panelimport.find_panel_files()
+    if not files:
+        print()
+        print(f"  {folder} 에 패널 결과 파일이 없습니다.")
+        print("  클로드 채팅 3단계에서 만든 "
+              f"<회차>{panelimport.FILE_SUFFIX} 을 그 폴더에 넣어 주세요.")
+        print(f"  예: {folder / ('260052' + panelimport.FILE_SUFFIX)}")
+        return None
+
+    rounds = [panelimport.round_of(p) for p in files]
+    if len(files) == 1:
+        path, rnd = files[0], rounds[0]
+        print(f"\n  파일: {path.name}"
+              + (f" (회차 {rnd})" if rnd else " — 회차를 읽지 못했습니다"))
+    else:
+        print("\n  패널 결과 파일이 여러 개입니다. 하나를 고르세요.")
+        for i, (p, r) in enumerate(zip(files, rounds), start=1):
+            print(f"  [{i}] {p.name}" + (f"  (회차 {r})" if r else ""))
+        answer = _ask(f"번호를 고르고 Enter (1~{len(files)}): ")
+        if answer is None:
+            print("입력이 끝나 실행하지 않았습니다.")
+            return None
+        if not answer.isdigit() or not 1 <= int(answer) <= len(files):
+            print(f"'{answer}' 는 없는 번호입니다.")
+            return None
+        path, rnd = files[int(answer) - 1], rounds[int(answer) - 1]
+
+    if not rnd:
+        # 파일에서 회차를 못 읽었다. 지어내지 않고 물어본다 (§1-5).
+        rnd = _ask("회차 번호를 입력하세요 (예: 260052): ")
+        if rnd is None or not rnd:
+            print("회차를 알 수 없어 실행하지 않았습니다.")
+            return None
+    return path, rnd
+
+
 def run_menu() -> int | None:
     """메뉴를 **한 번** 띄우고 선택에 맞는 인자를 만들어 실행한다.
 
@@ -189,6 +242,18 @@ def run_menu() -> int | None:
             print("입력이 끝나 수집은 하지 않았습니다.")
             return 1
         args = ["--round", rnd] if rnd else []
+
+    # 클로드 채팅에서 받은 Panel Result 를 되붙인다. **여기서 검증·감사를
+    # 다시 구현하지 않는다** — CLI 와 같은 인자를 만들어 같은 경로를 태운다
+    # (§43). 두 곳에서 다른 결과가 나오면 어느 쪽도 믿을 수 없다.
+    if args == "panel-apply":
+        picked = _pick_panel_file()
+        if picked is None:
+            return 1
+        path, rnd = picked
+        args = ["--round", rnd,
+                "--import-panel-result", str(path),
+                "--audit-panel-result", str(path)]
 
     # 진단·점검 도구는 별도 스크립트 (리포트를 만들지 않으므로 따로 표시)
     if args in ("diagnose", "probe", "probe-analyze"):

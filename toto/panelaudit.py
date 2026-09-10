@@ -65,6 +65,15 @@ ADOPTED_MATCHUP = "ADOPTED_MATCHUP_ANALYST"
 ADOPTED_BOTH = "ADOPTED_BOTH"
 MODIFIED = "MODIFIED_OR_COMPROMISE"
 NOT_ADOPTED = "NOT_ADOPTED"
+# 패널을 **돌리지 않은** 경기. `NOT_ADOPTED`(돌렸는데 못 골랐다)와 다르다 —
+# 승무패 의미는 없고, 무슨 일이 있었나만 적는 감사 전용 라벨이다.
+PANEL_SKIPPED = "PANEL_SKIPPED"
+
+# 패널 실행 상태는 4-B 의 어휘를 그대로 쓴다 (§1-6). 여기서 새로 만들지 않는다.
+STATUS_OK = panelimport.STATUS_OK
+STATUS_SKIPPED = panelimport.STATUS_SKIPPED
+STATUS_FAILED = panelimport.STATUS_FAILED
+STATUS_PARTIAL = panelimport.STATUS_PARTIAL
 
 # 자료에 없는 것. 추론하지 않는다는 표시다.
 UNOBSERVED = "UNOBSERVED"
@@ -87,6 +96,10 @@ class PanelMatchAudit:
     """경기 하나의 감사 기록. **새 점수를 만들지 않는다.**"""
     match_no: int = 0
     match_id: str = ""
+    # 패널을 실제로 돌렸나 (4-B `panel_status`). `ok` 가 아니면 아래 스코어·
+    # 분포 칸은 전부 비어 있고, 그것이 정답이다.
+    panel_status: str = STATUS_OK
+    panel_status_reason: str = ""
     home_team: str = ""
     away_team: str = ""
     data_analyst_score: tuple | None = None
@@ -172,6 +185,9 @@ def decision_type(adopted, da, mu) -> str:
 def _match_audit(no: int, match, run, codes) -> PanelMatchAudit:
     ops = {o.role: o for o in (getattr(run, "opinions", ()) or ())}
     mod = getattr(run, "moderator", None)
+    state = panelimport.status_of(run)
+    raw = getattr(run, "status", "") or ""
+    why = raw.split(" (", 1)[1].rstrip(")") if " (" in raw else ""
 
     def score(role):
         o = ops.get(role)
@@ -198,12 +214,16 @@ def _match_audit(no: int, match, run, codes) -> PanelMatchAudit:
 
     return PanelMatchAudit(
         match_no=no, match_id=getattr(run, "payload_hash", "") or "",
+        panel_status=state,
+        panel_status_reason=why if state != STATUS_OK else "",
         home_team=getattr(getattr(match, "home", None), "display", ""),
         away_team=getattr(getattr(match, "away", None), "display", ""),
         data_analyst_score=da, matchup_analyst_score=mu,
         moderator_score=adopted,
         initial_score_relation=initial_relation(da, mu),
-        decision_type=decision_type(adopted, da, mu),
+        # 돌리지 않은 경기를 "못 골랐다"로 적지 않는다.
+        decision_type=(PANEL_SKIPPED if state != STATUS_OK
+                       else decision_type(adopted, da, mu)),
         adopted_from=tuple(getattr(mod, "adopted_from", ()) or ()),
         simulations=getattr(mod, "simulations", 0) or 0,
         distribution_total=total, distribution_origins=origins,
@@ -228,27 +248,54 @@ def match_audit(match, run) -> PanelMatchAudit | None:
 
 
 def _coverage(report: Report, parsed: dict, imp: PanelImportResult) -> dict:
-    """커버리지. **누락 경기 번호까지 남긴다** (§5)."""
+    """커버리지. **누락 경기 번호까지 남긴다** (§5).
+
+    **패널을 돌린 경기와 돌리지 않은 경기를 섞지 않는다.** 예전에는
+    `data_analyst 14/14` 처럼 회차 전체를 분모로 썼는데, 260052 처럼 3경기를
+    실행하지 않은 회차에서는 그 수가 거짓이 된다 — 분석가가 있었던 것도
+    아니고 빠뜨린 것도 아니기 때문이다. 이제 분모는 **`ok` 경기 수**이고,
+    실행하지 않은 경기는 상태별로 따로 센다.
+    """
+    ran = {no: run for no, run in parsed.items()
+           if panelimport.status_of(run) == STATUS_OK}
+
+    # **돌리지 않겠다고 밝힌 경기**만 뺀다. 파일에 있었는데 깨져서 못 읽은
+    # 경기는 그대로 '누락' 이다 — 그 둘을 같이 빼면 import 오류가 커버리지에서
+    # 사라진다.
+    declared_skip = {no for no, run in parsed.items()
+                     if panelimport.status_of(run) != STATUS_OK}
+
     def missing(pred) -> list[int]:
         return [m.no for m in report.matches
-                if not pred(parsed.get(m.no))]
+                if m.no not in declared_skip and not pred(ran.get(m.no))]
 
     def has_role(run, role) -> bool:
         return run is not None and any(
             o.role == role for o in (run.opinions or ()))
 
+    def count(state: str) -> int:
+        return sum(1 for run in parsed.values()
+                   if panelimport.status_of(run) == state)
+
     return {
         "matches_total": len(report.matches),
-        "panel_results": len(parsed),
-        "panel_missing": missing(lambda r: r is not None),
-        "data_analyst": sum(1 for m in report.matches
-                            if has_role(parsed.get(m.no), DA)),
+        # 파일에 들어 있던 경기 전부 (실행 여부와 무관).
+        "panel_blocks": len(parsed),
+        "panel_missing": [m.no for m in report.matches if m.no not in parsed],
+        # 실제로 패널을 돌린 경기. 아래 분석가·사회자 수의 분모다.
+        "panel_results": len(ran),
+        "panel_skipped": count(STATUS_SKIPPED),
+        "panel_failed": count(STATUS_FAILED),
+        "panel_partial": count(STATUS_PARTIAL),
+        "skipped_matches": sorted(
+            no for no, run in parsed.items()
+            if panelimport.status_of(run) != STATUS_OK),
+        "data_analyst": sum(1 for run in ran.values() if has_role(run, DA)),
         "data_analyst_missing": missing(lambda r: has_role(r, DA)),
-        "matchup_analyst": sum(1 for m in report.matches
-                               if has_role(parsed.get(m.no), MU)),
+        "matchup_analyst": sum(1 for run in ran.values() if has_role(run, MU)),
         "matchup_analyst_missing": missing(lambda r: has_role(r, MU)),
-        "moderator": sum(1 for m in report.matches
-                         if getattr(parsed.get(m.no), "moderator", None)),
+        "moderator": sum(1 for run in ran.values()
+                         if getattr(run, "moderator", None)),
         "moderator_missing": missing(
             lambda r: getattr(r, "moderator", None) is not None),
         "import_errors": len(imp.errors),
@@ -299,27 +346,34 @@ def audit(imp: PanelImportResult, report: Report) -> PanelAuditResult:
     out.issues = list(imp.issues)
 
     # ---- 채택 (§13) — 세기만 한다. 승률·신뢰도가 아니다 -------------------
-    kinds = [a.decision_type for a in out.matches]
+    # **패널을 돌린 경기만 센다.** 실행하지 않은 경기를 "채택 없음" 으로
+    # 세면 사회자가 하지도 않은 일이 통계에 들어간다.
+    ran = [a for a in out.matches if a.panel_status == STATUS_OK]
+    kinds = [a.decision_type for a in ran]
     out.adoption = {
+        "panel_ran": len(ran),
+        "panel_not_run": len(out.matches) - len(ran),
         "adopted_data_analyst": kinds.count(ADOPTED_DATA),
         "adopted_matchup_analyst": kinds.count(ADOPTED_MATCHUP),
         "adopted_both": kinds.count(ADOPTED_BOTH),
         "modified_or_compromise": kinds.count(MODIFIED),
         "not_adopted": kinds.count(NOT_ADOPTED),
-        "same_initial": sum(1 for a in out.matches
+        "panel_skipped": sum(1 for a in out.matches
+                             if a.decision_type == PANEL_SKIPPED),
+        "same_initial": sum(1 for a in ran
                             if a.initial_score_relation == SAME_INITIAL),
         "different_initial": sum(
-            1 for a in out.matches
+            1 for a in ran
             if a.initial_score_relation == DIFFERENT_INITIAL),
         "unknown_initial": sum(
-            1 for a in out.matches
+            1 for a in ran
             if a.initial_score_relation == UNKNOWN_INITIAL),
     }
 
     # ---- 분포 (§15·§17) — 횟수만. 확률로 바꾸지 않는다 --------------------
     origins: dict[str, int] = {}
     totals = []
-    for a in out.matches:
+    for a in ran:
         for name, count in a.distribution_origins.items():
             origins[name] = origins.get(name, 0) + count
         totals.append(a.distribution_total)
@@ -333,23 +387,24 @@ def audit(imp: PanelImportResult, report: Report) -> PanelAuditResult:
     # ---- 근거 (§21) -------------------------------------------------------
     ev_codes = {"UNKNOWN_EVIDENCE_ID", "EVIDENCE_ABSENT_BUT_CITED"}
     out.evidence = {
-        "matches_with_evidence": sum(1 for a in out.matches
+        "matches_with_evidence": sum(1 for a in ran
                                      if a.evidence_available),
-        "matches_without_evidence": sum(1 for a in out.matches
+        "matches_without_evidence": sum(1 for a in ran
                                         if not a.evidence_available),
-        "citations": sum(len(a.evidence_cited) for a in out.matches),
+        "citations": sum(len(a.evidence_cited) for a in ran),
         "invalid_citation_issues": sum(1 for i in imp.issues
                                        if i.code in ev_codes),
     }
 
-    out.consistency = _consistency(out.matches, out)
+    out.consistency = _consistency(ran, out)
 
     # ---- 상태 ------------------------------------------------------------
     cov = out.coverage
-    full = (cov["panel_results"] == cov["matches_total"] > 0
-            and cov["data_analyst"] == cov["matches_total"]
-            and cov["matchup_analyst"] == cov["matches_total"]
-            and cov["moderator"] == cov["matches_total"])
+    ok_n = cov["panel_results"]
+    full = (cov["panel_blocks"] == cov["matches_total"] > 0
+            and cov["data_analyst"] == ok_n
+            and cov["matchup_analyst"] == ok_n
+            and cov["moderator"] == ok_n)
     if imp.errors or not cov["matches_total"]:
         # 4-B 오류가 있으면 COMPLETE 로 적지 않는다 (§6).
         out.coverage_status = FAILED if not parsed else PARTIAL
@@ -370,17 +425,31 @@ def report_lines(result: PanelAuditResult) -> list[str]:
     """회차 감사 요약. **구조적 사실만 적는다** (§32)."""
     cov, ad = result.coverage, result.adoption
     total = cov.get("matches_total", 0)
+    ran = cov.get("panel_results", 0)
     lines = [f"{result.round_id} PANEL AUDIT — {result.status} "
              f"(커버리지 {result.coverage_status})", "",
-             "커버리지"]
-    for key, label in (("panel_results", "패널 결과"),
-                       ("data_analyst", "데이터 분석가"),
+             "패널 실행 상태"]
+    miss = cov.get("panel_missing") or []
+    lines.append(f"- 파일에 있는 경기: {cov.get('panel_blocks', 0)}/{total}"
+                 + (f" · 누락 {', '.join(f'{n}번' for n in miss)}" if miss else ""))
+    lines.append(f"- 패널을 돌린 경기: {ran}")
+    for key, label in (("panel_skipped", "생략"), ("panel_failed", "실패"),
+                       ("panel_partial", "부분")):
+        if cov.get(key):
+            lines.append(f"- {label}: {cov[key]}")
+    if cov.get("skipped_matches"):
+        lines.append("- 돌리지 않은 경기: "
+                     + ", ".join(f"{n}번" for n in cov["skipped_matches"]))
+
+    # 분모는 **돌린 경기 수**다. 회차 전체를 분모로 쓰면 생략한 경기 때문에
+    # "분석가가 빠졌다" 처럼 보인다.
+    lines += ["", f"커버리지 (돌린 {ran}경기 기준)"]
+    for key, label in (("data_analyst", "데이터 분석가"),
                        ("matchup_analyst", "맞대결·전술 분석가"),
                        ("moderator", "사회자")):
-        miss = cov.get(f"{key}_missing" if key != "panel_results"
-                       else "panel_missing") or []
+        miss = cov.get(f"{key}_missing") or []
         tail = f" · 누락 {', '.join(f'{n}번' for n in miss)}" if miss else ""
-        lines.append(f"- {label}: {cov.get(key, 0)}/{total}{tail}")
+        lines.append(f"- {label}: {cov.get(key, 0)}/{ran}{tail}")
 
     lines += ["", "두 분석가의 처음 의견",
               f"- 같음: {ad.get('same_initial', 0)}",
@@ -412,7 +481,11 @@ def report_lines(result: PanelAuditResult) -> list[str]:
                   "경기 | 데이터 | 맞대결 | 사회자 | 결정"]
         for a in result.matches:
             no, da, mu, mod = a.row
-            lines.append(f"{no} | {da} | {mu} | {mod} | {a.decision_type}")
+            tail = (f" — {a.panel_status_reason}"
+                    if a.panel_status != STATUS_OK and a.panel_status_reason
+                    else "")
+            lines.append(f"{no} | {da} | {mu} | {mod} | "
+                         f"{a.decision_type}{tail}")
 
     lines += ["", "자료에 없는 것 (추론하지 않는다)"]
     lines += [f"- {x}: {UNOBSERVED}" for x in result.not_in_schema]

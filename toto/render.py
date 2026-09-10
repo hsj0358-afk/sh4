@@ -1190,6 +1190,21 @@ def _moderator_block(result) -> str:
     return f'<p class="lbl">사회자 (두 의견의 종합)</p>{note}{parts}'
 
 
+def _panel_state(run) -> tuple[str, str]:
+    """(상태 낱말, 사유). `PanelRun.status` 는 `"생략 (사유)"` 형식이다.
+
+    **여기서 판정하지 않는다** — 4-B 가 정한 상태를 읽어 옮길 뿐이다
+    (`panelimport.status_of`). 실행하지 않은 경기를 "못 골랐다" 로 적으면
+    사회자가 하지도 않은 일을 화면이 말하게 된다.
+    """
+    from . import panelimport
+
+    raw = getattr(run, "status", "") or ""
+    reason = raw.split(" (", 1)[1].rstrip(")") if " (" in raw else ""
+    state = panelimport.status_of(run)
+    return state, (reason if state != panelimport.STATUS_OK else "")
+
+
 def _score_flow(match: Match) -> str:
     """스코어 흐름 — 데이터 분석가 → 맞대결·전술 분석가 → 사회자 (Phase 4-D).
 
@@ -1202,10 +1217,12 @@ def _score_flow(match: Match) -> str:
     """
     from . import panelaudit
 
-    audit = panelaudit.match_audit(match, getattr(match, "panel", None))
+    run = getattr(match, "panel", None)
+    audit = panelaudit.match_audit(match, run)
     if audit is None:
         return ""
     decision_ko = {
+        panelaudit.PANEL_SKIPPED: "패널을 실행하지 않았습니다",
         panelaudit.ADOPTED_DATA: "데이터 분석가의 원안을 그대로 채택",
         panelaudit.ADOPTED_MATCHUP: "맞대결·전술 분석가의 원안을 그대로 채택",
         panelaudit.ADOPTED_BOTH: "두 분석가가 같은 원안을 냈고 그것을 채택",
@@ -1252,9 +1269,15 @@ def _panel_block(match: Match) -> str:
             '참고값입니다 · <b>승/무/패를 추천하지 않습니다</b></p>')
 
     if not run.opinions:
-        why = "근거가 없어 실행하지 않았습니다" if run.status.startswith("생략") \
-            else "분석가 의견을 만들지 못했습니다"
-        return (f'{head}<p class="nodata">{esc(why)}. 위의 데이터 분석 '
+        state, reason = _panel_state(run)
+        # **돌리지 않은 것과 돌렸는데 안 된 것을 같은 말로 적지 않는다**
+        # (§1-6). `생략` 은 애초에 실행하지 않은 것이고, `실패` 는 실행했는데
+        # 의견이 만들어지지 않은 것이다.
+        why = {"생략": "이 경기는 패널 분석을 하지 않았습니다",
+               "부분": "패널을 일부만 실행했습니다",
+               }.get(state, "분석가 의견을 만들지 못했습니다")
+        tail = f" — {esc(reason)}" if reason else ""
+        return (f'{head}<p class="nodata">{esc(why)}{tail}. 위의 데이터 분석 '
                 f'결과는 그대로 확인할 수 있습니다.</p></div>')
 
     cards = "".join(_opinion_card(o, run.evidence_ids) for o in run.opinions)
@@ -1347,8 +1370,14 @@ def _decision_summary(match: Match) -> str:
         from . import panelaudit
 
         audit = panelaudit.match_audit(match, run)
+        state, reason = _panel_state(run)
         _no, da, mu, adopted = audit.row
-        if adopted == "—":
+        if state != "ok":
+            rows.append(("Panel 분석",
+                         '<span class="nodata">하지 않았습니다 ('
+                         + esc(state) + (f' — {esc(reason)}' if reason else "")
+                         + ')</span>'))
+        elif adopted == "—":
             rows.append(("Panel 종합 예상 스코어",
                          '<span class="nodata">토론 결과에서 하나를 고를 '
                          '근거가 자료에 없었습니다</span>'))
@@ -1587,6 +1616,9 @@ def _summary_panel(match: Match) -> str:
     run = getattr(match, "panel", None)
     if run is None:
         return ""
+    state, _reason = _panel_state(run)
+    if state != "ok":
+        return f'<div class="pv"><span>Panel 분석 {esc(state)}</span></div>'
     mod = getattr(run, "moderator", None)
     home = getattr(mod, "adopted_home", None)
     away = getattr(mod, "adopted_away", None)

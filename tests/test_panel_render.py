@@ -310,9 +310,18 @@ def test_e12_both_panels_failed():
 
 
 def test_e13_skipped_for_no_evidence():
+    """**돌리지 않은 것**과 돌렸는데 안 된 것을 같은 말로 적지 않는다.
+
+    4-B 가 `panel_status` 를 갖게 되면서 생략 사유가 경기마다 다를 수 있다
+    (근거 없음 · 상세 자료 없음 …). 그래서 사유를 문장에 박지 않고 상태에
+    적힌 것을 그대로 옮긴다.
+    """
     html = carded(PanelRun(status="생략 (근거 없음)"))
-    assert "근거가 없어 실행하지 않았습니다" in html
+    assert "패널 분석을 하지 않았습니다" in html
+    assert "근거 없음" in html, "사유가 사라졌다"
     assert "<h5>" not in html
+    # 사유가 없으면 사유 없이, 문장은 그대로.
+    assert "패널 분석을 하지 않았습니다" in carded(PanelRun(status="생략"))
 
 
 def test_e14_full_report_survives_a_failed_panel():
@@ -548,7 +557,8 @@ def test_l36_panel_entry_collects_like_the_plain_run():
     assert by_key["1"] == (menu.ROUND, [])
     assert by_key["2"] == (menu.ROUND, ["--panel"])
     assert by_key["3"] == (menu.ROUND, ["--panel-export"])
-    assert by_key["4"] == ["--serve"]
+    assert by_key["4"] == "panel-apply"       # 패널 결과 반영 (4-B 운영)
+    assert by_key["5"] == ["--serve"]
     assert dict((k, a) for k, _t, _d, a in menu.TOOLS)["1"] == ["--demo"]
 
 

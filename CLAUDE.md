@@ -2312,6 +2312,128 @@ Chromium 실측: 1200 / 760 / 400px 에서 가로 오버플로 0, 카드 밖으�
 
 회귀 테스트: `python tests/test_final_layout.py` (37개).
 
+### 1-20. 패널 미실행 상태와 운영 워크플로 (4-B 계약 보완)
+
+260052 운영에서 세 가지가 드러났다.
+
+#### 문제 — "돌리지 않았다" 를 적을 자리가 없었다
+
+9·13·14번은 패널 토론을 **실행하지 않았다.** 그런데 계약에는
+`simulations=0 · distribution=[] · adopted=null` 만 있고 그것이
+**"토론했는데 못 골랐다"** 인지 **"애초에 돌리지 않았다"** 인지 구분할 칸이
+없었다. 결과가 셋이었다.
+
+  · `_import_match` 가 `PanelRun.status` 를 `"ok (2/2 분석가 · chat-import)"`
+    로 **하드코딩**해 정상 실행과 구분되지 않았다.
+  · 4-C 커버리지가 `data_analyst 14/14` 로 세어, 있지도 않은 분석가를
+    있다고 적었다.
+  · `moderator.parse_result()` 가 `common_points` 와 `differences` 가 **둘 다
+    비면 거부**하므로, 통과시키려고 **하지도 않은 토론의 공통점을 한 줄
+    지어내야** 했다. §1-5 와 정면으로 어긋난다.
+
+#### `panel_status` — 새 어휘를 만들지 않는다
+
+schema `1.1` 에 경기 단위 선택 칸 둘을 더했다. **1.0 파일은 그대로 읽힌다**
+(칸이 없으면 `ok` 다).
+
+```json
+{"match_id": "...", "panel_status": "생략",
+ "panel_status_reason": "상세 데이터가 없어 Panel 분석을 수행하지 않음"}
+```
+
+상태는 §1-6 의 **넷 그대로**다 — `ok` · `부분` · `실패` · `생략`.
+
+  · `ok` 가 아니면 **사유가 필수**다 (`PANEL_STATUS_REASON_MISSING`). 사유
+    없는 '생략' 은 왜 없는지를 남기라는 §1-6 과 어긋난다.
+  · `ok` 가 아니면 분석가·사회자 블록을 **요구하지 않는다.** 260052 의 실제
+    출력은 사회자 블록에 `0`·`[]` 를 달고 있어서, 빼라고 요구할 수 없다 —
+    있어도 받고 내용은 읽지 않는다.
+  · 다만 **상태와 내용이 어긋나면 오류**다 (`PANEL_STATUS_CONTRADICTION`).
+    실행하지 않았다는데 스코어가 있으면 둘 중 하나가 거짓이다.
+  · 결과는 `PanelRun(status="생략 (사유)", opinions=(), moderator=None)` 이다.
+    **가짜 의견도 `simulations=30` 도 만들지 않는다.**
+
+상태를 **낱말 + 괄호 사유**로 적는 것은 새 형식이 아니다 — §1-6 이 쭉 써 온
+것이고 `render._panel_block` 이 이미 그 앞 낱말을 읽고 있었다.
+`panelimport.status_of(run)` 이 그 규칙을 한 곳에서 읽는다.
+
+#### 4-C 감사 — 돌린 경기와 아닌 경기를 섞지 않는다
+
+```
+패널 실행 상태
+- 파일에 있는 경기: 14/14
+- 패널을 돌린 경기: 11
+- 생략: 3
+- 돌리지 않은 경기: 9번, 13번, 14번
+
+커버리지 (돌린 11경기 기준)
+- 데이터 분석가: 11/11
+```
+
+  · 분석가·사회자 커버리지의 **분모가 `ok` 경기 수**다. 회차 전체를 분모로
+    쓰면 생략한 경기 때문에 "분석가가 빠졌다" 처럼 보인다.
+  · 다만 **깨져서 못 읽은 경기는 그대로 누락**이다. 돌리지 않겠다고 **밝힌**
+    경기만 뺀다 — 둘을 같이 빼면 import 오류가 커버리지에서 사라진다.
+  · `decision_type` 에 `PANEL_SKIPPED` 를 더했다. `NOT_ADOPTED`(돌렸는데 못
+    골랐다)와 다르고, 승무패 뜻은 없다.
+  · 채택·일치/불일치·분포 origin·근거 집계가 전부 **돌린 경기만** 센다.
+    `MATCHUP_ORIGIN_ZERO`·`ANALYSTS_NEVER_DISAGREE` 도 마찬가지다 —
+    실행하지 않은 경기 때문에 뜨던 거짓 경고가 사라졌다.
+
+화면도 같다. 생략 경기는 **"이 경기는 패널 분석을 하지 않았습니다 — <사유>"**
+가 나오고 가짜 스코어가 없다. `실패` 는 "분석가 의견을 만들지 못했습니다"
+그대로다 — **돌리지 않은 것과 돌렸는데 안 된 것을 같은 말로 적지 않는다.**
+
+#### 채팅 워크플로 — 파일 분할 ≠ 대화 분할
+
+예전에는 자료가 크면 `1단계 (1/5부)` 처럼 **대화까지** 나눴다. 260052 운영에서
+**여러 MD 를 한 대화에 함께 첨부하면 그대로 처리된다**는 것이 확인됐고,
+대화를 나누면 한 분석가가 회차 전체를 못 본다.
+
+```
+5개 파일 → 1개 데이터 분석가 대화
+5개 파일 → 1개 맞대결 분석가 대화
+```
+
+`01_채팅에_적을_말.md` 가 그렇게 바뀌었고, **3단계 직후 JSON 파일을 만드는
+절차**가 그 파일 안으로 들어왔다 — 예전에는 사용자가 매 회차 같은 프롬프트를
+직접 지어내 입력해야 했다. 그 블록이 `panel_status` 규칙·`schema_version`·
+금지 칸을 코드에서 가져와 적고, **검증에 실패하면 파일을 만들지 말라**고
+못 박는다.
+
+**프롬프트는 바뀌지 않았다.** `00_프로젝트_지침.md`(지문 `5044ea86`)와
+`PANEL_PROMPT_VERSION`(2)·`MODERATOR_PROMPT_VERSION`(5)이 그대로다 — 1·2·3단계
+출력 형식은 그대로이고, 새 규칙은 **회차마다 다시 만들어지는**
+`01_채팅에_적을_말.md` 에만 있다. 그래서 **지침을 다시 붙여넣을 필요가 없고**
+Phase 3 캐시도 그대로 유효하다.
+
+#### 메뉴 [4] — 네 단계를 한 번에
+
+```
+[4] 패널 결과 반영 및 리포트 생성      ← 새로 생김
+[5] 폰에서 열기 (같은 와이파이)        ← 예전 [4], 기능 그대로
+```
+
+`panel_results/` 를 훑어 파일을 찾고, 회차를 **파일 내용의 `round`** 에서
+읽어(이름이 아니다) `--round R --import-panel-result F --audit-panel-result F`
+를 만들어 **CLI 를 그대로 부른다.** 검증·감사를 메뉴에서 다시 구현하지
+않는다 — 두 곳에서 다른 결과가 나오면 어느 쪽도 믿을 수 없다(테스트가
+`panelimport.validate`·`panelaudit.audit` 이 `menu.py` 에 없는지 본다).
+
+  · 파일이 없으면 **어디에 넣으라고** 알려 준다.
+  · 여러 개면 **임의로 고르지 않는다** — 목록을 보여 주고 고르게 한다.
+  · 회차를 못 읽으면 **지어내지 않고 물어본다.**
+  · 저장본(4-C)이 있으면 **수집하지 않는다** — 그것이 4-C 를 만든 목적이다.
+    실측: `저장된 회차 분석 결과를 씁니다 (수집하지 않습니다)` 뒤에 소스
+    호출 0회로 리포트가 갱신된다.
+  · 가져오기가 끝나도 **원본 JSON 을 지우지 않는다** — 나중에
+    `--audit-panel-result` 로 다시 감사할 수 있는 원자료다.
+
+`panel_results/` 를 `.gitignore` 에 넣지 않았다 — `data/rounds.csv`(§1-6-2)와
+같은 취급이고, 커밋할지는 사용자가 정한다.
+
+회귀 테스트: `python tests/test_panel_status.py` (32개).
+
 ---
 
 ## 2. 작업 방식
@@ -2583,6 +2705,7 @@ python -m toto --export-match-material     # 경기자료 MD 한 장 (Phase 4-A)
 python -m toto --import-panel-result F.json # 채팅 패널 결과 가져오기 (4-B)
 python -m toto --validate-panel-result F.json  # 검사만 (붙이지 않는다)
 python -m toto --audit-panel-result F.json  # 회차 구조 감사 (4-C)
+#  메뉴 [4] 가 위 셋을 한 번에 한다 — panel_results/ 에 JSON 을 넣고 고르면 된다 (§1-20)
 python tests/test_league_matching.py       # 리그·팀 매칭 회귀 (15개)
 python tests/test_match_details.py         # 경기 상세 파싱 회귀 (36개)
 python tests/test_shot_events.py           # 슛 이벤트 계층 (46개)
@@ -2598,7 +2721,7 @@ python tests/test_sustainability.py        # 지속성 2-D (51개)
 python tests/test_venue_context.py         # 장소 문맥 2-E (58개)
 python tests/test_schedule_strength.py     # 상대 강도 2-F (40개)
 python tests/test_evidence.py              # 근거 생성 2-G (57개)
-python tests/test_menu_flow.py             # 메뉴 루프·예외·로그 3-A (36개)
+python tests/test_menu_flow.py             # 메뉴 루프·예외·로그 3-A · 메뉴[4] §1-20 (45개)
 python tests/test_panel.py                 # 두 전문가 패널 3-B (70개)
 python tests/test_moderator.py             # 사회자 3-C (79개)
 python tests/test_panel_render.py          # 패널 리포트 출력 3-D (47개)
@@ -2613,6 +2736,7 @@ python tests/test_panel_import.py          # 패널 결과 가져오기 4-B §1-
 python tests/test_panel_audit.py           # 패널 감사·회차 저장 4-C §1-16·17 (42개)
 python tests/test_decision_render.py       # 요약·직접 비교·패널 시각화 4-D §1-18 (37개)
 python tests/test_final_layout.py          # 레이더·직접 비교·시장·회차 카드 4-E §1-19 (37개)
+python tests/test_panel_status.py          # 패널 미실행 상태·운영 워크플로 §1-20 (32개)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)
 python tools/probe_sources.py --browser    # 소스 구조 점검

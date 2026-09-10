@@ -56,8 +56,36 @@ from .models import Match, ModeratorResult, PanelOpinion, PanelRun, Report
 
 log = logging.getLogger("toto")
 
-SCHEMA_VERSION = "1.0"
-SUPPORTED_VERSIONS = ("1.0",)
+# 1.0 은 계속 읽는다. 1.1 은 `panel_status` 를 쓰는 파일이다 — 새 칸이 없는
+# 1.1 파일은 1.0 과 완전히 같은 뜻이고, 1.0 파일이 `panel_status` 를 쓰면
+# 경고만 남기고 받아 준다(막을 이유가 없다).
+SCHEMA_VERSION = "1.1"
+SUPPORTED_VERSIONS = ("1.0", "1.1")
+
+# 패널 실행 상태. **새 어휘를 만들지 않는다** — §1-6 의 네 상태 그대로다.
+#
+# 나누는 이유는 하나다. `simulations=0 · distribution=[] · adopted=null` 은
+# 지금도 통과하지만, 그것이 **"토론했는데 못 골랐다"** 인지 **"애초에 돌리지
+# 않았다"** 인지 구분할 자리가 없었다. 260052 의 9·13·14번이 뒤쪽인데
+# 커버리지에는 앞쪽으로 셌다.
+STATUS_OK = "ok"
+STATUS_PARTIAL = "부분"
+STATUS_FAILED = "실패"
+STATUS_SKIPPED = "생략"
+PANEL_STATUSES = (STATUS_OK, STATUS_PARTIAL, STATUS_FAILED, STATUS_SKIPPED)
+# `ok` 가 아닌 상태 — 분석가·사회자 내용을 요구하지 않는다.
+NOT_RUN_STATUSES = (STATUS_PARTIAL, STATUS_FAILED, STATUS_SKIPPED)
+
+
+def status_of(run) -> str:
+    """`PanelRun.status` 에서 상태 낱말만. 모르면 `ok` 로 본다.
+
+    상태를 `"생략 (사유)"` 처럼 **낱말 + 괄호 사유**로 적는 것은 이 프로젝트가
+    §1-6 에서 쭉 써 온 형식이고, `render._panel_block` 도 이미 그 앞 낱말을
+    본다. 새 필드를 만들지 않고 그 규칙을 그대로 읽는다.
+    """
+    head = (getattr(run, "status", "") or "").split(" (")[0].strip()
+    return head if head in PANEL_STATUSES else STATUS_OK
 
 # 이 파일이 만든 결과라는 표시. Phase 3 의 LLM 캐시와 **섞지 않는다** —
 # 저쪽은 프로그램이 API 를 부르던 구조의 저장소이고, 이쪽은 사람이 채팅에서
@@ -151,6 +179,52 @@ class PanelImportResult:
                     f"가져옴, 확인 필요 {len(self.warnings)}건)")
         return (f"실패 (오류 {len(self.errors)}건, 경고 "
                 f"{len(self.warnings)}건 — 가져오지 않았습니다)")
+
+
+# ==========================================================================
+# 받은 파일을 두는 곳
+# ==========================================================================
+# 사용자가 클로드 채팅에서 받은 JSON 을 넣는 폴더. 경로를 매번 입력받지
+# 않으려고 **한 자리로 정한다** — 여러 곳을 뒤지면 어느 파일이 쓰였는지
+# 사용자가 알 수 없다.
+INBOX_DIRNAME = "panel_results"
+FILE_SUFFIX = "_panel_result.json"
+
+
+def inbox_dir(base: Path | None = None) -> Path:
+    from .settings import ROOT
+    # `/` 대신 `joinpath` 를 쓴다 — 경로 결합도 AST 로는 나눗셈이라,
+    # "분포를 확률로 바꾸지 않는다" 를 지키는 검사에 걸린다 (§1-15).
+    return (Path(base) if base is not None else ROOT).joinpath(INBOX_DIRNAME)
+
+
+def find_panel_files(base: Path | None = None) -> list[Path]:
+    """`panel_results/` 의 Panel Result 파일들. 회차 번호 순으로.
+
+    **임의로 하나를 고르지 않는다** — 목록을 돌려주고 고르는 것은 부르는
+    쪽 몫이다. 여러 개일 때 조용히 하나를 쓰면 엉뚱한 회차를 붙일 수 있다.
+    """
+    folder = inbox_dir(base)
+    if not folder.is_dir():
+        return []
+    return sorted((p for p in folder.glob("*.json") if p.is_file()),
+                  key=lambda p: (p.name, p))
+
+
+def round_of(path: Path) -> str:
+    """파일에서 회차를 읽는다. 파일 이름이 아니라 **내용**이 기준이다.
+
+    이름은 바뀔 수 있고 내용의 `round` 가 실제로 검증에 쓰이는 값이다.
+    읽지 못하면 이름에서 짐작하되, 그것도 안 되면 빈 문자열이다.
+    """
+    data, _why = load(path)
+    if isinstance(data, dict):
+        found = _text(str(data.get("round") or ""))
+        if found:
+            return found
+    stem = path.name[:-len(FILE_SUFFIX)] if path.name.endswith(FILE_SUFFIX) \
+        else path.stem
+    return stem if stem.isdigit() else ""
 
 
 # ==========================================================================
@@ -357,8 +431,79 @@ def _check_evidence_scope(block, allowed_ids, result: PanelImportResult,
                        f"합니다", field=f"{name}.evidence_ids", **where)
 
 
+def _panel_status(block, version: str, result: PanelImportResult,
+                  where: dict) -> tuple[str, str]:
+    """(상태, 사유). 없으면 `ok` — 1.0 파일이 그대로 통과한다.
+
+    `ok` 가 아니면 **사유를 반드시 적어야 한다.** 사유 없는 '생략' 은 "왜
+    없는지" 를 남기라는 §1-6 과 어긋나고, 나중에 그 경기를 다시 볼 때
+    수집 실패였는지 자료 부족이었는지 알 수 없다.
+    """
+    raw = block.get("panel_status")
+    if raw is None:
+        return STATUS_OK, ""
+    status = _text(str(raw))
+    if status not in PANEL_STATUSES:
+        result.add(ERROR, "PANEL_STATUS_INVALID",
+                   f"panel_status '{status}' 는 없는 상태입니다 "
+                   f"(가능: {', '.join(PANEL_STATUSES)})",
+                   field="panel_status", **where)
+        return STATUS_OK, ""
+    reason = _text(block.get("panel_status_reason"))
+    if status != STATUS_OK:
+        if version == "1.0":
+            result.add(WARNING, "PANEL_STATUS_IN_1_0",
+                       f"schema_version 1.0 파일이 panel_status 를 씁니다 — "
+                       f"이 칸은 1.1 부터입니다 (읽기는 했습니다)",
+                       field="panel_status", **where)
+        if not reason:
+            result.add(ERROR, "PANEL_STATUS_REASON_MISSING",
+                       f"panel_status 가 '{status}' 인데 사유가 없습니다 — "
+                       f"panel_status_reason 에 실제 사유를 적으십시오",
+                       field="panel_status_reason", **where)
+    return status, reason
+
+
+def _not_run(block, match: Match, status: str, reason: str,
+             allowed_ids, result: PanelImportResult, where: dict) -> PanelRun:
+    """실행하지 않은 경기. **내용을 만들지 않는다.**
+
+    분석가·사회자 블록은 있어도 되고 없어도 된다 — 260052 의 실제 출력이
+    `simulations: 0 · distribution: []` 인 사회자 블록을 달고 있어서
+    없애라고 요구할 수 없다. 다만 **내용이 실려 있으면** 상태와 어긋나므로
+    그때는 오류다: 실행하지 않았다는데 스코어가 있으면 둘 중 하나가 거짓이다.
+
+    돌려주는 `PanelRun` 은 의견도 사회자도 없다. 여기서 가짜 의견이나
+    `simulations=30` 을 지어내지 않는다.
+    """
+    clashes = []
+    for role in ANALYST_ROLES:
+        part = block.get(role)
+        if isinstance(part, dict) and (part.get("predicted_home") is not None
+                                       or part.get("predicted_away") is not None):
+            clashes.append(f"{role} 에 예상 스코어가 있습니다")
+    mod = block.get(MODERATOR_ROLE)
+    if isinstance(mod, dict):
+        if mod.get("adopted_home") is not None or mod.get("adopted_away") is not None:
+            clashes.append("moderator 에 채택 스코어가 있습니다")
+        if mod.get("distribution"):
+            clashes.append("moderator 에 토론 분포가 있습니다")
+    for text in clashes:
+        result.add(ERROR, "PANEL_STATUS_CONTRADICTION",
+                   f"panel_status 가 '{status}' 인데 {text} — 실행했다면 "
+                   f"panel_status 를 'ok' 로, 실행하지 않았다면 그 내용을 "
+                   f"빼십시오", field="panel_status", **where)
+    _check_evidence_scope(block, allowed_ids, result, where)
+    return PanelRun(status=f"{status} ({reason})" if reason else status,
+                    opinions=(),
+                    role_status={r: status for r in ANALYST_ROLES},
+                    market_reference=panel.market_reference(match),
+                    evidence_ids=allowed_ids, payload_hash="", moderator=None)
+
+
 def _import_match(block, match: Match, mid: str, sims: int,
-                  result: PanelImportResult) -> PanelRun | None:
+                  result: PanelImportResult,
+                  version: str = SCHEMA_VERSION) -> PanelRun | None:
     where = {"match_id": mid, "match_no": match.no}
     rows = panel.evidence_rows(match)
     allowed_ids = tuple(r["id"] for r in rows)
@@ -375,6 +520,13 @@ def _import_match(block, match: Match, mid: str, sims: int,
             result.add(ERROR, "TEAM_MISMATCH",
                        f"{key} 가 '{given}' 인데 이 경기는 "
                        f"'{ref.display}' 입니다", field=key, **where)
+
+    status, reason = _panel_status(block, version, result, where)
+    if status != STATUS_OK:
+        # 실행하지 않은 경기는 여기서 끝난다 — 분석가·사회자를 요구하지
+        # 않고, 통과시키려고 `common_points` 한 줄을 지어내게 하지 않는다.
+        return _not_run(block, match, status, reason, allowed_ids,
+                        result, where)
 
     given_no = block.get("match_number")
     if isinstance(given_no, int) and given_no != match.no:
@@ -422,7 +574,16 @@ def _audit(runs: dict[int, PanelRun], result: PanelImportResult) -> None:
     """
     origins: dict[str, int] = {}
     agree = disagree = compromise = adopted_data = adopted_matchup = 0
-    for run in runs.values():
+    # **실행한 경기만 센다.** 생략한 경기를 섞으면 "두 분석가가 한 번도
+    # 갈리지 않았다" 같은 경고가 실행하지도 않은 경기 때문에 뜬다.
+    by_status: dict[str, int] = {}
+    ran = {}
+    for no, run in runs.items():
+        state = status_of(run)
+        by_status[state] = by_status.get(state, 0) + 1
+        if state == STATUS_OK:
+            ran[no] = run
+    for run in ran.values():
         mod = run.moderator
         by_role = {o.role: (o.predicted_home, o.predicted_away)
                    for o in run.opinions}
@@ -444,6 +605,10 @@ def _audit(runs: dict[int, PanelRun], result: PanelImportResult) -> None:
 
     result.audit = {
         "matches": len(runs),
+        "panel_ok": by_status.get(STATUS_OK, 0),
+        "panel_skipped": by_status.get(STATUS_SKIPPED, 0),
+        "panel_failed": by_status.get(STATUS_FAILED, 0),
+        "panel_partial": by_status.get(STATUS_PARTIAL, 0),
         "analysts_agree": agree,
         "analysts_disagree": disagree,
         "adopted_from_data_analyst": adopted_data,
@@ -454,15 +619,15 @@ def _audit(runs: dict[int, PanelRun], result: PanelImportResult) -> None:
 
     # 260050 에서 실제로 나온 상태다. **그 자체로 오류는 아니다** — 두
     # 분석가가 늘 같은 스코어를 냈다면 그럴 수 있다. 다만 보이게 한다.
-    if runs and not origins.get(MATCHUP_ROLE):
+    if ran and not origins.get(MATCHUP_ROLE):
         result.add(WARNING, "MATCHUP_ORIGIN_ZERO",
                    f"분포에서 맞대결·전술 분석가 원안이 한 번도 나오지 "
                    f"않았습니다 (두 분석가 의견 일치 {agree}경기 / 불일치 "
                    f"{disagree}경기). 분석가가 참여하지 않은 것과는 다른 "
                    f"상태입니다 — 위 수치로 구분하십시오")
-    if runs and not disagree:
+    if ran and not disagree:
         result.add(WARNING, "ANALYSTS_NEVER_DISAGREE",
-                   f"{len(runs)}경기 전부에서 두 분석가의 원안 스코어가 "
+                   f"{len(ran)}경기 전부에서 두 분석가의 원안 스코어가 "
                    f"같습니다. 토론이 실제로 갈릴 여지가 있었는지 확인하십시오")
 
 
@@ -568,7 +733,8 @@ def validate(data: dict, report: Report, settings=None) -> PanelImportResult:
         block = matched.get(m.no)
         if block is None:
             continue
-        run = _import_match(block, m, _match_key(m, report), sims, result)
+        run = _import_match(block, m, _match_key(m, report), sims, result,
+                            version)
         if run is not None:
             runs[m.no] = run
 

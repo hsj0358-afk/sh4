@@ -60,7 +60,7 @@ def test_a1_market_row_shows_the_probabilities_it_already_has():
     m.probs = additive_probabilities(m.odds.home, m.odds.draw,
                                      m.odds.away)
     html = render._decision_summary(m)
-    assert "시장 내재확률" in html
+    assert "Pinnacle 시장 기준선" in html
     ph, _pd, _pa = m.probs.pct()
     assert f"{ph:.1f}%" in html, html
 
@@ -73,9 +73,9 @@ def test_a2_no_odds_says_why_instead_of_zero():
 
 def test_a3_panel_rows_appear_only_when_a_panel_exists():
     plain = render._decision_summary(_match())
-    assert "패널 최종 예상 스코어" not in plain, \
+    assert "Panel 종합 예상 스코어" not in plain, \
         "패널 없이 돌린 실행에 패널 줄이 생겼다"
-    assert "패널 최종 예상 스코어" in render._decision_summary(_panelled())
+    assert "Panel 종합 예상 스코어" in render._decision_summary(_panelled())
 
 
 def test_a4_adopted_score_is_copied_verbatim_not_averaged():
@@ -159,8 +159,8 @@ def test_b3_periods_are_not_mixed_into_one_picture():
 def test_b4_lower_is_better_metrics_are_marked():
     html = render._direct_compare_block(_match())
     assert "실점 ↓" in html or "피슈팅 ↓" in html, html
-    # 방향 표시는 라벨뿐이고, 막대가 좋고 나쁨을 담지 않는다는 말이 붙는다.
-    assert "좋고 나쁨이 아닙니다" in html
+    # 방향 표시는 라벨뿐이고, 점의 위치가 우열이 아니라는 말이 붙는다.
+    assert "점의 위치가 우열을 뜻하지 않습니다" in html
 
 
 def test_b5_unequal_sample_sizes_are_reported_not_hidden():
@@ -361,9 +361,13 @@ def test_d7_blocks_are_well_formed():
 
 def test_d8_card_hierarchy_is_summary_compare_panel_detail():
     src = inspect.getsource(render._match_card)
+    # 4-E 에서 시즌 다이버징 바(`_compare_inner`)가 검증 계층으로 내려갔다
+    # — 요약 계층에서 직접 비교와 같은 질문에 같은 수로 답하고 있었다.
+    # 자기 표(`season_axes`) 바로 앞자리는 그대로다 (§1-1-15).
     order = [src.index(x) for x in
-             ("_odds_block", "_decision_summary", "_compare_inner",
-              "{season_axes}", "_direct_compare_block", "_panel_block",
+             ("_odds_block", "_decision_summary", "charts.radar",
+              "_direct_compare_block", "_panel_block",
+              "_compare_inner", "{season_axes}",
               "_recent_block(match, settings)", "{recent_axes}",
               "_traits_block", "_evidence_block", "_h2h_block")]
     assert order == sorted(order), order

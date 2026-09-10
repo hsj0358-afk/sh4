@@ -75,6 +75,14 @@ def _stats(rng: random.Random, strong: bool) -> TeamStats:
         away_points=int(ppg * away_played * rng.uniform(0.7, 0.95)),
         shots_pg=shots_pg,
         shots_on_target_pg=sot_pg,
+        # 시즌 통계 피드의 두 항목. 실물에서는 `big_chance_team` ·
+        # `touches_in_opp_box_team` 피드로 들어온다(§3-2-1 에서 실물 응답을
+        # 확인했다). 데모가 이 둘을 비워 두는 바람에 **레이더 8축 중 2축이
+        # 데모에서만 사라져** 축 구성을 판단할 근거가 흐려졌다 (Phase 4-E).
+        # 난수 표본인 것은 나머지 항목과 같다.
+        big_chances_pg=rng.uniform(2.2, 3.6) if strong else rng.uniform(0.7, 1.8),
+        touches_opp_box_pg=(rng.uniform(28, 42) if strong
+                            else rng.uniform(12, 24)),
         possession=rng.uniform(56, 66) if strong else rng.uniform(38, 50),
         pass_success=rng.uniform(84, 90) if strong else rng.uniform(72, 80),
         aerials_won_pg=rng.uniform(9, 16),

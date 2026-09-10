@@ -227,10 +227,32 @@ def _swatch(color: str) -> str:
     return f'<span class="sw" style="background:{color}"></span>'
 
 
-def _odds_block(match: Match) -> str:
+def _market_status(match: Match, report) -> str:
+    """이 경기가 예정인가 종료인가. **4-A 의 판정을 그대로 쓴다** (§53).
+
+    킥오프와 지금 시각을 비교해 추정하지 않는다 — 시즌 색인의 `finished`
+    에서만 오고, 색인에서 못 가리면 '확인 불가' 다.
+    """
+    if report is None or not getattr(report, "season_matches", None):
+        return ""
+    from . import match_material
+
+    try:
+        return match_material._status_of(match, report)[0]
+    except Exception:                                  # noqa: BLE001
+        # 상태를 못 가려도 리포트는 나와야 한다 — 그때는 '확인 불가' 다.
+        return ""
+
+
+def _odds_block(match: Match, report=None) -> str:
     if not match.probs or not match.odds.available:
-        return ('<div class="block"><h4>배당률 · 내재확률</h4>'
-                '<p class="nodata">피나클 배당률을 가져오지 못했습니다.</p></div>')
+        # 왜 없는지를 셋으로 나눠 적는다 (§42). 문장은 경기자료 MD 와
+        # **같은 함수**에서 온다 — 두 화면이 다른 이유를 말하면 안 된다.
+        from . import match_material
+
+        why = match_material.market_absence_reason(_market_status(match, report))
+        return ('<div class="block"><h4>Pinnacle 시장 기준선</h4>'
+                f'<p class="nodata">{esc(why)}</p></div>')
 
     p = match.probs
     bar = charts.prob_bar(p.home, p.draw, p.away,
@@ -257,7 +279,7 @@ def _odds_block(match: Match) -> str:
     pickline = (f'<div class="pickline">픽(argmax) '
                 f'<b class="pk">{esc(p.pick_ko)}</b> — 예상적중률 '
                 f'<b>{p.p_pick * 100:.1f}%</b>{tag}</div>')
-    return (f'<div class="block"><h4>보정 확률 · 픽 (지침 §3-(b) 가산 마진 제거)</h4>'
+    return (f'<div class="block"><h4>Pinnacle 시장 기준선 · 보정 확률 (지침 §3-(b) 가산 마진 제거)</h4>'
             f'{bar}{pickline}'
             f'<div class="kv">{"".join(f"<span>{e}</span>" for e in extra)}</div></div>')
 
@@ -615,17 +637,21 @@ def _axes_blocks(match: Match) -> tuple[str, str]:
 #
 # 지표 이름은 여기에 한 번씩만 적는다 — 같은 지표가 두 축에 다 있어도
 # (`goals_against` 는 시간축과 수비축에 다 있다) 화면에서 두 번 세면 안 된다.
+# 후보를 여덟으로 줄였다 (Phase 4-E §26). 기간마다 값이 있는 것만 그려지므로
+# 실제로는 시즌 6줄 · 최근 7줄쯤 나온다 — 상단 요약 계층은 훑을 수 있어야
+# 하고, 나머지 지표는 아래 «경기력 분석» 표에 **하나도 빠짐없이** 남아 있다.
+#
+# 공격과 수비를 짝으로 둔다: 득점↔실점 · xG↔xGA/npxGA · 유효슈팅↔피슈팅.
+# `npxg` 는 뺐다 — `xg` 와 거의 같은 이야기다(PK 차이뿐).
 _DIRECT_ROWS = (
     ("time_context", "points"),
     ("time_context", "goals"),
     ("chance_quality", "xg"),
-    ("chance_quality", "npxg"),
-    ("chance_quality", "shots"),
     ("chance_quality", "shots_on_target"),
     ("defensive_quality", "goals_against"),
+    ("defensive_quality", "xga"),
     ("defensive_quality", "npxga"),
     ("defensive_quality", "shots_against"),
-    ("defensive_quality", "shots_on_target_against"),
 )
 
 
@@ -668,10 +694,9 @@ def _direct_compare_block(match: Match) -> str:
 
     for attr, name in _DIRECT_ROWS:
         label, fmt = _axis_label_fmt(name)
-        # ↓ 는 레이더와 같은 표시다 — '낮을수록 좋은 지표'. 막대 길이 자체는
+        # ↓ 는 레이더와 같은 표시다 — '낮을수록 좋은 지표'. 점의 위치 자체는
         # 좋고 나쁨을 담지 않으므로, 방향은 라벨로만 알린다.
-        if analysis.SPECS.get(name, ("", "", ""))[2] == analysis.LOWER_BETTER:
-            label += " ↓"
+        lower = analysis.SPECS.get(name, ("", "", ""))[2] == analysis.LOWER_BETTER
         window = window_of(attr)
         periods = [(analysis.SEASON, "시즌")]
         if window:
@@ -684,13 +709,14 @@ def _direct_compare_block(match: Match) -> str:
             if hm is None or am is None or hm.value is None or am.value is None:
                 continue
             rows_by_period.setdefault(period, []).append(
-                {"label": label, "home": hm.value, "away": am.value, "fmt": fmt})
+                {"label": label, "home": hm.value, "away": am.value,
+                 "fmt": fmt, "lower_better": lower})
             spans[period] = span
             if (hm.sample_count is not None and am.sample_count is not None
                     and hm.sample_count != am.sample_count):
                 mismatch.setdefault(
                     (period, hm.sample_count, am.sample_count), []
-                ).append(label)
+                ).append(label + (" ↓" if lower else ""))
 
     if not rows_by_period:
         return ""
@@ -698,9 +724,9 @@ def _direct_compare_block(match: Match) -> str:
     body = ""
     for period in sorted(rows_by_period, key=analysis.period_sort_key):
         body += (f'<p class="meta">{esc(spans[period])}</p>'
-                 + charts.diverging_bar(rows_by_period[period],
-                                        match.home.display,
-                                        match.away.display, width=560))
+                 + charts.dumbbell(rows_by_period[period],
+                                   match.home.display,
+                                   match.away.display, width=560))
     lines = []
     for key in sorted(mismatch, key=lambda k: (analysis.period_sort_key(k[0]),
                                                k[1], k[2])):
@@ -717,10 +743,11 @@ def _direct_compare_block(match: Match) -> str:
                 '주의하십시오: ' + esc(" · ".join(lines)) + '</p>')
     return ('<div class="block"><h4>홈 ↔ 원정 직접 비교</h4>'
             '<p class="meta">같은 기간·같은 지표를 <b>양쪽 다 값이 있을 때만</b> '
-            '나란히 놓습니다 · 막대 길이는 두 값 중 큰 쪽을 기준으로 한 상대 '
-            '길이일 뿐 좋고 나쁨이 아닙니다 · ↓ 는 낮을수록 좋은 지표 · '
-            '표본 수(n)는 아래 경기력 분석 표에 있습니다 · 지표를 합쳐 종합 '
-            '점수를 만들지 않고 승·무·패를 추천하지 않습니다</p>'
+            '한 눈금 위에 놓습니다 · 눈금은 줄마다 따로라 다른 줄과 x 위치를 '
+            '견줄 수 없습니다 · ↓ 는 낮을수록 좋은 지표 · 표본 수(n)는 아래 '
+            '경기력 분석 표에 있고 여기 없는 지표도 거기 전부 남아 있습니다 · '
+            '지표를 합쳐 종합 점수를 만들지 않고 승·무·패를 추천하지 '
+            '않습니다</p>'
             f'{body}{note}</div>')
 
 
@@ -1038,7 +1065,7 @@ def _opinion_card(opinion, evidence_ids: tuple) -> str:
 def _market_table(market) -> str:
     """시장 기준선. **분석가가 아니다** — 별도 영역에 확률만 적는다."""
     if market is None:
-        return ('<p class="lbl">시장 기준선</p>'
+        return ('<p class="lbl">Pinnacle 시장 기준선</p>'
                 '<p class="nodata">배당을 가져오지 못해 시장 기준선이 '
                 '없습니다.</p>')
     rows = ""
@@ -1052,7 +1079,7 @@ def _market_table(market) -> str:
         rows += (f'<tr><td>오버라운드</td><td class="num">'
                  f'{esc(f"{market.overround:.4f}")}</td></tr>')
     meta = " · ".join(x for x in (market.source, market.as_of) if x)
-    return (f'<p class="lbl">시장 기준선 (외부 참고값 · 분석가가 아닙니다)</p>'
+    return (f'<p class="lbl">Pinnacle 시장 기준선 (외부 참고값 · 분석가가 아닙니다)</p>'
             f'<table class="mini"><tbody>{rows}</tbody></table>'
             + (f'<p class="vs">{esc(meta)}</p>' if meta else ""))
 
@@ -1080,7 +1107,7 @@ def _tally_table(result) -> str:
          for t in result.distribution])
     if not bars:
         return ""
-    return (f'<p class="lbl">토론 {esc(result.simulations)}회의 결론 분포</p>'
+    return (f'<p class="lbl">토론 시뮬레이션 {esc(result.simulations)}회의 스코어 분포</p>'
             f'{bars}'
             f'<p class="vs">같은 자료를 서로 다른 축에서 읽었을 때 결론이 '
             f'모인 정도입니다 · 막대는 <b>이 경기에서 가장 많이 나온 스코어</b>를 '
@@ -1100,7 +1127,7 @@ def _adopted_block(result) -> str:
     tally = _tally_table(result)
     if home is None or away is None:
         # 0 은 실제 예측이라 다르다. 못 골랐으면 이유가 그 자리를 채운다.
-        return ('<p class="lbl">최종 예상 스코어</p>'
+        return ('<p class="lbl">Panel 종합 예상 스코어</p>'
                 '<p class="nodata">토론 결과에서 하나를 고를 근거가 자료에 '
                 '없었습니다.</p>' + why + tally)
     who = " · ".join(_ROLE_KO.get(r, r) for r in result.adopted_from)
@@ -1108,8 +1135,12 @@ def _adopted_block(result) -> str:
            f'(평균내지 않습니다)</p>' if who else
            '<p class="vs">두 의견 어느 쪽도 처음에 내지 않은 <b>절충 '
            '스코어</b>입니다 (평균이 아니라 토론에서 나온 값)</p>')
-    return (f'<p class="lbl">최종 예상 스코어</p>'
-            f'<p class="mscore">{esc(home)} : {esc(away)}</p>{src}{why}{tally}')
+    # §31 — 역할을 이름 옆에 붙여 둔다. '최종 판단'·'정답'·'추천' 이 아니다.
+    role = ('<p class="vs">두 분석가의 의견을 <b>사회자가 종합한</b> 예상 '
+            '스코어이며 승·무·패 추천이 아닙니다.</p>')
+    return (f'<p class="lbl">Panel 종합 예상 스코어</p>'
+            f'<p class="mscore">{esc(home)} : {esc(away)}</p>'
+            f'{role}{src}{why}{tally}')
 
 
 def _moderator_block(result) -> str:
@@ -1247,6 +1278,43 @@ def _panel_block(match: Match) -> str:
             '</div>')
 
 
+def _radar_table(match: Match) -> str:
+    """레이더와 **같은 값**을 글자로 (Phase 4-E §45).
+
+    레이더는 값을 SVG `<title>` 로만 알려 주는데, 그건 마우스를 올려야 보이고
+    **폰에서는 아예 볼 수 없다.** 색과 위치에만 기대지 않으려면 같은 값이
+    글자로도 있어야 한다.
+
+    **여기서 계산하지 않는다** — `Match.radar` 에 이미 들어 있는 값과 백분위를
+    옮겨 적을 뿐이다. `상위 N%` 는 레이더 툴팁이 쓰는 것과 같은 표시 방식이다.
+    """
+    axes = (match.radar or {}).get("axes") or []
+    if not axes:
+        return '<p class="nodata">리그 백분위를 만들 자료가 없습니다.</p>'
+
+    def cell(axis, side: str) -> str:
+        value, pct = axis.get(f"{side}_value"), axis.get(f"{side}_pct")
+        if value is None or pct is None:
+            return '<td class="num"><span class="nodata">—</span></td>'
+        return (f'<td class="num">{esc(charts._fmt(value))}'
+                f'<small> 상위 {100 - pct:.0f}%</small></td>')
+
+    rows = ""
+    for axis in axes:
+        label = esc(axis["label"]) + ("↓" if axis.get("invert") else "")
+        # 장소 축은 두 팀이 다른 지표를 본다 — 그 사실을 줄에 적어 둔다.
+        note = ""
+        if axis.get("home_label") or axis.get("away_label"):
+            note = (f'<small> ({esc(axis.get("home_label", ""))} / '
+                    f'{esc(axis.get("away_label", ""))})</small>')
+        rows += (f'<tr><td>{label}{note}</td>'
+                 f'{cell(axis, "home")}{cell(axis, "away")}</tr>')
+    return (f'<table class="mini"><thead><tr><th>지표</th>'
+            f'<th class="num">{esc(match.home.display)}</th>'
+            f'<th class="num">{esc(match.away.display)}</th></tr></thead>'
+            f'<tbody>{rows}</tbody></table>')
+
+
 def _decision_summary(match: Match) -> str:
     """요약 — 이 경기에서 **이미 나온 것**을 한자리에 모은다 (Phase 4-D).
 
@@ -1266,10 +1334,10 @@ def _decision_summary(match: Match) -> str:
     if p is not None and match.odds.available:
         ph, pd, pa = p.pct()
         tag = ' <span class="tossup">백중세</span>' if p.toss_up else ""
-        rows.append(("시장 내재확률",
+        rows.append(("Pinnacle 시장 기준선",
                      f"승 {ph:.1f}% · 무 {pd:.1f}% · 패 {pa:.1f}%{tag}"))
     else:
-        rows.append(("시장 내재확률",
+        rows.append(("Pinnacle 시장 기준선",
                      '<span class="nodata">배당을 가져오지 못했습니다</span>'))
 
     # 패널은 `--panel` 없이 돌린 실행에 아예 없다. 그때는 줄을 만들지
@@ -1281,7 +1349,7 @@ def _decision_summary(match: Match) -> str:
         audit = panelaudit.match_audit(match, run)
         _no, da, mu, adopted = audit.row
         if adopted == "—":
-            rows.append(("패널 최종 예상 스코어",
+            rows.append(("Panel 종합 예상 스코어",
                          '<span class="nodata">토론 결과에서 하나를 고를 '
                          '근거가 자료에 없었습니다</span>'))
         else:
@@ -1289,7 +1357,7 @@ def _decision_summary(match: Match) -> str:
             src = (f"{esc(who)}의 예상 스코어 (평균내지 않습니다)" if who
                    else "두 의견 어느 쪽도 처음에 내지 않은 절충 스코어 "
                         "(평균이 아닙니다)")
-            rows.append(("패널 최종 예상 스코어",
+            rows.append(("Panel 종합 예상 스코어",
                          f"<b>{esc(adopted.replace('-', ' : '))}</b> — {src}"))
         both = " · ".join(
             f"{name} {cell.replace('-', ' : ')}"
@@ -1327,6 +1395,17 @@ def _decision_summary(match: Match) -> str:
             rows.append(("근거", '<span class="nodata">0건 (근거 생성 게이트 '
                                  '미충족)</span>'))
 
+    # §44 — 전술 정성 자료가 없으면 없다고 적는다. **포메이션·선발·부상·압박
+    # 방식을 추정해 채우지 않는다** (§1-12 가 "구조가 막지 못한다" 고 적어 둔
+    # 바로 그 항목들이라, 칸을 만들지 않는 것이 가장 확실한 방법이다).
+    traits = [len(p.strengths) + len(p.weaknesses) + len(p.style_of_play)
+              for p in (match.home_profile, match.away_profile) if p]
+    if not traits or not any(traits):
+        rows.append(("전술 정성 자료",
+                     '<span class="nodata">없음 (WhoScored 강점·약점·스타일 '
+                     '미수집) — 포메이션·선발·부상은 이 리포트 어디에도 '
+                     '없습니다</span>'))
+
     body = "".join(f'<tr><td>{esc(label)}</td><td>{value}</td></tr>'
                    for label, value in rows)
     return ('<div class="block"><h4>요약 — 이 경기에서 지금까지 나온 것</h4>'
@@ -1336,7 +1415,7 @@ def _decision_summary(match: Match) -> str:
             f'<table class="mini"><tbody>{body}</tbody></table></div>')
 
 
-def _match_card(match: Match, settings: Settings) -> str:
+def _match_card(match: Match, settings: Settings, report=None) -> str:
     meta = " · ".join(x for x in (match.league_ko or match.league,
                                   match.kickoff_kst) if x)
     notes = ""
@@ -1352,22 +1431,34 @@ def _match_card(match: Match, settings: Settings) -> str:
             f'<p class="meta">{esc(meta)}</p>'
             f'{_standing_row(match)}'
             f'{notes}'
-            f'{_odds_block(match)}'
+            f'{_odds_block(match, report)}'
             # 위계는 요약 → 비교 → 패널 → 세부다 (Phase 4-D). 예전에는
             # 카드가 세부부터 시작해서, 무엇이 있고 무엇이 없는지 알려면
             # 열 몇 개 블록을 끝까지 내려가 봐야 했다.
             f'{_decision_summary(match)}'
+            # 요약 계층의 두 그림은 **서로 다른 질문**에 답한다 (4-E §70):
+            # 레이더는 "리그 안에서 어디쯤", 직접 비교는 "이번 두 팀이 실제
+            # 수치로 어떻게 다른가". 예전에는 레이더 옆에 시즌 다이버징 바가
+            # 함께 있었는데, 그 바는 직접 비교와 **같은 질문에 같은 수**로
+            # 답해서 한 카드에 같은 지표가 세 번 그려졌다(실측 7종). 바는
+            # 검증 계층으로 내렸다 — 자기 표(시즌) 바로 앞자리다.
+            f'<div class="block"><h4>리그 내 위치 (리그 백분위)</h4>'
+            f'<p class="meta">같은 리그 안에서만 줄 세운 값입니다 · '
+            f'바깥쪽일수록 상위 · 옆 표에 같은 값을 글자로도 적었습니다 · '
+            f'<b>여기서 종합 점수를 만들지 않습니다</b></p>'
+            f'<div class="cols3">'
+            f'{charts.radar((match.radar or {}).get("axes") or [], match.home.display, match.away.display)}'
+            f'{_radar_table(match)}'
+            f'</div></div>'
+            f'{_direct_compare_block(match)}'
+            f'{_panel_block(match)}'
+            # ---- 검증 계층 (§62 LEVEL 4) ----
             # 차트와 그 표를 붙여 놓는다. 예전에는 다이버징 바(시즌)와
             # 슈팅·xG 프로필(최근)이 먼저 나오고 대응하는 표가 한참 뒤에
             # 따로 있어, 같은 지표를 두 곳에서 따로 읽어야 했다.
-            f'<div class="block"><h4>리그 내 위치 · 지표 비교</h4>'
-            f'<div class="cols3">'
-            f'{charts.radar((match.radar or {}).get("axes") or [], match.home.display, match.away.display)}'
-            f'{_compare_inner(match, settings)}'
-            f'</div></div>'
+            f'<div class="block"><h4>시즌 지표 비교 (수집한 값 전부)</h4>'
+            f'{_compare_inner(match, settings)}</div>'
             f'{season_axes}'
-            f'{_direct_compare_block(match)}'
-            f'{_panel_block(match)}'
             f'{_recent_block(match, settings)}'
             f'{recent_axes}'
             # 정성(강점/약점·상성)을 정량 바로 뒤에 둔다. 예전에는 카드의
@@ -1483,6 +1574,28 @@ def _tossup_list(matches: list[Match]) -> str:
             f'낮아집니다(§9 함정).</p>')
 
 
+def _summary_panel(match: Match) -> str:
+    """회차 요약 카드의 Panel 줄 (Phase 4-E §39·§64).
+
+    **스코어만 적고 승/무/패 라벨을 만들지 않는다** (§40). `2 : 0` 을 보고
+    '홈승' 이라고 읽는 것은 사용자의 판단이고, 그 낱말을 프로그램이 먼저
+    적어 주면 그 순간 추천이 된다.
+
+    패널이 없는 실행에서는 줄 자체가 없다 — 없는 단계를 실패처럼 보이게
+    하지 않는다 (§1-6).
+    """
+    run = getattr(match, "panel", None)
+    if run is None:
+        return ""
+    mod = getattr(run, "moderator", None)
+    home = getattr(mod, "adopted_home", None)
+    away = getattr(mod, "adopted_away", None)
+    if home is None or away is None:
+        return '<div class="pv"><span>Panel 종합 스코어 없음</span></div>'
+    return (f'<div class="pv"><span>Panel 종합 <b>{esc(home)} : '
+            f'{esc(away)}</b></span></div>')
+
+
 def _summary_grid(matches: list[Match]) -> str:
     cards = []
     for m in matches:
@@ -1498,7 +1611,7 @@ def _summary_grid(matches: list[Match]) -> str:
             f'<div class="hd"><span>{m.no}. {esc(m.league_ko or m.league)}</span>'
             f'<span>{esc(m.kickoff_kst)}</span></div>'
             f'<div class="tm">{esc(m.home.display)} vs {esc(m.away.display)}</div>'
-            f'{bar}{pv}</a>')
+            f'{bar}{pv}{_summary_panel(m)}</a>')
     return f'<div class="summary">{"".join(cards)}</div>'
 
 
@@ -1520,7 +1633,8 @@ def render_report(report: Report, settings: Settings) -> str:
         warnings = (f'<div class="warnbox"><b>확인이 필요한 항목</b>'
                     f'<ul>{items}</ul></div>')
 
-    cards = "".join(_match_card(m, settings) for m in report.matches)
+    cards = "".join(_match_card(m, settings, report)
+                     for m in report.matches)
 
     return f"""<!doctype html>
 <html lang="ko"><head>

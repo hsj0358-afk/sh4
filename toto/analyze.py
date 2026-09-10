@@ -66,13 +66,32 @@ def _metric_value(stats: TeamStats, key: str) -> float | None:
     return float(value) if isinstance(value, (int, float)) else None
 
 
+def _radar_keys(metric: dict) -> tuple[str, str]:
+    """(홈 쪽 키, 원정 쪽 키). 보통 같고, **장소 축만 다르다** (Phase 4-E).
+
+    예전에는 `홈 승점` 과 `원정 승점` 이 축 두 개였다. 그런데 레이더는 두 팀을
+    같은 축에 겹쳐 그리므로, `홈 승점` 축의 절반(원정팀의 홈 성적)과
+    `원정 승점` 축의 절반(홈팀의 원정 성적)은 **이 경기와 아무 상관이 없다** —
+    이 경기에서 홈팀은 홈에서, 원정팀은 원정에서 뛴다. 축 둘 중 절반씩이
+    빈 자리를 차지하고 있었다.
+
+    그래서 축을 하나로 합치고 각 팀에게 **자기가 실제로 뛸 장소의 성적**을
+    준다. 백분위는 각자 그 키의 리그 모집단에서 구하므로(홈 성적은 리그의
+    홈 성적 분포에서, 원정 성적은 원정 분포에서) 두 값은 여전히 같은 종류의
+    수 — '리그 안에서 몇 등쯤' — 이고 한 축에 놓을 수 있다.
+    """
+    key = metric.get("key") or ""
+    return metric.get("home_key") or key, metric.get("away_key") or key
+
+
 def build_radar(matches: list[Match], settings: Settings) -> None:
     """각 경기에 레이더 차트 데이터를 붙인다.
 
     백분위는 **같은 리그 안에서만** 계산한다 (K리그2 팀을 EPL 기준으로
-    줄 세우면 의미가 없다).
+    줄 세우면 의미가 없다). 새 정규화를 만들지 않고 `percentile()` 을 쓴다.
     """
-    # 리그별 모집단 수집
+    # 리그별 모집단 수집. 장소 축은 키가 둘이라 **키마다 따로** 모은다 —
+    # 홈 성적과 원정 성적을 한 모집단에 섞으면 둘 다 왜곡된다.
     pools: dict[str, dict[str, list[float]]] = {}
     for match in matches:
         for profile in (match.home_profile, match.away_profile):
@@ -80,30 +99,39 @@ def build_radar(matches: list[Match], settings: Settings) -> None:
                 continue
             bucket = pools.setdefault(match.league, {})
             for metric in settings.radar_metrics:
-                val = _metric_value(profile.stats, metric["key"])
-                if val is not None:
-                    bucket.setdefault(metric["key"], []).append(val)
+                for key in set(_radar_keys(metric)):
+                    val = _metric_value(profile.stats, key)
+                    if val is not None:
+                        bucket.setdefault(key, []).append(val)
 
     # 리그 전체 팀 데이터가 있으면 그걸로 모집단을 넓힌다
     for match in matches:
         pool = pools.get(match.league, {})
         axes = []
         for metric in settings.radar_metrics:
-            key, label = metric["key"], metric["label"]
+            label = metric["label"]
             invert = bool(metric.get("invert"))
-            population = pool.get(key) or []
-            hv = _metric_value(match.home_profile.stats, key) if match.home_profile else None
-            av = _metric_value(match.away_profile.stats, key) if match.away_profile else None
+            home_key, away_key = _radar_keys(metric)
+            hv = (_metric_value(match.home_profile.stats, home_key)
+                  if match.home_profile else None)
+            av = (_metric_value(match.away_profile.stats, away_key)
+                  if match.away_profile else None)
             if hv is None and av is None:
                 continue
             axes.append({
-                "key": key,
+                "key": metric.get("key") or home_key,
                 "label": label,
                 "invert": invert,
+                # 두 쪽이 다른 지표를 볼 때만 채운다 — 값이 무엇인지 마우스를
+                # 올리면 알 수 있어야 한다 (§60).
+                "home_label": metric.get("home_label", ""),
+                "away_label": metric.get("away_label", ""),
                 "home_value": hv,
                 "away_value": av,
-                "home_pct": percentile(hv, population, invert) if hv is not None else None,
-                "away_pct": percentile(av, population, invert) if av is not None else None,
+                "home_pct": (percentile(hv, pool.get(home_key) or [], invert)
+                             if hv is not None else None),
+                "away_pct": (percentile(av, pool.get(away_key) or [], invert)
+                             if av is not None else None),
             })
         match.radar = {"axes": axes, "league_size": len(
             {v for vals in pool.values() for v in vals}) or 0}

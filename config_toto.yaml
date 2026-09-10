@@ -206,14 +206,27 @@ radar_metrics:
   #   경기 지배력  → 점유율 + 상대 박스 터치
   #   장소 특화도  → 홈/원정 경기당 승점
   # 값이 없는 축은 자동으로 빠지므로, 수집이 덜 돼도 차트는 그려진다.
+  #
+  # Phase 4-E 에서 두 가지를 고쳤다.
+  #   · 결과 계열이 셋(득점·홈 승점·원정 승점)이고 수비가 하나(피xG)뿐이라
+  #     균형이 기울어 있었다 → 경기당 실점을 넣어 수비를 둘로 만들었다.
+  #   · `홈 승점` / `원정 승점` 두 축은 **각각 절반이 이 경기와 무관**했다.
+  #     레이더는 두 팀을 같은 축에 겹쳐 그리는데, 이 경기에서 홈팀은 홈에서
+  #     원정팀은 원정에서 뛰므로 `홈 승점` 축의 원정팀 값과 `원정 승점` 축의
+  #     홈팀 값은 쓸 자리가 없다 → 축 하나로 합치고 각 팀에게 **자기가 실제로
+  #     뛸 장소의 성적**을 준다 (`home_key`/`away_key`).
+  #
+  # 8축 = 공격 3 · 수비 2 · 경기운영 2 · 장소 1.
   - {key: "big_chances_pg",     label: "결정적 기회",    invert: false}
   - {key: "shots_on_target_pg", label: "유효슈팅",       invert: false}
   - {key: "goals_for_pg",       label: "경기당 득점",    invert: false}
   - {key: "xga_pg",             label: "피xG",           invert: true}
+  - {key: "goals_against_pg",   label: "경기당 실점",    invert: true}
   - {key: "possession",         label: "점유율",         invert: false}
   - {key: "touches_opp_box_pg", label: "상대 박스 터치", invert: false}
-  - {key: "home_points_pg",     label: "홈 승점",        invert: false}
-  - {key: "away_points_pg",     label: "원정 승점",      invert: false}
+  - {key: "venue_points_pg",    label: "장소 승점",      invert: false,
+     home_key: "home_points_pg", away_key: "away_points_pg",
+     home_label: "홈 경기 승점", away_label: "원정 경기 승점"}
 
 # 직접 비교(다이버징 바) 항목 ---------------------------------------------
 compare_metrics:

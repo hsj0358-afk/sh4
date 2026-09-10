@@ -271,21 +271,28 @@ def _basic(match, no: int, report: Report, status: str, sm) -> str:
     return _table(["항목", "값"], rows) + "\n"
 
 
+def market_absence_reason(status: str) -> str:
+    """배당이 없을 때 **왜 없는지**. 셋을 구분한다 (§1-6).
+
+    HTML 리포트(`render._odds_block`)와 경기자료 MD 가 **같은 문장**을 쓴다
+    (Phase 4-E §42·§53) — 두 곳에 따로 적으면 한쪽만 고쳐져 같은 경기가 두
+    화면에서 다른 이유를 말하게 된다.
+    """
+    if status == "종료":
+        return ("현재 배당 스냅샷 없음 — 경기가 이미 종료되어 시장이 "
+                "닫혔습니다 (수집 실패가 아닙니다)")
+    if status == "예정":
+        return "예정 경기인데 배당을 가져오지 못했습니다 (수집 실패)"
+    return ("배당 없음 — 경기 상태를 가리지 못해 수집 실패인지 "
+            "시장이 닫힌 것인지 판별할 수 없습니다")
+
+
 def _market(match, status: str) -> str:
     """시장 기준선. **여기서 favorite·픽을 만들지 않는다.**"""
     odds, probs = match.odds, match.probs
     out = ""
     if not odds.available:
-        # 수집 실패와 '지금은 시장이 없는 것이 정상' 을 구분한다 (§1-6).
-        if status == "종료":
-            why = ("현재 배당 스냅샷 없음 — 경기가 이미 종료되어 시장이 "
-                   "닫혔습니다 (수집 실패가 아닙니다)")
-        elif status == "예정":
-            why = "예정 경기인데 배당을 가져오지 못했습니다 (수집 실패)"
-        else:
-            why = ("배당 없음 — 경기 상태를 가리지 못해 수집 실패인지 "
-                   "시장이 닫힌 것인지 판별할 수 없습니다")
-        return f"{why}\n\n"
+        return f"{market_absence_reason(status)}\n\n"
     rows = [["source", odds.source or "—"],
             ["as_of (수집 시각)", odds.fetched_at or "—"],
             ["승 (decimal)", _num(odds.home)],

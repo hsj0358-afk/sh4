@@ -94,10 +94,14 @@ DEFAULT_RADAR_METRICS = [
     {"key": "shots_on_target_pg", "label": "유효슈팅", "invert": False},
     {"key": "goals_for_pg", "label": "경기당 득점", "invert": False},
     {"key": "xga_pg", "label": "피xG", "invert": True},
+    {"key": "goals_against_pg", "label": "경기당 실점", "invert": True},
     {"key": "possession", "label": "점유율", "invert": False},
     {"key": "touches_opp_box_pg", "label": "상대 박스 터치", "invert": False},
-    {"key": "home_points_pg", "label": "홈 승점", "invert": False},
-    {"key": "away_points_pg", "label": "원정 승점", "invert": False},
+    # 장소 축은 팀마다 **다른 지표**를 본다 — 이 경기에서 홈팀은 홈에서,
+    # 원정팀은 원정에서 뛴다 (Phase 4-E · config_toto.yaml 주석 참고).
+    {"key": "venue_points_pg", "label": "장소 승점", "invert": False,
+     "home_key": "home_points_pg", "away_key": "away_points_pg",
+     "home_label": "홈 경기 승점", "away_label": "원정 경기 승점"},
 ]
 
 DEFAULT_COMPARE_METRICS = [

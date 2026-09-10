@@ -34,6 +34,7 @@ C_LOSS = "var(--st-critical)"
 
 GAP = 2.0          # 표면색 간격 (px)
 BAR_MAX = 24.0     # 막대 최대 두께
+VB_PAD = 52.0      # 레이더 좌우 여백 — 가로 축의 긴 한글 라벨이 잘리지 않게
 
 
 def esc(text) -> str:
@@ -101,6 +102,7 @@ def radar(axes: list[dict], home_name: str, away_name: str,
 
     # --- 데이터 다각형 ---
     def polygon(key: str, color: str, name: str) -> str:
+        side = key.replace("_pct", "")          # "home" | "away"
         pts, titles = [], []
         for i, ax in enumerate(axes):
             pct = ax.get(key)
@@ -108,8 +110,12 @@ def radar(axes: list[dict], home_name: str, away_name: str,
                 pct = 0.0
             x, y = point(i, pct)
             pts.append(f"{x:.1f},{y:.1f}")
-            titles.append(f"{ax['label']}: {_fmt(ax.get(key.replace('_pct','_value')))} "
-                          f"(상위 {100 - pct:.0f}%)")
+            # 장소 축은 두 팀이 **다른 지표**를 본다 (홈 경기 승점 ↔ 원정 경기
+            # 승점). 축 이름만 적으면 같은 값을 견준 것처럼 보이므로, 쪽마다
+            # 붙은 이름이 있으면 그것을 쓴다 (Phase 4-E §60).
+            titles.append(
+                f"{ax.get(f'{side}_label') or ax['label']}: "
+                f"{_fmt(ax.get(f'{side}_value'))} (상위 {100 - pct:.0f}%)")
         body = (f'<polygon points="{" ".join(pts)}" fill="{color}" fill-opacity="0.10" '
                 f'stroke="{color}" stroke-width="2" stroke-linejoin="round">'
                 f'<title>{esc(name)}</title></polygon>')
@@ -127,9 +133,14 @@ def radar(axes: list[dict], home_name: str, away_name: str,
     parts.append(polygon("home_pct", C_HOME, home_name))
     parts.append(polygon("away_pct", C_AWAY, away_name))
 
-    svg = (f'<svg viewBox="0 0 {size} {size}" width="100%" '
-           f'role="img" aria-label="리그 내 위치 레이더 차트" '
-           f'style="max-width:{size}px;height:auto">{"".join(parts)}</svg>')
+    # 좌우로 여백을 준다. 축이 8개면 가로 축의 라벨이 정확히 왼쪽 끝으로
+    # 뻗는데(anchor="end"), 한글 7자 라벨("상대 박스 터치")이 viewBox 밖으로
+    # 나가 **글자가 잘렸다** — 실측으로 확인했다 (Phase 4-E §57).
+    # 원을 줄이는 대신 그릴 판을 옆으로 넓힌다.
+    svg = (f'<svg viewBox="-{VB_PAD} 0 {size + VB_PAD * 2} {size}" '
+           f'width="100%" role="img" aria-label="리그 내 위치 레이더 차트" '
+           f'style="max-width:{size + VB_PAD * 2}px;height:auto">'
+           f'{"".join(parts)}</svg>')
     return (f'<figure class="chart">{svg}'
             f'{legend([(C_HOME, home_name), (C_AWAY, away_name)])}'
             f'<figcaption>바깥쪽일수록 해당 리그에서 상위. '
@@ -358,6 +369,105 @@ def _rounded_bar(x: float, y: float, w: float, h: float, color: str,
                 f"V{y + h - r:.1f} A{r:.1f},{r:.1f} 0 0 1 {x + w - r:.1f},{y + h:.1f} "
                 f"H{x:.1f} Z")
     return f'<path d="{path}" fill="{color}"><title>{esc(title)}</title></path>'
+
+
+# --------------------------------------------------------------------------
+# 5-2) 덤벨 — 두 팀을 **같은 눈금 위의 두 점**으로 (Phase 4-E)
+# --------------------------------------------------------------------------
+def dumbbell(rows: list[dict], home_name: str, away_name: str,
+             width: int = 560) -> str:
+    """rows: [{label, home, away, fmt, lower_better}]
+
+    **막대가 아니라 위치다.** 마주보는 막대는 길이가 곧 '길다 = 낫다' 로
+    읽힌다 — 4-D 실물에서 `실점 ↓` 줄의 원정 막대가 홈보다 길었는데, 그건
+    원정이 **더 많이 실점했다**는 뜻인데도 화면에서는 우위처럼 보였다.
+    여기서는 두 팀을 같은 눈금 위의 두 점으로 찍는다. 눈에 들어오는 것은
+    길이가 아니라 **두 점의 위치와 그 사이의 간격**이다.
+
+    **눈금은 줄마다 따로다** (0 ~ 그 줄의 큰 값). 단위가 다른 지표를 한
+    눈금에 올리면 줄끼리 견줄 수 있는 것처럼 보인다 — 캡션에 그렇게 적는다.
+
+    색에만 기대지 않는다 (§45): 홈은 채운 점, 원정은 속 빈 점이고 값은
+    양쪽 끝에 숫자로도 적는다.
+
+    `lower_better` 는 라벨에 `↓` 를 붙이는 표시일 뿐이다. **여기서 누가
+    나은지 말하지 않는다.**
+    """
+    rows = [r for r in rows
+            if r.get("home") is not None and r.get("away") is not None]
+    if not rows:
+        return _empty_note("직접 견줄 수 있는 지표가 없습니다")
+
+    row_h, gap_y = 30.0, 6.0
+    label_w, val_w, pad = 132.0, 46.0, 8.0
+    track_x = label_w + pad + val_w + pad
+    track_w = max(40.0, width - track_x - pad - val_w)
+    height = len(rows) * (row_h + gap_y) - gap_y
+    parts: list[str] = []
+
+    for i, row in enumerate(rows):
+        mid_y = i * (row_h + gap_y) + row_h / 2
+        hv, av = row["home"], row["away"]
+        fmt = row.get("fmt", "{:.2f}")
+        label = row["label"] + (" ↓" if row.get("lower_better") else "")
+
+        # 눈금의 아래끝은 0 이다 — 0 이 어디인지 보이지 않으면 두 점의 간격이
+        # 얼마나 큰 차이인지 알 수 없다. 음수가 있으면 그쪽으로 넓힌다.
+        lo = min(0.0, hv, av)
+        hi = max(hv, av)
+        span = (hi - lo) or 1.0
+
+        def pos(value: float) -> float:
+            return track_x + track_w * (value - lo) / span
+
+        hx, ax_ = pos(hv), pos(av)
+        parts.append(
+            f'<line x1="{track_x:.1f}" y1="{mid_y:.1f}" '
+            f'x2="{track_x + track_w:.1f}" y2="{mid_y:.1f}" '
+            f'stroke="{C_GRID}" stroke-width="1" />')
+        parts.append(
+            f'<line x1="{hx:.1f}" y1="{mid_y:.1f}" x2="{ax_:.1f}" '
+            f'y2="{mid_y:.1f}" stroke="{C_AXIS}" stroke-width="3" '
+            f'stroke-linecap="round" />')
+        parts.append(
+            f'<text x="0" y="{mid_y:.1f}" dominant-baseline="central" '
+            f'font-size="12" fill="{C_SECOND}">{esc(label)}</text>')
+        # 값은 **자기 점 옆에** 적는다. 처음에는 왼쪽·오른쪽 고정 칸에
+        # 적었는데, 점은 값에 따라 움직이므로 큰 값의 숫자가 작은 값의 점
+        # 옆에 놓였다 — 화면에서 두 숫자가 서로 뒤바뀐 것처럼 보였다
+        # (실측으로 잡았다). 바깥쪽으로 밀어 두 라벨이 부딪히지 않게 한다.
+        for x, value, is_home in ((hx, hv, True), (ax_, av, False)):
+            # 두 점이 겹치면 홈을 왼쪽, 원정을 오른쪽으로 갈라 놓는다.
+            left = is_home if hx == ax_ else (x < (ax_ if is_home else hx))
+            tx = x - 9 if left else x + 9
+            anchor = "end" if left else "start"
+            parts.append(
+                f'<text x="{tx:.1f}" y="{mid_y:.1f}" text-anchor="{anchor}" '
+                f'dominant-baseline="central" font-size="12" '
+                f'font-weight="600" fill="{C_PRIMARY}">'
+                f'{esc(fmt.format(value))}</text>')
+        # 원정 점을 먼저 그려 두 값이 같을 때 홈 점이 위로 온다.
+        parts.append(
+            f'<circle cx="{ax_:.1f}" cy="{mid_y:.1f}" r="5.5" '
+            f'fill="{C_SURFACE}" stroke="{C_AWAY}" stroke-width="2.5">'
+            f'<title>{esc(away_name)} {esc(label)} '
+            f'{esc(fmt.format(av))}</title></circle>')
+        parts.append(
+            f'<circle cx="{hx:.1f}" cy="{mid_y:.1f}" r="5" fill="{C_HOME}">'
+            f'<title>{esc(home_name)} {esc(label)} '
+            f'{esc(fmt.format(hv))}</title></circle>')
+
+    svg = (f'<svg viewBox="0 0 {width} {height:.0f}" width="100%" '
+           f'role="img" aria-label="홈 원정 지표 직접 비교" '
+           f'style="max-width:{width}px;height:auto">{"".join(parts)}</svg>')
+    # f-string 표현식 안에 줄바꿈을 두지 않는다 (3.11 에서 문법 오류다).
+    keys = legend([(C_HOME, f"{home_name} (채운 점)"),
+                   (C_AWAY, f"{away_name} (속 빈 점)")])
+    return (f'<figure class="chart">{svg}{keys}'
+            f'<figcaption>각 줄은 <b>그 줄만의 눈금</b>입니다 (왼쪽 끝 0 ~ '
+            f'오른쪽 끝이 그 줄의 큰 값). 줄이 다르면 단위가 달라 x 위치를 '
+            f'서로 견줄 수 없습니다. ↓ 는 낮을수록 좋은 지표라는 표시이며, '
+            f'점의 위치가 우열을 뜻하지 않습니다.</figcaption></figure>')
 
 
 # --------------------------------------------------------------------------

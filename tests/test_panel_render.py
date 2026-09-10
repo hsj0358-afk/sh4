@@ -144,7 +144,7 @@ def test_b4_all_four_areas_render():
 def test_b5_moderator_items_render():
     html = carded(full_run())
     for token in ("공통점", "차이", "반론·제약", "불확실성",
-                  "최종 예상 스코어", "시장 기준선과의 관계"):
+                  "Panel 종합 예상 스코어", "시장 기준선과의 관계"):
         assert token in html, token
     assert "두 의견 모두 표본이 작다고 본다" in html
 
@@ -152,14 +152,14 @@ def test_b5_moderator_items_render():
 def test_b5a_adopted_score_is_the_headline():
     """3단계의 답이 화면에 나온다 — 비교로 끝나지 않는다."""
     html = carded(full_run())
-    assert "최종 예상 스코어" in html
+    assert "Panel 종합 예상 스코어" in html
     assert "2 : 1" in html
     # 어느 의견에서 왔는지, 그리고 평균이 아니라는 것.
     assert "데이터 분석가의 예상 스코어입니다" in html
     assert "평균내지 않습니다" in html
     assert "표본이 더 큰 근거를 든 쪽을 택했습니다." in html
     # 사회자 블록에서 가장 먼저 나온다 — 3단계에서 얻으려는 답이다.
-    assert html.index("최종 예상 스코어") < html.index("공통점")
+    assert html.index("Panel 종합 예상 스코어") < html.index("공통점")
 
 
 def test_b5b_no_adopted_score_says_why():
@@ -167,7 +167,7 @@ def test_b5b_no_adopted_score_says_why():
     html = carded(full_run(moderator=mod(
         adopted_home=None, adopted_away=None, adopted_from=(),
         conclusion="두 읽기 중 하나를 고를 근거가 자료에 없습니다")))
-    assert "최종 예상 스코어" in html
+    assert "Panel 종합 예상 스코어" in html
     assert "0 : 0" not in html
     assert "고를 근거가 자료에 없었습니다" in html
     assert "두 읽기 중 하나를 고를 근거가 자료에 없습니다" in html
@@ -175,9 +175,12 @@ def test_b5b_no_adopted_score_says_why():
 
 def test_b5c_adopted_score_is_not_turned_into_a_pick():
     html = carded(full_run())
-    tail = html[html.index("최종 예상 스코어"):]
-    for banned in ("홈승", "원정승", "승리 예상", "추천"):
+    tail = html[html.index("Panel 종합 예상 스코어"):]
+    for banned in ("홈승", "원정승", "승리 예상"):
         assert banned not in tail, banned
+    # `"추천"` 을 금지어로 두면 4-E 가 붙인 부정문("승·무·패 추천이
+    # 아닙니다")에 걸린다 — 부정문이 있는지를 본다 (§31).
+    assert "승·무·패 추천이 아닙니다" in tail
 
 
 def test_b5d_debate_distribution_renders_as_counts():
@@ -194,11 +197,11 @@ def test_b5d_debate_distribution_renders_as_counts():
         읽을 수가 없다.
     """
     html = carded(full_run())
-    assert "토론 30회의 결론 분포" in html
+    assert "토론 시뮬레이션 30회의 스코어 분포" in html
     assert "18회" in html and "9회" in html and "3회" in html
     assert "양쪽 절충" in html, "절충 스코어의 출처가 안 보인다"
     assert "확률이 아닙니다" in html
-    block = html[html.index("토론 30회"):html.index("공통점")]
+    block = html[html.index("토론 시뮬레이션 30회"):html.index("공통점")]
     assert "%" not in _text(block), "분포를 백분율로 그렸다"
 
 
@@ -268,8 +271,9 @@ def test_b9_panel_sits_above_the_detail_blocks_in_the_card():
     """
     src = inspect.getsource(render._match_card)
     order = [src.index(x) for x in
-             ("_decision_summary", "_compare_inner", "_direct_compare_block",
-              "_panel_block", "_evidence_block", "_form_block")]
+             ("_decision_summary", "charts.radar", "_direct_compare_block",
+              "_panel_block", "_compare_inner", "_evidence_block",
+              "_form_block")]
     assert order == sorted(order), order
 
 

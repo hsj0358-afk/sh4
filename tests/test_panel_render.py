@@ -69,6 +69,17 @@ MARKET = MarketReference(source="arcadia-api", as_of="2026-08-29 18:00",
                          away_probability=0.392, overround=1.0471)
 
 
+def _text(html: str) -> str:
+    """화면에 실제로 보이는 글자만. 태그와 속성값을 걷어낸다.
+
+    4-D 에서 토론 분포에 SVG 막대가 들어오면서, 문자열 검사가 막으려던
+    것(백분율 표기·합성 스코어) 대신 그림의 속성값에 걸리기 시작했다 —
+    `width="100%"` 의 `%`, `font-size="11.5"` 의 `1.5`. 잡아야 하는 것은
+    **읽는 사람이 보는 글자**이므로 그쪽만 남긴다.
+    """
+    return re.sub(r"<[^>]+>", " ", html)
+
+
 def carded(run: PanelRun):
     m = make_match()
     m.panel = run
@@ -170,15 +181,53 @@ def test_b5c_adopted_score_is_not_turned_into_a_pick():
 
 
 def test_b5d_debate_distribution_renders_as_counts():
-    """분포는 **횟수만** 적는다 — 확률이 아니므로 %·막대로 그리지 않는다."""
+    """분포는 **횟수**다 — 그림으로 그리되 확률로 읽히면 안 된다 (4-D).
+
+    막대는 Phase 4-D 에서 들어왔다. 그 전까지 이 테스트는 `<svg` 자체를
+    막았는데, 지키려던 것은 그림의 유무가 아니라 **확률이 되지 않는 것**
+    이었다. 그래서 금지를 한 겹 옮겼다 — 그림은 허용하고, 확률로 새는 두
+    경로를 대신 막는다. 둘 다 문구가 아니라 구조다.
+
+      · 화면에 백분율이 없다 (여기).
+      · 길이 기준이 `simulations` 가 아니라 그 표의 최댓값이다
+        (`test_b5f`) — 1등이 언제나 꽉 차므로 "30회 중 18회 = 60%" 로
+        읽을 수가 없다.
+    """
     html = carded(full_run())
     assert "토론 30회의 결론 분포" in html
     assert "18회" in html and "9회" in html and "3회" in html
     assert "양쪽 절충" in html, "절충 스코어의 출처가 안 보인다"
     assert "확률이 아닙니다" in html
     block = html[html.index("토론 30회"):html.index("공통점")]
-    assert "%" not in block, "분포를 백분율로 그렸다"
-    assert "<svg" not in block, "분포를 그림으로 그렸다"
+    assert "%" not in _text(block), "분포를 백분율로 그렸다"
+
+
+def test_b5f_distribution_bar_is_scaled_by_the_max_not_the_round_count():
+    """막대 길이의 기준이 전체 시행 횟수면 그 막대는 확률이다.
+
+    전체 횟수는 차트 함수에 **들어가지도 않는다**. 그래서 합이 30에 한참
+    못 미치는 분포를 넣어도 1등 막대가 꽉 차고, 눈으로 비율을 읽을 수 없다.
+    같은 비율이면 절대 횟수가 달라도 그림이 똑같다는 것으로 확인한다.
+    """
+    from toto import charts
+
+    sig = inspect.signature(charts.count_bars)
+    for banned in ("simulations", "total", "rounds"):
+        assert banned not in sig.parameters, banned
+
+    small = charts.count_bars([{"label": "2 : 1", "count": 4},
+                               {"label": "1 : 1", "count": 2}])
+    large = charts.count_bars([{"label": "2 : 1", "count": 20},
+                               {"label": "1 : 1", "count": 10}])
+    bars = re.compile(r'<path d="([^"]+)"')
+    assert bars.findall(small) == bars.findall(large), \
+        "막대 길이가 절대 횟수를 따라간다 — 최댓값 기준이 아니다"
+
+    # `_tally_table` 이 전체 횟수를 그림으로 넘기지 않는다 (제목에는 쓴다).
+    src = inspect.getsource(render._tally_table)
+    call = src[src.index("charts.count_bars("):]
+    assert "simulations" not in call[:call.index("])")], \
+        "전체 횟수가 차트로 넘어간다"
 
 
 def test_b5e_compromise_score_says_it_is_not_an_average():
@@ -210,10 +259,18 @@ def test_b8_same_data_notice():
     assert "분석가가 아니라 외부" in html, "시장이 분석가처럼 보인다"
 
 
-def test_b9_block_sits_after_evidence_in_the_card():
+def test_b9_panel_sits_above_the_detail_blocks_in_the_card():
+    """4-D 위계: 요약 → 비교 → 패널 → 세부.
+
+    예전에는 패널이 근거 다음(카드의 11번째)이었다. 패널은 사용자가 3단계
+    에서 얻으려는 답이라 세부보다 앞에 온다 — 근거·폼·상대전적은 그 답을
+    확인하러 내려가는 자리다.
+    """
     src = inspect.getsource(render._match_card)
-    assert src.index("_evidence_block") < src.index("_panel_block")
-    assert src.index("_panel_block") < src.index("_form_block")
+    order = [src.index(x) for x in
+             ("_decision_summary", "_compare_inner", "_direct_compare_block",
+              "_panel_block", "_evidence_block", "_form_block")]
+    assert order == sorted(order), order
 
 
 # --------------------------------------------------------------------------
@@ -287,11 +344,21 @@ def test_f17_zero_zero_is_a_real_score():
 # G~H. 근거·스코어 표시 규칙
 # --------------------------------------------------------------------------
 def test_g18_evidence_count_is_not_drawn_as_strength():
+    """**근거**는 여전히 그림이 아니다.
+
+    4-D 에서 토론 분포에 막대가 들어왔지만 근거는 그대로다 — 근거의 개수는
+    근거의 세기가 아니라서 길이로 그리면 안 된다. 그래서 '패널에 SVG 가
+    없다' 가 아니라 '**근거 자리에** SVG 가 없다' 로 지킨다.
+    """
     html = carded(full_run())
+    text = _text(html).replace("32.9%", "").replace(
+        "27.8%", "").replace("39.2%", "")
     for banned in ("★", "☆", "신뢰도", "근거 강도", "강한 근거", "%"):
-        assert banned not in html.replace("32.9%", "").replace(
-            "27.8%", "").replace("39.2%", ""), banned
-    assert "<svg" not in html, "근거를 그림으로 셌다"
+        assert banned not in text, banned
+    assert "<svg" not in render._opinion_card(op(DATA), ("E001",)), \
+        "인용한 근거를 그림으로 셌다"
+    assert "<svg" not in html[html.index("근거 사용 관계"):], \
+        "근거 사용 관계를 그림으로 셌다"
 
 
 def test_g19_shared_evidence_is_a_relation_not_a_score():
@@ -317,7 +384,7 @@ def test_h21_no_synthesized_score():
     """
     html = carded(full_run(opinions=(op(DATA, 2, 1), op(MATCHUP, 1, 1))))
     for banned in ("1.5", "대표 예상", "합의 예상", "평균 스코어"):
-        assert banned not in html, banned
+        assert banned not in _text(html), banned
     shown = re.search(r'class="mscore">([^<]+)<', html)
     assert shown, "종합 스코어가 없다"
     assert shown.group(1).strip() in ("2 : 1", "1 : 1"), shown.group(1)
@@ -375,11 +442,18 @@ def test_j25_no_wdl_helper_in_the_renderer():
 
 
 def test_j26_probabilities_are_market_only():
-    """확률은 시장 기준선 표에만 나온다 — 패널이 확률을 만들지 않는다."""
+    """확률은 시장 기준선 표에만 나온다 — 패널이 확률을 만들지 않는다.
+
+    자리를 글자 수로 세지 않는다. 4-D 에서 스코어 흐름 표가 분석가 카드와
+    시장 표 사이로 들어오면서 예전의 600자 창이 밀렸다 — 창이 아니라
+    **어느 블록에 있는가**를 본다.
+    """
     html = carded(full_run())
-    i = html.index("시장 기준선")
-    assert "32.9%" in html[i:i + 600]
-    assert "%" not in html[:i], "패널 영역에 확률이 있다"
+    market = render._market_table(MARKET)
+    assert "32.9%" in market, "시장 표에 확률이 없다"
+    assert market in html, "시장 표가 카드에 안 실렸다"
+    assert "%" not in _text(html.replace(market, "")), \
+        "패널 영역에 확률이 있다"
 
 
 # --------------------------------------------------------------------------

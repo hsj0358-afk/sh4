@@ -211,6 +211,22 @@ def _match_audit(no: int, match, run, codes) -> PanelMatchAudit:
         evidence_cited=tuple(cited), issue_codes=tuple(sorted(set(codes))))
 
 
+def match_audit(match, run) -> PanelMatchAudit | None:
+    """경기 하나의 감사 기록. **리포트(4-D)가 이 구조를 그대로 읽는다.**
+
+    회차 감사(`audit`)와 **같은 함수**로 만든다. 화면이 결정 유형을 따로
+    계산하기 시작하면 감사 보고서의 결정 유형과 갈라질 수 있고, 그러면 둘 중
+    어느 쪽도 믿을 수 없게 된다.
+
+    `PanelImportResult` 를 요구하지 않는다 — 채팅에서 받아 온 패널
+    (`--import-panel-result`)이든 곧바로 실행한 패널(`--panel`)이든 화면에
+    닿을 때는 똑같이 `PanelRun` 이고, 둘을 다르게 읽을 이유가 없다.
+    """
+    if run is None:
+        return None
+    return _match_audit(getattr(match, "no", 0) or 0, match, run, ())
+
+
 def _coverage(report: Report, parsed: dict, imp: PanelImportResult) -> dict:
     """커버리지. **누락 경기 번호까지 남긴다** (§5)."""
     def missing(pred) -> list[int]:

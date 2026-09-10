@@ -361,6 +361,63 @@ def _rounded_bar(x: float, y: float, w: float, h: float, color: str,
 
 
 # --------------------------------------------------------------------------
+# 6) 횟수 막대 — **확률이 아니다** (Phase 4-D)
+# --------------------------------------------------------------------------
+def count_bars(rows: list[dict], width: int = 560) -> str:
+    """rows: [{label, count, note}] — 같은 결론이 몇 번 나왔나.
+
+    **전체 시행 횟수로 나누지 않는다.** 막대 길이의 기준은 이 표의
+    **최댓값**이라 1등 막대가 언제나 꽉 찬다 — 그래서 "30회 중 18회 = 60%"
+    같은 확신도로 읽을 수가 없다. 전체 횟수(`simulations`)는 이 함수에
+    들어오지도 않는다. 그것이 이 그림이 확률로 새지 않게 막는 **구조**다.
+
+    라벨은 언제나 횟수다. 백분율·게이지·별점을 만들지 않는다.
+
+    색은 중립 한 가지만 쓴다. 홈/원정 색을 가져다 쓰면 어느 분석가가 '홈'
+    쪽인 것처럼 보이는데, 분석가와 팀은 아무 관계가 없다.
+    """
+    rows = [r for r in rows if (r.get("count") or 0) > 0]
+    if not rows:
+        return ""
+    top = max(r["count"] for r in rows)      # 최댓값 기준 (전체 횟수가 아니다)
+
+    row_h, gap_y = 26.0, 6.0
+    label_w, count_w, note_w, pad = 62.0, 44.0, 108.0, 8.0
+    span = max(24.0, width - label_w - count_w - note_w - pad * 3)
+    height = len(rows) * (row_h + gap_y) - gap_y
+    bar_h = min(BAR_MAX, row_h - 8)
+    bar_x = label_w + pad
+
+    parts: list[str] = []
+    for i, row in enumerate(rows):
+        mid_y = i * (row_h + gap_y) + row_h / 2
+        count = row["count"]
+        w = span * count / top
+        parts.append(
+            f'<text x="0" y="{mid_y:.1f}" dominant-baseline="central" '
+            f'font-size="12" font-weight="600" fill="{C_PRIMARY}">'
+            f'{esc(row["label"])}</text>')
+        parts.append(_rounded_bar(bar_x, mid_y - bar_h / 2, w, bar_h, C_AXIS,
+                                  left=False,
+                                  title=f'{row["label"]} {count}회'))
+        parts.append(
+            f'<text x="{bar_x + w + 6:.1f}" y="{mid_y:.1f}" '
+            f'dominant-baseline="central" font-size="12" '
+            f'fill="{C_SECOND}">{count}회</text>')
+        if row.get("note"):
+            parts.append(
+                f'<text x="{width}" y="{mid_y:.1f}" text-anchor="end" '
+                f'dominant-baseline="central" font-size="11" '
+                f'fill="{C_MUTED}">{esc(row["note"])}</text>')
+
+    summary = " · ".join(f'{r["label"]} {r["count"]}회' for r in rows)
+    svg = (f'<svg viewBox="0 0 {width} {height:.0f}" width="100%" '
+           f'role="img" aria-label="결론 분포 {esc(summary)}" '
+           f'style="max-width:{width}px;height:auto">{"".join(parts)}</svg>')
+    return f'<figure class="chart">{svg}</figure>'
+
+
+# --------------------------------------------------------------------------
 # 공통
 # --------------------------------------------------------------------------
 def legend(items: list[tuple[str, str]]) -> str:

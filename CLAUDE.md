@@ -1639,6 +1639,7 @@ API 판과 채팅 판이 조용히 갈라지고, 그 뒤로는 "왜 결과가 �
 01_채팅에_적을_말.md           1·2·3단계 메시지 (지시는 전부 여기)
 02_경기자료.md                 1단계·2단계에 **같은 파일**을 첨부한다
 03_사회자자료.md               3단계 첨부. 축 지표는 빠져 있다
+04_PanelResult_JSON_규격.md    3단계 함께 첨부. JSON 계약 (§1-11-2)
 경기별/…                       한 번에 넣기 너무 클 때의 대체 경로
 ```
 
@@ -1739,7 +1740,45 @@ bytes 이고 14경기면 약 730KB — 한국어 JSON 은 대략 2~3바이트당
 `opinions` 자리표시자에 **대괄호를 넣지 않는다** — 이미 `"opinions":[…]`
 안에 들어가므로 겹친다(실물에서 `[[[…]]]` 가 나와 고쳤다).
 
-회귀 테스트: `python tests/test_panel_export.py` (52개).
+회귀 테스트: `python tests/test_panel_export.py` (62개).
+
+### 1-11-2. JSON 계약 문서 — `panelexport.schema_guide()`
+
+3단계 대화가 만드는 것은 **프로그램이 검증하는 파일**인데, 그 계약이 어디에도
+사람이 읽을 수 있는 형태로 있지 않았다. 사용자는 문서 없이 만들고, 메뉴 `[4]`
+에서 거부당한 뒤에야 무엇이 어긋났는지 알게 된다.
+
+`04_PanelResult_JSON_규격.md` 가 그 계약을 적는다. 회차마다 다시 만들어지고
+3단계에 `03_사회자자료.md` 와 **함께 첨부**한다.
+
+**계약을 베끼지 않는다 — §1-11-1 과 같은 이유다.** 버전·상태 어휘·역할 이름·
+금지 칸·최소 라운드 수는 전부 `panelimport`·`moderator` 에서 끌어온다. 손으로
+적어 두면 코드가 바뀔 때 조용히 낡고, 그 뒤로는 프로그램과 문서 중 어느 쪽이
+맞는지 알 수 없게 된다. 테스트가 `schema_guide()` 본문에 `"1.1"`·`"생략"`·
+`"data_analyst"` 같은 문자열이 **없는지** 검사한다.
+
+  · **오류 코드 목록도 대조한다.** `panelimport.py` 의
+    `result.add(ERROR|WARNING, "CODE"` 를 전부 뽑아 문서에 있는지 본다 —
+    코드가 하나 늘면 그때 테스트가 깨져 문서가 낡았다고 알려 준다.
+  · **예시는 `json.dumps` 로 찍는다.** 손으로 적은 예시는 쉼표 하나로 틀린다.
+  · **예시가 실제 검증기를 지난다.** `panelimport.validate()` 에 그대로
+    태워 ERROR 도 WARNING 도 없는 것을 확인한다 — 문서와 검증기가 갈라지면
+    사용자는 문서대로 만들고 프로그램에서 거부당한다
+    (`tests/test_panel_import.py` 의 `test_s1`·`test_s2`).
+
+**지침 지문은 바뀌지 않는다.** `instructions_fingerprint()` 는
+`00_프로젝트_지침.md` 만 재므로, 이 문서가 바뀌어도 프로젝트 지침을 다시
+붙여넣을 필요가 없다 (테스트로 `5044ea86` 고정). 프롬프트도 그대로다 —
+`PANEL_PROMPT_VERSION` 2 · `MODERATOR_PROMPT_VERSION` 5, Phase 3 캐시 유효.
+
+문서가 적는 것은 열한 가지다 — schema_version · 최상위 · matches ·
+`panel_status` 허용값 · `생략` 일 때 허용 구조 · simulations/distribution ·
+`adopted_from` · `evidence_ids` · 금지 필드 · 오류 코드 · 1.0→1.1 호환.
+
+**계약에 없는 규칙을 적지 않는다.** 특히 `simulations` 가
+`DEBATE_SIMULATIONS`(30) 이어야 한다는 규칙은 **없다** — 그것은 설정값이고
+프롬프트에만 실린다. 프로그램이 검사하는 것은 합계 일치와 최소 라운드 수
+(`MIN_SIMULATIONS` 5)뿐이다. 문서가 그렇게 적고 테스트가 고정한다.
 
 ### 1-12. 패널 방어선은 두 층이고 세기가 다르다 (Phase 3-E 검증)
 
@@ -2027,7 +2066,7 @@ import 하지 않는다(AST). 저쪽은 프로그램이 API 를 부르던 구조
 **원문을 고치지 않는다.** `summary`·`rationale`·`conclusion` 은 그대로
 보존되고 markdown 을 해석하지 않는다. 입력 dict 도 바꾸지 않는다.
 
-회귀 테스트: `python tests/test_panel_import.py` (54개).
+회귀 테스트: `python tests/test_panel_import.py` (56개).
 
   · `rationale`·`uncertainty` 는 **배열**이다 (Phase 3 계약 그대로). 문자열로
     오면 ERROR 다 — 채팅 지침이 배열을 요구하므로 지침대로 답하면 맞는다.
@@ -2725,14 +2764,14 @@ python tests/test_menu_flow.py             # 메뉴 루프·예외·로그 3-A �
 python tests/test_panel.py                 # 두 전문가 패널 3-B (70개)
 python tests/test_moderator.py             # 사회자 3-C (79개)
 python tests/test_panel_render.py          # 패널 리포트 출력 3-D (47개)
-python tests/test_panel_export.py          # 채팅용 자료 내보내기 §1-11-1 (52개)
+python tests/test_panel_export.py          # 채팅용 자료 내보내기·JSON 규격 §1-11-1·2 (62개)
 python tests/test_time_safety.py           # 시간누수 감사 3-F (21개)
 python tests/test_axes_render.py           # 경기력 분석 블록 §1-1-15 (36개)
 python tests/test_whoscored_characteristics.py  # 팀 특성 파싱 §3-1 (33개)
 python tests/test_alias_table_loading.py   # 별칭 테이블 적재 진단 §1-6-1 (16개)
 python tests/test_roundlog.py              # 회차 기록 축적 §1-6-2 (23개)
 python tests/test_match_material.py        # 경기자료 MD 4-A §1-14 (37개)
-python tests/test_panel_import.py          # 패널 결과 가져오기 4-B §1-15 (54개)
+python tests/test_panel_import.py          # 패널 결과 가져오기 4-B §1-15 (56개)
 python tests/test_panel_audit.py           # 패널 감사·회차 저장 4-C §1-16·17 (42개)
 python tests/test_decision_render.py       # 요약·직접 비교·패널 시각화 4-D §1-18 (37개)
 python tests/test_final_layout.py          # 레이더·직접 비교·시장·회차 카드 4-E §1-19 (37개)

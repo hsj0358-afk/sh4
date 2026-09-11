@@ -54,6 +54,7 @@ API 경로(`panel.run_match()`)의 문은 **그대로 둔다** — 호출마다 
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import re
 from pathlib import Path
@@ -435,6 +436,406 @@ null 로 두고 그 이유를 conclusion 에 적으십시오.
 답하십시오."""
 
 
+SCHEMA_GUIDE_FILE = "04_PanelResult_JSON_규격.md"
+
+
+def _example_ok() -> dict:
+    """`panel_status` 가 `ok` 인 경기 하나. **키 이름을 코드에서 가져온다.**
+
+    `json.dumps` 로 찍으므로 예시가 유효한 JSON 이라는 것도 함께 보증된다 —
+    손으로 적은 예시는 쉼표 하나로 틀린다.
+    """
+    from . import panelimport
+    return {
+        "match_id": "4512345",
+        "match_number": 1,
+        "home_team": "첼시",
+        "away_team": "풀럼",
+        panelimport.DATA_ROLE: {
+            "role": panelimport.DATA_ROLE,
+            "summary": "최근 6경기 npxG 가 리그 상위권이고 피슈팅이 적다.",
+            "predicted_home": 2,
+            "predicted_away": 1,
+            "rationale": ["최근 6경기 npxG 1.82 (n=6)",
+                          "피유효슈팅 3.1 (n=6)"],
+            "evidence_ids": ["E001", "E003"],
+        },
+        panelimport.MATCHUP_ROLE: {
+            "role": panelimport.MATCHUP_ROLE,
+            "summary": "원정팀의 박스 안 슈팅 비중이 높아 접전이 예상된다.",
+            "predicted_home": 1,
+            "predicted_away": 1,
+            "rationale": ["원정 박스 안 슈팅 비율 62% (n=5)"],
+            "evidence_ids": ["E001"],
+        },
+        panelimport.MODERATOR_ROLE: {
+            "role": panelimport.MODERATOR_ROLE,
+            "conclusion": ("토론 결과 예상 스코어는 2-1 입니다. 홈의 기회 "
+                           "창출량이 양쪽 자료에서 모두 앞섰습니다. 다만 "
+                           "표본이 6경기여서 좁습니다."),
+            "common_points": ["두 의견 모두 홈의 기회 창출량이 앞선다고 본다"],
+            "differences": ["원정 수비 안정성의 평가가 갈린다"],
+            "counterpoints": ["홈의 최근 실점이 늘고 있다"],
+            "uncertainty": ["표본이 6경기로 좁다"],
+            "evidence_ids": ["E001"],
+            "market_relation": "시장 기준선과 방향은 같고 폭은 더 좁다.",
+            "simulations": moderator.DEBATE_SIMULATIONS,
+            "distribution": [
+                {"home": 2, "away": 1, "count": 18,
+                 "origin": panelimport.DATA_ROLE},
+                {"home": 1, "away": 1, "count": 7,
+                 "origin": panelimport.MATCHUP_ROLE},
+                {"home": 3, "away": 1, "count": 5,
+                 "origin": moderator.COMPROMISE},
+            ],
+            "adopted_home": 2,
+            "adopted_away": 1,
+            "adopted_from": [panelimport.DATA_ROLE],
+        },
+    }
+
+
+def _example_skipped() -> dict:
+    """실행하지 않은 경기. **내용을 만들지 않는다.**"""
+    from . import panelimport
+    return {
+        "match_id": "4512358",
+        "match_number": 9,
+        "home_team": "대구",
+        "away_team": "제주",
+        "panel_status": panelimport.STATUS_SKIPPED,
+        "panel_status_reason": "상세 데이터가 없어 Panel 분석을 수행하지 않음",
+    }
+
+
+def _json(obj) -> str:
+    return json.dumps(obj, ensure_ascii=False, indent=2)
+
+
+def schema_guide() -> str:
+    """`04_PanelResult_JSON_규격.md` — 사회자 채팅에 첨부하는 계약 문서.
+
+    **계약을 여기에 베끼지 않는다.** 버전·상태 어휘·역할 이름·금지 칸·최소
+    라운드 수는 전부 `panelimport`·`moderator` 에서 끌어온다 — 손으로 적어
+    두면 코드가 바뀔 때 조용히 낡고, 그 뒤로는 프로그램과 문서 중 어느 쪽이
+    맞는지 알 수 없게 된다(§1-11-1 이 프롬프트에서 겪은 것과 같은 위험이다).
+
+    오류 코드 목록도 같은 이유로 회귀 테스트가 `panelimport` 의 실제 코드
+    문자열과 대조한다 — 코드가 하나 늘면 이 문서가 낡았다는 것을 테스트가
+    알려 준다.
+    """
+    from . import panelimport as pi
+
+    ver = pi.SCHEMA_VERSION
+    roles = " · ".join(pi.ANALYST_ROLES)
+    statuses = " · ".join(f"`{s}`" for s in pi.PANEL_STATUSES)
+    forbidden = " · ".join(f"`{f}`" for f in pi.FORBIDDEN_FIELDS)
+
+    return f"""\
+# Panel Result JSON 규격 {ver}
+
+이 문서는 프로그램이 **실제로 검증하는 계약**입니다. 파일을 만들기 전에
+읽고, 여기에 없는 칸은 만들지 마십시오.
+
+프로그램이 읽는 곳은 `toto/panelimport.py` 이고, 경기 하나의 내용은
+Phase 3 의 `panel.parse_opinion()` · `moderator.parse_result()` 가 **그대로**
+검사합니다 — API 로 받든 채팅에서 받든 같은 문을 지납니다.
+
+> 이 문서는 회차마다 프로그램이 다시 만들어 냅니다. 버전·상태 어휘·금지
+> 칸은 코드에서 직접 가져온 값이므로, 코드가 바뀌면 이 문서도 바뀝니다.
+
+---
+
+## 1. schema_version
+
+| | |
+|---|---|
+| 지금 버전 | `{ver}` |
+| 읽을 수 있는 버전 | {' · '.join(f'`{v}`' for v in pi.SUPPORTED_VERSIONS)} |
+| 없으면 | ERROR `SCHEMA_VERSION_MISSING` |
+| 목록에 없으면 | ERROR `SCHEMA_VERSION_UNSUPPORTED` |
+
+**문자열입니다.** `1.1` (숫자)이 아니라 `"{ver}"` 입니다.
+
+## 2. 최상위 구조
+
+```json
+{{
+  "schema_version": "{ver}",
+  "round": "260052",
+  "generated_at": "2026-09-11T14:00:00+09:00",
+  "matches": [ ... ]
+}}
+```
+
+| 칸 | 필수 | 규칙 |
+|---|---|---|
+| `schema_version` | **예** | §1 |
+| `round` | **예** | 회차와 같아야 합니다. 문자열·숫자 어느 쪽이든 되고 문자열로 맞춰 비교합니다. 다르면 ERROR `ROUND_MISMATCH` |
+| `generated_at` | 아니오 | 기록만 합니다. 형식을 검사하지 않습니다 |
+| `matches` | **예** | 목록이어야 합니다(ERROR `MATCHES_MISSING`). **회차의 경기 수와 같아야** 합니다(ERROR `MATCH_COUNT_MISMATCH`) |
+
+**경기를 빼지 마십시오.** 패널을 돌리지 않은 경기도 `matches` 에 들어가야
+하고, 빠지면 ERROR `MATCH_MISSING` 입니다 — 빼는 것이 아니라 §4 의
+`panel_status` 로 적습니다.
+
+## 3. matches 구조
+
+`matches[i]` 는 객체여야 합니다(ERROR `MATCH_NOT_AN_OBJECT`).
+
+| 칸 | 필수 | 뜻 |
+|---|---|---|
+| `match_id` | **예** | **primary key.** 경기자료 MD 에 적힌 값을 그대로 씁니다. 두 번 나오면 ERROR `DUPLICATE_MATCH_ID`, 회차에 없는 값이면 ERROR `UNKNOWN_MATCH_ID` |
+| `match_number` | 권장 | **표시용**입니다. 어긋나도 `match_id` 기준으로 잇고 WARNING `MATCH_NUMBER_MISMATCH` 만 남깁니다 |
+| `home_team` · `away_team` | 아니오 | 확인용입니다. 적었는데 다른 팀이면 ERROR `TEAM_MISMATCH` |
+| `panel_status` | 아니오 | §4. 없으면 `{pi.STATUS_OK}` 입니다 |
+| `panel_status_reason` | 조건부 | `{pi.STATUS_OK}` 가 아니면 **필수** |
+| `{pi.DATA_ROLE}` | `ok` 일 때 **예** | 분석가 A |
+| `{pi.MATCHUP_ROLE}` | `ok` 일 때 **예** | 분석가 B |
+| `{pi.MODERATOR_ROLE}` | `ok` 일 때 **예** | 사회자 |
+
+경기 하나의 뼈대입니다.
+
+```json
+{{
+  "match_id": "4512345",
+  "match_number": 1,
+  "home_team": "첼시",
+  "away_team": "풀럼",
+  "{pi.DATA_ROLE}": {{ ... }},
+  "{pi.MATCHUP_ROLE}": {{ ... }},
+  "{pi.MODERATOR_ROLE}": {{ ... }}
+}}
+```
+
+### 3-1. 분석가 블록
+
+```json
+{_json(_example_ok()[pi.DATA_ROLE])}
+```
+
+| 칸 | 규칙 |
+|---|---|
+| `role` | 적어도 되고 빼도 됩니다. 적었는데 다르면 ERROR `ROLE_MISMATCH`. 분석가 자리에 `{pi.MODERATOR_ROLE}` 같은 이름을 적으면 ERROR |
+| `summary` | **비어 있지 않은 문자열.** 없으면 ERROR `INVALID_ANALYST` |
+| `predicted_home` · `predicted_away` | **0 이상의 정수 또는 `null`.** `"2"`·`1.5`·`true`·`-1` 은 전부 거부합니다. 고쳐 주지 않습니다 |
+| `rationale` | **문자열 배열.** 문자열 하나로 보내면 거부합니다 |
+| `evidence_ids` | 문자열 배열. §8 |
+
+블록이 없으면 ERROR `MISSING_ANALYST` 입니다. 역할 이름은
+`{roles}` 둘뿐이고, 시장(market)은 분석가가 아니라 역할로 들어올 수
+없습니다(ERROR `FORBIDDEN_ROLE`).
+
+### 3-2. 사회자 블록
+
+```json
+{_json(_example_ok()[pi.MODERATOR_ROLE])}
+```
+
+| 칸 | 규칙 |
+|---|---|
+| `conclusion` | 문자열. **스코어를 채택했으면 필수**입니다(없으면 거부). 고르지 못했어도 고를 것이 있었다면 이유를 적어야 합니다 |
+| `common_points` · `differences` | 문자열 배열. **둘 다 비면 거부**합니다 — 하나에는 내용이 있어야 합니다 |
+| `counterpoints` · `uncertainty` | 문자열 배열 |
+| `market_relation` | 문자열 |
+| `evidence_ids` | §8 |
+| `simulations` · `distribution` | §6 |
+| `adopted_home` · `adopted_away` | **둘 다 있거나 둘 다 `null`.** 한쪽만 있으면 거부 |
+| `adopted_from` | §7 |
+
+`shared_evidence_ids` 처럼 근거를 **분류**하는 칸을 보내도 읽지 않습니다 —
+공통/각자 분류는 프로그램이 계산합니다. 블록이 없으면 ERROR
+`MISSING_MODERATOR` 입니다.
+
+## 4. panel_status — 허용값과 의미
+
+가능한 값은 넷뿐이고, 프로그램이 §1-6 에서 쭉 써 온 어휘 그대로입니다.
+
+| 값 | 뜻 |
+|---|---|
+| `{pi.STATUS_OK}` | 패널을 정상적으로 돌렸다 (기본값) |
+| `{pi.STATUS_PARTIAL}` | 일부만 돌렸다 |
+| `{pi.STATUS_FAILED}` | 돌리려 했으나 실패했다 |
+| `{pi.STATUS_SKIPPED}` | 애초에 돌리지 않았다 |
+
+목록에 없는 값이면 ERROR `PANEL_STATUS_INVALID` 입니다 ({statuses}).
+
+**`{pi.STATUS_OK}` 가 아니면 `panel_status_reason` 이 필수입니다**
+(ERROR `PANEL_STATUS_REASON_MISSING`). 실제 사유를 적으십시오 — 왜 없는지가
+남지 않으면 다음에 그 경기를 볼 때 수집 실패였는지 자료 부족이었는지 알 수
+없습니다.
+
+**왜 이 칸이 생겼나.** `simulations: 0 · distribution: [] · adopted: null` 은
+예전에도 통과했지만, 그것이 *"토론했는데 못 골랐다"* 인지 *"애초에 돌리지
+않았다"* 인지 구분할 자리가 없었습니다. 앞쪽으로 세면 커버리지가 부풀고,
+통과시키려고 하지도 않은 토론의 공통점을 지어내게 됩니다.
+
+## 5. `{pi.STATUS_SKIPPED}` 일 때 허용되는 구조
+
+```json
+{_json(_example_skipped())}
+```
+
+- 분석가·사회자 블록은 **있어도 되고 없어도 됩니다.** 없는 것이 정직하고,
+  있어도 내용을 읽지 않습니다.
+- 다만 **상태와 내용이 어긋나면 ERROR** `PANEL_STATUS_CONTRADICTION` 입니다.
+  어긋나는 것은 셋입니다.
+  - 분석가에 `predicted_home`·`predicted_away` 가 `null` 이 아니다
+  - 사회자에 `adopted_home`·`adopted_away` 가 `null` 이 아니다
+  - 사회자에 `distribution` 이 비어 있지 않다
+- 돌리지 않았으면 `simulations` 를 지어내지 마십시오. `0` 이고
+  `distribution` 은 `[]` 입니다.
+- `common_points`·`differences` 를 지어내지 마십시오.
+  `{pi.STATUS_OK}` 가 아닌 경기에는 "둘 다 비면 거부" 규칙이 **적용되지
+  않습니다.**
+- 근거를 인용하지 마십시오(§8).
+
+결과는 의견도 사회자도 없는 `{pi.STATUS_SKIPPED} (사유)` 상태입니다.
+가짜 의견도, 돌리지 않은 토론의 라운드 수도 만들지 않습니다.
+
+## 6. simulations / distribution
+
+**{moderator.DEBATE_SIMULATIONS} 이어야 한다는 규칙은 없습니다.**
+`simulations` 는 그 경기에서 실제로 돌린 라운드 수이고,
+{moderator.DEBATE_SIMULATIONS} 은 설정값(`panel.debate_simulations`)이라
+프롬프트에만 실립니다. 프로그램이 검사하는 것은 아래 넷뿐입니다.
+
+1. **합이 맞아야 합니다.** `sum(distribution[].count) == simulations`.
+   다르면 거부합니다 — 세지 않고 지어낸 표는 분포가 아닙니다.
+2. 분포가 비어 있지 않으면 **`simulations` 가
+   {moderator.MIN_SIMULATIONS} 이상**이어야 합니다.
+3. 항목마다 `home`·`away`·`count` 가 **필요**하고 전부 정수입니다.
+   `count` 는 1 이상, 같은 스코어가 두 번 나오면 거부합니다.
+4. `origin` 은 적어도 되지만 **믿지 않습니다** — 제안 집합에서 다시 정합니다.
+   아무도 내지 않은 스코어는 `{moderator.COMPROMISE}` 가 됩니다.
+
+세 가지 경우를 정확히 구분하십시오.
+
+| 보낸 것 | 결과 |
+|---|---|
+| `"distribution"` 키가 **없음** | `simulations` 를 **아예 읽지 않고** 0 으로 둡니다 |
+| `"distribution": []` + `"simulations": 0` | 통과합니다 |
+| `"distribution": []` + `"simulations": {moderator.DEBATE_SIMULATIONS}` | **거부**합니다 (합이 0인데 {moderator.DEBATE_SIMULATIONS} 이라고 적었습니다) |
+
+`simulations` 만 빠지면 `distribution` 합계로 대신 채우고 WARNING
+`SIMULATIONS_MISSING` 을 남깁니다.
+
+**분포는 확률이 아닙니다.** 프로그램은 `count / simulations` 를 계산하지
+않습니다. 백분율·확신도·합의도로 바꾸어 적지 마십시오.
+
+## 7. adopted_from
+
+정의: **채택한 스코어와 같은 스코어를 처음 제안한 역할의 목록**입니다.
+
+- 적은 역할이 그 스코어를 내지 않았으면 **거부**합니다
+  (ERROR `ADOPTED_FROM_MISMATCH`).
+- 그 밖의 경우 **제안 집합에서 다시 계산**합니다. 보낸 값과 다르면
+  조용히 고치지 않고 WARNING `ADOPTED_FROM_RECOMPUTED` 를 남깁니다.
+- 두 분석가 어느 쪽도 내지 않은 **절충 스코어**면 `[]` 가 정답입니다.
+- 채택한 스코어는 **`distribution` 에 실제로 나타난 스코어**여야 합니다.
+  없으면 ERROR `ADOPTED_NOT_IN_DISTRIBUTION`. 분포가 비어 있으면 두 분석가가
+  낸 스코어 중에서만 고를 수 있습니다.
+- 평균을 내지 마십시오. 두 의견의 가운데 값은 분포에 나타나지 않으면
+  들어갈 자리가 없습니다.
+
+## 8. evidence_ids
+
+- 근거 ID 는 **경기마다 다시 매겨집니다.** `E001` 은 그 경기의 첫 근거이고,
+  다른 경기의 `E001` 과 다른 것입니다. 자료에 실린 ID 만 쓰십시오.
+- 자료에 없는 ID 를 쓰면 ERROR `UNKNOWN_EVIDENCE_ID` 입니다.
+- **근거가 하나도 없는 경기**(자료의 `evidence` 가 빈 경우)에서 인용하면
+  ERROR `EVIDENCE_ABSENT_BUT_CITED` 입니다. 그 경기는 `[]` 로 두십시오.
+- 지어내지 마십시오. 근거의 개수는 근거의 세기가 아닙니다.
+
+## 9. 금지 필드
+
+아래 이름은 **어느 깊이에 있든** 찾아내 ERROR `FORBIDDEN_FIELD` 로
+잡습니다({len(pi.FORBIDDEN_FIELDS)}개).
+
+{forbidden}
+
+승무패·추천·확신도·확률을 만들지 마십시오. 예상 스코어는 스코어일 뿐이고,
+`2 : 0` 을 '홈승' 으로 옮기는 일은 프로그램도 하지 않습니다 — 최종 판단은
+사용자가 합니다.
+
+역할 이름으로도 들어올 수 없습니다: {' · '.join(f'`{r}`' for r in pi.FORBIDDEN_ROLES)}.
+시장(Pinnacle)은 **외부 기준값**이지 분석가가 아닙니다.
+
+## 10. validation 규칙 — 오류 코드
+
+**부분 import 는 없습니다.** 한 경기라도 ERROR 가 나면 아무것도 붙지 않고,
+어느 경기가 왜 문제인지만 전부 기록합니다.
+
+### ERROR — 가져올 수 없습니다
+
+| 코드 | 언제 |
+|---|---|
+| `SCHEMA_VERSION_MISSING` | `schema_version` 이 없다 |
+| `SCHEMA_VERSION_UNSUPPORTED` | 읽을 수 없는 버전이다 |
+| `ROUND_MISMATCH` | `round` 가 이 회차가 아니다 |
+| `MATCHES_MISSING` | `matches` 가 목록이 아니다 |
+| `MATCH_COUNT_MISMATCH` | 경기 수가 회차와 다르다 |
+| `MATCH_NOT_AN_OBJECT` | `matches[i]` 가 객체가 아니다 |
+| `DUPLICATE_MATCH_ID` | 같은 `match_id` 가 두 번 |
+| `DUPLICATE_MATCH` | 같은 경기가 두 번 |
+| `UNKNOWN_MATCH_ID` | 이 회차에 없는 경기다 |
+| `MATCH_MISSING` | 회차의 경기가 파일에 없다 |
+| `TEAM_MISMATCH` | `home_team`·`away_team` 이 그 경기가 아니다 |
+| `PANEL_STATUS_INVALID` | 없는 상태 낱말이다 |
+| `PANEL_STATUS_REASON_MISSING` | `{pi.STATUS_OK}` 가 아닌데 사유가 없다 |
+| `PANEL_STATUS_CONTRADICTION` | 돌리지 않았다는데 내용이 있다 |
+| `MISSING_ANALYST` | 분석가 블록이 없다 |
+| `MISSING_MODERATOR` | 사회자 블록이 없다 |
+| `ROLE_MISMATCH` | `role` 이 그 자리의 역할이 아니다 |
+| `FORBIDDEN_ROLE` | 분석가가 아닌 이름을 역할로 적었다 |
+| `INVALID_ANALYST` | 분석가 블록의 형식이 어긋난다 |
+| `INVALID_MODERATOR` | 사회자 블록의 형식이 어긋난다 |
+| `INVALID_DISTRIBUTION` | 분포·`simulations` 가 어긋난다 |
+| `ADOPTED_NOT_IN_DISTRIBUTION` | 채택한 스코어가 분포에 없다 |
+| `ADOPTED_FROM_MISMATCH` | `adopted_from` 의 역할이 그 스코어를 내지 않았다 |
+| `UNKNOWN_EVIDENCE_ID` | 자료에 없는 근거 ID |
+| `EVIDENCE_ABSENT_BUT_CITED` | 근거 0건인 경기에서 인용했다 |
+| `FORBIDDEN_FIELD` | §9 의 칸이 들어 있다 |
+| `UNREADABLE` | 파일을 열거나 JSON 으로 읽지 못했다 |
+
+### WARNING — 가져오되 남깁니다
+
+| 코드 | 언제 |
+|---|---|
+| `MATCH_NUMBER_MISMATCH` | 번호가 다르다 (`match_id` 로 이었다) |
+| `SIMULATIONS_MISSING` | `simulations` 가 없어 분포 합계로 대신했다 |
+| `ADOPTED_FROM_RECOMPUTED` | `adopted_from` 을 실제 원안으로 다시 정했다 |
+| `PANEL_STATUS_IN_1_0` | `1.0` 파일이 `panel_status` 를 썼다 |
+| `LOCAL_MATCH_ID_MISSING` | 프로그램 쪽이 `match_id` 를 모르는 경기가 있다 |
+| `MATCHUP_ORIGIN_ZERO` | 분포에 맞대결 분석가 원안이 한 번도 없다 (감사) |
+| `ANALYSTS_NEVER_DISAGREE` | 두 분석가가 한 번도 갈리지 않았다 (감사) |
+
+뒤의 둘은 감사(4-C)에서 나오는 것이고 **오류가 아닙니다** — 두 분석가가 늘
+같은 스코어를 냈으면 그럴 수 있습니다.
+
+## 11. 1.0 → 1.1 호환
+
+- **`1.0` 파일은 그대로 읽힙니다.** `panel_status` 가 없으면 모든 경기가
+  `{pi.STATUS_OK}` 입니다 — `1.0` 의 뜻이 정확히 그것입니다.
+- **새 칸을 안 쓰는 `1.1` 파일은 `1.0` 과 완전히 같은 뜻입니다.**
+- `1.0` 이라고 적고 `panel_status` 를 쓰면 **읽어는 주되** WARNING
+  `PANEL_STATUS_IN_1_0` 을 남깁니다. 막지 않습니다.
+- 새로 만드는 파일은 `"{ver}"` 로 적으십시오.
+
+---
+
+## 파일 이름과 넣을 곳
+
+```
+{{회차}}{pi.FILE_SUFFIX}      예: 260052{pi.FILE_SUFFIX}
+  → 프로그램 폴더의 {pi.INBOX_DIRNAME}/ 에 넣고 메뉴 [4]
+```
+
+검증에 실패하면 **파일을 만들지 말고** 무엇이 어긋났는지 먼저 설명하십시오.
+임의로 고쳐서 통과시키지 마십시오.
+"""
+
+
 def _json_step(round_id: str, total: int) -> str:
     """3단계 **직후**에 이어서 보낼 말 — Panel Result JSON 파일 만들기.
 
@@ -449,11 +850,14 @@ def _json_step(round_id: str, total: int) -> str:
     return f"""
 ## 3단계 직후 — Panel Result JSON 파일 만들기
 
-3단계 응답을 받은 **같은 대화에서 이어서** 아래를 보내십시오.
+3단계 응답을 받은 **같은 대화에서 이어서** 아래를 보내십시오. 3단계에
+`{SCHEMA_GUIDE_FILE}` 을 함께 첨부해 두었으면 규격이 그 대화에 이미
+들어 있습니다.
 
 ```
 방금 만든 {total}경기 사회자 결과 전체를 프로젝트의 공식 Panel Result
 JSON 으로 저장하십시오. schema_version 은 "{panelimport.SCHEMA_VERSION}" 입니다.
+첨부한 `{SCHEMA_GUIDE_FILE}` 의 규격을 그대로 따르십시오.
 
 먼저 검증하고, 통과할 때만 파일을 만드십시오.
 
@@ -510,7 +914,8 @@ def chat_messages(round_id: str, groups, warned: bool = False,
         blocks += (f"\n## {step}단계 — {_ROLE_KO[role]}\n\n{attach}\n\n```\n"
                    + _analyst_message(round_id, role, groups, 1, parts, warned)
                    + "\n```\n")
-    blocks += ("\n## 3단계 — 사회자\n\n첨부: `03_사회자자료.md`\n\n"
+    blocks += ("\n## 3단계 — 사회자\n\n첨부: `03_사회자자료.md` · "
+               f"`{SCHEMA_GUIDE_FILE}`\n\n"
                "`◀ … ▶` 두 자리에 1·2단계에서 받은 **JSON 배열을 통째로** "
                f"채운 뒤 보내십시오. 사회자는 토론을 {sims}회 돌립니다.\n\n```\n"
                + _moderator_message(round_id, total, warned, sims)
@@ -655,6 +1060,9 @@ def export(report: Report, outdir: Path | None = None,
                               data_sheet(round_id, group, i, parts)))
             files.append(("03_사회자자료.md",
                           moderator_data_sheet(round_id, payloads)))
+            # 계약 문서. 3단계 대화에 함께 첨부해 JSON 을 만들 때 본다 —
+            # 상수는 전부 `panelimport` 에서 끌어오므로 낡지 않는다.
+            files.append((SCHEMA_GUIDE_FILE, schema_guide()))
             for name, text in files:
                 path = target / name
                 path.write_text(text, encoding="utf-8")

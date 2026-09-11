@@ -739,6 +739,64 @@ def test_j2_status_line_uses_the_project_vocabulary():
 
 
 # --------------------------------------------------------------------------
+# S. 규격 문서의 예시가 실제로 통과하는가
+#
+# 문서와 검증기가 갈라지면 사용자는 문서대로 만들고 프로그램에서 거부당한다.
+# 예시를 **진짜 검증기에 태워** 그 일을 막는다. 식별자(match_id·팀명)만
+# 이 픽스처에 맞추고 구조는 한 칸도 바꾸지 않는다.
+# --------------------------------------------------------------------------
+def _from_guide(example: dict, match: Match, mid: str) -> dict:
+    block = copy.deepcopy(example)
+    block["match_id"] = mid
+    block["match_number"] = match.no
+    block["home_team"] = match.home.display
+    block["away_team"] = match.away.display
+    return block
+
+
+def test_s1_guide_example_passes_the_real_validator():
+    from toto import panelexport
+
+    report = _report(n=2, evidence=3)
+    data = {"schema_version": panelimport.SCHEMA_VERSION,
+            "round": report.round_id,
+            "matches": [
+                _from_guide(panelexport._example_ok(), report.matches[0],
+                            "400001"),
+                _from_guide(panelexport._example_skipped(), report.matches[1],
+                            "400002")]}
+    res = panelimport.validate(data, report, S)
+    assert res.success, [str(i) for i in res.issues]
+    assert not _codes(res), _codes(res)          # 경고도 없어야 한다
+
+    ok, skipped = res.runs[1], res.runs[2]
+    assert (ok.moderator.adopted_home, ok.moderator.adopted_away) == (2, 1)
+    assert ok.moderator.simulations == \
+        sum(t.count for t in ok.moderator.distribution)
+    # 생략 경기는 의견도 사회자도 만들지 않는다.
+    assert panelimport.status_of(skipped) == panelimport.STATUS_SKIPPED
+    assert skipped.opinions == () and skipped.moderator is None
+    assert "상세 데이터가 없어" in skipped.status
+
+
+def test_s2_guide_example_origin_and_adopted_from_survive_recompute():
+    """예시의 `origin`·`adopted_from` 이 재계산과 어긋나지 않는다."""
+    from toto import panelexport
+
+    report = _report(n=1, evidence=3)
+    data = {"schema_version": panelimport.SCHEMA_VERSION,
+            "round": report.round_id,
+            "matches": [_from_guide(panelexport._example_ok(),
+                                    report.matches[0], "400001")]}
+    res = panelimport.validate(data, report, S)
+    assert res.success, [str(i) for i in res.issues]
+    assert "ADOPTED_FROM_RECOMPUTED" not in _codes(res), _codes(res)
+    origins = {(t.home, t.away): t.origin
+               for t in res.runs[1].moderator.distribution}
+    assert origins[(3, 1)] == "compromise", origins
+
+
+# --------------------------------------------------------------------------
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items())
              if n.startswith("test_") and callable(f)]

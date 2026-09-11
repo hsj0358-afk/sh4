@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from toto import moderator, panel, panelexport                  # noqa: E402
+from toto import moderator, panel, panelexport, panelimport     # noqa: E402
 from toto.models import (                                       # noqa: E402
     AnalysisAxis, EvidenceItem, Match, MatchAnalysis, MatchProb, Metric,
     Report, Signal, TeamAnalysis, TeamRef)
@@ -168,7 +168,8 @@ def test_b1_both_analysts_get_the_same_payload_string():
     _st, out = _run()
     files = sorted(f.name for f in out.glob("0*.md"))
     assert files == ["00_프로젝트_지침.md", "01_채팅에_적을_말.md",
-                     "02_경기자료.md", "03_사회자자료.md"], files
+                     "02_경기자료.md", "03_사회자자료.md",
+                     panelexport.SCHEMA_GUIDE_FILE], files
     says = _says(out)
     assert says.count("첨부: `02_경기자료.md`") == 2, "두 단계가 같은 파일이 아니다"
 
@@ -257,7 +258,8 @@ def test_c7_flag_writes_the_sheets():
     assert "근거 0건인 채로 실은 1경기" in status, status
     names = sorted(f.name for f in out.glob("*.md"))
     assert names == ["00_프로젝트_지침.md", "01_채팅에_적을_말.md",
-                     "02_경기자료.md", "03_사회자자료.md"], names
+                     "02_경기자료.md", "03_사회자자료.md",
+                     panelexport.SCHEMA_GUIDE_FILE], names
 
 
 def test_c8_sheets_carry_the_warning():
@@ -598,6 +600,116 @@ def test_s2b_simulation_count_flows_from_settings_to_both_files():
     # 지문도 라운드 수에 따라 달라진다 — 붙여넣은 지침이 낡은 줄 알 수 있다.
     assert panelexport.instructions_fingerprint(12) != \
         panelexport.instructions_fingerprint(30)
+
+
+# --------------------------------------------------------------------------
+# T. Panel Result JSON 규격 문서 (§1-11-1 과 같은 이유로 코드에서 만든다)
+# --------------------------------------------------------------------------
+def _guide() -> str:
+    return panelexport.schema_guide()
+
+
+def _codes_in_source() -> set[str]:
+    """`panelimport` 가 실제로 내는 ERROR·WARNING 코드 전부.
+
+    문서에 손으로 적어 둔 목록은 코드가 하나 늘 때 조용히 낡는다. 원본에서
+    뽑아 대조하면 그때 테스트가 깨진다.
+    """
+    src = Path(panelexport.__file__).with_name("panelimport.py").read_text(
+        encoding="utf-8")
+    return set(re.findall(r'\.add\((?:ERROR|WARNING),\s*"([A-Z_]+)"', src))
+
+
+def test_t1_guide_documents_every_code_the_importer_can_raise():
+    guide, codes = _guide(), _codes_in_source()
+    assert codes, "코드를 하나도 못 찾았다 — 추출 패턴이 낡았다"
+    missing = sorted(c for c in codes if c not in guide)
+    assert not missing, f"규격 문서에 없는 코드: {missing}"
+
+
+def test_t2_guide_takes_its_constants_from_code_not_by_hand():
+    """상수를 베끼지 않는다 — 소스에 그 낱말이 문자열로 없어야 한다."""
+    src = Path(panelexport.__file__).read_text(encoding="utf-8")
+    body = src.split("def schema_guide")[1].split("\ndef ")[0]
+    for literal in ('"1.1"', '"생략"', '"부분"', '"실패"',
+                    '"data_analyst"', '"matchup_tactical_analyst"',
+                    '"panel_results"', '"_panel_result.json"'):
+        assert literal not in body, f"{literal} 을 손으로 적었다"
+    # 그런데도 문서에는 그 값들이 나와야 한다 (코드에서 온 것이다).
+    guide = _guide()
+    for value in (panelimport.SCHEMA_VERSION, panelimport.STATUS_SKIPPED,
+                  panelimport.DATA_ROLE, panelimport.MATCHUP_ROLE,
+                  panelimport.INBOX_DIRNAME, panelimport.FILE_SUFFIX):
+        assert value in guide, value
+
+
+def test_t3_guide_lists_every_forbidden_field_and_status():
+    guide = _guide()
+    for name in panelimport.FORBIDDEN_FIELDS:
+        assert f"`{name}`" in guide, name
+    for name in panelimport.FORBIDDEN_ROLES:
+        assert name in guide, name
+    for name in panelimport.PANEL_STATUSES:
+        assert f"`{name}`" in guide, name
+
+
+def test_t4_examples_are_valid_json():
+    """예시는 `json.dumps` 로 찍는다 — 손으로 적으면 쉼표 하나로 틀린다."""
+    blocks = re.findall(r"```json\n(.*?)\n```", _guide(), re.S)
+    assert len(blocks) >= 4, len(blocks)
+    for block in blocks:
+        if "..." in block:          # 뼈대 예시는 자리표시자를 쓴다
+            continue
+        json.loads(block)
+
+
+def test_t5_example_distribution_sums_to_simulations():
+    """예시가 규칙을 어기면 그대로 따라 만든다."""
+    mod = panelexport._example_ok()[panelimport.MODERATOR_ROLE]
+    assert sum(d["count"] for d in mod["distribution"]) == mod["simulations"]
+    assert mod["simulations"] >= moderator.MIN_SIMULATIONS
+    pairs = {(d["home"], d["away"]) for d in mod["distribution"]}
+    assert (mod["adopted_home"], mod["adopted_away"]) in pairs
+
+
+def test_t6_skipped_example_carries_no_content():
+    """`생략` 예시에 스코어가 있으면 PANEL_STATUS_CONTRADICTION 을 가르친다."""
+    ex = panelexport._example_skipped()
+    assert ex["panel_status"] == panelimport.STATUS_SKIPPED
+    assert ex["panel_status_reason"].strip()
+    for role in panelimport.ANALYST_ROLES + (panelimport.MODERATOR_ROLE,):
+        assert role not in ex, role
+
+
+def test_t7_guide_does_not_invent_a_simulations_30_rule():
+    """`DEBATE_SIMULATIONS` 는 설정값이지 계약이 아니다."""
+    guide = _guide()
+    assert "이어야 한다는 규칙은 없습니다" in guide
+    assert str(moderator.MIN_SIMULATIONS) in guide
+
+
+def test_t8_guide_forbids_turning_counts_into_probability():
+    guide = _guide()
+    assert "분포는 확률이 아닙니다" in guide
+    assert "count / simulations" in guide
+    # 문서가 승무패를 만들라고 적지 않는다.
+    assert "승무패" in guide and "만들지 마십시오" in guide
+
+
+def test_t9_export_writes_the_guide_and_stage_three_attaches_it():
+    out = Path(tempfile.mkdtemp()) / "panel"
+    panelexport.export(_report(), outdir=out)
+    path = out / panelexport.SCHEMA_GUIDE_FILE
+    assert path.exists(), sorted(f.name for f in out.iterdir())
+    assert path.read_text(encoding="utf-8") == _guide()
+    stage3 = _says(out).split("## 3단계")[1]
+    assert panelexport.SCHEMA_GUIDE_FILE in stage3, stage3[:400]
+
+
+def test_t10_guide_does_not_change_the_instructions_fingerprint():
+    """지문은 `00_프로젝트_지침.md` 만 잰다 — 규격 문서가 바뀌어도 프로젝트
+    지침을 다시 붙여넣을 필요가 없다."""
+    assert panelexport.instructions_fingerprint() == "5044ea86"
 
 
 def test_s3_conclusion_is_the_first_field_in_the_schema():

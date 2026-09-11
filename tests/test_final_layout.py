@@ -339,13 +339,19 @@ def test_c8_no_market_derived_score_anywhere_in_render():
 # D. 회차 요약 카드
 # --------------------------------------------------------------------------
 def test_c9_missing_tactical_data_is_stated_not_invented():
-    """§44 — 없으면 없다고 적고, 포메이션·선발·부상을 추정해 채우지 않는다."""
+    """§44 — 없으면 없다고 적고, 포메이션·선발·부상을 추정해 채우지 않는다.
+
+    5-D 에서 카드 안의 요약 복사본(`_decision_summary`)이 걷혔다. 정성
+    자료가 없다는 사실을 적는 자리는 **원래부터** 정성 블록이고, 그것이
+    그대로 남아 있는지 본다 — 걷어낸 것은 사본이지 이 사실이 아니다.
+    """
     matches, _s = _demo()
     m = matches[0]
     for p in (m.home_profile, m.away_profile):
         p.strengths, p.weaknesses, p.style_of_play = [], [], []
-    html = render._decision_summary(m)
-    assert "전술 정성 자료" in html and "미수집" in html
+    html = render._traits_block(m)
+    assert "강점 Strengths" in html
+    assert html.count("데이터 없음") >= 6, "없는 것을 없다고 적지 않았다"
     for banned in ("포메이션 4-", "선발 명단", "부상자 명단", "압박 방식"):
         assert banned not in html, banned
 
@@ -401,8 +407,10 @@ def _report_html(with_panel: bool = False) -> str:
 def test_e1_section_order_is_summary_compare_panel_detail():
     html = _report_html(with_panel=True)
     card = html[html.index('id="m1"'):html.index('id="m2"')]
+    # 5-D 에서 `요약 — 이 경기에서 지금까지 나온 것` 이 빠졌다 — 그 블록의
+    # 값은 전부 아래 블록들에 그대로 있었고, 같은 수를 두 번 적는 자리였다.
     order = [card.index(x) for x in
-             ("Pinnacle 시장 기준선", "요약 — 이 경기에서 지금까지 나온 것",
+             ("Pinnacle 시장 기준선",
               "리그 내 위치", "홈 ↔ 원정 직접 비교", "패널 분석",
               "토론 시뮬레이션", "최근 경기 슈팅", "상대전적")]
     assert order == sorted(order), order

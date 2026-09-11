@@ -38,6 +38,10 @@ NAME = {US: "US", A: "A", B: "B", C: "C"}
 WINDOWS = [6, 3]
 OPEN = {"min_sample": 1, "opponent_min_matches": 1, "thresholds": {}}
 UP = Path("/root/.claude/uploads/4f45b11b-6ed2-571d-8e30-3901a62afd1b")
+# 실물 픽스처는 세션 업로드 폴더에 있다. **폴더가 아니라 파일**의
+# 유무를 본다 — 폴더는 다른 업로드 때문에 남아 있을 수 있고, 그러면
+# 가드가 통과한 뒤 읽기에서 터진다(실제로 그랬다).
+REAL = UP / "da0dcdd0-match_5795372.json"
 
 
 def kick(day: int) -> datetime:
@@ -501,7 +505,7 @@ def _real_row():
 
 def test_10_real_260048_has_no_opponent_history():
     """실물 캐시는 팀당 과거 1경기뿐 — 상대 강도가 만들어지지 않는 게 정답."""
-    if not UP.exists():
+    if not REAL.exists():
         return
     row, hid, aid = _real_row()
     as_of = datetime(2026, 8, 29, 20, 0, tzinfo=analysis.KST)
@@ -517,7 +521,7 @@ def test_10_real_260048_has_no_opponent_history():
 
 
 def test_10_real_opponent_is_linked_by_id():
-    if not UP.exists():
+    if not REAL.exists():
         return
     row, hid, aid = _real_row()
     assert analysis.opponent_id_in(row, "Fulham") == aid

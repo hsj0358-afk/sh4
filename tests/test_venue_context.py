@@ -36,6 +36,10 @@ US, THEM = 111, 222
 WINDOWS = [6, 3]
 CFG = analysis.venue_context_config(Settings())
 UP = Path("/root/.claude/uploads/4f45b11b-6ed2-571d-8e30-3901a62afd1b")
+# 실물 픽스처는 세션 업로드 폴더에 있다. **폴더가 아니라 파일**의
+# 유무를 본다 — 폴더는 다른 업로드 때문에 남아 있을 수 있고, 그러면
+# 가드가 통과한 뒤 읽기에서 터진다(실제로 그랬다).
+REAL = UP / "da0dcdd0-match_5795372.json"
 
 
 def kick(day: int) -> datetime:
@@ -737,7 +741,7 @@ def _real_axis(team, tid, oid, aggs, goals, hid, aid, venue, min_sample=1):
 
 
 def test_28_real_fulham_home_context():
-    if not UP.exists():
+    if not REAL.exists():
         return
     _pay, hid, aid, aggs, goals = _real("5795372",
                                         "da0dcdd0-match_5795372.json")
@@ -758,7 +762,7 @@ def test_28_real_fulham_home_context():
 
 
 def test_28_real_chelsea_away_context():
-    if not UP.exists():
+    if not REAL.exists():
         return
     _pay, hid, aid, aggs, goals = _real("5795372",
                                         "da0dcdd0-match_5795372.json")
@@ -777,7 +781,7 @@ def test_28_real_chelsea_away_context():
 
 
 def test_28_real_venue_filter_is_not_by_name_only():
-    if not UP.exists():
+    if not REAL.exists():
         return
     _pay, hid, aid, aggs, goals = _real("5795372",
                                         "da0dcdd0-match_5795372.json")

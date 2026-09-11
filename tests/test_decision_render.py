@@ -50,83 +50,61 @@ def _panelled(**kw):
 
 
 # --------------------------------------------------------------------------
-# A. 요약 — 이 경기에서 지금까지 나온 것
+# A. 요약 블록은 Phase 5-D 에서 빠졌다 — 원본은 제자리에 있다
 # --------------------------------------------------------------------------
-def test_a1_market_row_shows_the_probabilities_it_already_has():
-    m = _match()
-    m.odds = Odds(home=2.0, draw=3.5, away=4.0, source="arcadia-api")
+# 4-D 가 맨 위에 둔 `요약 — 이 경기에서 지금까지 나온 것` 은 아래 블록의
+# 끝값을 옮겨 적던 사본이었다. 실물 260052 에서 그 네 줄이 전부 같은 카드
+# 안에서 두 번째로 읽히는 수가 돼 5-D 에서 뺐다.
+#
+# **지운 것은 사본뿐이다.** 아래 테스트가 원본 네 자리를 그대로 확인한다.
+def test_a1_summary_block_is_gone():
+    from toto.settings import Settings
+
+    html = render._match_card(_panelled(), Settings(), None)
+    assert "요약 — 이 경기에서" not in html
+    assert not hasattr(render, "_decision_summary"), \
+        "사본을 지웠는데 함수가 남아 있다"
+
+
+def test_a2_market_probabilities_are_still_there():
+    """시장 확률은 `_odds_block` 에 그대로 있다."""
     from toto.predict import additive_probabilities
 
-    m.probs = additive_probabilities(m.odds.home, m.odds.draw,
-                                     m.odds.away)
-    html = render._decision_summary(m)
-    assert "Pinnacle 시장 기준선" in html
+    m = _match()
+    m.odds = Odds(home=2.0, draw=3.5, away=4.0, source="arcadia-api")
+    m.probs = additive_probabilities(m.odds.home, m.odds.draw, m.odds.away)
+    html = render._odds_block(m)
     ph, _pd, _pa = m.probs.pct()
-    assert f"{ph:.1f}%" in html, html
+    assert "Pinnacle 시장 기준선" in html and f"{ph:.1f}%" in html
 
 
-def test_a2_no_odds_says_why_instead_of_zero():
-    html = render._decision_summary(_match())
-    assert "배당을 가져오지 못했습니다" in html
-    assert "0.0%" not in html, "배당이 없는데 0% 로 채웠다"
-
-
-def test_a3_panel_rows_appear_only_when_a_panel_exists():
-    plain = render._decision_summary(_match())
-    assert "Panel 종합 예상 스코어" not in plain, \
-        "패널 없이 돌린 실행에 패널 줄이 생겼다"
-    assert "Panel 종합 예상 스코어" in render._decision_summary(_panelled())
-
-
-def test_a4_adopted_score_is_copied_verbatim_not_averaged():
-    """2-1 과 1-1 에서 1.5 같은 값이 나오면 안 된다."""
-    html = render._decision_summary(_panelled())
+def test_a3_panel_score_is_still_there():
+    """Panel 종합 예상 스코어는 `_panel_block` 에 그대로 있다."""
+    html = render._panel_block(_panelled())
+    assert "Panel 종합 예상 스코어" in html
     assert "2 : 1" in html
     assert "평균내지 않습니다" in html
-    for banned in ("1.5", "1 : 1.5", "대표 예상", "합의 예상"):
-        assert banned not in _text(html), banned
 
 
-def test_a5_compromise_says_it_is_not_an_average():
-    html = render._decision_summary(_panelled(moderator=mod(
-        adopted_home=2, adopted_away=2, adopted_from=())))
-    assert "2 : 2" in html
-    assert "절충" in html and "평균이 아닙니다" in html
+def test_a4_axes_and_evidence_are_still_there():
+    """축과 근거도 각자의 블록에 그대로 있다."""
+    from toto.settings import Settings
+
+    html = render._match_card(_match(), Settings(), None)
+    assert "경기력 분석" in html, "분석 축 블록이 사라졌다"
+    assert "리그 내 위치" in html
 
 
-def test_a6_no_adopted_score_says_why_and_never_prints_zero():
-    html = render._decision_summary(_panelled(moderator=mod(
-        adopted_home=None, adopted_away=None, adopted_from=())))
-    assert "고를 근거가 자료에 없었습니다" in html
-    assert "0 : 0" not in html
+def test_a5_removing_the_copy_did_not_touch_the_values():
+    """사본을 지운 것이 원본 수를 바꾸지 않았다."""
+    from toto.predict import additive_probabilities
 
-
-def test_a7_initial_opinions_are_shown_as_a_relation():
-    """두 원안을 나란히 적되 **누가 옳은지 말하지 않는다.**"""
-    html = render._decision_summary(_panelled())
-    assert "두 분석가의 처음 의견" in html
-    assert "데이터 2 : 1" in html and "맞대결 1 : 1" in html
-    assert "달랐습니다" in html
-    same = render._decision_summary(_panelled(
-        opinions=(op(DATA, 2, 1), op(MATCHUP, 2, 1))))
-    assert "같았습니다" in same
-
-
-def test_a8_axis_and_evidence_counts_come_with_their_caveat():
-    html = render._decision_summary(_match())
-    assert "계산된 분석 축" in html
-    assert "3축" in html, html          # 픽스처는 축 셋을 채운다
-    assert "근거" in html
-    # 근거가 없는 경기는 **왜 없는지**를 적는다 (§1-5).
-    assert "0건" in html and "게이트" in html
-
-
-def test_a9_summary_never_recommends():
-    html = render._decision_summary(_panelled())
-    text = _text(html)
-    for banned in ("홈승", "원정승", "승리 예상", "유력", "우세", "추천합니다"):
-        assert banned not in text, banned
-    assert "추천하지 않습니다" in text
+    m = _panelled()
+    m.odds = Odds(home=2.0, draw=3.5, away=4.0, source="arcadia-api")
+    m.probs = additive_probabilities(m.odds.home, m.odds.draw, m.odds.away)
+    assert m.probs.pct() == additive_probabilities(2.0, 3.5, 4.0).pct()
+    assert (m.panel.moderator.adopted_home,
+            m.panel.moderator.adopted_away) == (2, 1)
 
 
 # --------------------------------------------------------------------------
@@ -159,8 +137,12 @@ def test_b3_periods_are_not_mixed_into_one_picture():
 def test_b4_lower_is_better_metrics_are_marked():
     html = render._direct_compare_block(_match())
     assert "실점 ↓" in html or "피슈팅 ↓" in html, html
-    # 방향 표시는 라벨뿐이고, 점의 위치가 우열이 아니라는 말이 붙는다.
-    assert "점의 위치가 우열을 뜻하지 않습니다" in html
+    # Phase 5-D 에서 ↓ 가 표시에 그치지 않게 됐다 — 그 줄은 축을 뒤집어
+    # 그리므로 어느 줄이든 오른쪽이 더 좋은 값이다. 예전 캡션의 "점의 위치가
+    # 우열을 뜻하지 않습니다" 는 더 이상 사실이 아니라 바뀌었다.
+    assert "축을 반대로" in html
+    assert "오른쪽이 그 지표에서 더 좋은 값" in html
+    assert "점의 위치가 우열을 뜻하지 않습니다" not in html
 
 
 def test_b5_unequal_sample_sizes_are_reported_not_hidden():
@@ -287,7 +269,8 @@ def test_c9_distribution_keeps_the_origin_visible():
 # --------------------------------------------------------------------------
 # D. 전체 규칙
 # --------------------------------------------------------------------------
-NEW_BLOCKS = ("_decision_summary", "_direct_compare_block", "_score_flow")
+# `_decision_summary` 는 5-D 에서 빠졌다 (A 절).
+NEW_BLOCKS = ("_direct_compare_block", "_score_flow")
 
 
 def test_d1_new_blocks_do_not_compute():
@@ -328,14 +311,13 @@ def test_d3_no_wdl_helper_appears():
 def test_d4_model_text_is_escaped():
     evil = '<script>alert(1)</script>'
     m = _panelled(moderator=mod(conclusion=evil))
-    for html in (render._decision_summary(m), render._panel_block(m)):
+    for html in (render._panel_block(m),):
         assert "<script>" not in html, "모델 문장이 그대로 새어 나갔다"
 
 
 def test_d5_no_external_reference():
     m = _panelled()
-    for html in (render._decision_summary(m), render._direct_compare_block(m),
-                 render._score_flow(m)):
+    for html in (render._direct_compare_block(m), render._score_flow(m)):
         for bad in ("http://", "https://", "<script", "<iframe", "url("):
             assert bad not in html, bad
 
@@ -345,8 +327,7 @@ def test_d6_only_existing_css_classes():
     allowed = {"block", "meta", "mini", "num", "nodata", "tossup", "chart",
                "legend", "lg", "sw", "lbl", "vs", "tablewrap"}
     m = _panelled()
-    for html in (render._decision_summary(m), render._direct_compare_block(m),
-                 render._score_flow(m)):
+    for html in (render._direct_compare_block(m), render._score_flow(m)):
         for group in re.findall(r'class="([^"]+)"', html):
             for token in group.split():
                 assert token in allowed, f"새 CSS 클래스: {token}"
@@ -354,8 +335,7 @@ def test_d6_only_existing_css_classes():
 
 def test_d7_blocks_are_well_formed():
     m = _panelled()
-    for html in (render._decision_summary(m), render._direct_compare_block(m),
-                 render._score_flow(m)):
+    for html in (render._direct_compare_block(m), render._score_flow(m)):
         ElementTree.fromstring(f"<div>{html}</div>")
 
 
@@ -372,7 +352,7 @@ def test_d8_card_hierarchy_is_summary_compare_panel_detail():
 
     html = render._match_card(_panelled(), Settings(), None)
     order = [html.index(x) for x in
-             ("Pinnacle 시장 기준선", "요약 — 이 경기에서", "리그 내 위치",
+             ("Pinnacle 시장 기준선", "리그 내 위치",
               "홈 ↔ 원정 직접 비교", "패널 분석",
               "상세 경기력 지표", "시즌 지표 비교", "경기력 분석 · 시즌",
               "경기력 분석 · 최근 경기")]

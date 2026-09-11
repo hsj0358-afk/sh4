@@ -70,10 +70,16 @@ def _card(html: str, no: int) -> str:
 # --------------------------------------------------------------------------
 # A. Moderator-only 문구
 # --------------------------------------------------------------------------
-def test_a1_summary_says_moderator_result_not_did_not_run():
+def test_a1_card_says_moderator_result_not_did_not_run():
+    """결과가 있는데 "하지 않았습니다" 라고 적지 않는다.
+
+    5-D 전에는 카드 안의 요약 복사본(`_decision_summary`)이 이 문장을 들고
+    있었다. 그 블록이 걷히면서 상태를 말하는 자리가 **패널 블록 하나로**
+    모였다 — 같은 말을 두 곳에 적지 않는 §1-15-3 의 연장이다.
+    """
     report, _res = _moderator_only_report()
     card = _card(_html(report), 1)
-    assert "Moderator 결과만 반영" in card
+    assert "사회자 결과만 반영" in card
     assert "하지 않았습니다" not in card, "결과가 있는데 없다고 적었다"
 
 
@@ -202,8 +208,10 @@ def test_b6_summary_label_is_escaped():
 
 def test_b7_core_blocks_stay_open():
     """첫 화면에 남아야 하는 것 — 요약·시장·비교·패널은 접지 않는다."""
+    # 5-D 에서 요약 블록이 걷혔다 — 접힘 규칙은 그대로이고, 검사 대상에서
+    # 없어진 블록만 뺀다.
     head = _demo_card().split("<details")[0]
-    for must in ("Pinnacle 시장 기준선", "요약 — 이 경기에서",
+    for must in ("Pinnacle 시장 기준선",
                  "리그 내 위치", "홈 ↔ 원정 직접 비교"):
         assert must in head, must
 

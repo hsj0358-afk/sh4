@@ -289,8 +289,10 @@ def test_b9_panel_sits_above_the_detail_blocks_in_the_card():
     m = _match()
     m.panel = full_run()
     html = render._match_card(m, Settings(), None)
+    # 5-D 에서 `요약 — 이 경기에서` 블록이 걷혔다. 묻는 것은 그대로다 —
+    # 패널이 세부보다 앞에 오는가.
     order = [html.index(x) for x in
-             ("요약 — 이 경기에서", "리그 내 위치", "홈 ↔ 원정 직접 비교",
+             ("리그 내 위치", "홈 ↔ 원정 직접 비교",
               "패널 분석", "상세 경기력 지표", "시즌 지표 비교")]
     assert order == sorted(order), order
 

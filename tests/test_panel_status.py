@@ -308,16 +308,19 @@ def test_d1_skipped_match_shows_the_real_state():
         assert banned not in html, banned
 
 
-def test_d2_summary_and_round_card_say_skipped():
+def test_d2_round_card_says_skipped():
+    """회차 카드도 생략을 생략으로 적는다.
+
+    5-D 에서 카드 안의 요약 복사본(`_decision_summary`)이 걷혔다 — 상태를
+    말하는 자리는 패널 블록(d1)과 이 회차 카드 둘뿐이다.
+    """
     res, report = _round_260052()
     panelimport.attach(res, report)
     match = next(m for m in report.matches if m.no == 9)
-    summary = render._decision_summary(match)
-    assert "Panel 분석" in summary and SKIPPED in summary
-    assert "고를 근거가 자료에 없었습니다" not in summary, \
-        "돌리지 않은 것을 '못 골랐다' 로 적었다"
     card = render._summary_panel(match)
     assert SKIPPED in card
+    assert "고를 근거가 자료에 없었습니다" not in card, \
+        "돌리지 않은 것을 '못 골랐다' 로 적었다"
     for banned in ("홈승", "원정승", "0 : 0"):
         assert banned not in card, banned
 

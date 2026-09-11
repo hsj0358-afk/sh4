@@ -699,9 +699,13 @@ def _direct_compare_block(match: Match) -> str:
 
     for attr, name in _DIRECT_ROWS:
         label, fmt = _axis_label_fmt(name)
-        # ↓ 는 레이더와 같은 표시다 — '낮을수록 좋은 지표'. 점의 위치 자체는
-        # 좋고 나쁨을 담지 않으므로, 방향은 라벨로만 알린다.
-        lower = analysis.SPECS.get(name, ("", "", ""))[2] == analysis.LOWER_BETTER
+        # **방향은 지표 카탈로그가 정한다** (`analysis.SPECS` 의 세 번째 칸).
+        # 지표 이름으로 분기하지도, 라벨의 `↓` 를 되읽지도 않는다 — `↓` 쪽이
+        # 이 값에서 파생된 표시다. 방향이 비어 있는 지표(슈팅 수·무승부처럼
+        # 많다고 좋은 것이 아닌 것)는 뒤집지 않는다: `== LOWER_BETTER` 만
+        # 참이고 빈 문자열은 기본 방향으로 남는다 (Phase 5-D §17).
+        direction = analysis.SPECS.get(name, ("", "", "", ""))[2]
+        lower = direction == analysis.LOWER_BETTER
         window = window_of(attr)
         periods = [(analysis.SEASON, "시즌")]
         if window:
@@ -749,10 +753,11 @@ def _direct_compare_block(match: Match) -> str:
     return ('<div class="block"><h4>홈 ↔ 원정 직접 비교</h4>'
             '<p class="meta">같은 기간·같은 지표를 <b>양쪽 다 값이 있을 때만</b> '
             '한 눈금 위에 놓습니다 · 눈금은 줄마다 따로라 다른 줄과 x 위치를 '
-            '견줄 수 없습니다 · ↓ 는 낮을수록 좋은 지표 · 표본 수(n)는 아래 '
-            '경기력 분석 표에 있고 여기 없는 지표도 거기 전부 남아 있습니다 · '
-            '지표를 합쳐 종합 점수를 만들지 않고 승·무·패를 추천하지 '
-            '않습니다</p>'
+            '견줄 수 없습니다 · ↓ 는 낮을수록 좋은 지표이고 <b>그 줄은 축을 '
+            '반대로</b> 그립니다 (어느 줄이든 오른쪽이 더 좋은 값) · 표본 '
+            '수(n)는 아래 경기력 분석 표에 있고 여기 없는 지표도 거기 전부 '
+            '남아 있습니다 · 지표를 합쳐 종합 점수를 만들지 않고 승·무·패를 '
+            '추천하지 않습니다</p>'
             f'{body}{note}</div>')
 
 
@@ -1411,7 +1416,11 @@ def _radar_table(match: Match) -> str:
     글자로도 있어야 한다.
 
     **여기서 계산하지 않는다** — `Match.radar` 에 이미 들어 있는 값과 백분위를
-    옮겨 적을 뿐이다. `상위 N%` 는 레이더 툴팁이 쓰는 것과 같은 표시 방식이다.
+    옮겨 적을 뿐이다. 표기는 레이더 툴팁과 같은 방식이다.
+
+    **값마다 `상위` 를 붙이지 않는다** (Phase 5-D). 축 여덟 줄 × 두 팀이라
+    한 카드에만 열여섯 번 반복됐는데, 그 낱말이 뜻하는 것은 블록 설명이 이미
+    한 번 적어 준다 — 여기서는 숫자만 옮긴다. **값도 백분위도 바뀌지 않았다.**
     """
     axes = (match.radar or {}).get("axes") or []
     if not axes:
@@ -1422,7 +1431,7 @@ def _radar_table(match: Match) -> str:
         if value is None or pct is None:
             return '<td class="num"><span class="nodata">—</span></td>'
         return (f'<td class="num">{esc(charts._fmt(value))}'
-                f'<small> 상위 {100 - pct:.0f}%</small></td>')
+                f'<small> {100 - pct:.0f}%</small></td>')
 
     rows = ""
     for axis in axes:
@@ -1440,117 +1449,16 @@ def _radar_table(match: Match) -> str:
             f'<tbody>{rows}</tbody></table>')
 
 
-def _decision_summary(match: Match) -> str:
-    """요약 — 이 경기에서 **이미 나온 것**을 한자리에 모은다 (Phase 4-D).
-
-    새로 계산하지 않는다. 시장·패널·분석 축·근거는 각자 아래 블록에 그대로
-    있고, 여기서는 그 **끝값만** 옮겨 적는다. 값을 합쳐 종합 점수를 만들지
-    않고, 승·무·패를 고르지 않는다 (§1-3).
-
-    자리가 위인 이유는 하나다 — 무엇이 있고 무엇이 **없는지**를 스무 개
-    블록을 스크롤한 뒤가 아니라 먼저 알아야 한다. 시즌 초에는 축과 근거가
-    통째로 비는 일이 흔한데, 예전에는 그 사실이 끝까지 내려가 봐야 보였다.
-
-    없는 줄은 지우지 않고 **왜 없는지**를 그 자리에 적는다 (§1-5·§1-6).
-    """
-    rows = []
-
-    p = match.probs
-    if p is not None and match.odds.available:
-        ph, pd, pa = p.pct()
-        tag = ' <span class="tossup">백중세</span>' if p.toss_up else ""
-        rows.append(("Pinnacle 시장 기준선",
-                     f"승 {ph:.1f}% · 무 {pd:.1f}% · 패 {pa:.1f}%{tag}"))
-    else:
-        rows.append(("Pinnacle 시장 기준선",
-                     '<span class="nodata">배당을 가져오지 못했습니다</span>'))
-
-    # 패널은 `--panel` 없이 돌린 실행에 아예 없다. 그때는 줄을 만들지
-    # 않는다 — 없는 단계를 '실패' 처럼 보이게 하면 안 된다 (§1-6).
-    run = getattr(match, "panel", None)
-    if run is not None:
-        from . import panelaudit
-
-        audit = panelaudit.match_audit(match, run)
-        state, reason = _panel_state(run)
-        _no, da, mu, adopted = audit.row
-        if _moderator_only(run):
-            # **"하지 않았습니다" 가 아니다.** 사회자는 돌았고 분석가 원문만
-            # 이번 입력에 없다 — 내부 상태(`부분`)를 그대로 화면에 적으면
-            # 결과가 있는데 없는 것처럼 읽힌다 (Phase 4-F UI §1).
-            rows.append(("Panel 분석",
-                         'Moderator 결과만 반영 <span class="nodata">'
-                         '(1·2단계 분석가 원문 없음)</span>'))
-        elif state != "ok":
-            rows.append(("Panel 분석",
-                         '<span class="nodata">하지 않았습니다 ('
-                         + esc(state) + (f' — {esc(reason)}' if reason else "")
-                         + ')</span>'))
-        elif adopted == "—":
-            rows.append(("Panel 종합 예상 스코어",
-                         '<span class="nodata">토론 결과에서 하나를 고를 '
-                         '근거가 자료에 없었습니다</span>'))
-        else:
-            who = " · ".join(_ROLE_KO.get(r, r) for r in audit.adopted_from)
-            src = (f"{esc(who)}의 예상 스코어 (평균내지 않습니다)" if who
-                   else "두 의견 어느 쪽도 처음에 내지 않은 절충 스코어 "
-                        "(평균이 아닙니다)")
-            rows.append(("Panel 종합 예상 스코어",
-                         f"<b>{esc(adopted.replace('-', ' : '))}</b> — {src}"))
-        both = " · ".join(
-            f"{name} {cell.replace('-', ' : ')}"
-            for name, cell in (("데이터", da), ("맞대결", mu))
-            if cell != "—")
-        if both:
-            same = audit.initial_score_relation == panelaudit.SAME_INITIAL
-            rows.append(("두 분석가의 처음 의견",
-                         f"{esc(both)} — 처음 의견이 "
-                         f"{'같았습니다' if same else '달랐습니다'}"))
-
-    data = getattr(match, "analysis", None)
-    if data is not None:
-        counts = []
-        for side, ref in (("home", match.home), ("away", match.away)):
-            team = getattr(data, side, None)
-            if team is None:
-                continue
-            counts.append(f"{esc(ref.display)} {len(team.computed_axes())}축")
-        if counts:
-            rows.append(("계산된 분석 축", " · ".join(counts)))
-
-        items = list(getattr(data, "evidence", None) or [])
-        if items:
-            per = []
-            for side, ref in (("home", match.home), ("away", match.away)):
-                team = getattr(getattr(data, side, None), "team", "")
-                if not team:
-                    continue
-                per.append(f"{esc(ref.display)} "
-                           f"{len([i for i in items if i.team == team])}건")
-            rows.append(("근거", " · ".join(per)
-                         + " — 개수는 근거의 세기가 아닙니다"))
-        else:
-            rows.append(("근거", '<span class="nodata">0건 (근거 생성 게이트 '
-                                 '미충족)</span>'))
-
-    # §44 — 전술 정성 자료가 없으면 없다고 적는다. **포메이션·선발·부상·압박
-    # 방식을 추정해 채우지 않는다** (§1-12 가 "구조가 막지 못한다" 고 적어 둔
-    # 바로 그 항목들이라, 칸을 만들지 않는 것이 가장 확실한 방법이다).
-    traits = [len(p.strengths) + len(p.weaknesses) + len(p.style_of_play)
-              for p in (match.home_profile, match.away_profile) if p]
-    if not traits or not any(traits):
-        rows.append(("전술 정성 자료",
-                     '<span class="nodata">없음 (WhoScored 강점·약점·스타일 '
-                     '미수집) — 포메이션·선발·부상은 이 리포트 어디에도 '
-                     '없습니다</span>'))
-
-    body = "".join(f'<tr><td>{esc(label)}</td><td>{value}</td></tr>'
-                   for label, value in rows)
-    return ('<div class="block"><h4>요약 — 이 경기에서 지금까지 나온 것</h4>'
-            '<p class="meta">아래 블록에 이미 있는 값을 한자리에 옮긴 것입니다 · '
-            '여기서 새로 계산하거나 합치지 않습니다 · '
-            '<b>승·무·패를 추천하지 않습니다</b></p>'
-            f'<table class="mini"><tbody>{body}</tbody></table></div>')
+# 요약 블록(`_decision_summary`)은 Phase 5-D 에서 **통째로 뺐다.**
+#
+# 4-D 가 만든 블록이고 하는 일은 "아래 블록에 이미 있는 끝값을 한자리에
+# 옮기는 것" 하나였다. 실물 260052 에서 그 네 줄(시장 확률·패널 스코어·
+# 축 개수·근거 개수)이 전부 같은 카드 안에서 두 번째로 읽히는 수가 됐다.
+#
+# **계산을 지운 것이 아니다** — 옮겨 적던 원본은 전부 제자리에 있다:
+# 시장 확률 `_odds_block` · 패널 스코어 `_panel_block` · 분석 축
+# `_axes_blocks` · 근거 `_evidence_block`. 지운 것은 사본뿐이고, 전용
+# CSS 도 없었다(`table.mini`·`.meta`·`.nodata` 는 다른 블록이 함께 쓴다).
 
 
 def _match_card(match: Match, settings: Settings, report=None) -> str:
@@ -1589,10 +1497,12 @@ def _match_card(match: Match, settings: Settings, report=None) -> str:
             f'{_standing_row(match)}'
             f'{notes}'
             f'{_odds_block(match, report)}'
-            # 위계는 요약 → 비교 → 패널 → 세부다 (Phase 4-D). 예전에는
-            # 카드가 세부부터 시작해서, 무엇이 있고 무엇이 없는지 알려면
-            # 열 몇 개 블록을 끝까지 내려가 봐야 했다.
-            f'{_decision_summary(match)}'
+            # **요약 블록은 Phase 5-D 에서 뺐다.** 4-D 가 그것을 맨 위에 둔
+            # 이유는 "무엇이 있고 무엇이 없는지" 를 먼저 보이려는 것이었는데,
+            # 실물 260052 에서는 그 네 줄이 전부 아래 블록의 값을 그대로 옮겨
+            # 적은 것이라 같은 카드에서 같은 수를 두 번 읽게 됐다. 원본은
+            # 그대로 있다 — 시장 확률은 `_odds_block`, 패널 스코어는
+            # `_panel_block`, 축·근거는 각자의 블록에 있다.
             # 요약 계층의 두 그림은 **서로 다른 질문**에 답한다 (4-E §70):
             # 레이더는 "리그 안에서 어디쯤", 직접 비교는 "이번 두 팀이 실제
             # 수치로 어떻게 다른가". 예전에는 레이더 옆에 시즌 다이버징 바가

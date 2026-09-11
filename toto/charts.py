@@ -113,9 +113,12 @@ def radar(axes: list[dict], home_name: str, away_name: str,
             # 장소 축은 두 팀이 **다른 지표**를 본다 (홈 경기 승점 ↔ 원정 경기
             # 승점). 축 이름만 적으면 같은 값을 견준 것처럼 보이므로, 쪽마다
             # 붙은 이름이 있으면 그것을 쓴다 (Phase 4-E §60).
+            # 백분위는 **값마다 `상위` 를 반복해 붙이지 않는다** (Phase 5-D).
+            # 한 카드에 수십 번 나오는 낱말이고, 그 뜻은 블록 설명이 한 번
+            # 적어 준다 — 여기서는 숫자만 옮긴다.
             titles.append(
                 f"{ax.get(f'{side}_label') or ax['label']}: "
-                f"{_fmt(ax.get(f'{side}_value'))} (상위 {100 - pct:.0f}%)")
+                f"{_fmt(ax.get(f'{side}_value'))} ({100 - pct:.0f}%)")
         body = (f'<polygon points="{" ".join(pts)}" fill="{color}" fill-opacity="0.10" '
                 f'stroke="{color}" stroke-width="2" stroke-linejoin="round">'
                 f'<title>{esc(name)}</title></polygon>')
@@ -390,8 +393,22 @@ def dumbbell(rows: list[dict], home_name: str, away_name: str,
     색에만 기대지 않는다 (§45): 홈은 채운 점, 원정은 속 빈 점이고 값은
     양쪽 끝에 숫자로도 적는다.
 
-    `lower_better` 는 라벨에 `↓` 를 붙이는 표시일 뿐이다. **여기서 누가
-    나은지 말하지 않는다.**
+    **`lower_better` 면 그 줄의 눈금을 뒤집는다** (Phase 5-D). 예전에는
+    라벨에 `↓` 를 붙이는 표시일 뿐이어서, 실점 1.67 인 팀이 1.00 인 팀보다
+    **오른쪽**에 찍혔다 — 화면은 "오른쪽이 크다" 만 말하는데 사람은 그것을
+    "오른쪽이 낫다" 로 읽는다. 이제 어느 줄이든 **오른쪽이 그 지표에서 더
+    좋은 값**이다.
+
+      · `lower_better` 가 아니면  왼쪽 0        → 오른쪽 그 줄의 큰 값
+      · `lower_better` 면          왼쪽 큰 값   → 오른쪽 0
+
+    **값은 한 자리도 바뀌지 않는다.** 뒤집는 것은 SVG x 좌표 하나뿐이고
+    `1/x`·`max−v` 같은 변환값을 만들거나 보여 주지 않는다. 마커·연결선·
+    값 라벨·툴팁이 전부 같은 `pos()` 에서 나오므로 서로 어긋날 수 없다.
+
+    **이 플래그는 라벨을 파싱해 만들지 않는다.** 호출부가 지표 카탈로그
+    (`analysis.SPECS` 의 방향)에서 정해 넘긴다 — `↓` 는 그 방향에서 **파생된
+    표시**이지 근거가 아니다.
     """
     rows = [r for r in rows
             if r.get("home") is not None and r.get("away") is not None]
@@ -411,14 +428,18 @@ def dumbbell(rows: list[dict], home_name: str, away_name: str,
         fmt = row.get("fmt", "{:.2f}")
         label = row["label"] + (" ↓" if row.get("lower_better") else "")
 
-        # 눈금의 아래끝은 0 이다 — 0 이 어디인지 보이지 않으면 두 점의 간격이
+        # 눈금의 한쪽 끝은 0 이다 — 0 이 어디인지 보이지 않으면 두 점의 간격이
         # 얼마나 큰 차이인지 알 수 없다. 음수가 있으면 그쪽으로 넓힌다.
         lo = min(0.0, hv, av)
         hi = max(hv, av)
         span = (hi - lo) or 1.0
+        lower = bool(row.get("lower_better"))
 
-        def pos(value: float) -> float:
-            return track_x + track_w * (value - lo) / span
+        def pos(value: float, _lower=lower, _lo=lo, _hi=hi, _span=span) -> float:
+            # 낮을수록 좋은 지표는 눈금을 뒤집는다 — 그래야 어느 줄이든
+            # 오른쪽이 더 좋은 값이 된다. **값 자체는 건드리지 않는다.**
+            frac = ((_hi - value) if _lower else (value - _lo)) / _span
+            return track_x + track_w * frac
 
         hx, ax_ = pos(hv), pos(av)
         parts.append(
@@ -464,10 +485,13 @@ def dumbbell(rows: list[dict], home_name: str, away_name: str,
     keys = legend([(C_HOME, f"{home_name} (채운 점)"),
                    (C_AWAY, f"{away_name} (속 빈 점)")])
     return (f'<figure class="chart">{svg}{keys}'
-            f'<figcaption>각 줄은 <b>그 줄만의 눈금</b>입니다 (왼쪽 끝 0 ~ '
-            f'오른쪽 끝이 그 줄의 큰 값). 줄이 다르면 단위가 달라 x 위치를 '
-            f'서로 견줄 수 없습니다. ↓ 는 낮을수록 좋은 지표라는 표시이며, '
-            f'점의 위치가 우열을 뜻하지 않습니다.</figcaption></figure>')
+            f'<figcaption>각 줄은 <b>그 줄만의 눈금</b>입니다. 보통 지표는 '
+            f'왼쪽 끝이 0 이고 오른쪽으로 갈수록 값이 커집니다. '
+            f'↓ 가 붙은 <b>낮을수록 좋은 지표는 축을 반대로</b> 그려 왼쪽 끝이 '
+            f'그 줄의 큰 값이고 오른쪽 끝이 0 입니다 — 그래서 어느 줄이든 '
+            f'<b>오른쪽이 그 지표에서 더 좋은 값</b>입니다. 줄이 다르면 단위가 '
+            f'달라 x 위치를 서로 견줄 수 없고, 지표를 합쳐 종합 점수를 만들지 '
+            f'않습니다.</figcaption></figure>')
 
 
 # --------------------------------------------------------------------------

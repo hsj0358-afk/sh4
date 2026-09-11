@@ -276,7 +276,98 @@ def summarize(path: Path) -> None:
         ids = [d.get("id") for d in soup.find_all(id=True)][:25]
         print(f"  id 가진 요소 예시: {ids}")
 
+    stat_table_verdict(raw, tables)
+
     _tournament_links(raw)
+
+
+# --------------------------------------------------------------------------
+# 리그 페이지 3절(팀 통계) 전용 판정  — Phase 5-E1
+# --------------------------------------------------------------------------
+# 260052 에서 `season.shots`(경기당 슈팅)가 28/28 팀 비었다. 그 값을 만드는
+# 곳은 저장소 전체에서 `read_league()` 의 3절 한 곳뿐이고, 그 절이 채우는
+# 세 칸(`shots_pg`·`pass_success`·`aerials_won_pg`)이 두 리그 전부 `None`
+# 이었다. 남은 물음은 하나다 — **표가 페이지에 없는 것인가, 있는데 머리글을
+# 못 맞춘 것인가.** 둘은 고칠 자리가 완전히 다르다.
+#
+# 그래서 눈으로 표를 훑는 대신 **수집기가 쓰는 바로 그 함수**를 저장본에
+# 돌린다. 진단이 따로 판정하면 수집과 어긋날 수 있다 (§1-8).
+#
+# 머리글 후보도 여기서 지어내지 않는다 — 아래 목록은 `whoscored.py` 3절이
+# `_header_index(...)` 에 넘기는 이름과 **같아야** 한다.
+STAT_HEADERS = (
+    ("shots_pg", ("shots pg", "shotspg")),
+    ("possession", ("possession%", "possession")),
+    ("pass_success", ("pass%", "passsuccess", "pass success")),
+    ("aerials_won_pg", ("aerialswon", "aerials won")),
+    ("rating", ("rating",)),
+)
+
+
+def stat_table_verdict(raw: str, tables: list) -> None:
+    """3절이 왜 한 칸도 못 채웠나. 파서 함수를 그대로 불러 판정한다."""
+    try:
+        # 스크립트로 돌리면 sys.path[0] 이 tools/ 라 저장소 뿌리가 없다.
+        if str(ROOT) not in sys.path:
+            sys.path.insert(0, str(ROOT))
+        from toto.sources.whoscored import (_find_header, _header_index,
+                                            _table_rows)
+    except Exception as exc:            # 진단이 수집기 때문에 죽지 않게
+        print(f"  ! 파서 함수를 불러오지 못해 3절 판정 생략 ({exc})")
+        return
+
+    print("  ── 팀 통계 표(3절) 판정 " + "─" * 40)
+
+    # ① 머리글 문구가 문서 안에 있기는 한가. DOM 인지 <script> 안인지 밝힌다
+    #    — script 안에만 있으면 표가 JS 로 그려진다는 뜻이라 대응이 달라진다.
+    low = raw.lower()
+    for field, names in STAT_HEADERS:
+        marks = []
+        for name in names:
+            dom = js = 0
+            pos = low.find(name)
+            while pos >= 0:
+                if _in_script(raw, pos):
+                    js += 1
+                else:
+                    dom += 1
+                pos = low.find(name, pos + 1)
+            if dom or js:
+                marks.append(f"{name!r} DOM {dom}회/script {js}회")
+        print(f"      {field:<15} " + ("; ".join(marks) if marks
+                                       else "문서에 없음"))
+
+    # ② 파서의 실제 판정. `if not any(...)` 가 3절의 통과 조건이다.
+    accepted = []
+    for i, table in enumerate(tables):
+        rows = _table_rows(table)
+        if len(rows) < 3:
+            continue
+        hdr = _find_header(rows)
+        idx = {field: _header_index(rows, *names, hdr=hdr)
+               for field, names in STAT_HEADERS}
+        keys = ("shots_pg", "possession", "pass_success", "rating")
+        if not any(idx[k] is not None for k in keys):
+            continue
+        accepted.append((i, hdr, idx, rows))
+
+    if not accepted:
+        print("      → 3절을 통과하는 표가 **하나도 없다**.")
+        print("        표가 페이지에 없는 것인지(수집 대상/주소 문제),")
+        print("        있는데 머리글이 다른 것인지는 위 ① 줄이 가른다.")
+        return
+
+    for i, hdr, idx, rows in accepted:
+        got = ", ".join(f"{f}={idx[f]}" for f, _ in STAT_HEADERS)
+        print(f"      → 표 [{i}] 통과 (머리글 r{hdr}): {got}")
+        print(f"        머리글: {rows[hdr][:14]}")
+        if idx["shots_pg"] is None:
+            print("        ! 표는 통과하는데 **Shots pg 열이 없다** — "
+                  "열 이름이 바뀐 자리다.")
+        else:
+            data = [r for r in rows[hdr + 1:] if len(r) > idx['shots_pg']]
+            vals = [r[idx["shots_pg"]] for r in data[:5]]
+            print(f"        Shots pg 열 표본: {vals} (데이터 {len(data)}행)")
 
 
 # 저장된 페이지가 홈으로 리다이렉트된 것이라면, 그 안에 대회 메뉴가 들어 있다.

@@ -3367,6 +3367,64 @@ Phase 2-B 에서 **이 지표를 분석에 쓰지 않기로 정했다** — xGOT
 붙일지는 사용자 판단이 필요하다.** 분석 축(`chance_quality`)에는 들어가지
 않는다는 것만 코드로 고정돼 있다.
 
+### 3-9. 시즌 슈팅이 28/28 비었다 (5-E1 조사) — 손실 지점 확정, 원인 미확정
+
+260052 에서 `season.shots` 가 전 팀 없다. 함께 사라진 것이 **셋**이다 —
+`shots`·`on_target_rate`·`xg_per_shot`. 셋 다 `TeamStats.shots_pg` 하나에
+매달려 있다. 그 밖의 시즌 지표 15종은 28/28 정상이다.
+
+**§2-A 네 갈래로 세면 `null` 이다** (absent 0 · **null 28** · 0 이 0 ·
+값 0). 필드는 있고 값이 안 들어왔다.
+
+```
+season.shots   ← _put(out,"shots", stats.shots_pg, played)   analysis.py:734·1434
+stats.shots_pg ← st.shots_pg = _f(row, i_shots) or …         whoscored.py:341  ← 유일한 생산지
+```
+
+**`shots_pg` 를 채우는 곳은 저장소 전체에서 한 곳뿐이다** — `read_league()`
+의 「3) 팀 통계」 절. FotMob 은 이 칸을 건드리지 않는다
+(`DEFAULT_TEAM_STAT_FEEDS` 23종 중 슛 계열은 `ontarget_scoring_att_team`
+= 유효슈팅 하나뿐이고 총슈팅 피드는 목록에 없다). 슛 계층은 최근 N경기
+전용이라 시즌 표본이 아니다 (§1-1-2).
+
+**손실 지점은 그 3절이다.** 그 절이 채우는 세 칸(`shots_pg`·`pass_success`·
+`aerials_won_pg`)이 두 리그 28팀 **전부** `null` 인 반면, 1절(팀 링크)과
+2절(순위표)은 성공했다(로그 `epl 팀 21개(경기수 20팀)` · `laliga 19개` ·
+강점/약점 28팀). `possession`·`rating` 이 28/28 값을 가진 것은 3절 성공의
+증거가 **아니다** — FotMob 이 먼저 채우고 `fill_stats(overwrite=False)` 로
+후스코어드 값은 버려진다(§1-1). 3절의 성패를 말해 주는 칸은 위 셋뿐이다.
+
+집계·모델·저장·렌더는 **정상**이다. `_put()` 은 `None` 을 넣지도 0 으로
+바꾸지도 않고, artifact 는 `null` 을 그대로 싣고, 셋 다 `_AXES_SECTIONS`
+공격 절에 들어 있어 값만 있으면 그려진다(`--demo` 에서 슈팅 28회).
+
+**아직 모르는 것 하나 — 표가 없는 것인가, 있는데 머리글을 못 맞춘 것인가.**
+둘은 고칠 자리가 완전히 다르므로 **추측으로 머리글 후보를 늘리지 않는다**
+(§1-4). 판별에 필요한 것은 실제로 받은 HTML 이고, 그 파일은 사용자 PC 의
+`cache/<날짜>/whoscored/FAILED_page_league_epl.html` 에만 있다.
+
+`tools/diagnose_whoscored.py` 가 그 저장본으로 셋을 가른다. **수집기가 쓰는
+바로 그 함수**(`_table_rows`·`_find_header`·`_header_index`)를 그대로 불러
+판정하므로 진단과 수집이 어긋날 수 없다 (§1-8).
+
+| 출력 | 뜻 | 고칠 자리 |
+|---|---|---|
+| `3절을 통과하는 표가 하나도 없다` + 문구가 `script` 에만 | 표가 DOM 에 없다 (JS 로 그린다 / 다른 주소) | 수집 대상·대기 |
+| `표 [i] 통과` + `Shots pg 열이 없다` | 표는 있는데 열 이름이 바뀌었다 | `_header_index` 후보 |
+| `표 [i] 통과` + `Shots pg 열 표본: [...]` | 표도 열도 있다 | 행·값 해석 |
+
+**왜 아무도 몰랐나.** 세 군데가 조용하다 — ① `enrich()` 의 `stats_done` 은
+순위표 항목만 세므로 고유 지표 5종 중 3종이 전 팀에서 비었는데도
+`ok (28/28팀, 강점/약점 28팀)` 로 보고됐다(§1-6·§1-6-1 과 어긋난다).
+② `_put(out,"shots", …)` 이 `reasons=` 없이 불려 notes·`degraded_reason`
+어디에도 흔적이 없다. ③ `fixtures.py:65` 가 `shots_pg` 를 **무조건** 만들어
+`--demo` 와 모든 단위 테스트에서 이 칸은 언제나 차 있다.
+
+**곁가지 하나** — `_SEASON_ORIGIN["shots"]` 는 원천을 `season_stats_feed`
+(FotMob)로 적고 있는데 실제 유일한 생산지는 후스코어드 리그 표다.
+
+원인이 갈리기 전까지 production code 는 고치지 않았다.
+
 ---
 
 ## 4. 빠른 참조
@@ -3427,7 +3485,7 @@ python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)
 python tools/probe_sources.py --browser    # 소스 구조 점검
 python tools/probe_sources.py --analyze    # 저장본 재분석 (접속 없음)
-python tools/diagnose_whoscored.py         # 실패 원본 진단
+python tools/diagnose_whoscored.py         # 실패 원본 진단 · 리그 3절(팀 통계) 판정 §3-9
 ```
 
 메뉴(바탕화면 바로가기 / `toto_menu.bat`) 구성은 §1-7-2 참고.

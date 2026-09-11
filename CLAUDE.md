@@ -1757,6 +1757,9 @@ bytes 이고 14경기면 약 730KB — 한국어 JSON 은 대략 2~3바이트당
 맞는지 알 수 없게 된다. 테스트가 `schema_guide()` 본문에 `"1.1"`·`"생략"`·
 `"data_analyst"` 같은 문자열이 **없는지** 검사한다.
 
+  · **식별자 계약도 여기서 나간다** — `match_number` 필수 · 팀 이름 필수 ·
+    `match_id` 는 만들지 말 것 (§1-15-1). 규격이 코드와 어긋나면 사용자는
+    문서대로 만들고 프로그램에서 거부당한다.
   · **오류 코드 목록도 대조한다.** `panelimport.py` 의
     `result.add(ERROR|WARNING, "CODE"` 를 전부 뽑아 문서에 있는지 본다 —
     코드가 하나 늘면 그때 테스트가 깨져 문서가 낡았다고 알려 준다.
@@ -2030,10 +2033,10 @@ python -m toto --round 260050 --validate-panel-result FILE   # 붙이지 않고 
 | 승무패·추천·확신도 칸 | `FORBIDDEN_FIELD` |
 | 근거 0건인데 인용 | `EVIDENCE_ABSENT_BUT_CITED` |
 
-**`match_id` 가 primary key 이고 `match_number` 는 표시용**이다. 번호가
-어긋나도 `match_id` 를 버리고 다른 경기에 붙이지 않는다(경고만 남긴다).
-그 id 는 4-A 와 **같은 함수**(`match_material._status_of` → 시즌 색인)로
-찾는다 — 경기자료 MD 에 적힌 값과 달라지면 안 된다.
+**경기 식별자는 `match_number` 이고 `match_id` 는 프로그램 내부 값이다.**
+자세한 규칙은 §1-15-1. 그 id 는 4-A 와 **같은 함수**
+(`match_material._status_of` → 시즌 색인)로 찾는다 — 경기자료 MD 에 적힌
+값과 달라지면 안 된다.
 
 **근거 ID 는 경기마다 다시 매겨진다.** 그래서 '이 회차에 있는 ID' 가 아니라
 **'이 경기에 있는 ID'** 여야 하고, 다른 경기의 ID 를 쓰면 잡힌다. 근거가
@@ -2066,11 +2069,82 @@ import 하지 않는다(AST). 저쪽은 프로그램이 API 를 부르던 구조
 **원문을 고치지 않는다.** `summary`·`rationale`·`conclusion` 은 그대로
 보존되고 markdown 을 해석하지 않는다. 입력 dict 도 바꾸지 않는다.
 
-회귀 테스트: `python tests/test_panel_import.py` (56개).
+회귀 테스트: `python tests/test_panel_import.py` (72개).
 
   · `rationale`·`uncertainty` 는 **배열**이다 (Phase 3 계약 그대로). 문자열로
     오면 ERROR 다 — 채팅 지침이 배열을 요구하므로 지침대로 답하면 맞는다.
   · **독립 실행은 4-C 에서 풀렸다** (`toto/artifact.py`, §1-16).
+
+### 1-15-1. 경기 식별자 — 채팅은 `match_number` 로 말한다
+
+260052 운영에서 JSON 생성이 **멈췄다.** 계약이 `match_id` 를 요구하는데
+**채팅에는 그 값이 간 적이 없다.**
+
+  · `PanelPayload` 에 `match_id` 칸이 **없다** (`toto/panel.py`).
+  · 그래서 `02_경기자료.md`·`03_사회자자료.md` 어디에도 실리지 않는다 —
+    `moderator.build_input()` 이 싣는 것은 `no`·`home_team`·`away_team`·
+    `kickoff_kst` 다.
+  · 1·2·3단계 출력 키도 전부 `match_no` 다.
+
+`match_id` 가 적힌 파일은 4-A 의 `<회차>_경기자료.md` 인데 그건 **다른
+명령의 산출물**이고 메뉴 `[3]` 폴더에 들어 있지도 않다. "자료에 적힌 그대로
+넣으십시오" 를 지킬 방법이 없었다.
+
+**받아 봐야 쓰지도 않았다.** `match_id` 는 `validate()` 의 조회 키로만
+쓰이고 어디에도 저장되지 않는다 — `PanelRun` 에 그 칸이 없고, attach 는
+`result.runs.get(match.no)` 로 번호로 붙이며, 감사는 파일 값을 버리고
+`a.match_id = panelimport._match_key(match, report)` 로 **덮어쓴다.**
+내부 식별자를 외부로 내보내 다시 받아 대조하는 구조인데 내보내는 경로가
+없어 반쪽만 구현돼 있었다.
+
+**그래서 외부 계약과 내부 식별자를 나눈다.**
+
+```
+수동 Panel   match_number + 팀 이름
+프로그램     match_number → 회차 경기목록 → match_id
+```
+
+해소 순서는 셋이다 (`LINK_ID` / `LINK_NUMBER`).
+
+| # | 조건 | 결과 |
+|---|---|---|
+| 1 | `match_id` 가 이 회차의 값 | 그것으로 잇는다 (옛 파일 호환) |
+| 2 | 아니면 `match_number` 가 회차에 있음 | 번호로 잇고 **팀으로 검증** |
+| 3 | 둘 다 실패 | ERROR `UNKNOWN_MATCH_ID` |
+
+**번호로 이을 때 팀 이름은 선택이 아니라 필수다** (`_check_teams`). 회차
+안에서 번호는 유일하지만 **한 칸 밀린 파일도 번호만 보면 통과한다** —
+그때 잘못된 경기에 붙는 것을 막는 것이 팀 검증이다. 없으면 ERROR
+`MATCH_LINK_UNVERIFIED` 이고, 검증할 수 없는 링크를 통과시키지 않는다.
+
+  · 팀 이름이 어긋날 위험은 없다 — 자료에 실리는 이름은
+    `match.home.display or match.home.canonical`(`panel.build_panel_payload`)
+    이고 검사기가 받는 것은 `display`·`canonical`·`name_ko` 다.
+  · **홈/원정이 뒤바뀌면 ERROR** 이고 **한 줄로** 알린다. 두 팀이 다
+    틀렸다고 적으면 정작 무엇이 잘못됐는지 흐려진다.
+  · 돌리지 않은 경기(`생략`)도 정체성은 확인한다 — `_check_teams` 가
+    `_panel_status` **앞에** 있다.
+  · `True` 는 `int` 의 하위형이라 `match_number` 에서 따로 막는다 (§1-9).
+
+**파일의 `match_id` 가 이 회차의 값이 아니면 조용히 넘어가지 않는다.**
+번호·팀으로 이은 뒤 WARNING `MATCH_ID_MISMATCH` 를 남기고 **프로그램의
+authoritative id** 를 쓴다 — 값을 고쳐 주는 것이 아니라 그 사실을 남긴다
+(`ADOPTED_FROM_RECOMPUTED` 와 같은 방식이다, §1-15).
+
+**schema_version 은 올리지 않았다 (1.1 그대로).** 새 칸을 더한 것이 아니라
+필수를 **선택으로 푸는** 변경이라 기존 1.0·1.1 파일이 전부 그대로 유효하다.
+`match_id` 만 있고 `match_number` 가 없는 옛 파일도 계속 읽힌다.
+
+**`PanelRun`·`artifact`·`panelaudit`·메뉴 `[4]` 는 바뀌지 않았다** —
+`PanelRun` 에 `match_id` 칸을 만들지 않았고, 감사는 이미 회차에서 구한
+값을 쓰고 있었으며, 메뉴는 파일에서 `round` 만 읽는다.
+
+실측(260052 모양 재현, 14경기 중 9·13·14번 생략): `match_id` 가 **0회**
+등장하는 15,276 bytes 파일이 `ok (14/14경기)` 로 들어가고, 감사가
+`PASS · COMPLETE` 에 `400001…` 을 스스로 채우며, 저장본 경로라 **수집은
+0회**다.
+
+회귀 테스트: `python tests/test_panel_import.py` 의 `T` 절 (15개).
 
 ### 1-16. 회차 분석 저장 (Phase 4-C) — `toto/artifact.py`
 
@@ -2771,7 +2845,7 @@ python tests/test_whoscored_characteristics.py  # 팀 특성 파싱 §3-1 (33개
 python tests/test_alias_table_loading.py   # 별칭 테이블 적재 진단 §1-6-1 (16개)
 python tests/test_roundlog.py              # 회차 기록 축적 §1-6-2 (23개)
 python tests/test_match_material.py        # 경기자료 MD 4-A §1-14 (37개)
-python tests/test_panel_import.py          # 패널 결과 가져오기 4-B §1-15 (56개)
+python tests/test_panel_import.py          # 패널 결과 가져오기·경기 식별 4-B §1-15·15-1 (72개)
 python tests/test_panel_audit.py           # 패널 감사·회차 저장 4-C §1-16·17 (42개)
 python tests/test_decision_render.py       # 요약·직접 비교·패널 시각화 4-D §1-18 (37개)
 python tests/test_final_layout.py          # 레이더·직접 비교·시장·회차 카드 4-E §1-19 (37개)

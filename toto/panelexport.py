@@ -447,7 +447,6 @@ def _example_ok() -> dict:
     """
     from . import panelimport
     return {
-        "match_id": "4512345",
         "match_number": 1,
         "home_team": "첼시",
         "away_team": "풀럼",
@@ -499,7 +498,6 @@ def _example_skipped() -> dict:
     """실행하지 않은 경기. **내용을 만들지 않는다.**"""
     from . import panelimport
     return {
-        "match_id": "4512358",
         "match_number": 9,
         "home_team": "대구",
         "away_team": "제주",
@@ -585,9 +583,9 @@ Phase 3 의 `panel.parse_opinion()` · `moderator.parse_result()` 가 **그대�
 
 | 칸 | 필수 | 뜻 |
 |---|---|---|
-| `match_id` | **예** | **primary key.** 경기자료 MD 에 적힌 값을 그대로 씁니다. 두 번 나오면 ERROR `DUPLICATE_MATCH_ID`, 회차에 없는 값이면 ERROR `UNKNOWN_MATCH_ID` |
-| `match_number` | 권장 | **표시용**입니다. 어긋나도 `match_id` 기준으로 잇고 WARNING `MATCH_NUMBER_MISMATCH` 만 남깁니다 |
-| `home_team` · `away_team` | 아니오 | 확인용입니다. 적었는데 다른 팀이면 ERROR `TEAM_MISMATCH` |
+| `match_number` | **예** | **경기 식별자.** 자료의 경기 번호를 그대로 씁니다 |
+| `home_team` · `away_team` | **예** | 번호로 찾은 경기가 맞는지 대조합니다. 다르면 ERROR `TEAM_MISMATCH` |
+| `match_id` | 아니오 | **만들지 마십시오.** 프로그램이 회차 경기목록에서 스스로 찾습니다 (§3-0) |
 | `panel_status` | 아니오 | §4. 없으면 `{pi.STATUS_OK}` 입니다 |
 | `panel_status_reason` | 조건부 | `{pi.STATUS_OK}` 가 아니면 **필수** |
 | `{pi.DATA_ROLE}` | `ok` 일 때 **예** | 분석가 A |
@@ -598,7 +596,6 @@ Phase 3 의 `panel.parse_opinion()` · `moderator.parse_result()` 가 **그대�
 
 ```json
 {{
-  "match_id": "4512345",
   "match_number": 1,
   "home_team": "첼시",
   "away_team": "풀럼",
@@ -607,6 +604,28 @@ Phase 3 의 `panel.parse_opinion()` · `moderator.parse_result()` 가 **그대�
   "{pi.MODERATOR_ROLE}": {{ ... }}
 }}
 ```
+
+### 3-0. 경기를 어떻게 찾는가 — `match_number` + 팀 이름
+
+**`match_id` 를 지어내지 마십시오.** 그것은 프로그램 **내부 식별자**이고
+1·2·3단계 자료 어디에도 실려 있지 않습니다. 자료가 주는 식별자는
+`match_number` 와 팀 이름뿐이고, 그 둘이면 충분합니다.
+
+프로그램은 이 순서로 경기를 찾습니다.
+
+1. `match_id` 가 있고 이 회차의 값이면 → 그것으로 잇습니다 (옛 파일 호환).
+2. 아니면 `match_number` 로 잇고 **팀 이름으로 검증**합니다.
+3. 둘 다 실패하면 ERROR `UNKNOWN_MATCH_ID` 입니다.
+
+**2번에서는 팀 이름이 필수입니다.** 번호가 한 칸 밀린 파일도 번호만 보면
+그대로 통과하기 때문입니다. 없으면 ERROR `MATCH_LINK_UNVERIFIED` —
+검증할 수 없는 링크를 통과시키지 않습니다.
+
+  · 팀 이름은 **자료에 적힌 그대로** 쓰십시오 (`home_team`·`away_team`).
+  · **홈/원정 순서가 뒤바뀌면 ERROR** 입니다. 자리를 바꿔 적지 마십시오.
+  · `match_id` 를 적었는데 이 회차의 값이 아니면, 번호와 팀으로 잇고
+    WARNING `MATCH_ID_MISMATCH` 를 남긴 뒤 **프로그램의 값**을 씁니다 —
+    조용히 다른 경기에 붙이지 않습니다.
 
 ### 3-1. 분석가 블록
 
@@ -778,9 +797,10 @@ Phase 3 의 `panel.parse_opinion()` · `moderator.parse_result()` 가 **그대�
 | `MATCH_NOT_AN_OBJECT` | `matches[i]` 가 객체가 아니다 |
 | `DUPLICATE_MATCH_ID` | 같은 `match_id` 가 두 번 |
 | `DUPLICATE_MATCH` | 같은 경기가 두 번 |
-| `UNKNOWN_MATCH_ID` | 이 회차에 없는 경기다 |
+| `UNKNOWN_MATCH_ID` | `match_id` 로도 `match_number` 로도 못 찾았다 |
 | `MATCH_MISSING` | 회차의 경기가 파일에 없다 |
-| `TEAM_MISMATCH` | `home_team`·`away_team` 이 그 경기가 아니다 |
+| `MATCH_LINK_UNVERIFIED` | 번호로 이었는데 팀 이름이 없어 확인할 수 없다 |
+| `TEAM_MISMATCH` | 팀이 다르거나 홈/원정이 뒤바뀌었다 |
 | `PANEL_STATUS_INVALID` | 없는 상태 낱말이다 |
 | `PANEL_STATUS_REASON_MISSING` | `{pi.STATUS_OK}` 가 아닌데 사유가 없다 |
 | `PANEL_STATUS_CONTRADICTION` | 돌리지 않았다는데 내용이 있다 |
@@ -803,6 +823,7 @@ Phase 3 의 `panel.parse_opinion()` · `moderator.parse_result()` 가 **그대�
 | 코드 | 언제 |
 |---|---|
 | `MATCH_NUMBER_MISMATCH` | 번호가 다르다 (`match_id` 로 이었다) |
+| `MATCH_ID_MISMATCH` | 파일의 `match_id` 가 이 회차의 값이 아니다 (번호·팀으로 이었다) |
 | `SIMULATIONS_MISSING` | `simulations` 가 없어 분포 합계로 대신했다 |
 | `ADOPTED_FROM_RECOMPUTED` | `adopted_from` 을 실제 원안으로 다시 정했다 |
 | `PANEL_STATUS_IN_1_0` | `1.0` 파일이 `panel_status` 를 썼다 |
@@ -820,7 +841,12 @@ Phase 3 의 `panel.parse_opinion()` · `moderator.parse_result()` 가 **그대�
 - **새 칸을 안 쓰는 `1.1` 파일은 `1.0` 과 완전히 같은 뜻입니다.**
 - `1.0` 이라고 적고 `panel_status` 를 쓰면 **읽어는 주되** WARNING
   `PANEL_STATUS_IN_1_0` 을 남깁니다. 막지 않습니다.
-- 새로 만드는 파일은 `"{ver}"` 로 적으십시오.
+- **`match_id` 가 들어 있는 옛 파일도 그대로 읽힙니다.** 이 회차의 값이면
+  §3-0 의 1번으로 이어지고, `match_number` 가 없어도 됩니다. 버전은
+  올리지 않았습니다 — 필수를 **선택으로 푸는** 변경이라 기존 파일이 모두
+  그대로 유효하기 때문입니다.
+- 새로 만드는 파일은 `"{ver}"` 로 적고, 식별자는 `match_number` + 팀
+  이름으로 적으십시오.
 
 ---
 
@@ -866,7 +892,11 @@ JSON 으로 저장하십시오. schema_version 은 "{panelimport.SCHEMA_VERSION}
 2. 최상위는 schema_version · round · generated_at · matches 입니다.
    round 는 "{round_id}" 이고 matches 는 {total}경기 전부입니다.
    경기를 빼지 마십시오.
-3. 경기마다 match_id 와 match_number 를 자료에 적힌 그대로 넣으십시오.
+3. 경기 식별자는 **match_number** 입니다. 자료의 경기 번호를 그대로
+   넣고, 함께 home_team 과 away_team 도 자료에 적힌 그대로 넣으십시오
+   (프로그램이 번호와 팀을 대조해 경기를 찾습니다).
+   **match_id 는 만들지 마십시오.** 자료에 없는 값이고, 프로그램이
+   회차 경기목록에서 스스로 찾습니다.
 4. **패널을 실제로 돌리지 않은 경기**는 그 경기 객체에
    "panel_status": "{panelimport.STATUS_SKIPPED}" 와
    "panel_status_reason": "<실제 사유>" 를 넣으십시오.

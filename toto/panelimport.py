@@ -112,6 +112,16 @@ FORBIDDEN_FIELDS = (
 # 시장은 분석가가 아니다 (§1-9 불변조건 1). 역할 이름으로도 들어올 수 없다.
 FORBIDDEN_ROLES = ("market_reference", "market_analyst", "market", "moderator")
 
+# 경기를 어떻게 이었나. **외부 계약과 내부 식별자를 나누는 자리다.**
+#
+# 수동 Panel 경로에는 `match_id` 가 없다 — `PanelPayload` 에 그 칸이 없어서
+# (`panel.py`) 1·2·3단계 자료 어디에도 실리지 않는다. 채팅이 줄 수 있는
+# 식별자는 `match_number` 와 팀 이름뿐이고, 회차 안에서 번호는 유일하므로
+# 그것으로 경기 하나가 정해진다. `match_id` 는 프로그램이 시즌 색인에서
+# 스스로 구한다 (`_match_key`).
+LINK_ID = "id"
+LINK_NUMBER = "number"
+
 
 @dataclass(frozen=True)
 class Issue:
@@ -501,9 +511,61 @@ def _not_run(block, match: Match, status: str, reason: str,
                     evidence_ids=allowed_ids, payload_hash="", moderator=None)
 
 
+def _is_team(given: str, ref) -> bool:
+    """이 이름이 그 팀인가. 채팅이 보는 이름과 같은 표기만 받는다.
+
+    자료에 실리는 이름은 `match.home.display or match.home.canonical`
+    (`panel.build_panel_payload`)이라, 그대로 옮겨 적으면 반드시 맞는다.
+    """
+    return given in (ref.display, ref.canonical, ref.name_ko)
+
+
+def _check_teams(block, match: Match, linked_by: str,
+                 result: PanelImportResult, where: dict) -> None:
+    """팀 정체성. **번호로 이었으면 이것이 유일한 확인 수단이다.**
+
+    회차 안에서 `match_number` 는 유일하므로 번호만으로 경기 하나가 정해진다.
+    그러나 번호가 한 칸 밀린 파일도 번호만 보면 그대로 통과한다 — 잘못된
+    경기에 붙는 것을 막는 것이 이 검사이고, 그래서 번호로 이은 경우에는
+    팀 이름을 **선택이 아니라 필수**로 요구한다. 검증할 수 없는 링크를
+    조용히 통과시키지 않는다 (§1-6).
+
+    `match_id` 로 이었으면 지금까지처럼 **있을 때만** 본다 — 그쪽은 이미
+    강한 키이고, 옛 파일이 팀 이름 없이도 읽혀야 한다.
+    """
+    home = _text(block.get("home_team"))
+    away = _text(block.get("away_team"))
+    if linked_by == LINK_NUMBER and not (home and away):
+        missing = " · ".join(
+            k for k, v in (("home_team", home), ("away_team", away)) if not v)
+        result.add(ERROR, "MATCH_LINK_UNVERIFIED",
+                   f"match_id 없이 match_number 로 이었는데 {missing} 가 "
+                   f"없습니다 — 번호만으로는 잘못된 경기에 붙어도 알 수 "
+                   f"없으므로 팀 이름이 필요합니다 (이 경기는 "
+                   f"'{match.home.display}' vs '{match.away.display}')",
+                   field="home_team", **where)
+        return
+    # 홈/원정이 통째로 뒤바뀐 것은 **한 줄로** 알린다 — 두 팀이 다 틀렸다고
+    # 적으면 정작 무엇이 잘못됐는지 흐려진다.
+    if (home and away and _is_team(home, match.away)
+            and _is_team(away, match.home)):
+        result.add(ERROR, "TEAM_MISMATCH",
+                   f"홈/원정이 뒤바뀌었습니다 — 파일 '{home}' vs '{away}', "
+                   f"이 경기는 '{match.home.display}' vs "
+                   f"'{match.away.display}'", field="home_team", **where)
+        return
+    for key, given, ref in (("home_team", home, match.home),
+                            ("away_team", away, match.away)):
+        if given and not _is_team(given, ref):
+            result.add(ERROR, "TEAM_MISMATCH",
+                       f"{key} 가 '{given}' 인데 이 경기는 "
+                       f"'{ref.display}' 입니다", field=key, **where)
+
+
 def _import_match(block, match: Match, mid: str, sims: int,
                   result: PanelImportResult,
-                  version: str = SCHEMA_VERSION) -> PanelRun | None:
+                  version: str = SCHEMA_VERSION,
+                  linked_by: str = LINK_ID) -> PanelRun | None:
     where = {"match_id": mid, "match_no": match.no}
     rows = panel.evidence_rows(match)
     allowed_ids = tuple(r["id"] for r in rows)
@@ -513,13 +575,7 @@ def _import_match(block, match: Match, mid: str, sims: int,
                    f"'{name}' 은 만들 수 없는 칸입니다 (승무패·추천·확신도)",
                    field=path, **where)
 
-    # 팀 정체성. match_id 가 primary key 이고 팀 이름은 **확인용**이다.
-    for key, ref in (("home_team", match.home), ("away_team", match.away)):
-        given = _text(block.get(key))
-        if given and given not in (ref.display, ref.canonical, ref.name_ko):
-            result.add(ERROR, "TEAM_MISMATCH",
-                       f"{key} 가 '{given}' 인데 이 경기는 "
-                       f"'{ref.display}' 입니다", field=key, **where)
+    _check_teams(block, match, linked_by, result, where)
 
     status, reason = _panel_status(block, version, result, where)
     if status != STATUS_OK:
@@ -688,13 +744,18 @@ def validate(data: dict, report: Report, settings=None) -> PanelImportResult:
 
     seen: dict[str, int] = {}
     matched: dict[int, dict] = {}
+    links: dict[int, str] = {}          # 경기번호 → 무엇으로 이었나
+    by_no = {m.no: m for m in report.matches}
     for i, block in enumerate(blocks):
         if not isinstance(block, dict):
             result.add(ERROR, "MATCH_NOT_AN_OBJECT",
                        f"matches[{i}] 가 객체가 아닙니다", field=f"matches[{i}]")
             continue
         mid = _text(str(block.get("match_id") or ""))
-        no = block.get("match_number")
+        raw_no = block.get("match_number")
+        # `True` 는 `int` 의 하위형이라 그냥 두면 1번 경기가 된다 (§1-9).
+        no = (raw_no if isinstance(raw_no, int)
+              and not isinstance(raw_no, bool) else None)
         if mid:
             if mid in seen:
                 result.add(ERROR, "DUPLICATE_MATCH_ID",
@@ -703,16 +764,26 @@ def validate(data: dict, report: Report, settings=None) -> PanelImportResult:
                            field=f"matches[{i}].match_id")
                 continue
             seen[mid] = i + 1
-        target = by_id.get(mid)
-        if target is None and isinstance(no, int):
-            # match_id 를 우리 쪽이 모르는 경우에만 번호로 잇는다.
-            target = next((m for m in report.matches if m.no == no), None)
-            if target is not None and _match_key(target, report):
-                target = None       # 우리는 아는데 파일의 id 가 다르다
+
+        # ---- 해소 순서: match_id → match_number → 실패 -------------------
+        target, how = (by_id.get(mid) if mid else None), LINK_ID
+        if target is None and no is not None:
+            target, how = by_no.get(no), LINK_NUMBER
+            if target is not None and mid:
+                # 파일의 id 가 이 회차의 id 가 아니다. **조용히 다른 경기에
+                # 붙이지 않는다** — 번호와 팀으로 이은 뒤 그 사실을 남기고,
+                # 값은 프로그램의 authoritative id 를 쓴다.
+                result.add(WARNING, "MATCH_ID_MISMATCH",
+                           f"파일의 match_id '{mid}' 는 이 회차의 값이 "
+                           f"아닙니다 — match_number {no} 와 팀 이름으로 "
+                           f"이었고 회차의 match_id "
+                           f"'{_match_key(target, report) or '없음'}' 를 "
+                           f"씁니다", match_id=mid, match_no=target.no,
+                           field=f"matches[{i}].match_id")
         if target is None:
             result.add(ERROR, "UNKNOWN_MATCH_ID",
                        f"이 회차에 없는 경기입니다 (match_id="
-                       f"{mid or '없음'}, match_number={no})",
+                       f"{mid or '없음'}, match_number={raw_no})",
                        match_id=mid, field=f"matches[{i}]")
             continue
         if target.no in matched:
@@ -721,6 +792,7 @@ def validate(data: dict, report: Report, settings=None) -> PanelImportResult:
                        match_id=mid, match_no=target.no)
             continue
         matched[target.no] = block
+        links[target.no] = how
 
     for m in report.matches:
         if m.no not in matched:
@@ -734,7 +806,7 @@ def validate(data: dict, report: Report, settings=None) -> PanelImportResult:
         if block is None:
             continue
         run = _import_match(block, m, _match_key(m, report), sims, result,
-                            version)
+                            version, links.get(m.no, LINK_ID))
         if run is not None:
             runs[m.no] = run
 

@@ -123,7 +123,10 @@ def test_b2_teams_are_carried_from_the_analysis_not_the_file():
 def test_b3_attachment_errors_show_up_in_the_audit():
     report = _report(n=2)
     data = _payload(report)
+    # 번호까지 없애야 정말로 못 찾는다 — 번호·팀이 맞으면 그쪽으로 잇고
+    # `MATCH_ID_MISMATCH` 경고만 남긴다 (4-B 식별자 계약).
     data["matches"][0]["match_id"] = "9999999"
+    data["matches"][0].pop("match_number")
     res, _imp, _r = _audit(data, report)
     assert "UNKNOWN_MATCH_ID" in _codes(res)
     assert res.status == panelaudit.FAIL

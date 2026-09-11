@@ -282,12 +282,32 @@ def test_c2_case11_missing_match():
 
 
 def test_c3_case12_unknown_match_id():
+    """식별자로 아무것도 못 찾으면 ERROR.
+
+    회차에 없는 `match_id` 하나만으로는 **조용히 넘어가지 않는다.** 번호가
+    함께 있으면 그쪽으로 이어지므로(§3-0), 이 테스트는 번호까지 없앤다.
+    """
+    report = _report(n=1)
+    data = _payload(report)
+    data["matches"][0]["match_id"] = "9999999"
+    data["matches"][0].pop("match_number")
+    res, _ = _run(data, report)
+    assert not res.success
+    assert "UNKNOWN_MATCH_ID" in _codes(res)
+
+
+def test_c3b_stale_match_id_falls_back_to_number_and_says_so():
+    """옛 id 가 남아 있어도 번호·팀이 맞으면 잇되, 그 사실을 남긴다.
+
+    프로그램의 authoritative id 를 쓰고 **조용히 고치지 않는다.**
+    """
     report = _report(n=1)
     data = _payload(report)
     data["matches"][0]["match_id"] = "9999999"
     res, _ = _run(data, report)
-    assert not res.success
-    assert "UNKNOWN_MATCH_ID" in _codes(res)
+    assert res.success, [str(i) for i in res.issues]
+    assert "MATCH_ID_MISMATCH" in _codes(res), _codes(res)
+    assert 1 in res.runs
 
 
 def test_c4_team_identity_is_checked_against_the_id():
@@ -626,6 +646,7 @@ def test_h3_one_broken_match_blocks_the_whole_import():
     report = _report(n=3)
     data = _payload(report)
     data["matches"][2]["match_id"] = "9999999"
+    data["matches"][2].pop("match_number")
     res, _ = _run(data, report)
     assert not res.success
     assert res.runs == {}, "실패인데 결과를 남겼다"
@@ -736,6 +757,191 @@ def test_j2_status_line_uses_the_project_vocabulary():
     bad, _ = _run(data, report)
     assert bad.status_line().startswith("실패")
     assert "가져오지 않았습니다" in bad.status_line()
+
+
+# --------------------------------------------------------------------------
+# T. 경기 식별 — 수동 Panel 은 match_number 로 말한다
+#
+# `PanelPayload` 에 `match_id` 칸이 없어(`toto/panel.py`) 1·2·3단계 자료
+# 어디에도 그 값이 실리지 않는다. 채팅이 줄 수 있는 식별자는 `match_number`
+# 와 팀 이름뿐이고, 회차 안에서 번호는 유일하므로 그것으로 경기가 정해진다.
+# `match_id` 는 프로그램이 시즌 색인에서 스스로 찾는다.
+#
+# 번호만 보면 **한 칸 밀린 파일도 통과**하므로, 번호로 이을 때는 팀 이름을
+# 필수로 요구하고 홈/원정 순서까지 본다.
+# --------------------------------------------------------------------------
+def _numbered(report: Report, **per_match) -> dict:
+    """수동 Panel 이 실제로 만들 수 있는 모양 — `match_id` 가 없다."""
+    data = _payload(report, **per_match)
+    data["schema_version"] = panelimport.SCHEMA_VERSION
+    for block in data["matches"]:
+        block.pop("match_id")
+    return data
+
+
+def test_t1_number_and_teams_are_enough():
+    report = _report(n=3)
+    res, _ = _run(_numbered(report), report)
+    assert res.success, [str(i) for i in res.issues]
+    assert not _codes(res), _codes(res)
+    assert sorted(res.runs) == [1, 2, 3]
+
+
+def test_t2_program_resolves_the_match_id_itself():
+    """파일이 안 줘도 감사에는 회차의 authoritative id 가 실린다."""
+    from toto import panelaudit
+
+    report = _report(n=2)
+    res, _ = _run(_numbered(report), report)
+    assert res.success
+    ids = [a.match_id for a in panelaudit.audit(res, report).matches]
+    assert ids == ["400001", "400002"], ids
+
+
+def test_t3_old_file_with_match_id_still_reads():
+    """기존 1.0/1.1 파일은 그대로 읽힌다 — 번호가 없어도 된다."""
+    report = _report(n=2)
+    data = _payload(report)
+    for block in data["matches"]:
+        block.pop("match_number")
+    res, _ = _run(data, report)
+    assert res.success, [str(i) for i in res.issues]
+    assert not _codes(res), _codes(res)
+
+
+def test_t4_number_without_team_names_is_refused():
+    """검증할 수 없는 링크를 통과시키지 않는다."""
+    for drop in ("home_team", "away_team", None):
+        report = _report(n=1)
+        data = _numbered(report)
+        for key in (("home_team", "away_team") if drop is None else (drop,)):
+            data["matches"][0].pop(key)
+        res, _ = _run(data, report)
+        assert not res.success, drop
+        assert "MATCH_LINK_UNVERIFIED" in _codes(res), (drop, _codes(res))
+
+
+def test_t5_wrong_home_team_is_an_error():
+    report = _report(n=2)
+    data = _numbered(report)
+    data["matches"][0]["home_team"] = "Barcelona"
+    res, _ = _run(data, report)
+    assert not res.success
+    assert "TEAM_MISMATCH" in _codes(res), _codes(res)
+
+
+def test_t6_wrong_away_team_is_an_error():
+    report = _report(n=2)
+    data = _numbered(report)
+    data["matches"][1]["away_team"] = "Barcelona"
+    res, _ = _run(data, report)
+    assert not res.success
+    assert "TEAM_MISMATCH" in _codes(res), _codes(res)
+
+
+def test_t7_swapped_home_and_away_is_one_clear_error():
+    """홈/원정이 뒤바뀌면 ERROR 이고, **한 줄로** 알린다."""
+    report = _report(n=1)
+    data = _numbered(report)
+    block = data["matches"][0]
+    block["home_team"], block["away_team"] = \
+        block["away_team"], block["home_team"]
+    res, _ = _run(data, report)
+    assert not res.success
+    swaps = [i for i in res.issues if i.code == "TEAM_MISMATCH"]
+    assert len(swaps) == 1, [str(i) for i in swaps]
+    assert "뒤바뀌었습니다" in str(swaps[0]), str(swaps[0])
+
+
+def test_t8_shifted_numbers_are_caught_by_the_teams():
+    """번호가 한 칸 밀린 파일 — 번호만 보면 통과한다. 팀이 막는다."""
+    report = _report(n=3)
+    data = _numbered(report)
+    for i, block in enumerate(data["matches"]):
+        block["match_number"] = (i % 3) + 2 if i < 2 else 1
+    res, _ = _run(data, report)
+    assert not res.success
+    assert "TEAM_MISMATCH" in _codes(res), _codes(res)
+
+
+def test_t9_no_identifier_at_all_is_an_error():
+    report = _report(n=1)
+    data = _numbered(report)
+    data["matches"][0].pop("match_number")
+    res, _ = _run(data, report)
+    assert not res.success
+    assert "UNKNOWN_MATCH_ID" in _codes(res), _codes(res)
+
+
+def test_t10_unknown_match_number_is_an_error():
+    report = _report(n=2)
+    data = _numbered(report)
+    data["matches"][0]["match_number"] = 99
+    res, _ = _run(data, report)
+    assert not res.success
+    assert "UNKNOWN_MATCH_ID" in _codes(res), _codes(res)
+
+
+def test_t11_boolean_is_not_a_match_number():
+    """`True` 는 `int` 의 하위형이라 그냥 두면 1번 경기가 된다."""
+    report = _report(n=1)
+    data = _numbered(report)
+    data["matches"][0]["match_number"] = True
+    res, _ = _run(data, report)
+    assert not res.success
+    assert "UNKNOWN_MATCH_ID" in _codes(res), _codes(res)
+
+
+def test_t12_skipped_match_is_verified_too():
+    """돌리지 않은 경기도 정체성은 확인한다 — 번호만으로 받지 않는다."""
+    report = _report(n=1)
+    data = _numbered(report)
+    block = data["matches"][0]
+    for key in (DA, MU, "moderator", "home_team", "away_team"):
+        block.pop(key)
+    block["panel_status"] = panelimport.STATUS_SKIPPED
+    block["panel_status_reason"] = "상세 데이터가 없어 수행하지 않음"
+    res, _ = _run(data, report)
+    assert not res.success
+    assert "MATCH_LINK_UNVERIFIED" in _codes(res), _codes(res)
+
+
+def test_t13_skipped_match_with_teams_passes():
+    report = _report(n=2)
+    data = _numbered(report)
+    block = data["matches"][1]
+    for key in (DA, MU, "moderator"):
+        block.pop(key)
+    block["panel_status"] = panelimport.STATUS_SKIPPED
+    block["panel_status_reason"] = "상세 데이터가 없어 수행하지 않음"
+    res, _ = _run(data, report)
+    assert res.success, [str(i) for i in res.issues]
+    assert panelimport.status_of(res.runs[2]) == panelimport.STATUS_SKIPPED
+
+
+def test_t14_attach_and_render_survive_a_number_linked_import():
+    """가져오기 → 감사 → 렌더까지 그대로 간다."""
+    from toto import panelaudit, render
+
+    report = _report(n=2)
+    res, _ = _run(_numbered(report), report)
+    assert panelimport.attach(res, report) == 2
+    audit = panelaudit.audit(res, report)
+    assert audit.status in ("PASS", "CONDITIONAL"), audit.status
+    assert audit.coverage["panel_results"] == 2, audit.coverage
+    html = render.render_report(report, Settings())
+    assert "패널" in html and "<svg" in html
+
+
+def test_t15_the_importer_keeps_no_match_id_of_its_own():
+    """외부 계약과 내부 식별자를 나눈다 — `PanelRun` 에 칸을 만들지 않는다."""
+    from toto.models import PanelRun
+
+    assert not hasattr(PanelRun(), "match_id")
+    # 경기 하나를 읽을 때 넘기는 id 는 **회차에서 구한 값**이다.
+    src = Path(panelimport.__file__).read_text(encoding="utf-8")
+    call = src.split("run = _import_match(")[1][:200]
+    assert "_match_key(m, report)" in call, call
 
 
 # --------------------------------------------------------------------------

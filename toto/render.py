@@ -118,6 +118,19 @@ figure.chart figcaption{font-size:11.5px;color:var(--text-muted);margin-top:8px}
 .sw{width:10px;height:10px;border-radius:3px;display:inline-block;flex:none}
 .nodata{font-size:12.5px;color:var(--text-muted);margin:6px 0;font-style:italic}
 
+/* 상세 자료 접기 (Phase 4-F). 브라우저 기본 <details> 라 JS 가 없다. */
+details.more{margin:14px 0 0;border:1px solid var(--border);border-radius:10px;
+  background:var(--page)}
+details.more>summary{cursor:pointer;padding:12px 14px;font-size:13.5px;
+  font-weight:600;list-style:none;display:flex;flex-wrap:wrap;gap:8px;
+  align-items:baseline}
+details.more>summary::-webkit-details-marker{display:none}
+details.more>summary::before{content:"▸";color:var(--text-muted);flex:none}
+details.more[open]>summary::before{content:"▾"}
+details.more>summary .meta{font-weight:400;margin:0}
+details.more .morebody{padding:0 14px 14px}
+details.more .morebody>.block:first-child{margin-top:0}
+
 table.mini{width:100%;border-collapse:collapse;margin-top:10px;font-size:12.5px}
 table.mini th{text-align:left;font-weight:600;color:var(--text-muted);
   border-bottom:1px solid var(--grid);padding:5px 6px;font-size:11.5px}
@@ -1187,7 +1200,12 @@ def _moderator_block(result) -> str:
         # 관계만 보여준다 — 공통 근거가 많다고 강한 것이 아니다.
         parts += (f'<p class="lbl">근거 사용 관계</p>'
                   f'<ul class="mnotes">{used}</ul>')
-    return f'<p class="lbl">사회자 (두 의견의 종합)</p>{note}{parts}'
+    # **본 의견이 둘일 때만 "두 의견의 종합" 이라고 적는다** (Phase 4-F UI).
+    # 3단계 결과만 들어온 경기에서 이 제목을 그대로 쓰면, 바로 위에서
+    # "분석가 원문이 없다" 고 적어 놓고 여기서는 둘을 봤다고 말하게 된다.
+    title = ("사회자 (두 의견의 종합)" if len(result.panels_seen) >= 2
+             else "사회자 종합")
+    return f'<p class="lbl">{esc(title)}</p>{note}{parts}'
 
 
 def _panel_state(run) -> tuple[str, str]:
@@ -1203,6 +1221,35 @@ def _panel_state(run) -> tuple[str, str]:
     reason = raw.split(" (", 1)[1].rstrip(")") if " (" in raw else ""
     state = panelimport.status_of(run)
     return state, (reason if state != panelimport.STATUS_OK else "")
+
+
+def _moderator_only(run) -> bool:
+    """사회자 결과만 들어온 경기인가 (Phase 4-F).
+
+    **판정을 여기서 다시 만들지 않는다** — 4-B 가 정한 것을 읽는다.
+    """
+    from . import panelimport
+
+    return bool(run is not None and panelimport.is_moderator_only(run))
+
+
+def _details(title: str, why: str, body: str) -> str:
+    """상세 자료를 기본 접힘으로 (Phase 4-F UI §5).
+
+    **브라우저 기본 `<details>` 를 쓴다** — 외부 참조 0과 자체 완결 HTML 이
+    이 프로젝트의 조건이라(§1-8) JS 를 새로 들이지 않는다. 폰에서도 그대로
+    동작하고 접근성도 브라우저가 챙긴다.
+
+    **접는 것은 지우는 것이 아니다.** 펼치면 전과 같은 값이 그대로 있다 —
+    지표·표본 수·source·measurement_basis 중 어느 것도 줄이지 않는다.
+
+    내용이 비면 빈 껍데기를 내지 않는다 (§1-1-15 와 같은 규칙).
+    """
+    if not body.strip():
+        return ""
+    note = f'<span class="meta">{esc(why)}</span>' if why else ""
+    return (f'<details class="more"><summary>{esc(title)} {note}</summary>'
+            f'<div class="morebody">{body}</div></details>')
 
 
 def _score_flow(match: Match) -> str:
@@ -1268,21 +1315,17 @@ def _panel_block(match: Match) -> str:
             '관점에서 해석합니다 · 시장 기준선은 분석가가 아니라 외부 '
             '참고값입니다 · <b>승/무/패를 추천하지 않습니다</b></p>')
 
-    if not run.opinions and run.moderator is not None:
-        # **사회자 결과만 들어온 경기** (Phase 4-F). 분석가 카드가 없는 것이
-        # 사실이므로 빈 카드를 만들지 않고, 그 사실을 화면에 적는다 —
-        # 없는 의견을 있었던 것처럼 보이게 하지 않는다.
-        _state, reason = _panel_state(run)
-        note = (f'<p class="nodata">사회자 결과만 반영했습니다 — 1·2단계 '
-                f'분석가 원문은 이번 입력에 포함되지 않았습니다'
-                f'{(" · " + esc(reason)) if reason else ""}. 아래 종합은 '
-                f'사회자가 낸 것이고, 분석가 각자의 예상 스코어는 '
-                f'<b>표시하지 않습니다</b>.</p>')
-        return (f'{head}{note}{_market_table(run.market_reference)}'
+    if _moderator_only(run):
+        # **사회자 결과만 들어온 경기** (Phase 4-F). 제목부터 상태를 밝힌다 —
+        # "두 전문가의 해석" 이라고 적어 놓고 아래에서 "없습니다" 라고
+        # 덧붙이면 같은 말을 두 번 하면서 뜻은 흐려진다 (UI §2).
+        return ('<div class="block"><h4>패널 분석 (사회자 결과만 반영)</h4>'
+                '<p class="meta">1·2단계 분석가 원문은 이번 입력에 포함되지 '
+                '않았습니다 · 아래 종합은 사회자가 낸 것이고 분석가 각자의 '
+                '예상 스코어는 <b>표시하지 않습니다</b> · '
+                '<b>승/무/패를 추천하지 않습니다</b></p>'
+                f'{_market_table(run.market_reference)}'
                 f'{_moderator_block(run.moderator)}'
-                '<p class="lbl">최종 판단</p>'
-                '<p class="ptext">패널 의견과 시장 기준선은 판단에 참고하는 '
-                '정보입니다. 최종 승·무·패 선택은 사용자가 직접 합니다.</p>'
                 '</div>')
 
     if not run.opinions:
@@ -1309,12 +1352,13 @@ def _panel_block(match: Match) -> str:
         missing = (f'<p class="lbl">실행하지 못한 분석가</p>'
                    f'<ul class="mnotes">{missing}</ul>')
 
+    # '최종 판단' 안내를 여기에 다시 적지 않는다 (Phase 4-F UI §11) — 블록
+    # 머리글이 이미 "승/무/패를 추천하지 않습니다" 라고 적고 있고, 리포트
+    # 하단에도 같은 문장이 있다. 같은 말을 세 번 하면 정작 판단 재료가
+    # 뒤로 밀린다. **원칙이 바뀐 것이 아니라 중복을 걷어낸 것이다.**
     return (f'{head}<div class="traits">{cards}</div>{_score_flow(match)}{missing}'
             f'{_market_table(run.market_reference)}'
             f'{_moderator_block(run.moderator)}'
-            '<p class="lbl">최종 판단</p>'
-            '<p class="ptext">패널 의견과 시장 기준선은 판단에 참고하는 '
-            '정보입니다. 최종 승·무·패 선택은 사용자가 직접 합니다.</p>'
             '</div>')
 
 
@@ -1389,7 +1433,14 @@ def _decision_summary(match: Match) -> str:
         audit = panelaudit.match_audit(match, run)
         state, reason = _panel_state(run)
         _no, da, mu, adopted = audit.row
-        if state != "ok":
+        if _moderator_only(run):
+            # **"하지 않았습니다" 가 아니다.** 사회자는 돌았고 분석가 원문만
+            # 이번 입력에 없다 — 내부 상태(`부분`)를 그대로 화면에 적으면
+            # 결과가 있는데 없는 것처럼 읽힌다 (Phase 4-F UI §1).
+            rows.append(("Panel 분석",
+                         'Moderator 결과만 반영 <span class="nodata">'
+                         '(1·2단계 분석가 원문 없음)</span>'))
+        elif state != "ok":
             rows.append(("Panel 분석",
                          '<span class="nodata">하지 않았습니다 ('
                          + esc(state) + (f' — {esc(reason)}' if reason else "")
@@ -1470,6 +1521,25 @@ def _match_card(match: Match, settings: Settings, report=None) -> str:
                  + "<br>".join(esc(n) for n in match.notes) + "</div>")
     season_axes, recent_axes = _axes_blocks(match)
 
+    # 검증 계층을 두 묶음으로 접는다 (Phase 4-F UI §8). **잘게 쪼개지
+    # 않는다** — 시즌·최근·창마다 접으면 클릭이 일곱 번이 된다.
+    detail_metrics = _details(
+        "상세 경기력 지표",
+        "시즌 · 최근 · 장소 · 상대 강도 — 수집한 값 전부",
+        f'<div class="block"><h4>시즌 지표 비교 (수집한 값 전부)</h4>'
+        f'{_compare_inner(match, settings)}</div>'
+        f'{season_axes}'
+        f'{_recent_block(match, settings)}'
+        f'{recent_axes}'
+        # 정성(강점/약점·상성)은 정량 바로 뒤에 둔다 (§1-1-15).
+        f'{_traits_block(match)}'
+        f'{_venue_block(match)}'
+        f'{_sos_block(match)}')
+    detail_evidence = _details(
+        "근거 · 상대전적",
+        "발견을 지지한 지표·출처와 맞대결 기록",
+        f'{_evidence_block(match)}{_h2h_block(match)}')
+
     return (f'<article class="match" id="m{match.no}">'
             f'<h3><span class="no">{match.no}</span>'
             f'{esc(match.home.display)} <span style="color:var(--text-muted)">vs</span> '
@@ -1498,24 +1568,15 @@ def _match_card(match: Match, settings: Settings, report=None) -> str:
             f'</div></div>'
             f'{_direct_compare_block(match)}'
             f'{_panel_block(match)}'
-            # ---- 검증 계층 (§62 LEVEL 4) ----
-            # 차트와 그 표를 붙여 놓는다. 예전에는 다이버징 바(시즌)와
-            # 슈팅·xG 프로필(최근)이 먼저 나오고 대응하는 표가 한참 뒤에
-            # 따로 있어, 같은 지표를 두 곳에서 따로 읽어야 했다.
-            f'<div class="block"><h4>시즌 지표 비교 (수집한 값 전부)</h4>'
-            f'{_compare_inner(match, settings)}</div>'
-            f'{season_axes}'
-            f'{_recent_block(match, settings)}'
-            f'{recent_axes}'
-            # 정성(강점/약점·상성)을 정량 바로 뒤에 둔다. 예전에는 카드의
-            # 맨 아래(10번째)였는데, 강점/약점이 처음 들어오면서 이 블록이
-            # 실제로 값을 갖는 몇 안 되는 자리가 됐다.
-            f'{_traits_block(match)}'
-            f'{_venue_block(match)}'
-            f'{_sos_block(match)}'
-            f'{_evidence_block(match)}'
             f'{_form_block(match)}'
-            f'{_h2h_block(match)}'
+            # ---- 검증 계층 (§62 LEVEL 4) — 기본 접힘 (Phase 4-F UI §5) ----
+            # 값은 하나도 줄이지 않았다. 14경기를 훑는 첫 화면에 '수집한 값
+            # 전부' 가 펼쳐져 있을 필요가 없을 뿐이다. 펼치면 전과 같다.
+            #
+            # 차트와 그 표는 여전히 붙어 있다 (§1-1-15) — 다이버징 바 뒤에
+            # 시즌 표, 슈팅·xG 프로필 뒤에 최근 표.
+            f'{detail_metrics}'
+            f'{detail_evidence}'
             f'<p style="margin:18px 0 0"><a class="top-link" href="#top">↑ 목록으로</a></p>'
             f'</article>')
 

@@ -313,6 +313,28 @@ def _coverage(report: Report, parsed: dict, imp: PanelImportResult) -> dict:
     }
 
 
+def composition_line(result: PanelAuditResult) -> str:
+    """배지에 적을 한 줄 — **무엇이 실제로 반영됐나** (Phase 4-F UI §4).
+
+    `부분 (14/14경기 가져옴)` 만으로는 사용자가 무엇을 얻었는지 알 수 없다.
+    셋을 나눠 적는다 — 판정하지 않고 세기만 한다.
+
+    **"14/14경기 분석 완료" 처럼 적지 않는다.** 사회자만 반영된 경기를
+    완전한 패널로 보이게 하는 표현이다 (§13).
+    """
+    cov = result.coverage or {}
+    parts = []
+    if cov.get("panel_results"):
+        parts.append(f"패널 {cov['panel_results']}경기")
+    if cov.get("moderator_only"):
+        parts.append(f"Moderator 결과 {len(cov['moderator_only'])}경기")
+    for key, label in (("panel_skipped", "생략"),
+                       ("panel_failed", "실패")):
+        if cov.get(key):
+            parts.append(f"{label} {cov[key]}경기")
+    return " · ".join(parts)
+
+
 def _consistency(audits: list[PanelMatchAudit],
                  result: PanelAuditResult) -> dict:
     """회차 안에서 모든 경기가 **같은 패널 계약**을 썼는지 (§44).

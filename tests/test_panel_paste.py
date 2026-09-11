@@ -347,8 +347,10 @@ def test_d8_report_says_moderator_only():
     path, res, report, _b = _apply(_paste())
     assert panelimport.attach(res, report) == 14
     html = render.render_report(report, Settings())
-    assert "사회자 결과만 반영했습니다" in html
+    # 4-F UI: 제목부터 상태를 밝힌다. "하지 않았습니다" 로 적지 않는다.
+    assert "패널 분석 (사회자 결과만 반영)" in html
     assert "1·2단계 분석가 원문은 이번 입력에 포함되지 않았습니다" in html
+    assert "Moderator 결과만 반영" in html          # 요약 카드
     assert "이 경기는 패널 분석을 하지 않았습니다" in html   # 9·13·14번
 
 
@@ -470,7 +472,7 @@ def test_f2_fixture_goes_through_the_whole_pipeline():
     out = base.joinpath("art")
     assert artifact.save(report, outdir=out).startswith("ok")
     html = render.render_report(report, Settings())
-    assert "사회자 결과만 반영했습니다" in html
+    assert "패널 분석 (사회자 결과만 반영)" in html
     assert len(html.encode("utf-8")) > 50_000
 
 

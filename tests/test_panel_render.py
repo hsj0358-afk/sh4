@@ -251,9 +251,20 @@ def test_b6_evidence_ids_render_as_ids():
 
 
 def test_b7_user_decision_notice():
+    """'최종 판단' 절은 4-F 에서 **뺐다** — 같은 말을 세 번 하고 있었다.
+
+    원칙이 바뀐 것이 아니다. 블록 머리글이 여전히 추천하지 않는다고 적고,
+    리포트 하단의 §1-3 문장도 그대로다. 그 자리에 추천·확신도를 **대신
+    넣지 않았다**는 것까지 함께 고정한다.
+    """
     html = carded(full_run())
-    assert "최종 판단" in html
-    assert "사용자가 직접" in html
+    assert "최종 판단" not in html
+    assert "승/무/패를 추천하지 않습니다" in html
+    for banned in ("추천합니다", "확신도", "신뢰도", "우세", "유력"):
+        assert banned not in _text(html), banned
+    # 리포트 전체에는 §1-3 의 문장이 그대로 남아 있다.
+    src = inspect.getsource(render)
+    assert "승/무/패를 추천하지 않습니다" in src
 
 
 def test_b8_same_data_notice():
@@ -268,12 +279,19 @@ def test_b9_panel_sits_above_the_detail_blocks_in_the_card():
     예전에는 패널이 근거 다음(카드의 11번째)이었다. 패널은 사용자가 3단계
     에서 얻으려는 답이라 세부보다 앞에 온다 — 근거·폼·상대전적은 그 답을
     확인하러 내려가는 자리다.
+
+    **화면에 나온 순서로 본다** — 4-F 에서 검증 계층이 지역변수로 먼저
+    조립되므로 소스 줄 순서는 더 이상 화면 순서가 아니다.
     """
-    src = inspect.getsource(render._match_card)
-    order = [src.index(x) for x in
-             ("_decision_summary", "charts.radar", "_direct_compare_block",
-              "_panel_block", "_compare_inner", "_evidence_block",
-              "_form_block")]
+    from test_axes_render import _match
+    from toto.settings import Settings
+
+    m = _match()
+    m.panel = full_run()
+    html = render._match_card(m, Settings(), None)
+    order = [html.index(x) for x in
+             ("요약 — 이 경기에서", "리그 내 위치", "홈 ↔ 원정 직접 비교",
+              "패널 분석", "상세 경기력 지표", "시즌 지표 비교")]
     assert order == sorted(order), order
 
 

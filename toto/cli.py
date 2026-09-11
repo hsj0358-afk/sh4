@@ -239,6 +239,13 @@ def _handle_panel_file(report: Report, args, settings, panel_file) -> None:
         return
     from . import panelaudit
     result = panelaudit.audit(outcome, report)
+    # 배지에 **무엇이 실제로 반영됐는지**를 함께 적는다 (Phase 4-F UI §4).
+    # `부분 (14/14경기 가져옴)` 만 보면 사용자는 무엇을 얻었는지 모른다.
+    # 가져오기 상태(§1-6 어휘)는 그대로 두고 구성만 덧붙인다.
+    composition = panelaudit.composition_line(result)
+    if composition:
+        report.source_status["패널 가져오기"] = (
+            f"{outcome.status_line()} · {composition}")
     report.source_status["패널 감사"] = (
         f"{result.status} (커버리지 {result.coverage_status})")
     for line in panelaudit.report_lines(result):

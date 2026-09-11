@@ -360,17 +360,25 @@ def test_d7_blocks_are_well_formed():
 
 
 def test_d8_card_hierarchy_is_summary_compare_panel_detail():
-    src = inspect.getsource(render._match_card)
-    # 4-E 에서 시즌 다이버징 바(`_compare_inner`)가 검증 계층으로 내려갔다
-    # — 요약 계층에서 직접 비교와 같은 질문에 같은 수로 답하고 있었다.
-    # 자기 표(`season_axes`) 바로 앞자리는 그대로다 (§1-1-15).
-    order = [src.index(x) for x in
-             ("_odds_block", "_decision_summary", "charts.radar",
-              "_direct_compare_block", "_panel_block",
-              "_compare_inner", "{season_axes}",
-              "_recent_block(match, settings)", "{recent_axes}",
-              "_traits_block", "_evidence_block", "_h2h_block")]
+    """4-E 에서 시즌 다이버징 바(`_compare_inner`)가 검증 계층으로 내려갔다
+    — 요약 계층에서 직접 비교와 같은 질문에 같은 수로 답하고 있었다.
+    자기 표(시즌) 바로 앞자리는 그대로다 (§1-1-15).
+
+    **소스 줄 순서가 아니라 화면에 나온 순서를 본다** — 4-F 에서 검증
+    계층이 지역변수로 먼저 조립되므로 소스 순서는 더 이상 화면 순서가
+    아니다(테스트가 실제로 재려던 것은 언제나 화면 순서였다).
+    """
+    from toto.settings import Settings
+
+    html = render._match_card(_panelled(), Settings(), None)
+    order = [html.index(x) for x in
+             ("Pinnacle 시장 기준선", "요약 — 이 경기에서", "리그 내 위치",
+              "홈 ↔ 원정 직접 비교", "패널 분석",
+              "상세 경기력 지표", "시즌 지표 비교", "경기력 분석 · 시즌",
+              "경기력 분석 · 최근 경기")]
     assert order == sorted(order), order
+    # 검증 계층은 **접혀서** 나온다 — 값은 그 안에 그대로 있다.
+    assert html.index("<details") < html.index("시즌 지표 비교")
 
 
 def test_d9_panel_visualisation_is_shared_with_the_audit():

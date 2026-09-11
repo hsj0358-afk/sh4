@@ -3398,20 +3398,46 @@ stats.shots_pg ← st.shots_pg = _f(row, i_shots) or …         whoscored.py:34
 바꾸지도 않고, artifact 는 `null` 을 그대로 싣고, 셋 다 `_AXES_SECTIONS`
 공격 절에 들어 있어 값만 있으면 그려진다(`--demo` 에서 슈팅 28회).
 
-**아직 모르는 것 하나 — 표가 없는 것인가, 있는데 머리글을 못 맞춘 것인가.**
-둘은 고칠 자리가 완전히 다르므로 **추측으로 머리글 후보를 늘리지 않는다**
-(§1-4). 판별에 필요한 것은 실제로 받은 HTML 이고, 그 파일은 사용자 PC 의
-`cache/<날짜>/whoscored/FAILED_page_league_epl.html` 에만 있다.
+**실물 저장본으로 판정이 났다 (2026-09-12 · 사용자 PC).** 진단기가 수집기의
+`_table_rows`·`_find_header`·`_header_index` 를 그대로 불러 판정했다 (§1-8).
 
-`tools/diagnose_whoscored.py` 가 그 저장본으로 셋을 가른다. **수집기가 쓰는
-바로 그 함수**(`_table_rows`·`_find_header`·`_header_index`)를 그대로 불러
-판정하므로 진단과 수집이 어긋날 수 없다 (§1-8).
+```
+shots_pg        문서에 없음          ← EPL 730KB · 라리가 1,225KB 두 파일 전부
+pass_success    문서에 없음
+aerials_won_pg  문서에 없음
+possession      'possession' DOM 1회 · script 0회
+```
 
-| 출력 | 뜻 | 고칠 자리 |
-|---|---|---|
-| `3절을 통과하는 표가 하나도 없다` + 문구가 `script` 에만 | 표가 DOM 에 없다 (JS 로 그린다 / 다른 주소) | 수집 대상·대기 |
-| `표 [i] 통과` + `Shots pg 열이 없다` | 표는 있는데 열 이름이 바뀌었다 | `_header_index` 후보 |
-| `표 [i] 통과` + `Shots pg 열 표본: [...]` | 표도 열도 있다 | 행·값 해석 |
+**세 머리글이 문서에 0회다 — DOM 에도 `<script>` 에도.** 열 이름이 바뀐 것도
+JS 로 그려지는 것도 아니고, **그 표가 이 페이지에 없다.** 그래서 머리글
+후보를 늘리는 수정은 성립하지 않는다.
+
+받은 페이지는 리그 **요약(Scores)** 화면이다 — `<title> Premier League
+Scores`, canonical `…/stages/25544/show/england-premier-league-2026-2027`.
+표 17개 중 실제 데이터가 있는 것은 순위표(`standings-25544-grid`, 23행)와
+**톱5 위젯**들뿐이다(`Possession`·`Aggression`·`Ratings`, 5행짜리 목록).
+`forms`·`streaks`·`history`·`custom-standings` 는 머리글 3행만 있고 비었다.
+
+**그 톱5 위젯이 3절 게이트를 통과한다.** 머리글이 `['Possession']`·
+`['Ratings', '', 'Apps', 'Rt']` 라 `_header_index` 의 **부분일치**에 걸려
+`i_poss=0`·`i_rating=0` 이 되고, 그 0번 칸은 지표가 아니라 **팀 이름 칸**이다.
+실물 재현으로 확인한 결과는 이렇다.
+
+  · 관측된 `Possession` 위젯(`['Man City', '66.5%']`)에서는 `_f` 가 팀 이름을
+    숫자로 읽지 못해 `None` 이고 **값이 망가지지 않는다.**
+  · 그러나 행에 **순위 접두가 붙으면**(`'1 Man City'`) `_num` 이 `1` 을 집어
+    `rating` 에 **순위 숫자가 들어간다** — 재현에서 1.0·2.0·3.0 이 실제로
+    들어갔다. 지금은 FotMob 이 `rating` 을 먼저 채워
+    `fill_stats(overwrite=False)` 가 버리므로 리포트에 닿지 않지만,
+    **잠재 결함이다.**
+  · 위젯이 `out` 에 **순위표에 없는 팀을 만든다**(`setdefault`). 로그의
+    `epl 팀 21개(경기수 20팀)` 처럼 경기수 없는 항목이 섞이는 경로다.
+
+**남은 물음은 "그럼 그 표가 어디 있나" 하나이고, 주소를 기억으로 지어내지
+않는다** (§1-4). 페이지 자신의 메뉴에 형제 탭이 들어 있으므로 진단기가
+canonical 의 stage 번호를 가진 링크를 구간별로 모아 보여 준다
+(`stage_tabs()`). 통과한 표의 **데이터 행**도 함께 찍는다 — 3절은 열 번호로
+값을 읽으므로 그 번호가 가리키는 칸이 무엇인지 봐야 한다.
 
 **왜 아무도 몰랐나.** 세 군데가 조용하다 — ① `enrich()` 의 `stats_done` 은
 순위표 항목만 세므로 고유 지표 5종 중 3종이 전 팀에서 비었는데도
@@ -3423,7 +3449,9 @@ stats.shots_pg ← st.shots_pg = _f(row, i_shots) or …         whoscored.py:34
 **곁가지 하나** — `_SEASON_ORIGIN["shots"]` 는 원천을 `season_stats_feed`
 (FotMob)로 적고 있는데 실제 유일한 생산지는 후스코어드 리그 표다.
 
-원인이 갈리기 전까지 production code 는 고치지 않았다.
+**production code 는 아직 고치지 않았다.** 고칠 자리가 둘로 갈리는데
+(수집 대상 주소 / 3절 게이트) 앞쪽은 형제 탭 목록을 봐야 정해지고, 뒤쪽은
+그것과 함께 고쳐야 같은 실수를 두 번 하지 않는다.
 
 ---
 

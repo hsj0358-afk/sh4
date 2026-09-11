@@ -277,6 +277,7 @@ def summarize(path: Path) -> None:
         print(f"  id 가진 요소 예시: {ids}")
 
     stat_table_verdict(raw, tables)
+    stage_tabs(raw)
 
     _tournament_links(raw)
 
@@ -361,6 +362,10 @@ def stat_table_verdict(raw: str, tables: list) -> None:
         got = ", ".join(f"{f}={idx[f]}" for f, _ in STAT_HEADERS)
         print(f"      → 표 [{i}] 통과 (머리글 r{hdr}): {got}")
         print(f"        머리글: {rows[hdr][:14]}")
+        # 데이터 행을 함께 찍는다. 3절은 통과한 표의 **열 번호로 값을 읽으므로**,
+        # 그 번호가 가리키는 칸이 실제로 무엇인지 봐야 값이 옳은지 알 수 있다.
+        for r in rows[hdr + 1:hdr + 3]:
+            print(f"        데이터: {r[:14]}")
         if idx["shots_pg"] is None:
             print("        ! 표는 통과하는데 **Shots pg 열이 없다** — "
                   "열 이름이 바뀐 자리다.")
@@ -368,6 +373,35 @@ def stat_table_verdict(raw: str, tables: list) -> None:
             data = [r for r in rows[hdr + 1:] if len(r) > idx['shots_pg']]
             vals = [r[idx["shots_pg"]] for r in data[:5]]
             print(f"        Shots pg 열 표본: {vals} (데이터 {len(data)}행)")
+
+
+# --------------------------------------------------------------------------
+# 이 페이지가 스스로 가리키는 형제 탭  — Phase 5-E1
+# --------------------------------------------------------------------------
+# 팀 통계 표가 이 페이지에 없다면 다음 물음은 "그럼 어디에 있나" 인데,
+# **기억으로 주소를 지어내지 않는다** (§1-4). 페이지 자신의 메뉴에 형제 탭이
+# 들어 있으므로 그것을 그대로 읽는다 — canonical 의 stage 번호를 가진 링크를
+# 모아 마지막 구간별로 센다.
+_STAGE_HREF = re.compile(r"/[Ss]tages/(\d+)/([A-Za-z][\w-]*)", re.I)
+
+
+def stage_tabs(raw: str) -> None:
+    """같은 stage 를 가리키는 링크를 구간별로 모은다 (형제 탭 찾기)."""
+    seen: dict[tuple[str, str], list[str]] = {}
+    for m in re.finditer(r'href="([^"]{5,160})"', raw, re.I):
+        href = m.group(1)
+        hit = _STAGE_HREF.search(href)
+        if hit:
+            seen.setdefault((hit.group(1), hit.group(2).lower()), []).append(href)
+    if not seen:
+        print("  stage 링크: 없음 — 이 페이지에 형제 탭 메뉴가 없습니다.")
+        return
+    print(f"  stage 링크 {sum(len(v) for v in seen.values())}개 "
+          f"· 구간 {len(seen)}종:")
+    for (stage, seg), hrefs in sorted(seen.items(),
+                                      key=lambda kv: (kv[0][0], kv[0][1])):
+        print(f"      stage {stage} / {seg:<18} {len(hrefs):>3}회  "
+              f"예: {hrefs[0][:78]}")
 
 
 # 저장된 페이지가 홈으로 리다이렉트된 것이라면, 그 안에 대회 메뉴가 들어 있다.

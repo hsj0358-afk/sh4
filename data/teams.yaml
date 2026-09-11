@@ -102,7 +102,7 @@ Athletic Club:
   en: [Athletic Bilbao, Athletic Club Bilbao]
   league: laliga
 Atletico Madrid:
-  ko: [아틀레티코마드리드, 아틀레티코 마드리드, 아틀레티코]
+  ko: [아틀레티코마드리드, 아틀레티코 마드리드, 아틀레티코, AT마드]
   en: [Atlético Madrid, Atletico de Madrid, Atl. Madrid]
   league: laliga
 Barcelona:
@@ -112,6 +112,10 @@ Barcelona:
 Celta Vigo:
   ko: [셀타비고, 셀타 비고]
   en: [Celta de Vigo, RC Celta]
+  league: laliga
+Deportivo La Coruna:
+  ko: [데포아코]
+  en: [Deportivo La Coruna, Deportivo La Coruña, RC Deportivo]
   league: laliga
 Elche:
   ko: [엘체]
@@ -132,6 +136,10 @@ Girona:
 Levante:
   ko: [레반테]
   en: [Levante UD]
+  league: laliga
+Malaga:
+  ko: [말라가]
+  en: [Malaga, Málaga CF]
   league: laliga
 Mallorca:
   ko: [마요르카, 마조르카]

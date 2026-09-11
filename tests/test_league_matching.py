@@ -283,6 +283,145 @@ def test_new_aliases_do_not_hijack_other_teams():
 
 
 # --------------------------------------------------------------------------
+# 3-B. 260052 팀 식별 복구 (Phase 5-A2)
+# --------------------------------------------------------------------------
+# 9·13·14번이 `팀명 매칭 실패` 로 떨어지면서 배당·상세데이터가 통째로 빠졌다.
+# 세 건 모두 **Resolver 단계에서** 끝났고(Phase 5-0), 정규명이 비면 세 소스가
+# 전부 같은 게이트에서 조회 자체를 하지 않는다.
+#
+# 정규명·별칭은 **실제 Pinnacle fixture 와 공식 일정으로 확인된 것만** 넣었다.
+# 한국어 이름이 영어처럼 보인다는 이유로 만든 것이 아니다 (Phase 5-A0 §7).
+RECOVERED = {
+    # 베트맨 표기 → 정규명
+    "말라가": "Malaga",
+    "데포아코": "Deportivo La Coruna",
+    "AT마드": "Atletico Madrid",       # 정규명은 원래 있었고 ko 별칭만 없었다
+}
+
+# 소스가 쓰는 표기도 같은 정규명으로 수렴해야 한다 — 한쪽만 붙으면
+# 베트맨은 맞는데 피나클·FotMob 은 안 맞는 반쪽 상태가 된다.
+SOURCE_SPELLINGS = {
+    "Malaga": "Malaga",
+    "Málaga CF": "Malaga",
+    "Deportivo La Coruna": "Deportivo La Coruna",
+    "Deportivo La Coruña": "Deportivo La Coruna",
+    "RC Deportivo": "Deportivo La Coruna",
+    "Atletico Madrid": "Atletico Madrid",
+    "Atl. Madrid": "Atletico Madrid",
+    "Atlético Madrid": "Atletico Madrid",
+}
+
+
+def test_260052_betman_names_resolve():
+    r = TeamResolver()
+    for ko, want in RECOVERED.items():
+        got = r.resolve(ko, learn=False, quiet=True)
+        assert got == want, f"{ko} → {got} (기대 {want})"
+
+
+def test_260052_source_spellings_resolve_to_the_same_canonical():
+    r = TeamResolver()
+    for name, want in SOURCE_SPELLINGS.items():
+        got = r.resolve(name, learn=False, quiet=True)
+        assert got == want, f"{name} → {got} (기대 {want})"
+
+
+def test_260052_home_teams_still_resolve():
+    """같은 경기의 홈팀은 원래 정상이었다 — 그대로여야 한다."""
+    r = TeamResolver()
+    for ko, want in (("셀타비고", "Celta Vigo"), ("헤타페", "Getafe"),
+                     ("소시에다", "Real Sociedad")):
+        got = r.resolve(ko, learn=False, quiet=True)
+        assert got == want, f"{ko} → {got} (기대 {want})"
+
+
+def test_new_canonicals_do_not_hijack_neighbours():
+    """새 이름이 기존 팀을 가로채지 않는다.
+
+    `Deportivo Alaves` 는 Alaves 의 영문 별칭이고 `Mallorca` 는 `Malaga` 와
+    철자가 가깝다 — 부분일치 범위가 이쪽으로 넘어오면 안 된다.
+    """
+    r = TeamResolver()
+    for name, want in (("Deportivo Alaves", "Alaves"),
+                       ("Deportivo Alavés", "Alaves"),
+                       ("알라베스", "Alaves"),
+                       ("Mallorca", "Mallorca"),
+                       ("RCD Mallorca", "Mallorca"),
+                       ("마요르카", "Mallorca"),
+                       ("마조르카", "Mallorca"),
+                       ("Athletic Bilbao", "Athletic Club"),
+                       ("빌바오", "Athletic Club"),
+                       ("아틀레틱빌바오", "Athletic Club")):
+        got = r.resolve(name, learn=False, quiet=True)
+        assert got == want, f"{name} → {got} (기대 {want})"
+
+
+def test_bare_deportivo_no_longer_lands_on_alaves():
+    """`RC Deportivo` 등록으로 **잠재 오매칭 하나가 함께 고쳐졌다.**
+
+    이 별칭을 넣기 전에는 `Deportivo` 한 낱말이 부분일치로
+    `Deportivo Alaves`(= Alaves) 에 붙었다. 이제 정확일치가 이긴다.
+    """
+    r = TeamResolver()
+    for name in ("Deportivo", "RC Deportivo"):
+        assert r.resolve(name, learn=False, quiet=True) == "Deportivo La Coruna"
+
+
+def test_recovered_teams_carry_a_league():
+    """리그를 모르면 배당 조회가 통째로 불가능하다 (cli._resolve_teams)."""
+    r = TeamResolver()
+    for team in ("Malaga", "Deportivo La Coruna", "Atletico Madrid"):
+        assert r.league_of(team) == "laliga", f"{team} → {r.league_of(team)}"
+
+
+def test_260052_matches_now_fill_both_canonicals():
+    """9·13·14번이 실제로 복구되는가 — `_resolve_teams` 를 그대로 태운다.
+
+    묻는 것은 둘이다: 양쪽 canonical 이 채워지는가, 그리고 `팀명 매칭 실패`
+    경고가 사라지는가.
+    """
+    from toto import cli
+    from toto.models import Match, Report, TeamRef
+
+    matches = [Match(no=9, home=TeamRef(name_ko="셀타비고"),
+                     away=TeamRef(name_ko="말라가")),
+               Match(no=13, home=TeamRef(name_ko="헤타페"),
+                     away=TeamRef(name_ko="데포아코")),
+               Match(no=14, home=TeamRef(name_ko="소시에다"),
+                     away=TeamRef(name_ko="AT마드"))]
+    report = Report(round_id="260052", matches=matches)
+    cli._resolve_teams(matches, TeamResolver(), report, load_settings())
+
+    for m in matches:
+        assert m.home.canonical and m.home.matched, m.no
+        assert m.away.canonical and m.away.matched, m.no
+        assert m.league == "laliga", (m.no, m.league)
+    assert not [w for w in report.warnings if "매칭하지 못했습니다" in w], \
+        report.warnings
+
+
+def test_260052_pinnacle_gate_now_opens():
+    """정규명이 생기면 피나클 조회 게이트가 열린다 (`pinnacle.py:359`).
+
+    **네트워크를 쓰지 않는다** — 빈 matchups 를 주고 `_find_matchup` 까지
+    도달하는지만 본다. 실제 수집 검증은 Phase 5-B 소관이다.
+    """
+    from toto.sources import pinnacle
+    from toto.models import Match, TeamRef
+
+    match = Match(no=9, home=TeamRef(name_ko="셀타비고", canonical="Celta Vigo"),
+                  away=TeamRef(name_ko="말라가", canonical="Malaga"))
+    seen = []
+    original = pinnacle._find_matchup
+    pinnacle._find_matchup = lambda *a, **k: seen.append(a[2:4]) or original(*a, **k)
+    try:
+        pinnacle._apply_odds(match, [], [], TeamResolver(), "now")
+    finally:
+        pinnacle._find_matchup = original
+    assert seen == [("Celta Vigo", "Malaga")], seen
+
+
+# --------------------------------------------------------------------------
 # 4. K/J리그 회귀 — 기존 매핑이 그대로 살아 있는가
 # --------------------------------------------------------------------------
 DOMESTIC = {

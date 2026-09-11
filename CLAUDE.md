@@ -2819,6 +2819,70 @@ Phase 3 캐시도 그대로 유효하다.
 
 회귀 테스트: `python tests/test_report_ia.py` (51개).
 
+### 1-22. 260052 팀 식별 복구 (Phase 5-A2) — 세 이름이 세 소스를 막고 있었다
+
+260052 의 9·13·14번이 `팀명 매칭 실패` 로 떨어지면서 **배당과 상세데이터가
+함께** 빠졌다. 조사(5-0)에서 확인한 것은 하나다 — **세 건 모두 Resolver
+단계에서 끝났고 소스는 한 번도 호출되지 않았다.**
+
+```
+ref.canonical ─┬─→ pinnacle._apply_odds:359        비면 즉시 False (1차·2차 모두)
+               ├─→ pinnacle._find_matchup:249-251  피나클 쪽 이름도 같은 resolver
+               ├─→ fotmob.py:1427                  index.get
+               └─→ whoscored.py:856                table.get
+```
+
+`name_ko` 로 되돌아가는 폴백이 **어디에도 없어서**(grep 0건) 정규명 하나가 세
+갈래의 공통 관문이다. 그래서 "팀명 매칭 실패 = 배당 없음 = 상세데이터 없음"
+이 동시에 일어났다. **"Pinnacle 데이터 없음" 이 아니라 "Pinnacle 조회 전
+Team Resolution 단계에서 중단" 이다** — 둘을 같은 말로 적지 않는다.
+
+#### 등록한 것과 그 근거
+
+| 경기 | 베트맨 표기 | 정규명 | 종류 |
+|---|---|---|---|
+| 9 | `말라가` | **`Malaga`** (신규) | 정규명 자체가 없었다 |
+| 13 | `데포아코` | **`Deportivo La Coruna`** (신규) | 〃 |
+| 14 | `AT마드` | `Atletico Madrid` (기존) | **ko 별칭 한 줄만 없었다** |
+
+**이름을 해석해서 만들지 않았다.** 근거는 사용자 PC 의 **실제 Pinnacle
+fixture**(participant 이름 · competition `Spain - La Liga` · 2026-09-13
+킥오프)와 공식 일정이다. 5-A0 에서 정한 조건 — 실제 source 팀명·fixture·
+competition 이 있을 때만 canonical 을 만든다 — 을 지킨 것이고, 그 근거가
+없던 동안에는 후보를 제시하지 않았다.
+
+  · **관측한 표기만 넣는다.** ko 는 베트맨이 실제로 보낸 한 낱말뿐이다
+    (`데포르티보`·`라코루냐` 같은 미관측 변형을 만들지 않는다 — §3-1 과
+    같은 규칙). en 은 소스가 쓰는 표기와 공식 표기다.
+  · **소스 표기까지 같은 정규명으로 수렴시킨다.** 베트맨만 붙이면 피나클·
+    FotMob 은 여전히 안 붙는 반쪽이 된다 (`_find_matchup` 이 소스 쪽 이름도
+    같은 resolver 에 태우므로).
+  · `league: laliga` 는 위 fixture 근거로 적었다. 틀리면 순위표를 권위로
+    삼는 `set_league()` 가 정정한다 (§3-5) — 손으로 단정한 값이 아니다.
+
+#### 부수적으로 **잠재 오매칭 하나가 함께 고쳐졌다**
+
+`RC Deportivo` 를 등록하면서 정규화 키 `deportivo` 가 생겼다. 그 전에는
+`Deportivo` 한 낱말이 부분일치로 **`Deportivo Alaves`(= Alaves)** 에 붙고
+있었다 — 알라베스의 영문 별칭이 `Deportivo` 로 시작하기 때문이다. 이제
+정확일치가 이겨 `Deportivo La Coruna` 로 간다.
+
+  · `Deportivo Alaves`·`Deportivo Alavés`·`알라베스` 는 **그대로 Alaves** 다
+    (정확일치가 먼저다 · 테스트로 고정).
+  · `Malaga` 와 `Mallorca` 는 서로 부분일치하지 않는다(`malaga` ↔ `mallorca`).
+
+**충돌 검사는 시뮬레이션으로 먼저 했다** — 표에 실린 659개 표기(정규명+ko+en)
+전부를 추가 전후로 돌려 **해석이 바뀐 것 0건**을 확인한 뒤에 파일을 고쳤다.
+바뀐 것은 등록되지 않았던 입력 넷뿐이다: `말라가`·`AT마드`(없음→정답) ·
+`Deportivo`·`RC Deportivo`(Alaves→Depor, 위의 교정).
+
+**소스 수집기는 한 줄도 바꾸지 않았다.** `sources/` 무변경이고, 실제 재수집과
+source-level 검증은 **Phase 5-B** 소관이다. 이 Phase 가 증명한 것은 "게이트가
+열린다" 까지다 — `_apply_odds` 가 `_find_matchup` 에 도달하는 것을 네트워크
+없이 확인했다.
+
+회귀 테스트: `python tests/test_league_matching.py` (23개, 5-A2 로 +8).
+
 ---
 
 ## 2. 작업 방식
@@ -3092,7 +3156,7 @@ python -m toto --validate-panel-result F.json  # 검사만 (붙이지 않는다)
 python -m toto --audit-panel-result F.json  # 회차 구조 감사 (4-C)
 python -m toto --paste-panel-result F.json  # 3단계 Moderator 결과 원문 → 반영 (4-F)
 #  메뉴 [4] 가 위 셋을 한 번에 한다 — panel_results/ 에 JSON 을 넣고 고르면 된다 (§1-20)
-python tests/test_league_matching.py       # 리그·팀 매칭 회귀 (15개)
+python tests/test_league_matching.py       # 리그·팀 매칭 회귀 · 260052 팀 식별 §1-22 (23개)
 python tests/test_match_details.py         # 경기 상세 파싱 회귀 (36개)
 python tests/test_shot_events.py           # 슛 이벤트 계층 (46개)
 python tests/test_season_matches.py        # 시즌 경기 색인·시점 (27개)

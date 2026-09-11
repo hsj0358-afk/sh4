@@ -350,7 +350,11 @@ def test_e14_full_report_survives_a_failed_panel():
     html = render.render_report(
         Report(round_id="T", generated_at="fixed", matches=matches), s)
     assert html.count('<article class="match"') == len(matches)
-    assert "회차 승산" in html or "단통표" in html
+    # Phase 4-G 에서 시장 중심 최상단(회차 승산·단통표·직관 후보)이 빠졌다.
+    # 이 테스트가 묻는 것은 "패널 하나가 실패해도 리포트 전체가 나오는가"
+    # 이므로, 그대로 남아 있는 최상단 요약으로 확인한다.
+    assert "14경기 한눈에 보기" in html
+    assert html.count('class="sumcard"') == len(matches)
 
 
 def test_f15_missing_market_does_not_break():

@@ -842,6 +842,34 @@ class PanelOpinion:
 
 
 @dataclass(frozen=True)
+class InitialScore:
+    """1·2단계 분석가가 **처음** 낸 예상 스코어 한 쌍 (Phase 4-G).
+
+    **의견이 아니다.** `PanelOpinion` 은 요약·근거·지지 지표를 함께 담는
+    '해석' 이고, 이것은 스코어 두 개뿐인 **스냅샷**이다. 3단계 결과만
+    붙여넣는 경로에는 분석가 원문이 오지 않는데(§1-15-2), 그렇다고 최초
+    스코어까지 잃을 이유는 없어서 이 자리를 따로 뒀다.
+
+    이 값이 있다고 `opinions` 가 생기지 않는다 — `is_moderator_only()` 의
+    판정은 그대로이고, 리포트도 "두 전문가의 해석" 이라고 적지 않는다.
+    스코어가 있다는 것과 의견이 있다는 것은 다른 사실이다.
+
+    스코어는 `PanelOpinion` 과 같은 규칙이다: 0 이상 정수 또는 `None`.
+    `0` 은 실제 예측(무득점)이라 `None` 과 다르다.
+    """
+    role: str = ""                  # panel.DATA_ANALYST / MATCHUP_ANALYST
+    home: int | None = None
+    away: int | None = None
+
+    @property
+    def label(self) -> str:
+        """`"2-1"`. 둘 중 하나라도 없으면 빈 문자열이다 — 0 으로 채우지 않는다."""
+        if self.home is None or self.away is None:
+            return ""
+        return f"{self.home}-{self.away}"
+
+
+@dataclass(frozen=True)
 class ScoreTally:
     """토론 라운드 하나하나가 도달한 스코어와 그 횟수 (3-C 시뮬레이션).
 
@@ -941,9 +969,20 @@ class PanelRun:
     payload_hash: str = ""
     # Phase 3-C. 의견이 하나도 없으면 None 이다 (종합할 것이 없다).
     moderator: ModeratorResult | None = None
+    # Phase 4-G. 1·2단계의 **최초 예상 스코어만** 옮겨 둔 스냅샷.
+    # `opinions` 와 **별개 칸**이다 — 여기에 값이 있어도 분석가 원문이
+    # 있는 것이 아니다 (`InitialScore` 참고). 옛 결과에는 없으므로 기본은
+    # 빈 튜플이고, 그때는 리포트가 종합 스코어만 보여 준다.
+    initial_scores: tuple[InitialScore, ...] = ()
 
     def opinion(self, role: str) -> PanelOpinion | None:
         for item in self.opinions:
+            if item.role == role:
+                return item
+        return None
+
+    def initial_score(self, role: str) -> InitialScore | None:
+        for item in self.initial_scores:
             if item.role == role:
                 return item
         return None
@@ -984,7 +1023,10 @@ def revive_panel_run(d: Any) -> PanelRun | None:
         market_reference=(MarketReference(**market)
                           if isinstance(market, dict) else None),
         evidence_ids=tuple(d.get("evidence_ids") or ()),
-        payload_hash=d.get("payload_hash", ""))
+        payload_hash=d.get("payload_hash", ""),
+        initial_scores=tuple(
+            InitialScore(**s) for s in (d.get("initial_scores") or [])
+            if isinstance(s, dict)))
 
 
 def revive_team_analysis(d: Any) -> TeamAnalysis | None:

@@ -48,11 +48,12 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import moderator, panel
-from .models import Match, ModeratorResult, PanelOpinion, PanelRun, Report
+from .models import (InitialScore, Match, ModeratorResult, PanelOpinion,
+                     PanelRun, Report)
 
 log = logging.getLogger("toto")
 
@@ -125,6 +126,13 @@ LINK_NUMBER = "number"
 # 3단계 결과만 받았을 때 분석가 자리에 남기는 사유 (Phase 4-F).
 # **가짜 의견을 만들지 않는다** — 왜 없는지만 적는다 (§1-6).
 MODERATOR_ONLY = "이번 입력에 원문이 포함되지 않음 (사회자 결과만 반영)"
+
+# 1·2단계의 **최초 예상 스코어만** 담는 경기 단위 칸 (Phase 4-G).
+#
+# **분석가 블록이 아니다.** 여기에 값이 있어도 `opinions` 는 생기지 않고
+# `panel_status` 도 바뀌지 않는다 — 스코어가 있다는 것과 의견이 있다는
+# 것은 다른 사실이다(§1-21). 옛 파일에는 없으므로 언제나 선택이다.
+INITIAL_SCORES = "initial_scores"
 
 
 def is_moderator_only(run) -> bool:
@@ -629,6 +637,71 @@ def _check_teams(block, match: Match, linked_by: str,
                        f"'{ref.display}' 입니다", field=key, **where)
 
 
+def _initial_scores(block, result: PanelImportResult,
+                    where: dict) -> tuple[InitialScore, ...]:
+    """`initial_scores` → `InitialScore` 튜플 (Phase 4-G). 없으면 빈 튜플.
+
+    **스코어 검증을 새로 쓰지 않는다** — `panel._score()` 를 그대로 부른다.
+    분석가 의견의 `predicted_home` 과 같은 규칙(0 이상 정수 또는 `null`,
+    `True`·`1.5`·`"2"` 거부)이어야 하고, 두 곳에 따로 적으면 갈라진다.
+
+    **역추론하지 않는다.** 여기서 읽는 것은 1·2단계가 실제로 낸 값뿐이다 —
+    `distribution.origin`·`adopted_from`·`conclusion` 을 보지 않는다.
+    """
+    raw = block.get(INITIAL_SCORES)
+    if raw is None:
+        return ()
+    if not isinstance(raw, dict):
+        result.add(ERROR, "INITIAL_SCORES_INVALID",
+                   f"{INITIAL_SCORES} 는 역할별 객체여야 합니다 "
+                   f"({type(raw).__name__} 이 왔습니다)",
+                   field=INITIAL_SCORES, **where)
+        return ()
+
+    out = []
+    for role in raw:
+        if role not in ANALYST_ROLES:
+            result.add(ERROR, "INITIAL_SCORES_ROLE_UNKNOWN",
+                       f"'{role}' 은 분석가 역할이 아닙니다 "
+                       f"(가능한 값: {' · '.join(ANALYST_ROLES)})",
+                       field=f"{INITIAL_SCORES}.{role}", **where)
+    for role in ANALYST_ROLES:
+        body = raw.get(role)
+        if body is None:
+            continue
+        if not isinstance(body, dict):
+            result.add(ERROR, "INITIAL_SCORE_INVALID",
+                       f"{role} 의 최초 스코어는 home·away 를 가진 객체여야 "
+                       f"합니다 ({type(body).__name__} 이 왔습니다)",
+                       field=f"{INITIAL_SCORES}.{role}", **where)
+            continue
+        try:
+            home = panel._score(body.get("home"), "home")
+            away = panel._score(body.get("away"), "away")
+        except panel.ValidationError as exc:
+            result.add(ERROR, "INITIAL_SCORE_INVALID",
+                       f"{role} 의 최초 스코어: {exc}",
+                       field=f"{INITIAL_SCORES}.{role}", **where)
+            continue
+        # **`null` 을 0 으로 채우지 않는다.** 스코어를 내지 않은 분석가와
+        # 0-0 을 예상한 분석가는 다르다 (§1-5).
+        out.append(InitialScore(role=role, home=home, away=away))
+    return tuple(out)
+
+
+def _with_initials(run: PanelRun | None,
+                   initials: tuple[InitialScore, ...]) -> PanelRun | None:
+    """최초 스코어 스냅샷을 결과에 붙인다 (Phase 4-G).
+
+    **상태를 바꾸지 않는다.** `status`·`opinions`·`role_status`·`moderator`
+    는 그대로이고, 칸 하나만 더 실린다 — `is_moderator_only()` 의 판정도
+    그래서 달라지지 않는다.
+    """
+    if run is None or not initials:
+        return run
+    return replace(run, initial_scores=initials)
+
+
 def _import_match(block, match: Match, mid: str, sims: int,
                   result: PanelImportResult,
                   version: str = SCHEMA_VERSION,
@@ -644,18 +717,24 @@ def _import_match(block, match: Match, mid: str, sims: int,
 
     _check_teams(block, match, linked_by, result, where)
 
+    # 1·2단계 최초 스코어는 **상태와 무관하게** 읽는다 (Phase 4-G) — 어느
+    # 갈래로 가든 같은 칸에 실린다.
+    initials = _initial_scores(block, result, where)
+
     status, reason = _panel_status(block, version, result, where)
     if status == STATUS_PARTIAL and _has_moderator_content(block):
         # **3단계 결과만 받은 경기** (Phase 4-F). §1-6 의 `부분` 그대로다 —
         # 사회자는 돌았고 두 분석가의 원문은 이 입력에 없다. 새 어휘를
         # 만들지 않고, 없는 의견을 지어내지도 않는다.
-        return _moderator_only(block, match, reason, allowed_ids, sims,
-                               result, where)
+        return _with_initials(
+            _moderator_only(block, match, reason, allowed_ids, sims,
+                            result, where), initials)
     if status != STATUS_OK:
         # 실행하지 않은 경기는 여기서 끝난다 — 분석가·사회자를 요구하지
         # 않고, 통과시키려고 `common_points` 한 줄을 지어내게 하지 않는다.
-        return _not_run(block, match, status, reason, allowed_ids,
-                        result, where)
+        return _with_initials(
+            _not_run(block, match, status, reason, allowed_ids,
+                     result, where), initials)
 
     given_no = block.get("match_number")
     if isinstance(given_no, int) and given_no != match.no:
@@ -683,12 +762,13 @@ def _import_match(block, match: Match, mid: str, sims: int,
         (block.get(MODERATOR_ROLE) or {}).get("adopted_from"),
         mod, opinions, result, where)
 
-    return PanelRun(status=f"ok (2/2 분석가 · {IMPORT_SOURCE})",
-                    opinions=tuple(opinions),
-                    role_status={r: "ok" for r in ANALYST_ROLES},
-                    market_reference=panel.market_reference(match),
-                    evidence_ids=allowed_ids,
-                    payload_hash="", moderator=mod)
+    return _with_initials(
+        PanelRun(status=f"ok (2/2 분석가 · {IMPORT_SOURCE})",
+                 opinions=tuple(opinions),
+                 role_status={r: "ok" for r in ANALYST_ROLES},
+                 market_reference=panel.market_reference(match),
+                 evidence_ids=allowed_ids,
+                 payload_hash="", moderator=mod), initials)
 
 
 # ==========================================================================

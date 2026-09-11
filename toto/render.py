@@ -90,6 +90,17 @@ h2.sec{font-size:18px;margin:36px 0 12px;letter-spacing:-.01em}
   overflow-wrap:anywhere}
 .sumcard .pv{display:flex;gap:10px;font-size:11.5px;color:var(--text-secondary);
   margin-top:5px;font-variant-numeric:tabular-nums}
+/* 회차 요약의 중심은 Panel 종합 예상 스코어다 (Phase 4-G). 폰에서도 이것이
+   카드의 첫 시각적 초점이 되도록 가장 크게 둔다. */
+.sumcard .sumscore{font-size:30px;font-weight:700;text-align:center;margin:10px 0 2px;
+  letter-spacing:.02em;font-variant-numeric:tabular-nums;color:var(--text-primary)}
+.sumcard .sumscore.none{font-size:24px;color:var(--text-muted)}
+.sumcard .sumlab{font-size:11px;color:var(--text-muted);text-align:center;
+  margin:0 0 8px}
+.sumcard .init{font-size:11.5px;color:var(--text-secondary);text-align:center;
+  margin:0;font-variant-numeric:tabular-nums}
+.sumcard .pstate{font-size:11.5px;color:var(--text-muted);text-align:center;
+  margin:4px 0 0}
 
 /* 경기 카드 */
 .match{background:var(--surface-1);border:1px solid var(--border);border-radius:14px;
@@ -177,25 +188,6 @@ table.mini small{color:var(--text-muted);font-size:11px;font-weight:400}
 
 .missing{font-size:12.5px;color:var(--text-secondary)}
 .missing ul{margin:4px 0 0;padding-left:17px}
-
-/* 회차 승산 (지침 §5) */
-.verdict{margin:16px 0 22px;padding:16px 18px;border-radius:12px;
-  background:var(--surface-1);border:1px solid var(--border);
-  border-left:4px solid var(--draw);box-shadow:var(--shadow)}
-.verdict.bet{border-left-color:var(--st-good)}
-.verdict.pass{border-left-color:var(--st-critical)}
-.vhead{font-size:14px;font-weight:700;display:flex;align-items:center;gap:10px}
-.vlab{font-size:12px;padding:2px 10px;border-radius:999px;
-  border:1px solid var(--border);background:var(--page)}
-.verdict.bet .vlab{color:var(--st-good)}
-.verdict.pass .vlab{color:var(--st-critical)}
-.vnums{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:10px;font-size:13px;
-  color:var(--text-secondary);font-variant-numeric:tabular-nums}
-.vnums b{color:var(--text-primary);font-size:15px}
-.vex{color:var(--text-muted);font-size:12px}
-.vnote{font-size:11.5px;color:var(--text-muted);margin:10px 0 0}
-.vwarn{font-size:12.5px;color:var(--text-secondary);margin:8px 0 0;
-  padding:8px 10px;border-radius:8px;background:var(--page)}
 
 /* 통합표 (지침 §7) */
 .tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
@@ -1170,7 +1162,12 @@ def _moderator_block(result) -> str:
                 '분석가 의견은 위에서 그대로 확인할 수 있습니다.</p>')
     seen = ", ".join(_ROLE_KO.get(r, r) for r in result.panels_seen)
     note = ""
-    if len(result.panels_seen) < 2:
+    if len(result.panels_seen) == 1:
+        # **하나도 못 봤을 때 "한 명의 의견" 이라고 적지 않는다.** 3단계
+        # 결과만 들어온 경기는 `panels_seen` 이 비어 있는데, 예전에는 이
+        # 조건이 `< 2` 라 `분석가 한 명()의 의견만으로` 라는 빈 괄호 문장이
+        # 나왔다 — 바로 위에서 "원문이 없다" 고 적어 놓고 아래에서 한 명을
+        # 봤다고 말하는 셈이었다. 그 상태의 설명은 블록 머리글이 이미 한다.
         note = (f'<p class="vs">분석가 한 명({esc(seen)})의 의견만으로 '
                 f'정리한 것입니다.</p>')
     # 사용자가 3단계에서 얻으려는 답이므로 맨 앞에 놓는다.
@@ -1221,6 +1218,36 @@ def _panel_state(run) -> tuple[str, str]:
     reason = raw.split(" (", 1)[1].rstrip(")") if " (" in raw else ""
     state = panelimport.status_of(run)
     return state, (reason if state != panelimport.STATUS_OK else "")
+
+
+def _initial_pairs(run) -> list[tuple[str, str]]:
+    """1·2단계 최초 예상 스코어 — (역할 표시명, `"2-1"`) (Phase 4-G).
+
+    **읽어서 옮기기만 한다.** 여기서 두 스코어를 견주지 않고, 사회자 채택과
+    비교하지도 않으며, 없는 값을 `0` 으로 채우지 않는다.
+
+    이 목록이 비어 있지 않다는 것은 **최초 스코어를 안다**는 뜻일 뿐이고
+    분석가 원문이 있다는 뜻이 아니다 (§1-21) — 그래서 이 함수의 결과로
+    패널 제목이나 `MODERATOR_ONLY` 판정이 달라지지 않는다.
+    """
+    out = []
+    for item in getattr(run, "initial_scores", ()) or ():
+        if item.label:
+            out.append((_ROLE_KO.get(item.role, item.role), item.label))
+    return out
+
+
+def _initial_line(run, cls: str = "init") -> str:
+    """최초 예상 스코어 한 줄. 하나도 없으면 줄 자체가 없다.
+
+    없는 것을 `데이터 분석가 —` 처럼 줄로 만들어 늘어놓지 않는다 (§14) —
+    그러면 '재 봤는데 없다' 처럼 보인다 (§1-1-15 와 같은 규칙).
+    """
+    pairs = _initial_pairs(run)
+    if not pairs:
+        return ""
+    body = " · ".join(f"{esc(name)} <b>{esc(label)}</b>" for name, label in pairs)
+    return f'<p class="{cls}">{body}</p>'
 
 
 def _moderator_only(run) -> bool:
@@ -1319,11 +1346,25 @@ def _panel_block(match: Match) -> str:
         # **사회자 결과만 들어온 경기** (Phase 4-F). 제목부터 상태를 밝힌다 —
         # "두 전문가의 해석" 이라고 적어 놓고 아래에서 "없습니다" 라고
         # 덧붙이면 같은 말을 두 번 하면서 뜻은 흐려진다 (UI §2).
+        # 최초 스코어 스냅샷이 실려 있으면 그것만 적는다 (Phase 4-G).
+        # **원문이 생긴 것이 아니다** — 제목도 상태도 그대로다.
+        initial = _initial_line(run, cls="ptext")
+        if initial:
+            initial = ('<p class="lbl">1·2단계 최초 예상 스코어</p>'
+                       + initial
+                       + '<p class="meta">각 분석가가 <b>처음</b> 낸 스코어만 '
+                         '옮긴 것입니다 · 요약·근거 같은 분석가 원문은 이번 '
+                         '입력에 없습니다</p>')
+            said = ('아래 종합은 사회자가 낸 것이고 분석가의 <b>최초 예상 '
+                    '스코어만</b> 함께 적습니다')
+        else:
+            said = ('아래 종합은 사회자가 낸 것이고 분석가 각자의 '
+                    '예상 스코어는 <b>표시하지 않습니다</b>')
         return ('<div class="block"><h4>패널 분석 (사회자 결과만 반영)</h4>'
                 '<p class="meta">1·2단계 분석가 원문은 이번 입력에 포함되지 '
-                '않았습니다 · 아래 종합은 사회자가 낸 것이고 분석가 각자의 '
-                '예상 스코어는 <b>표시하지 않습니다</b> · '
+                f'않았습니다 · {said} · '
                 '<b>승/무/패를 추천하지 않습니다</b></p>'
+                f'{initial}'
                 f'{_market_table(run.market_reference)}'
                 f'{_moderator_block(run.moderator)}'
                 '</div>')
@@ -1566,9 +1607,13 @@ def _match_card(match: Match, settings: Settings, report=None) -> str:
             f'{charts.radar((match.radar or {}).get("axes") or [], match.home.display, match.away.display)}'
             f'{_radar_table(match)}'
             f'</div></div>'
+            # 최근 폼은 **접힘 밖**이고 비교보다 앞이다 (Phase 4-G §19·§20).
+            # 장기적인 리그 내 위치 → 최근 흐름 → 두 팀 비교 → 해석 순으로
+            # 읽힌다. 폼은 '상세 근거' 가 아니라 분위기를 빠르게 읽는
+            # 핵심 정보라 `<details>` 안에 넣지 않는다.
+            f'{_form_block(match)}'
             f'{_direct_compare_block(match)}'
             f'{_panel_block(match)}'
-            f'{_form_block(match)}'
             # ---- 검증 계층 (§62 LEVEL 4) — 기본 접힘 (Phase 4-F UI §5) ----
             # 값은 하나도 줄이지 않았다. 14경기를 훑는 첫 화면에 '수집한 값
             # 전부' 가 펼쳐져 있을 필요가 없을 뿐이다. 펼치면 전과 같다.
@@ -1631,8 +1676,47 @@ def _recent_block(match: Match, settings: Settings) -> str:
             f'</div>')
 
 
+# --------------------------------------------------------------------------
+# 시장 중심 최상단 세 블록 — **계산은 그대로 두고 자리에서 내렸다** (Phase 4-G)
+# --------------------------------------------------------------------------
+# `회차 승산` · `단통표 만들기` · `직관 적용 후보` 는 리포트 맨 위에서
+# 빠졌다. 이 프로젝트가 보여 주려는 것은 "시장 배당만으로 만든 단통표" 가
+# 아니라 **시장 기준선 + 데이터 + 비교 + 패널 해석 + 사용자의 최종 판단**
+# 이고, 세 블록이 맨 위를 차지하고 있으면 그 흐름의 출발점이 시장이 된다.
+#
+# **계산을 지우지 않았다.** `predict.round_verdict()` · `probs.toss_up` ·
+# `ticket.py` 는 한 줄도 바뀌지 않았고 CLI 로그도 그대로 회차 승산을 찍는다
+# (`cli.py`). 아래 두 함수도 남겨 둔다 — 되돌리려면 `render_report` 에서
+# 부르기만 하면 된다. 바뀐 것은 **HTML 표현 계층 하나뿐이다.**
+#
+# 시장 정보 자체는 사라지지 않았다. 경기마다 `Pinnacle 시장 기준선 · 보정
+# 확률`(`_odds_block`)이 그대로 있고, 거기가 외부 참고값의 제자리다.
+# 회차 승산 상자의 스타일. 상자를 리포트에서 내리면서 CSS 도 함께 내렸다 —
+# 쓰지 않는 규칙을 14경기마다 싣고 다닐 이유가 없다. 되돌릴 때는 이 상수를
+# `render_report` 의 `<style>` 에 다시 끼우면 된다.
+VERDICT_CSS = """
+.verdict{margin:16px 0 22px;padding:16px 18px;border-radius:12px;
+  background:var(--surface-1);border:1px solid var(--border);
+  border-left:4px solid var(--draw);box-shadow:var(--shadow)}
+.verdict.bet{border-left-color:var(--st-good)}
+.verdict.pass{border-left-color:var(--st-critical)}
+.vhead{font-size:14px;font-weight:700;display:flex;align-items:center;gap:10px}
+.vlab{font-size:12px;padding:2px 10px;border-radius:999px;
+  border:1px solid var(--border);background:var(--page)}
+.verdict.bet .vlab{color:var(--st-good)}
+.verdict.pass .vlab{color:var(--st-critical)}
+.vnums{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:10px;font-size:13px;
+  color:var(--text-secondary);font-variant-numeric:tabular-nums}
+.vnums b{color:var(--text-primary);font-size:15px}
+.vex{color:var(--text-muted);font-size:12px}
+.vnote{font-size:11.5px;color:var(--text-muted);margin:10px 0 0}
+.vwarn{font-size:12.5px;color:var(--text-secondary);margin:8px 0 0;
+  padding:8px 10px;border-radius:8px;background:var(--page)}
+"""
+
+
 def _verdict_box(report: Report) -> str:
-    """회차 승산 요약 (지침 §5-(f), §7)."""
+    """회차 승산 요약 (지침 §5-(f), §7). **지금은 리포트에 실리지 않는다.**"""
     v = report.verdict
     if v is None or not v.n:
         return ('<div class="warnbox">배당률이 없어 회차 승산을 계산할 수 없습니다.'
@@ -1660,7 +1744,7 @@ def _verdict_box(report: Report) -> str:
 
 
 def _tossup_list(matches: list[Match]) -> str:
-    """직관 적용 후보 (지침 §7, §9-(1))."""
+    """직관 적용 후보 (지침 §7, §9-(1)). **지금은 리포트에 실리지 않는다.**"""
     items = [m for m in matches if m.probs is not None and m.probs.toss_up]
     if not items:
         return ('<p class="sub" style="color:var(--text-muted);font-size:12.5px">'
@@ -1682,46 +1766,82 @@ def _tossup_list(matches: list[Match]) -> str:
 
 
 def _summary_panel(match: Match) -> str:
-    """회차 요약 카드의 Panel 줄 (Phase 4-E §39·§64).
+    """회차 요약 카드의 본문 — Panel 종합 예상 스코어 (Phase 4-G).
+
+    이 카드의 중심을 시장 확률에서 **Panel 종합 예상 스코어**로 옮겼다.
+    14경기를 훑을 때 사용자가 묻는 것은 "시장이 이 경기를 어떻게 매겼나"가
+    아니라 "이 경기를 어떤 그림으로 봐야 하나" 이기 때문이다. 시장 확률은
+    지워지지 않았고 경기 상세의 `Pinnacle 시장 기준선` 에 그대로 있다.
 
     **스코어만 적고 승/무/패 라벨을 만들지 않는다** (§40). `2 : 0` 을 보고
     '홈승' 이라고 읽는 것은 사용자의 판단이고, 그 낱말을 프로그램이 먼저
     적어 주면 그 순간 추천이 된다.
 
-    패널이 없는 실행에서는 줄 자체가 없다 — 없는 단계를 실패처럼 보이게
-    하지 않는다 (§1-6).
+    **분포의 최빈값을 새로 고르지 않는다.** 값은 사회자가 채택한
+    `adopted_home`·`adopted_away` 하나뿐이고, 없으면 `—` 다 — 0 으로 채우면
+    그건 실제 예측(무득점)이 되어 버린다 (§1-5).
+
+    패널이 없는 실행에서는 이 자리가 통째로 비어 있다 — 없는 단계를
+    실패처럼 보이게 하지 않는다 (§1-6).
     """
     run = getattr(match, "panel", None)
     if run is None:
         return ""
-    state, _reason = _panel_state(run)
-    if state != "ok":
-        return f'<div class="pv"><span>Panel 분석 {esc(state)}</span></div>'
     mod = getattr(run, "moderator", None)
     home = getattr(mod, "adopted_home", None)
     away = getattr(mod, "adopted_away", None)
     if home is None or away is None:
-        return '<div class="pv"><span>Panel 종합 스코어 없음</span></div>'
-    return (f'<div class="pv"><span>Panel 종합 <b>{esc(home)} : '
-            f'{esc(away)}</b></span></div>')
+        state, _reason = _panel_state(run)
+        why = ("Panel 생략" if state == "생략" else
+               "Panel 실패" if state == "실패" else
+               "종합 예상 스코어 없음")
+        return (f'<p class="sumscore none">—</p>'
+                f'<p class="sumlab">예상 스코어 없음</p>'
+                f'{_initial_line(run)}'
+                f'<p class="pstate">{esc(why)}</p>')
+
+    # 최초 스코어가 없으면 그 줄을 만들지 않고, 대신 무엇이 반영된
+    # 결과인지만 적는다 (§14).
+    tail = _initial_line(run)
+    if not tail and _moderator_only(run):
+        tail = ('<p class="pstate">Moderator 결과만 반영<br>'
+                '1·2단계 최초 스코어 정보 없음</p>')
+    return (f'<p class="sumscore">{esc(home)} - {esc(away)}</p>'
+            f'<p class="sumlab">종합 예상 스코어</p>{tail}')
+
+
+def _summary_intro(matches: list[Match]) -> str:
+    """요약 그리드 위의 설명 한 줄. **있는 것만 약속한다.**
+
+    패널을 한 번도 돌리지 않은 실행에서 "큰 숫자는 종합 예상 스코어입니다"
+    라고 적어 두면, 카드에 그 숫자가 없는 것이 고장처럼 보인다 (§1-6).
+    """
+    if not any(getattr(m, "panel", None) is not None for m in matches):
+        return ('카드를 누르면 상세로 이동합니다 · 이 실행에는 Panel 분석이 '
+                '없어 종합 예상 스코어가 없습니다 · 시장 확률·지표는 각 '
+                '경기의 상세에 있습니다')
+    return ('큰 숫자는 <b>Panel 종합 예상 스코어</b>(사회자가 토론 분포에서 '
+            '채택한 값)입니다 · 아래 작은 줄이 있으면 1·2단계 분석가가 '
+            '<b>처음</b> 낸 예상 스코어입니다 · <b>승/무/패로 바꾸지 '
+            '않습니다</b> · 시장 확률은 각 경기의 <b>Pinnacle 시장 기준선</b>'
+            '에 있습니다 · 카드를 누르면 상세로 이동합니다')
 
 
 def _summary_grid(matches: list[Match]) -> str:
+    """14경기 한눈에 보기 (Phase 4-G).
+
+    **시장 확률 막대를 여기서 내렸다.** 같은 값이 경기 상세의
+    `Pinnacle 시장 기준선` 에 그대로 있고, 회차를 훑는 첫 화면의 중심은
+    Panel 종합 예상 스코어다.
+    """
     cards = []
     for m in matches:
-        if m.probs:
-            bar = charts.mini_prob_bar(m.probs.home, m.probs.draw, m.probs.away)
-            ph, pd, pa = m.probs.pct()
-            pv = (f'<div class="pv"><span>승 {ph:.0f}%</span>'
-                  f'<span>무 {pd:.0f}%</span><span>패 {pa:.0f}%</span></div>')
-        else:
-            bar, pv = "", '<div class="pv"><span>배당 없음</span></div>'
         cards.append(
             f'<a class="sumcard" href="#m{m.no}">'
             f'<div class="hd"><span>{m.no}. {esc(m.league_ko or m.league)}</span>'
             f'<span>{esc(m.kickoff_kst)}</span></div>'
             f'<div class="tm">{esc(m.home.display)} vs {esc(m.away.display)}</div>'
-            f'{bar}{pv}{_summary_panel(m)}</a>')
+            f'{_summary_panel(m)}</a>')
     return f'<div class="summary">{"".join(cards)}</div>'
 
 
@@ -1751,7 +1871,7 @@ def render_report(report: Report, settings: Settings) -> str:
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{esc(title)}</title>
-<style>{CSS}{TICKET_CSS}{panel_css_for(report.matches)}</style>
+<style>{CSS}{panel_css_for(report.matches)}</style>
 </head><body><div class="wrap" id="top">
 <header class="top">
   <h1>⚽ {esc(title)}</h1>
@@ -1759,22 +1879,9 @@ def render_report(report: Report, settings: Settings) -> str:
   <div class="badges">{badges}</div>
 </header>
 {warnings}
-{_verdict_box(report)}
-<p class="sub" style="color:var(--text-muted);font-size:12.5px;margin:0 0 12px">
-  피나클 배당에서 <b>가산(균등) 마진</b>을 제거한 확률입니다(지침 §3-(b)).
-  픽 기본값은 각 경기의 최댓값(argmax, §4)이며, 무승부 가중이나 리그 보정 같은
-  임의 조정은 하지 않습니다.</p>
-{render_ticket(report)}
-
-<h2 class="sec">직관 적용 후보 (백중세)</h2>
-{_tossup_list(report.matches)}
-
 <h2 class="sec">14경기 한눈에 보기</h2>
 <p class="sub" style="color:var(--text-muted);font-size:12.5px;margin:0 0 12px">
-  막대는 배당률에서 마진을 제거한 내재확률입니다
-  (<span class="lg">{_swatch(charts.C_HOME)}승</span>
-   <span class="lg">{_swatch(charts.C_DRAW)}무</span>
-   <span class="lg">{_swatch(charts.C_AWAY)}패</span>). 카드를 누르면 상세로 이동합니다.</p>
+  {_summary_intro(report.matches)}.</p>
 {_summary_grid(report.matches)}
 
 <h2 class="sec">경기별 상세 분석</h2>

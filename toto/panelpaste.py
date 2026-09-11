@@ -32,6 +32,10 @@
 결과는 `panel_status = "부분"` 이고 — §1-6 의 어휘 그대로다 — 분석가 자리에는
 `panelimport.MODERATOR_ONLY` 사유만 남는다. 리포트도 그렇게 적는다.
 
+**다만 3단계 결과가 `initial_scores` 를 싣고 오면 그것은 옮긴다** (Phase 4-G).
+1·2단계가 **실제로 낸 스코어**를 그대로 적어 보낸 값이라 추론이 아니고,
+그것이 있다고 분석가 원문이 생기는 것도 아니다 — `부분` 은 그대로다.
+
 ## 3단계 결과를 고치지 않는다
 
 `origin`·`adopted_from`·`distribution`·`conclusion`·`market_relation`·
@@ -60,9 +64,12 @@ log = logging.getLogger("toto")
 PASTE_NO = "match_no"
 
 # 사회자 블록으로 옮기지 않는 칸 — 경기 식별자는 바깥에 자리가 따로 있다.
+# `initial_scores` 도 여기에 있다: 사회자가 만든 값이 아니라 **1·2단계의
+# 스냅샷**이라 사회자 블록 안에 넣으면 출처가 흐려진다 (Phase 4-G).
 _IDENTITY_KEYS = (PASTE_NO, "match_number", "match_id",
                   "home_team", "away_team",
-                  "panel_status", "panel_status_reason")
+                  "panel_status", "panel_status_reason",
+                  panelimport.INITIAL_SCORES)
 
 # 돌리지 않은 경기의 사유. **문장을 지어내지 않는다** — 입력이 말해 준
 # 사실(시뮬레이션 0회·분포 없음·채택 없음)을 그대로 적는다.
@@ -186,6 +193,11 @@ def _block(item: dict, match) -> dict:
         "home_team": match.home.display or match.home.canonical,
         "away_team": match.away.display or match.away.canonical,
     }
+    # 1·2단계 최초 스코어는 **그대로 옮긴다** (Phase 4-G). 값을 검사하지도
+    # 고치지도 않는다 — `panelimport._initial_scores()` 가 본다. 3단계
+    # 결과에 없으면 칸도 만들지 않는다 (`null` 을 지어내지 않는다).
+    if panelimport.INITIAL_SCORES in item:
+        block[panelimport.INITIAL_SCORES] = item[panelimport.INITIAL_SCORES]
     if _is_skipped(body):
         block["panel_status"] = panelimport.STATUS_SKIPPED
         block["panel_status_reason"] = SKIPPED_REASON

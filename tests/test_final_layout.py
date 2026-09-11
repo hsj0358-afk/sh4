@@ -354,7 +354,9 @@ def test_d1_panel_score_appears_on_the_round_card():
     matches, _s = _demo()
     matches[0].panel = full_run()
     html = render._summary_grid(matches)
-    assert "Panel 종합" in html and "2 : 1" in html
+    # Phase 4-G 에서 카드의 중심이 시장 확률 → 종합 예상 스코어로 바뀌었다.
+    # 묻는 것은 그대로다: 사회자가 채택한 스코어가 카드에 나오는가.
+    assert "종합 예상 스코어" in html and "2 - 1" in html
 
 
 def test_d2_no_panel_no_panel_line():
@@ -380,8 +382,8 @@ def test_d4_panel_without_adopted_score_says_so():
     matches[0].panel = full_run(moderator=mod(
         adopted_home=None, adopted_away=None, adopted_from=()))
     html = render._summary_grid(matches)
-    assert "Panel 종합 스코어 없음" in html
-    assert "0 : 0" not in html
+    assert "예상 스코어 없음" in html
+    assert "0 : 0" not in html and "0 - 0" not in html
 
 
 # --------------------------------------------------------------------------

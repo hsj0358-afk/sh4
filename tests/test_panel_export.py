@@ -708,8 +708,13 @@ def test_t9_export_writes_the_guide_and_stage_three_attaches_it():
 
 def test_t10_guide_does_not_change_the_instructions_fingerprint():
     """지문은 `00_프로젝트_지침.md` 만 잰다 — 규격 문서가 바뀌어도 프로젝트
-    지침을 다시 붙여넣을 필요가 없다."""
-    assert panelexport.instructions_fingerprint() == "5044ea86"
+    지침을 다시 붙여넣을 필요가 없다.
+
+    Phase 4-G 에서 지침 본문에 `initial_scores` 절이 들어가 지문이 바뀌었다
+    (`5044ea86` → `e99bf42f`). **지문이 바뀌는 것이 이 장치의 목적이다** —
+    붙여넣은 사본이 낡았다는 것을 그 값으로 알린다 (§1-11-1).
+    """
+    assert panelexport.instructions_fingerprint() == "e99bf42f"
 
 
 def test_s3_conclusion_is_the_first_field_in_the_schema():

@@ -59,7 +59,7 @@ import logging
 import re
 from pathlib import Path
 
-from . import moderator, panel
+from . import moderator, panel, panelimport
 from .models import Report
 from .settings import ROOT
 
@@ -68,6 +68,10 @@ log = logging.getLogger("toto")
 # 붙여넣기 블록의 자리표시자. 사용자가 여기에 1·2단계 응답을 넣는다.
 # **대괄호를 넣지 않는다** — 이미 `"opinions":[...]` 안에 들어가므로 겹친다.
 OPINIONS_SLOT = "◀ 여기에 1단계와 2단계 JSON 응답 두 개를 쉼표로 이어 붙이십시오 ▶"
+
+# 3단계 결과가 1·2단계 최초 스코어를 싣는 칸 (Phase 4-G).
+# **이름을 여기 베끼지 않는다** — 계약은 `panelimport` 것이다 (§1-11-1).
+_INITIAL = panelimport.INITIAL_SCORES
 
 _ROLE_KO = {panel.DATA_ANALYST: "데이터 분석가",
             panel.MATCHUP_ANALYST: "맞대결·전술 분석가"}
@@ -275,6 +279,34 @@ def _instructions_body(simulations: int = moderator.DEBATE_SIMULATIONS
 
 ---
 
+## 3단계에만 더 적는 칸 — 1·2단계의 최초 예상 스코어
+
+3단계 결과에는 1·2단계의 **전체 분석 원문이 들어가지 않습니다.** 그래서
+프로그램은 두 분석가가 처음에 어떤 스코어를 봤는지 알 수 없었습니다.
+사회자 객체마다 `{_INITIAL}` 을 함께 적어 그것만 남깁니다.
+
+```
+{{"match_no": 4,
+  "{_INITIAL}": {{
+    "{panel.DATA_ANALYST}": {{"home": 2, "away": 1}},
+    "{panel.MATCHUP_ANALYST}": {{"home": 1, "away": 1}}
+  }},
+  "simulations": {simulations}, "distribution": [ ... ],
+  "adopted_home": 2, "adopted_away": 1, "conclusion": "..." }}
+```
+
+- **1·2단계 응답의 `predicted_home`·`predicted_away` 원값**을 그대로
+  옮깁니다. 토론으로 바뀐 값도, 사회자가 채택한 값도 아닙니다.
+- `distribution` 의 `origin` 이나 `adopted_from` 에서 **거꾸로 만들지
+  마십시오.** 그것은 추론이지 기록이 아닙니다.
+- 한쪽 단계의 응답이 없으면 그 역할을 **넣지 마십시오** (빈 값을 만들지
+  않습니다). 스코어가 `null` 이면 `null` 그대로 둡니다 — `0` 은 무득점
+  예상이라 다릅니다.
+- **요약·근거·분석 문장은 옮기지 않습니다.** 스코어 두 개뿐입니다.
+  이 칸이 있다고 "두 전문가의 의견이 다 있다" 가 되지 않습니다.
+
+---
+
 ## 응답을 받은 뒤 확인할 것
 
 - **JSON 만** 왔는가. 머리말·코드펜스가 붙었으면 다시 요청하십시오.
@@ -432,6 +464,15 @@ null 로 두고 그 이유를 conclusion 에 적으십시오.
 목록 칸(common_points·differences·counterpoints·uncertainty)은 지침에 적힌
 개수를 넘기지 말고 한 항목에 한 문장으로 적으십시오.
 
+경기마다 [A]·[B] 가 **처음** 낸 예상 스코어를 "{panelimport.INITIAL_SCORES}" 에
+그대로 옮겨 적으십시오. 토론으로 바뀐 값이 아니라 1·2단계 응답의
+predicted_home·predicted_away 원값입니다. 한쪽이 없으면 그 역할을 빼고,
+스코어가 null 이면 null 그대로 두십시오 — 0 으로 채우지 마십시오.
+
+{{"{panelimport.INITIAL_SCORES}": {{
+   "{panelimport.DATA_ROLE}": {{"home": 2, "away": 1}},
+   "{panelimport.MATCHUP_ROLE}": {{"home": 1, "away": 1}} }}}}
+
 경기마다 지침의 사회자 JSON 객체를 만들고 "match_no" 를 넣어 배열 하나로
 답하십시오."""
 
@@ -450,6 +491,10 @@ def _example_ok() -> dict:
         "match_number": 1,
         "home_team": "첼시",
         "away_team": "풀럼",
+        panelimport.INITIAL_SCORES: {
+            panelimport.DATA_ROLE: {"home": 2, "away": 1},
+            panelimport.MATCHUP_ROLE: {"home": 1, "away": 1},
+        },
         panelimport.DATA_ROLE: {
             "role": panelimport.DATA_ROLE,
             "summary": "최근 6경기 npxG 가 리그 상위권이고 피슈팅이 적다.",
@@ -586,6 +631,7 @@ Phase 3 의 `panel.parse_opinion()` · `moderator.parse_result()` 가 **그대�
 | `match_number` | **예** | **경기 식별자.** 자료의 경기 번호를 그대로 씁니다 |
 | `home_team` · `away_team` | **예** | 번호로 찾은 경기가 맞는지 대조합니다. 다르면 ERROR `TEAM_MISMATCH` |
 | `match_id` | 아니오 | **만들지 마십시오.** 프로그램이 회차 경기목록에서 스스로 찾습니다 (§3-0) |
+| `{pi.INITIAL_SCORES}` | 아니오 | 1·2단계가 **처음** 낸 예상 스코어만. §3-3 |
 | `panel_status` | 아니오 | §4. 없으면 `{pi.STATUS_OK}` 입니다 |
 | `panel_status_reason` | 조건부 | `{pi.STATUS_OK}` 가 아니면 **필수** |
 | `{pi.DATA_ROLE}` | `ok` 일 때 **예** | 분석가 A |
@@ -665,6 +711,32 @@ Phase 3 의 `panel.parse_opinion()` · `moderator.parse_result()` 가 **그대�
 `shared_evidence_ids` 처럼 근거를 **분류**하는 칸을 보내도 읽지 않습니다 —
 공통/각자 분류는 프로그램이 계산합니다. 블록이 없으면 ERROR
 `MISSING_MODERATOR` 입니다.
+
+### 3-3. `{pi.INITIAL_SCORES}` — 1·2단계의 최초 예상 스코어
+
+```json
+{_json(_example_ok()[pi.INITIAL_SCORES])}
+```
+
+**언제나 선택입니다.** 없는 파일도 그대로 읽히고, 그때 프로그램은 사회자의
+종합 예상 스코어만 보여 줍니다. 1.0 파일에도 넣을 수 있습니다.
+
+| 규칙 | 내용 |
+|---|---|
+| 자리 | **경기 객체 바로 아래.** 사회자 블록 안이 아닙니다 — 사회자가 만든 값이 아니라 1·2단계의 기록이기 때문입니다 |
+| 모양 | 역할 이름을 키로 갖는 객체. 아니면 ERROR `INITIAL_SCORES_INVALID` |
+| 역할 | `{pi.DATA_ROLE}` · `{pi.MATCHUP_ROLE}` 둘뿐. 다른 이름이면 ERROR `INITIAL_SCORES_ROLE_UNKNOWN` |
+| 값 | `{{"home": 정수, "away": 정수}}`. 분석가 블록의 `predicted_home` 과 **같은 규칙**(0 이상 정수 또는 `null`)이고, 어긋나면 ERROR `INITIAL_SCORE_INVALID` |
+| 없는 역할 | **칸을 만들지 마십시오.** 빈 객체나 `0` 으로 채우지 않습니다 |
+
+**여기 들어가는 값은 1·2단계 응답의 `predicted_home`·`predicted_away`
+원값입니다.** 토론으로 바뀐 값도, 사회자가 채택한 값도 아닙니다.
+`distribution` 의 `origin` 이나 `adopted_from` 에서 **거꾸로 만들지
+마십시오** — 그것은 기록이 아니라 추론입니다.
+
+**이 칸이 있어도 분석가 의견이 있는 것이 아닙니다.** 스코어 두 개일 뿐이고
+요약·근거·분석 문장은 들어가지 않습니다. `panel_status` 도 이 칸 때문에
+바뀌지 않습니다 — 3단계 결과만 있으면 그대로 `{pi.STATUS_PARTIAL}` 입니다.
 
 ## 4. panel_status — 허용값과 의미
 
@@ -811,6 +883,9 @@ Phase 3 의 `panel.parse_opinion()` · `moderator.parse_result()` 가 **그대�
 | `INVALID_ANALYST` | 분석가 블록의 형식이 어긋난다 |
 | `INVALID_MODERATOR` | 사회자 블록의 형식이 어긋난다 |
 | `INVALID_DISTRIBUTION` | 분포·`simulations` 가 어긋난다 |
+| `INITIAL_SCORES_INVALID` | `{pi.INITIAL_SCORES}` 가 객체가 아니다 (§3-3) |
+| `INITIAL_SCORES_ROLE_UNKNOWN` | `{pi.INITIAL_SCORES}` 에 분석가가 아닌 역할 이름이 있다 |
+| `INITIAL_SCORE_INVALID` | 최초 스코어가 0 이상 정수도 `null` 도 아니다 |
 | `ADOPTED_NOT_IN_DISTRIBUTION` | 채택한 스코어가 분포에 없다 |
 | `ADOPTED_FROM_MISMATCH` | `adopted_from` 의 역할이 그 스코어를 내지 않았다 |
 | `UNKNOWN_EVIDENCE_ID` | 자료에 없는 근거 ID |
@@ -838,6 +913,9 @@ Phase 3 의 `panel.parse_opinion()` · `moderator.parse_result()` 가 **그대�
 
 - **`1.0` 파일은 그대로 읽힙니다.** `panel_status` 가 없으면 모든 경기가
   `{pi.STATUS_OK}` 입니다 — `1.0` 의 뜻이 정확히 그것입니다.
+- **`{pi.INITIAL_SCORES}` 때문에 버전을 올리지 않았습니다.** 없어도 되는
+  칸이라 기존 파일이 전부 그대로 유효하고, 있으면 리포트에 한 줄이 더
+  붙을 뿐입니다.
 - **새 칸을 안 쓰는 `1.1` 파일은 `1.0` 과 완전히 같은 뜻입니다.**
 - `1.0` 이라고 적고 `panel_status` 를 쓰면 **읽어는 주되** WARNING
   `PANEL_STATUS_IN_1_0` 을 남깁니다. 막지 않습니다.
@@ -889,6 +967,9 @@ JSON 으로 저장하십시오. schema_version 은 "{panelimport.SCHEMA_VERSION}
 
 1. 방금 낸 결과를 **그대로** 옮기십시오. 스코어·distribution·evidence_ids·
    conclusion·uncertainty 를 다시 쓰거나 요약하지 마십시오.
+   방금 결과에 "{panelimport.INITIAL_SCORES}" 가 있으면 **경기 객체 맨 위에**
+   같은 모양으로 옮기십시오 (사회자 블록 안이 아닙니다). 없으면 그 칸을
+   만들지 마십시오 — 지어낸 값보다 빈 칸이 낫습니다.
 2. 최상위는 schema_version · round · generated_at · matches 입니다.
    round 는 "{round_id}" 이고 matches 는 {total}경기 전부입니다.
    경기를 빼지 마십시오.

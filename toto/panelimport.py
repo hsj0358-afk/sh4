@@ -122,6 +122,19 @@ FORBIDDEN_ROLES = ("market_reference", "market_analyst", "market", "moderator")
 LINK_ID = "id"
 LINK_NUMBER = "number"
 
+# 3단계 결과만 받았을 때 분석가 자리에 남기는 사유 (Phase 4-F).
+# **가짜 의견을 만들지 않는다** — 왜 없는지만 적는다 (§1-6).
+MODERATOR_ONLY = "이번 입력에 원문이 포함되지 않음 (사회자 결과만 반영)"
+
+
+def is_moderator_only(run) -> bool:
+    """사회자 결과만 들어온 경기인가 (Phase 4-F).
+
+    의견이 없는데 사회자가 있는 상태는 **이 경로에서만** 만들어진다.
+    """
+    return (not getattr(run, "opinions", ())
+            and getattr(run, "moderator", None) is not None)
+
 
 @dataclass(frozen=True)
 class Issue:
@@ -337,8 +350,15 @@ def _opinion(block, role: str, allowed_ids, result: PanelImportResult,
 
 
 def _moderator(block, opinions, allowed_ids, sims: int,
-               result: PanelImportResult, where: dict) -> ModeratorResult | None:
-    """사회자. **`moderator.parse_result()` 를 그대로 쓴다.**"""
+               result: PanelImportResult, where: dict,
+               proposals_known: bool = True) -> ModeratorResult | None:
+    """사회자. **`moderator.parse_result()` 를 그대로 쓴다.**
+
+    `proposals_known=False` 는 **3단계 결과만 받은 입력**이다 (Phase 4-F).
+    두 분석가의 원안이 이 입력에 없으므로 제안 집합으로 확인할 수 없고,
+    그렇다고 `origin`·`adopted_from` 으로 원안을 **역추론하지도 않는다** —
+    적힌 라벨을 보존할 뿐이다.
+    """
     if not isinstance(block, dict):
         result.add(ERROR, "MISSING_MODERATOR", "moderator 블록이 없습니다",
                    field=MODERATOR_ROLE, **where)
@@ -373,7 +393,8 @@ def _moderator(block, opinions, allowed_ids, sims: int,
             shared=shared, data_only=data_only, matchup_only=matchup_only,
             allowed_ids=order,
             allowed_scores=moderator.proposed_scores(opinions),
-            model=IMPORT_SOURCE, prompt_version=SCHEMA_VERSION)
+            model=IMPORT_SOURCE, prompt_version=SCHEMA_VERSION,
+            proposals_known=proposals_known)
     except moderator.ValidationError as exc:
         text = str(exc)
         if "근거 ID" in text:
@@ -511,6 +532,52 @@ def _not_run(block, match: Match, status: str, reason: str,
                     evidence_ids=allowed_ids, payload_hash="", moderator=None)
 
 
+def _has_moderator_content(block) -> bool:
+    """사회자가 실제로 돌았다는 표시가 이 블록에 있나 (Phase 4-F).
+
+    `생략`(돌리지 않았다)과 가르는 기준이다. 채택 스코어나 분포 중 하나라도
+    있으면 토론이 있었던 것이고, 둘 다 없으면 `_not_run` 이 맞다.
+    """
+    mod = block.get(MODERATOR_ROLE)
+    if not isinstance(mod, dict):
+        return False
+    return bool(mod.get("distribution")) or mod.get("adopted_home") is not None
+
+
+def _moderator_only(block, match: Match, reason: str, allowed_ids, sims: int,
+                    result: PanelImportResult, where: dict) -> PanelRun | None:
+    """사회자 결과만 있는 경기 (Phase 4-F).
+
+    **없는 의견을 만들지 않는다.** 분석가 블록을 요구하지 않고, `origin` 이나
+    `adopted_from` 으로 두 분석가의 예상 스코어를 역추론하지도 않는다 —
+    `opinions` 는 빈 튜플이고 `role_status` 가 그 사실을 적는다.
+
+    분석가 블록이 실려 있으면 **상태와 어긋난다.** 있는데 '부분' 이라고
+    적었다면 둘 중 하나가 거짓이다.
+    """
+    for role in ANALYST_ROLES:
+        part = block.get(role)
+        if isinstance(part, dict) and (part.get("predicted_home") is not None
+                                       or part.get("predicted_away") is not None):
+            result.add(ERROR, "PANEL_STATUS_CONTRADICTION",
+                       f"panel_status 가 '{STATUS_PARTIAL}' 인데 {role} 에 "
+                       f"예상 스코어가 있습니다 — 분석가 의견까지 있으면 "
+                       f"'{STATUS_OK}' 입니다", field="panel_status", **where)
+            return None
+
+    _check_evidence_scope(block, allowed_ids, result, where)
+    mod = _moderator(block.get(MODERATOR_ROLE), (), allowed_ids, sims,
+                     result, where, proposals_known=False)
+    if mod is None:
+        return None
+    return PanelRun(status=f"{STATUS_PARTIAL} ({reason})" if reason
+                    else STATUS_PARTIAL,
+                    opinions=(),
+                    role_status={r: MODERATOR_ONLY for r in ANALYST_ROLES},
+                    market_reference=panel.market_reference(match),
+                    evidence_ids=allowed_ids, payload_hash="", moderator=mod)
+
+
 def _is_team(given: str, ref) -> bool:
     """이 이름이 그 팀인가. 채팅이 보는 이름과 같은 표기만 받는다.
 
@@ -578,6 +645,12 @@ def _import_match(block, match: Match, mid: str, sims: int,
     _check_teams(block, match, linked_by, result, where)
 
     status, reason = _panel_status(block, version, result, where)
+    if status == STATUS_PARTIAL and _has_moderator_content(block):
+        # **3단계 결과만 받은 경기** (Phase 4-F). §1-6 의 `부분` 그대로다 —
+        # 사회자는 돌았고 두 분석가의 원문은 이 입력에 없다. 새 어휘를
+        # 만들지 않고, 없는 의견을 지어내지도 않는다.
+        return _moderator_only(block, match, reason, allowed_ids, sims,
+                               result, where)
     if status != STATUS_OK:
         # 실행하지 않은 경기는 여기서 끝난다 — 분석가·사회자를 요구하지
         # 않고, 통과시키려고 `common_points` 한 줄을 지어내게 하지 않는다.

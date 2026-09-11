@@ -89,6 +89,11 @@ def build_parser() -> argparse.ArgumentParser:
                    metavar="FILE",
                    help="가져온 Panel Result 의 회차 전체 구조를 감사합니다 "
                         "(커버리지·채택·분포·근거). 판정하지 않습니다.")
+    p.add_argument("--paste-panel-result", type=Path, default=None,
+                   metavar="FILE",
+                   help="클로드 3단계 Moderator 결과(JSON 배열) 원문을 읽어 "
+                        "Panel Result 로 옮긴 뒤 가져오기·감사까지 합니다. "
+                        "검증을 통과할 때만 panel_results/ 에 저장합니다.")
     p.add_argument("--panel-export-all", action="store_true",
                    help="--panel-export 를 켜고, 근거 0건 경기도 축 지표만으로 "
                         "냅니다 (시즌 초). 시트에 경고가 붙고 --panel 실행과 "
@@ -181,12 +186,47 @@ def _missing_required_deps() -> bool:
     return True
 
 
+def _paste_to_canonical(report: Report, args, settings, paste_file):
+    """3단계 결과 원문 → Panel Result 파일 (Phase 4-F). 실패하면 `None`.
+
+    **검증을 통과한 경우에만 파일을 만든다.** 깨진 붙여넣기가
+    `panel_results/` 에 남으면 다음 실행이 그것을 집어 든다.
+    """
+    from . import panelpaste
+    try:
+        text = Path(paste_file).read_text(encoding="utf-8")
+    except OSError as exc:
+        log.error("붙여넣기 파일을 읽지 못했습니다: %s", exc)
+        report.source_status["패널 가져오기"] = f"실패 ({exc})"
+        return None
+
+    path, outcome = panelpaste.apply(text, report, settings)
+    if path is None:
+        report.source_status["패널 가져오기"] = outcome.status_line()
+        for line in panelpaste.report_lines(outcome):
+            log.error("붙여넣기: %s", line)
+        return None
+
+    log.info("붙여넣기 → %s (%d경기)", path, outcome.imported_matches)
+    # 아래 경로가 가져오기·감사를 하도록 같은 파일을 가리켜 준다.
+    args.import_panel_result = path
+    args.audit_panel_result = path
+    return path
+
+
 def _handle_panel_file(report: Report, args, settings, panel_file) -> None:
     """Panel Result 를 검증·부착하고(4-B) 회차 구조를 감사한다(4-C).
 
     수집 경로와 저장본 경로가 **이 함수 하나**를 쓴다 — 두 곳에 두면
     한쪽만 고쳐져 결과가 달라진다.
     """
+    if args.paste_panel_result is not None:
+        # 3단계 결과 붙여넣기 (Phase 4-F). **여기서 파이프라인을 새로 만들지
+        # 않는다** — Panel Result 로 옮겨 저장한 뒤 아래 같은 경로를 탄다.
+        panel_file = _paste_to_canonical(report, args, settings, panel_file)
+        if panel_file is None:
+            return
+
     from . import panelimport
     outcome = panelimport.run(
         panel_file, report, settings,
@@ -215,6 +255,10 @@ def _panel_only(report: Report, args, settings, panel_file) -> int:
         return 1
 
     if args.import_panel_result is None:
+        # 붙여넣기는 통과하면 위에서 `import_panel_result` 를 채운다. 아직
+        # 비어 있다면 변환·검증에서 막힌 것이다 (§12 — 파일도 만들지 않았다).
+        if args.paste_panel_result is not None:
+            return 1
         return 0                        # 검사·감사만 — 리포트를 다시 쓰지 않는다
 
     html = render_report(report, settings)
@@ -259,7 +303,7 @@ def main(argv: list[str] | None = None) -> int:
     # 다시 돌리면 순위표·배당이 그때와 달라져(§1-1-7) 경기자료 MD 를 만든
     # 분석과 패널 결과를 붙이는 분석이 서로 다른 것이 된다.
     panel_file = (args.import_panel_result or args.validate_panel_result
-                  or args.audit_panel_result)
+                  or args.audit_panel_result or args.paste_panel_result)
     if panel_file is not None and args.round_id and not args.demo:
         from . import artifact
         saved, why = artifact.load(args.round_id)

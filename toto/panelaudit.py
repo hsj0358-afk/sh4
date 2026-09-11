@@ -68,6 +68,10 @@ NOT_ADOPTED = "NOT_ADOPTED"
 # 패널을 **돌리지 않은** 경기. `NOT_ADOPTED`(돌렸는데 못 골랐다)와 다르다 —
 # 승무패 의미는 없고, 무슨 일이 있었나만 적는 감사 전용 라벨이다.
 PANEL_SKIPPED = "PANEL_SKIPPED"
+# 3단계 결과만 들어온 경기 (Phase 4-F). `PANEL_SKIPPED`(돌리지 않았다)와도,
+# `MODIFIED_OR_COMPROMISE`(분석가 둘과 다른 값을 골랐다)와도 다르다 —
+# **분석가의 원안이 이 입력에 없어서 견줄 것이 없다.**
+MODERATOR_ONLY = "MODERATOR_ONLY"
 
 # 패널 실행 상태는 4-B 의 어휘를 그대로 쓴다 (§1-6). 여기서 새로 만들지 않는다.
 STATUS_OK = panelimport.STATUS_OK
@@ -221,8 +225,10 @@ def _match_audit(no: int, match, run, codes) -> PanelMatchAudit:
         data_analyst_score=da, matchup_analyst_score=mu,
         moderator_score=adopted,
         initial_score_relation=initial_relation(da, mu),
-        # 돌리지 않은 경기를 "못 골랐다"로 적지 않는다.
-        decision_type=(PANEL_SKIPPED if state != STATUS_OK
+        # 돌리지 않은 경기를 "못 골랐다"로 적지 않는다. 사회자 결과만 들어온
+        # 경기도 마찬가지다 — 분석가 원안이 없어 견줄 수가 없다.
+        decision_type=(MODERATOR_ONLY if panelimport.is_moderator_only(run)
+                       else PANEL_SKIPPED if state != STATUS_OK
                        else decision_type(adopted, da, mu)),
         adopted_from=tuple(getattr(mod, "adopted_from", ()) or ()),
         simulations=getattr(mod, "simulations", 0) or 0,
@@ -287,9 +293,14 @@ def _coverage(report: Report, parsed: dict, imp: PanelImportResult) -> dict:
         "panel_skipped": count(STATUS_SKIPPED),
         "panel_failed": count(STATUS_FAILED),
         "panel_partial": count(STATUS_PARTIAL),
+        # 3단계 결과만 들어온 경기 (Phase 4-F). 돌리지 않은 경기와 **다르다**.
+        "moderator_only": sorted(
+            no for no, run in parsed.items()
+            if panelimport.is_moderator_only(run)),
         "skipped_matches": sorted(
             no for no, run in parsed.items()
-            if panelimport.status_of(run) != STATUS_OK),
+            if panelimport.status_of(run) != STATUS_OK
+            and not panelimport.is_moderator_only(run)),
         "data_analyst": sum(1 for run in ran.values() if has_role(run, DA)),
         "data_analyst_missing": missing(lambda r: has_role(r, DA)),
         "matchup_analyst": sum(1 for run in ran.values() if has_role(run, MU)),
@@ -437,6 +448,13 @@ def report_lines(result: PanelAuditResult) -> list[str]:
                        ("panel_partial", "부분")):
         if cov.get(key):
             lines.append(f"- {label}: {cov[key]}")
+    if cov.get("moderator_only"):
+        # **돌리지 않은 것과 섞지 않는다** — 사회자는 돌았고 분석가 원문만
+        # 이 입력에 없다 (Phase 4-F).
+        lines.append(
+            "- 사회자 결과만 반영된 경기: "
+            + ", ".join(f"{n}번" for n in cov["moderator_only"])
+            + " (1·2단계 분석가 원문은 이 입력에 없습니다)")
     if cov.get("skipped_matches"):
         lines.append("- 돌리지 않은 경기: "
                      + ", ".join(f"{n}번" for n in cov["skipped_matches"]))

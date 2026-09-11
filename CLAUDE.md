@@ -2146,6 +2146,80 @@ authoritative id** 를 쓴다 — 값을 고쳐 주는 것이 아니라 그 사�
 
 회귀 테스트: `python tests/test_panel_import.py` 의 `T` 절 (15개).
 
+### 1-15-2. 3단계 결과 붙여넣기 (Phase 4-F) — `toto/panelpaste.py`
+
+사용자가 손에 쥐는 것은 **클로드 채팅 3단계 응답 한 덩어리**인데, 그것을
+Panel Result JSON 으로 옮겨 적는 단계가 매 회차 손으로 반복됐다. 이제
+그대로 붙여넣으면 된다.
+
+```
+클로드 3단계 결과 → [어댑터] → Panel Result 1.1 → 기존 4-B 경로 → 리포트
+```
+
+**파이프라인을 새로 만들지 않는다.** 어댑터가 하는 일은 셋뿐이다 —
+텍스트를 JSON 배열로 읽고, `match_no` 를 회차 경기목록에 맞춰 경기를
+확정하고(`match_id` 는 프로그램이 구한다 — §1-15-1), Panel Result 1.1
+**dict** 로 옮긴다. 스코어·분포·근거·금지 칸은 `panelimport.validate()` 가
+보고 그것이 다시 `moderator.parse_result()` 를 부른다 — API·파일·붙여넣기
+세 경로가 같은 문을 지난다. 계약도 `1.1` 그대로다.
+
+**없는 것을 만들지 않는다.** 3단계 결과에는 두 분석가의 원문이 없다.
+`origin`·`adopted_from`·`conclusion` 으로 분석가의 **예상 스코어**를
+역추론하지 않는다 — `opinions` 는 빈 튜플이고 `role_status` 에
+`MODERATOR_ONLY` 사유만 남는다.
+
+**`부분` 이 그 자리다.** §1-6 의 어휘 그대로이고 새 낱말을 만들지 않았다 —
+사회자는 돌았고 분석가 원문만 없으니 "일부만" 이 맞다. `_not_run`(생략·실패)
+과 가르는 기준은 `_has_moderator_content()` — 분포나 채택 스코어가 하나라도
+있으면 토론이 있었던 것이다.
+
+**3단계 결과를 고치지 않는다.** `origin`·`adopted_from` 이 **원문 그대로**
+보존된다. 그런데 `moderator.parse_result()` 는 원래 그 둘을 **제안 집합으로
+다시 정한다** — 제안 집합이 없으면(`allowed_scores={}`) 모든 `origin` 이
+`compromise` 가 되고 `adopted_from` 은 `모르는 역할` 로 **거부된다**(실측).
+그래서 `proposals_known=False` 를 뒀다.
+
+  · 기본값 `True` 는 **기존 동작 그대로**다 (파일·API 경로 무변화).
+  · `False` 면 `origin` 을 역할 이름/`compromise` 인지만 보고 **보존**하고,
+    `adopted_from` 도 보존한다. 이것은 라벨 보존이지 역추론이 아니다 —
+    이 값으로 `PanelOpinion` 을 만들지 않는다.
+  · 채택 스코어가 **분포에 있어야 한다**는 문은 그대로 지난다.
+
+**돌리지 않은 경기를 토론 실패로 바꾸지 않는다.** `simulations 0` ·
+`distribution []` · 채택 없음이 **모두** 맞을 때만 `생략` 으로 옮기고,
+사유는 입력이 말해 준 사실을 그대로 적는다(문장을 지어내지 않는다).
+
+**통과할 때만 파일을 만든다.** 깨진 붙여넣기가 `panel_results/` 에 남으면
+다음 실행이 그것을 집어 든다. 저장한 파일은 사용자가 만든 것이 아니라
+**프로그램이 만든 canonical 출력**이고, 그대로 기존 파일 경로에 다시 태울
+수 있다(테스트로 고정).
+
+**일부만 붙여넣은 것을 완전한 회차 결과로 치지 않는다** —
+`PASTE_INCOMPLETE_ROUND` 가 빠진 경기 번호를 적어 준다.
+
+메뉴 `[4]` 가 입력 경로를 묻는다. **기존 파일 경로를 없애지 않았다.**
+
+```
+[4] 패널 결과 반영 및 리포트 생성
+    [1] 3단계 Moderator 결과 붙여넣기   ← 새로 생김 (END 로 끝낸다)
+    [2] Panel Result JSON 파일 가져오기  ← 그대로
+```
+
+화면과 감사가 **사회자 결과만 반영됐다는 사실을 적는다.** 빈 분석가 카드를
+만들지 않고, 감사의 `decision_type` 에 `MODERATOR_ONLY` 를 따로 뒀다 —
+`PANEL_SKIPPED`(돌리지 않았다)와도 `MODIFIED_OR_COMPROMISE`(분석가 둘과
+다른 값을 골랐다)와도 다르다. 커버리지도 `moderator_only` 와
+`skipped_matches` 를 나눠 적는다.
+
+실측(14경기 · 9·13·14번 미실행 픽스처): `match_id` 가 0회 등장하는 3단계
+결과가 `ok (14/14경기)` 로 들어가고, 감사가 `PASS · COMPLETE` 에
+`사회자 결과만 반영된 경기 11개` 를 적으며, 저장본 경로라 **수집은 0회**,
+리포트 93.9KB 가 나온다.
+
+회귀 테스트: `python tests/test_panel_paste.py` (39개).
+픽스처는 소스에 박지 않고 파일로 둔다 —
+`tests/fixtures/260052_moderator_result.json`.
+
 ### 1-16. 회차 분석 저장 (Phase 4-C) — `toto/artifact.py`
 
 **왜 필요한가.** 4-B 까지는 패널 결과를 붙이려면 그 회차를 **다시 돌려야**
@@ -2818,6 +2892,7 @@ python -m toto --export-match-material     # 경기자료 MD 한 장 (Phase 4-A)
 python -m toto --import-panel-result F.json # 채팅 패널 결과 가져오기 (4-B)
 python -m toto --validate-panel-result F.json  # 검사만 (붙이지 않는다)
 python -m toto --audit-panel-result F.json  # 회차 구조 감사 (4-C)
+python -m toto --paste-panel-result F.json  # 3단계 Moderator 결과 원문 → 반영 (4-F)
 #  메뉴 [4] 가 위 셋을 한 번에 한다 — panel_results/ 에 JSON 을 넣고 고르면 된다 (§1-20)
 python tests/test_league_matching.py       # 리그·팀 매칭 회귀 (15개)
 python tests/test_match_details.py         # 경기 상세 파싱 회귀 (36개)
@@ -2834,7 +2909,7 @@ python tests/test_sustainability.py        # 지속성 2-D (51개)
 python tests/test_venue_context.py         # 장소 문맥 2-E (58개)
 python tests/test_schedule_strength.py     # 상대 강도 2-F (40개)
 python tests/test_evidence.py              # 근거 생성 2-G (57개)
-python tests/test_menu_flow.py             # 메뉴 루프·예외·로그 3-A · 메뉴[4] §1-20 (45개)
+python tests/test_menu_flow.py             # 메뉴 루프·예외·로그 3-A · 메뉴[4] §1-20·15-2 (45개)
 python tests/test_panel.py                 # 두 전문가 패널 3-B (70개)
 python tests/test_moderator.py             # 사회자 3-C (79개)
 python tests/test_panel_render.py          # 패널 리포트 출력 3-D (47개)
@@ -2847,6 +2922,7 @@ python tests/test_roundlog.py              # 회차 기록 축적 §1-6-2 (23개
 python tests/test_match_material.py        # 경기자료 MD 4-A §1-14 (37개)
 python tests/test_panel_import.py          # 패널 결과 가져오기·경기 식별 4-B §1-15·15-1 (72개)
 python tests/test_panel_audit.py           # 패널 감사·회차 저장 4-C §1-16·17 (42개)
+python tests/test_panel_paste.py           # 3단계 결과 붙여넣기 4-F §1-15-2 (39개)
 python tests/test_decision_render.py       # 요약·직접 비교·패널 시각화 4-D §1-18 (37개)
 python tests/test_final_layout.py          # 레이더·직접 비교·시장·회차 카드 4-E §1-19 (37개)
 python tests/test_panel_status.py          # 패널 미실행 상태·운영 워크플로 §1-20 (32개)

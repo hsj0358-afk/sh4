@@ -1268,6 +1268,23 @@ def _panel_block(match: Match) -> str:
             '관점에서 해석합니다 · 시장 기준선은 분석가가 아니라 외부 '
             '참고값입니다 · <b>승/무/패를 추천하지 않습니다</b></p>')
 
+    if not run.opinions and run.moderator is not None:
+        # **사회자 결과만 들어온 경기** (Phase 4-F). 분석가 카드가 없는 것이
+        # 사실이므로 빈 카드를 만들지 않고, 그 사실을 화면에 적는다 —
+        # 없는 의견을 있었던 것처럼 보이게 하지 않는다.
+        _state, reason = _panel_state(run)
+        note = (f'<p class="nodata">사회자 결과만 반영했습니다 — 1·2단계 '
+                f'분석가 원문은 이번 입력에 포함되지 않았습니다'
+                f'{(" · " + esc(reason)) if reason else ""}. 아래 종합은 '
+                f'사회자가 낸 것이고, 분석가 각자의 예상 스코어는 '
+                f'<b>표시하지 않습니다</b>.</p>')
+        return (f'{head}{note}{_market_table(run.market_reference)}'
+                f'{_moderator_block(run.moderator)}'
+                '<p class="lbl">최종 판단</p>'
+                '<p class="ptext">패널 의견과 시장 기준선은 판단에 참고하는 '
+                '정보입니다. 최종 승·무·패 선택은 사용자가 직접 합니다.</p>'
+                '</div>')
+
     if not run.opinions:
         state, reason = _panel_state(run)
         # **돌리지 않은 것과 돌렸는데 안 된 것을 같은 말로 적지 않는다**

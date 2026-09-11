@@ -472,7 +472,18 @@ def proposed_scores(opinions) -> dict:
     return out
 
 
-def _tallies(data: dict, allowed: dict) -> tuple[int, tuple[ScoreTally, ...]]:
+def _known_origin(value: str) -> str:
+    """제안 집합을 모를 때 쓰는 `origin` 검사.
+
+    **역추론이 아니라 보존이다.** 모델이 적은 라벨이 실제 역할 이름이거나
+    절충인지만 보고 그대로 둔다 — 이것으로 그 분석가의 **예상 스코어**를
+    만들어 내지는 않는다 (그건 Phase 4-F 가 금지한 일이다).
+    """
+    return value if value in (DATA_ROLE, MATCHUP_ROLE, COMPROMISE) else COMPROMISE
+
+
+def _tallies(data: dict, allowed: dict,
+             proposals_known: bool = True) -> tuple[int, tuple[ScoreTally, ...]]:
     """토론 라운드 빈도표. **여기가 최종 스코어의 값 출처다.**
 
     분포에 없는 스코어는 채택될 수 없으므로, 이 검증이 곧 "평균을 만들지
@@ -500,12 +511,17 @@ def _tallies(data: dict, allowed: dict) -> tuple[int, tuple[ScoreTally, ...]]:
         if (home, away) in seen:
             raise ValidationError(f"distribution: {home}-{away} 가 두 번 나옵니다")
         origin = _text(item.get("origin"), f"distribution[{i}].origin")
-        # 출처는 **모델 말을 믿지 않고 제안 집합으로 확인한다.**
-        actual = tuple(r for r, s in allowed.items() if s == (home, away))
-        if actual:
-            origin = origin if origin in actual else actual[0]
+        if not proposals_known:
+            # 제안 집합이 아예 없는 입력(3단계 결과만 받은 경우)에서는
+            # **확인할 것이 없으므로 고치지도 않는다** — 적힌 라벨을 보존한다.
+            origin = _known_origin(origin)
         else:
-            origin = COMPROMISE
+            # 출처는 **모델 말을 믿지 않고 제안 집합으로 확인한다.**
+            actual = tuple(r for r, s in allowed.items() if s == (home, away))
+            if actual:
+                origin = origin if origin in actual else actual[0]
+            else:
+                origin = COMPROMISE
         seen[(home, away)] = origin
         out.append(ScoreTally(home=home, away=away, count=count,
                               origin=origin))
@@ -523,7 +539,8 @@ def _tallies(data: dict, allowed: dict) -> tuple[int, tuple[ScoreTally, ...]]:
     return sims, tuple(out)
 
 
-def _adopted(data: dict, allowed: dict, tallies, has_proposal: bool):
+def _adopted(data: dict, allowed: dict, tallies, has_proposal: bool,
+             proposals_known: bool = True):
     """(홈, 원정, 채택한 역할들, 결론).
 
     **분포에 없는 스코어는 거부한다.** 분포가 비어 있으면(옛 형식·시뮬레이션
@@ -553,6 +570,12 @@ def _adopted(data: dict, allowed: dict, tallies, has_proposal: bool):
                 f"채택한 스코어 {home}-{away} 는 어느 토론 라운드에서도 "
                 f"나오지 않았습니다 (분포: "
                 f"{', '.join(f'{t.home}-{t.away}' for t in tallies)})")
+        if not proposals_known:
+            # 제안 집합이 없으면 `adopted_from` 을 확인할 수도, 다시 계산할
+            # 수도 없다. **적힌 그대로 보존한다** — 이 목록으로 분석가의
+            # 예상 스코어를 만들어 내지는 않는다.
+            return home, away, tuple(_known_origin(r) for r in roles
+                                     if _known_origin(r) != COMPROMISE), why
     elif pair not in set(allowed.values()):
         raise ValidationError(
             f"채택한 스코어 {home}-{away} 를 낸 의견이 없습니다 "
@@ -571,8 +594,8 @@ def _adopted(data: dict, allowed: dict, tallies, has_proposal: bool):
 
 def parse_result(text: str, *, panels_seen, shared, data_only, matchup_only,
                  allowed_ids, allowed_scores=None, model: str = "",
-                 prompt_version: str = MODERATOR_PROMPT_VERSION
-                 ) -> ModeratorResult:
+                 prompt_version: str = MODERATOR_PROMPT_VERSION,
+                 proposals_known: bool = True) -> ModeratorResult:
     """응답 원문 → `ModeratorResult`. 어기면 예외를 낸다.
 
     근거 분류(공통/각자)는 **모델에게 받지 않고 여기서 계산한 값을 쓴다** —
@@ -600,9 +623,9 @@ def parse_result(text: str, *, panels_seen, shared, data_only, matchup_only,
         raise ValidationError("공통점과 차이가 모두 비어 있습니다")
 
     allowed = dict(allowed_scores or {})
-    sims, tallies = _tallies(data, allowed)
+    sims, tallies = _tallies(data, allowed, proposals_known)
     home, away, from_roles, why = _adopted(data, allowed, tallies,
-                                           bool(allowed))
+                                           bool(allowed), proposals_known)
     if home is not None and not why:
         # 스코어만 있고 이유가 없으면 사용자가 얻는 것이 숫자 하나뿐이다.
         raise ValidationError("conclusion 에 채택 이유를 적으십시오")

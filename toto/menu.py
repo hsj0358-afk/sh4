@@ -56,9 +56,9 @@ ITEMS = [
     # 자리. 검증·가져오기·감사·리포트 갱신을 **한 번에** 한다 — 예전에는
     # 그 넷을 사용자가 CLI 로 따로 실행해야 했다.
     ("4", "패널 결과 반영 및 리포트 생성",
-     "클로드 채팅에서 받은 <회차>_panel_result.json 을 panel_results/ 에 "
-     "넣고 고르면, 검증·가져오기·감사·리포트 갱신을 한 번에 합니다. "
-     "저장된 회차 분석이 있으면 다시 수집하지 않습니다.",
+     "클로드 채팅 3단계 결과를 **붙여넣거나** panel_results/ 의 "
+     "<회차>_panel_result.json 을 골라, 검증·가져오기·감사·리포트 갱신을 "
+     "한 번에 합니다. 저장된 회차 분석이 있으면 다시 수집하지 않습니다.",
      "panel-apply"),
     ("5", "폰에서 열기 (같은 와이파이)",
      "이미 만든 리포트를 폰으로 볼 수 있게 주소를 띄웁니다. 클라우드 계정 불필요.",
@@ -191,6 +191,95 @@ def _pick_panel_file():
     return path, rnd
 
 
+PASTE_END = "END"
+
+
+def _read_paste() -> str | None:
+    """여러 줄 붙여넣기를 읽는다. 끝은 `END` 한 줄 (Phase 4-F).
+
+    **한 줄 입력으로 받지 않는다** — 3단계 결과는 14경기가 들어간 긴 JSON
+    배열이고, 윈도우 콘솔은 붙여넣기를 줄 단위로 흘려보낸다.
+
+    `EOF`(Ctrl+Z/Ctrl+D)도 끝으로 본다. `KeyboardInterrupt` 는 **잡지
+    않는다** — 메뉴 루프의 "중단했습니다 → 130" 정책에 그대로 올라가야
+    한다 (§1-7-1).
+    """
+    print(f"\n  3단계 Moderator 결과(JSON 배열)를 통째로 붙여넣으세요.")
+    print(f"  다 붙여넣은 뒤 마지막 줄에 {PASTE_END} 만 입력하고 Enter.")
+    print("  (취소하려면 그냥 Enter 로 끝내세요)\n")
+    lines: list[str] = []
+    while True:
+        try:
+            line = input()
+        except EOFError:
+            break
+        if line.strip() == PASTE_END:
+            break
+        lines.append(line)
+    text = "\n".join(lines).strip()
+    if not text:
+        print("붙여넣은 내용이 없어 실행하지 않았습니다.")
+        return None
+    return text
+
+
+def _paste_panel() -> list[str] | None:
+    """`[4] → [1]` 3단계 결과 붙여넣기. CLI 인자를 만들어 돌려준다.
+
+    **검증·감사를 여기서 다시 구현하지 않는다** — 원문을 임시 파일로 넘기고
+    `--paste-panel-result` 가 같은 경로를 태운다 (§1-20 과 같은 이유).
+    """
+    import tempfile
+    from pathlib import Path
+
+    rnd = _ask("회차 번호를 입력하세요 (예: 260052): ")
+    if rnd is None or not rnd.strip():
+        print("회차를 알 수 없어 실행하지 않았습니다.")
+        return None
+    rnd = rnd.strip()
+    text = _read_paste()
+    if text is None:
+        return None
+    tmp = Path(tempfile.mkdtemp(prefix="toto_paste_")) / f"{rnd}_moderator.json"
+    tmp.write_text(text, encoding="utf-8")
+    print(f"\n  {len(text):,}자를 읽었습니다. 검증합니다…")
+    return ["--round", rnd, "--paste-panel-result", str(tmp)]
+
+
+# `[4]` 안에서 고르는 두 입력 경로. **기존 파일 경로를 없애지 않는다.**
+PANEL_INPUTS = [
+    ("1", "3단계 Moderator 결과 붙여넣기",
+     "클로드 채팅 3단계 응답을 그대로 붙여넣습니다. JSON 파일을 따로 만들 "
+     "필요가 없습니다."),
+    ("2", "Panel Result JSON 파일 가져오기",
+     "panel_results/ 에 넣어 둔 <회차>_panel_result.json 을 씁니다."),
+]
+
+
+def _panel_apply_args() -> list[str] | None:
+    """`[4]` 의 두 입력 경로 중 하나를 골라 CLI 인자를 만든다."""
+    print("\n  패널 결과를 어떻게 넣을까요?")
+    for key, title, why in PANEL_INPUTS:
+        print(f"  [{key}] {title}")
+        print(f"      {why}")
+    print("  [0] 뒤로")
+    answer = (_ask("번호를 고르고 Enter (기본 1): ") or "1").strip()
+    if answer == "0":
+        return None
+    if answer == "2":
+        picked = _pick_panel_file()
+        if picked is None:
+            return None
+        path, rnd = picked
+        return ["--round", rnd,
+                "--import-panel-result", str(path),
+                "--audit-panel-result", str(path)]
+    if answer != "1":
+        print(f"'{answer}' 는 없는 번호입니다.")
+        return None
+    return _paste_panel()
+
+
 def run_menu() -> int | None:
     """메뉴를 **한 번** 띄우고 선택에 맞는 인자를 만들어 실행한다.
 
@@ -247,13 +336,10 @@ def run_menu() -> int | None:
     # 다시 구현하지 않는다** — CLI 와 같은 인자를 만들어 같은 경로를 태운다
     # (§43). 두 곳에서 다른 결과가 나오면 어느 쪽도 믿을 수 없다.
     if args == "panel-apply":
-        picked = _pick_panel_file()
-        if picked is None:
+        built = _panel_apply_args()
+        if built is None:
             return 1
-        path, rnd = picked
-        args = ["--round", rnd,
-                "--import-panel-result", str(path),
-                "--audit-panel-result", str(path)]
+        args = built
 
     # 진단·점검 도구는 별도 스크립트 (리포트를 만들지 않으므로 따로 표시)
     if args in ("diagnose", "probe", "probe-analyze"):

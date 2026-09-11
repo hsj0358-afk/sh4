@@ -403,7 +403,7 @@ def test_h28_no_json_tells_the_user_where_to_put_it():
     tmp = Path(tempfile.mkdtemp())
     saved = _with_inbox(tmp)
     try:
-        code, calls, out = drive(["4", "", "0"])
+        code, calls, out = drive(["4", "2", "", "0"])
     finally:
         _restore(saved)
     assert calls == [], "파일이 없는데 실행했다"
@@ -417,7 +417,7 @@ def test_h29_single_json_runs_without_asking_for_a_path():
     _inbox(tmp, [("260052_panel_result.json", "260052")])
     saved = _with_inbox(tmp)
     try:
-        code, calls, _out = drive(["4", "", "0"])
+        code, calls, _out = drive(["4", "2", "", "0"])
     finally:
         _restore(saved)
     assert len(calls) == 1, calls
@@ -434,7 +434,7 @@ def test_h30_several_json_files_are_not_picked_silently():
                  ("260052_panel_result.json", "260052")])
     saved = _with_inbox(tmp)
     try:
-        code, calls, out = drive(["4", "2", "", "0"])
+        code, calls, out = drive(["4", "2", "2", "", "0"])
     finally:
         _restore(saved)
     assert "[1] 260050_panel_result.json" in out
@@ -448,7 +448,7 @@ def test_h31_bad_choice_does_not_run_anything():
                  ("b_panel_result.json", "260052")])
     saved = _with_inbox(tmp)
     try:
-        _code, calls, out = drive(["4", "9", "", "0"])
+        _code, calls, out = drive(["4", "2", "9", "", "0"])
     finally:
         _restore(saved)
     assert calls == [], "없는 번호인데 실행했다"
@@ -462,7 +462,7 @@ def test_h32_unreadable_round_is_asked_not_guessed():
     folder.joinpath("broken.json").write_text("{oops", encoding="utf-8")
     saved = _with_inbox(tmp)
     try:
-        _code, calls, _out = drive(["4", "260052", "", "0"])
+        _code, calls, _out = drive(["4", "2", "260052", "", "0"])
     finally:
         _restore(saved)
     assert calls[0][:2] == ["--round", "260052"], calls
@@ -488,7 +488,7 @@ def test_h34_panel_menu_never_collects():
     _inbox(tmp, [("260052_panel_result.json", "260052")])
     saved = _with_inbox(tmp)
     try:
-        _code, calls, _out = drive(["4", "", "0"])
+        _code, calls, _out = drive(["4", "2", "", "0"])
     finally:
         _restore(saved)
     argv = calls[0]
@@ -501,7 +501,7 @@ def test_h35_exception_in_panel_menu_does_not_kill_the_loop():
     _inbox(tmp, [("260052_panel_result.json", "260052")])
     saved = _with_inbox(tmp)
     try:
-        code, calls, out = drive(["4", "", "4", "", "0"],
+        code, calls, out = drive(["4", "2", "", "4", "2", "", "0"],
                                  result=RuntimeError("가져오기 실패"))
     finally:
         _restore(saved)
@@ -516,7 +516,7 @@ def test_h36_eof_while_choosing_a_file_stops_cleanly():
                  ("b_panel_result.json", "260052")])
     saved = _with_inbox(tmp)
     try:
-        code, calls, out = drive(["4"])        # 파일 선택에서 EOF
+        code, calls, out = drive(["4", "2"])   # 파일 선택에서 EOF
     finally:
         _restore(saved)
     assert calls == [], "EOF 인데 실행했다"

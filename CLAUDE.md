@@ -3030,6 +3030,72 @@ viewBox = "-52 0 484 380"        ← min-x 가 0 이 아니라 −52 다
 
 회귀 테스트: `python tests/test_radar_geometry.py` (18개).
 
+### 1-25. 저장본 재렌더 (Phase 5-E3a) — `--rerender-artifact`
+
+4-C 가 회차 분석을 `data/artifacts/<회차>.json` 으로 저장해 두는데, **그것을
+읽는 입구가 하나뿐이었고 패널 파일 인자에 묶여 있었다.**
+
+```python
+# cli.py  — 5-E3a 이전의 유일한 저장본 입구
+panel_file = (import|validate|audit|paste_panel_result)
+if panel_file is not None and args.round_id and not args.demo:
+    saved, why = artifact.load(args.round_id)     ← 여기서만 저장본을 읽었다
+```
+
+게다가 `_panel_only()` 는 `--import-panel-result` 가 있을 때만 HTML 을 다시
+썼다(`검사·감사만 — 리포트를 다시 쓰지 않는다`). 그래서 **"자료는 그대로 두고
+화면만 지금 코드로 다시 그린다" 를 할 방법이 없었다.**
+
+이것이 실제로 막았다. 리포트 표현이 바뀔 때마다(4-G · 5-D) 그것을 실물 회차에
+확인하려면 재수집밖에 없는데, **재수집은 다른 자료가 된다** — 순위표는 수집
+시점 스냅샷이고(§1-1-7) 배당도 움직인다. 그러면 "화면만 바뀌었나" 를 물을 수가
+없다. 5-E3 가 정확히 여기서 막혔다.
+
+```bash
+python -m toto --rerender-artifact data/artifacts/260052.json
+python -m toto --rerender-artifact data/artifacts/260052.json -o reports/toto_260052_5E3.html
+```
+
+**수집하지 않는다 — 그것이 구조로 보장된다.** 네 수집기는 전부 수집 구간
+안에서 **지연 import** 되고(`cli.py` 의 `from .sources import betman|fotmob|
+pinnacle|whoscored`), 이 분기는 그 구간 **앞에서** 돌려준다. 그래서 별도
+프로세스로 돌린 뒤 `sys.modules` 를 보면 `toto.sources*` 가 **하나도 없다** —
+모듈이 로드되지 않았으면 네트워크 요청도 있을 수 없다. 이것이 "네트워크 0회"
+의 직접 증거이고 테스트가 그것을 확인한다. `TeamResolver`·`Cache` 도 만들지
+않는다 — 저장본은 이미 해석이 끝난 값이다.
+
+**새 파서를 만들지 않았다.** `artifact.load_path(path)` 를 더하고 기존
+`load(round_id)` 가 **그리로 들어가게** 했다 — 회차 경로든 임의 경로든 같은
+판 검사와 같은 `revive_report()` 를 지난다. 읽는 규칙이 둘이 되지 않는다.
+
+  · 저장 형식·`ARTIFACT_VERSION`·`DROPPED`·파일 이름 규칙은 **그대로**다.
+  · 오류는 다섯 가지를 사유와 함께 낸다 — 파일 없음 · 깨진 JSON · 최상위가
+    객체가 아님 · **판 불일치**(조용히 다른 것을 되살리지 않는다) · 경기 0.
+    실패하면 종료코드 1 이고 **빈 HTML 을 남기지 않는다.**
+  · 분석값을 다시 만들지 않는다. `run_all` 도 `evaluate_round` 도 부르지
+    않고 되감은 그대로 렌더에 넘긴다.
+  · 상태 문자열(`ok (14/14경기)` 등)은 **그때 적힌 것**을 그대로 다시 찍는다.
+    지금 다시 판정하지 않는다.
+
+**세 경로가 같은 출력 규칙을 쓴다.** 출력 경로·mkdir·쓰기·로그 열 줄이 원래
+수집 경로와 `_panel_only` 두 곳에 복사돼 있었고, 재렌더가 **세 번째 사본**을
+만들면 어느 하나만 고쳐져 조용히 갈라진다. `_write_report()` 하나로 모았고
+호출부는 로그 동사만 정한다 (§1-8).
+
+  · **기존 실행 경로의 출력이 바이트까지 같다.** `PYTHONHASHSEED=0` 로
+    고정해 변경 전후를 대조했다 — `render_report` 출력 sha256 동일
+    (`79a099ca…`, 672,279 bytes), `--demo` CLI 출력 동일, 로그 문구도
+    `리포트 생성 완료 → … (656.6 KB)` 로 글자까지 같다.
+
+**출력 경로는 기존 관례 그대로다** (`reports/toto_{round}.html`). 덮어쓰기가
+곤란하면 `-o` 로 딴 곳에 쓴다 — 5-E3b 처럼 옛 리포트와 나란히 놓고 볼 때
+그렇게 한다.
+
+실측: 실물 260052 저장본(6.0 MB · 14경기)이 **0.29초**에 935.4 KB 리포트로
+렌더된다. 같은 회차의 원래 수집은 12분이 걸렸다.
+
+회귀 테스트: `python tests/test_rerender.py` (26개).
+
 ---
 
 ## 2. 작업 방식
@@ -3271,6 +3337,22 @@ DOM 에 1회 있다고 했는데 제목 노드로는 잡히지 않았다. 추측
 
 → 이 셋을 다시 쓰려면 `[7]` 점검부터 다시 한다.
 
+### 3-8. 리포트 HTML 이 `PYTHONHASHSEED` 에 따라 달라진다 (5-E3a 관찰)
+
+5-E3a 에서 변경 전후를 바이트로 대조하려다 **같은 코드가 두 번 다른 HTML 을
+낸다**는 것을 발견했다. `PYTHONHASHSEED=0` 으로 고정하면 같아진다.
+
+차이가 난 자리는 **전략적 상성 노트**(`_traits_block` 의 `matchup_notes`)의
+줄 순서다 — `analyze._topics_of()` 가 집합을 쓰고, 파이썬 문자열 해시가
+실행마다 달라지기 때문이다. **§1-1-10 이 `_missing_notes` 에서 고친 것과
+같은 계열**인데 그때 이 자리는 함께 보지 않았다.
+
+  · **값은 바뀌지 않는다.** 같은 노트가 다른 순서로 나올 뿐이다.
+  · 5-E3a 범위 밖이라 고치지 않았다. 고칠 때는 `period_sort_key()` 처럼
+    **동점을 없애는 정렬 키**를 주는 방식이 이 프로젝트의 선례다.
+  · 그때까지 리포트를 바이트로 대조할 일이 있으면 `PYTHONHASHSEED` 를
+    고정해야 한다.
+
 ### 3-7. 리포트에 남아 있는 `xGOT−npxG` 행
 
 `config_toto.yaml` 의 `recent_metrics` 에 Phase 1-B 때 넣은
@@ -3302,6 +3384,7 @@ python -m toto --import-panel-result F.json # 채팅 패널 결과 가져오기 
 python -m toto --validate-panel-result F.json  # 검사만 (붙이지 않는다)
 python -m toto --audit-panel-result F.json  # 회차 구조 감사 (4-C)
 python -m toto --paste-panel-result F.json  # 3단계 Moderator 결과 원문 → 반영 (4-F)
+python -m toto --rerender-artifact data/artifacts/260052.json   # 저장본만 다시 렌더 · 수집 0회 (5-E3a §1-25)
 #  메뉴 [4] 가 위 셋을 한 번에 한다 — panel_results/ 에 JSON 을 넣고 고르면 된다 (§1-20)
 python tests/test_league_matching.py       # 리그·팀 매칭 회귀 · 260052 팀 식별 §1-22 (23개)
 python tests/test_match_details.py         # 경기 상세 파싱 회귀 (36개)
@@ -3339,6 +3422,7 @@ python tests/test_panel_status.py          # 패널 미실행 상태·운영 워
 python tests/test_report_ia.py             # 리포트 정보 구조·최초 스코어 4-G §1-21 (51개)
 python tests/test_direction_axis.py        # 지표 방향·직접 비교 축 5-D §1-23 (35개)
 python tests/test_radar_geometry.py        # 레이더 viewBox·라벨·축 순서 5-D1 §1-24 (18개)
+python tests/test_rerender.py              # 저장본 재렌더 진입점 5-E3a §1-25 (26개)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)
 python tools/probe_sources.py --browser    # 소스 구조 점검

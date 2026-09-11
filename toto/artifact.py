@@ -102,7 +102,19 @@ def save(report: Report, outdir: Path | None = None) -> str:
 def load(round_id: str, outdir: Path | None = None
          ) -> tuple[Report | None, str]:
     """저장된 회차 분석 결과를 되살린다. (Report, 사유)."""
-    path = path_for(round_id, outdir)
+    return load_path(path_for(round_id, outdir))
+
+
+def load_path(path: Path) -> tuple[Report | None, str]:
+    """**파일 경로로** 되살린다 (Phase 5-E3a). (Report, 사유).
+
+    `load()` 는 회차 번호로 경로를 만들어 읽는데, 저장본을 손에 들고
+    "이 파일을 다시 렌더하라" 고 말하려면 경로로 부를 자리가 필요하다.
+    **읽는 규칙은 하나다** — `load()` 가 이 함수로 들어오므로 회차 경로든
+    임의 경로든 같은 판 검사와 같은 `revive_report()` 를 지난다. 새 파서를
+    만들지 않는다 (§1-8).
+    """
+    path = Path(path)
     if not path.exists():
         return None, f"저장된 분석 결과가 없습니다 ({path})"
     try:

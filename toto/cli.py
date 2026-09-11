@@ -98,6 +98,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="--panel-export 를 켜고, 근거 0건 경기도 축 지표만으로 "
                         "냅니다 (시즌 초). 시트에 경고가 붙고 --panel 실행과 "
                         "같은 결과가 아닙니다.")
+    p.add_argument("--rerender-artifact", type=Path, default=None,
+                   metavar="FILE",
+                   help="저장된 회차 분석 결과(data/artifacts/<회차>.json)를 "
+                        "지금 코드로 다시 렌더한다. 수집하지 않는다")
     p.add_argument("--no-cache", action="store_true",
                    help="캐시를 무시하고 새로 수집")
     p.add_argument("--open", action="store_true",
@@ -252,6 +256,64 @@ def _handle_panel_file(report: Report, args, settings, panel_file) -> None:
         log.info("감사 | %s", line)
 
 
+def _write_report(report: Report, args, settings, verb: str) -> Path:
+    """렌더해서 파일로 쓰고 경로를 돌려준다.
+
+    수집 경로·패널 전용 경로·저장본 재렌더 경로가 **같은 renderer 와 같은
+    출력 규칙**을 쓰게 하려고 한 곳에 뒀다 (§1-8). 예전에는 이 열 줄이 두
+    곳에 복사돼 있었고, 세 번째 사본을 만들면 어느 하나만 고쳐져 세 경로가
+    조용히 갈라진다. **동작은 그대로다** — 경로 규칙도 로그도 전과 같고
+    `verb` 만 호출부가 정한다.
+    """
+    html = render_report(report, settings)
+    out = args.output
+    if out is None:
+        name = settings.output.get("filename", "toto_{round}.html").format(
+            round=report.round_id or "latest")
+        out = settings.output_dir / name
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(html, encoding="utf-8")
+    log.info("리포트 %s → %s (%.1f KB)", verb, out,
+             len(html.encode("utf-8")) / 1024)
+    return out
+
+
+def _rerender(args, settings) -> int:
+    """저장된 회차 분석 결과(4-C)를 **현재 renderer 로** 다시 그린다.
+
+    이 경로는 **수집하지 않는다.** `toto.sources` 를 import 하지도 않으므로
+    베트맨·FotMob·피나클·후스코어드 어느 것도 호출될 수 없다 — 네 모듈은
+    전부 수집 구간 안에서 지연 import 되고 여기는 그 구간에 닿지 않는다.
+
+    **왜 따로 필요한가.** 저장본을 읽는 입구가 `_panel_only` 하나뿐이었고
+    그건 패널 파일 인자에 묶여 있었다. 그래서 "자료는 그대로 두고 화면만
+    지금 코드로 다시 그린다" 를 할 방법이 없었다 — 리포트 표현이 바뀔 때마다
+    (4-G·5-D) 그것을 실물 회차에 확인하려면 재수집밖에 없었는데, 재수집은
+    순위표·배당이 움직여(§1-1-7) **다른 자료가 된다.**
+
+    분석값을 다시 만들지 않는다. `revive_report()` 가 되감은 그대로 렌더에
+    넘긴다.
+    """
+    from . import artifact
+
+    path = Path(args.rerender_artifact)
+    report, why = artifact.load_path(path)
+    if report is None:
+        log.error("저장본을 읽지 못했습니다 — %s", why)
+        return 1
+
+    log.info("저장본으로 다시 렌더합니다 (수집하지 않습니다) — %s", path)
+    log.info("  회차 %s · %d경기 · 생성 %s",
+             report.round_id or "미상", len(report.matches),
+             report.generated_at or "미상")
+    out = _write_report(report, args, settings, "갱신")
+    for key, value in report.source_status.items():
+        log.info("  · %s: %s", key, value)
+    if args.open:
+        webbrowser.open(out.resolve().as_uri())
+    return 0
+
+
 def _panel_only(report: Report, args, settings, panel_file) -> int:
     """저장된 회차 분석 결과에 패널 파일만 얹는다. **수집하지 않는다.**"""
     try:
@@ -268,15 +330,7 @@ def _panel_only(report: Report, args, settings, panel_file) -> int:
             return 1
         return 0                        # 검사·감사만 — 리포트를 다시 쓰지 않는다
 
-    html = render_report(report, settings)
-    out = args.output
-    if out is None:
-        name = settings.output.get("filename", "toto_{round}.html").format(
-            round=report.round_id or "latest")
-        out = settings.output_dir / name
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(html, encoding="utf-8")
-    log.info("리포트 갱신 → %s (%.1f KB)", out, len(html.encode("utf-8")) / 1024)
+    out = _write_report(report, args, settings, "갱신")
     if args.open:
         webbrowser.open(out.resolve().as_uri())
     return 0
@@ -303,6 +357,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.serve and not any((args.demo, args.round_id, args.matches_file)):
         from .publish import serve
         return serve(settings, port=args.serve_port)
+
+    # ---- 0-a. 저장본만 다시 렌더 (Phase 5-E3a) ---------------------------
+    # **수집 경로에 닿기 전에** 갈라진다. 아래 한 줄 밑부터가 수집이고,
+    # 여기서 돌려주면 `sources` 는 import 조차 되지 않는다.
+    if args.rerender_artifact is not None:
+        return _rerender(args, settings)
 
     # ---- 0. 저장된 회차 분석 결과로 되돌아가기 (Phase 4-C) ---------------
     # 패널 파일만 주고 그 회차의 artifact 가 있으면 **수집을 다시 하지
@@ -453,17 +513,7 @@ def main(argv: list[str] | None = None) -> int:
             "배당률을 가져오지 못한 경기: " + ", ".join(f"{n}번" for n in missing_odds))
 
     # ---- 6. 렌더링 --------------------------------------------------------
-    html = render_report(report, settings)
-
-    out = args.output
-    if out is None:
-        name = settings.output.get("filename", "toto_{round}.html").format(
-            round=report.round_id or "latest")
-        out = settings.output_dir / name
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(html, encoding="utf-8")
-
-    log.info("리포트 생성 완료 → %s (%.1f KB)", out, len(html.encode("utf-8")) / 1024)
+    out = _write_report(report, args, settings, "생성 완료")
 
     # 폰에서 보기 — 동기화 폴더에도 복사한다 (실패해도 실행은 성공으로 끝난다)
     from .publish import publish

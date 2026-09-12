@@ -24,15 +24,32 @@
   · `--demo` 는 기록하지 않는다. 난수 표본이라 축적할 값이 아니다.
   · 파일은 **UTF-8 BOM** 으로 쓴다. 한국어 윈도우의 엑셀이 BOM 없는 UTF-8
     을 cp949 로 읽어 깨뜨린다 (§1-7 과 같은 계열의 함정).
+
+## 정산은 두 경로에서 같은 함수를 쓴다 (Phase 6-C-2)
+
+예전에는 결과를 채우려면 회차 하나를 **12분짜리 전체 수집으로 다시** 돌려야
+했다 — `record()` 안에서만 정산이 일어났기 때문이다. 이제 결과만 채우는
+입구가 따로 있고, 둘이 **같은 `settle_rows()`** 를 쓴다.
+
+    [1] 수집        → record()      → settle_rows(모든 회차)
+    --settle-round  → settle(회차)  → settle_rows(그 회차만)
+
+짝을 고르는 순서도 바뀌었다. **① `match_id` 정확일치 → ② 팀·날짜 폴백.**
+`SeasonMatch.match_id` 는 FotMob 이 준 권위 있는 값인데 예전에는 `_settle()`
+이 그것을 손에 쥐고도 CSV 경계에서 버렸다. 이제 경기 전 스냅샷에 함께 싣고,
+정산 때 그 값을 먼저 본다 — 팀 별칭이 바뀌어도(§1-22) 그 행은 계속 이어진다.
 """
 from __future__ import annotations
 
 import csv
 import logging
+import os
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from .models import Report, find_season_match
+from .models import (Report, SeasonMatch, find_season_match,
+                     find_season_match_by_id)
 from .settings import ROOT
 
 log = logging.getLogger("toto")
@@ -51,7 +68,7 @@ ROUND_FIELDS = (
 
 MATCH_FIELDS = (
     "round", "recorded_at", "no", "league", "kickoff_kst",
-    "home", "away", "home_canon", "away_canon",
+    "home", "away", "home_canon", "away_canon", "match_id",
     "odds_home", "odds_draw", "odds_away",
     "p_home", "p_draw", "p_away", "pick", "p_pick", "gap", "toss_up",
     "home_goals", "away_goals", "result", "pick_hit", "settled_at",
@@ -69,6 +86,12 @@ _SETTLE_WINDOW = timedelta(days=4)
 # 쓸 수 없게 된다 — 사후 배당으로 사후 결과를 맞히는 셈이기 때문이다.
 RESULT_FIELDS = ("home_goals", "away_goals", "result", "pick_hit",
                  "settled_at")
+
+# `match_id` 는 결과 칸이 아니지만 **비어 있을 때 한 번은 채울 수 있다**
+# (Phase 6-C-2). 옛 행에는 이 열이 아예 없었으므로, 정산하면서 권위 있는
+# 값을 처음 확보하면 그때 싣는다. **이미 값이 있으면 바꾸지 않는다** —
+# 고쳐 주는 것이 아니라 없던 것을 채우는 것이다.
+ID_FIELD = "match_id"
 
 
 def _fmt(value, spec: str = "") -> str:
@@ -97,16 +120,30 @@ def _read(path: Path, fields: tuple[str, ...]) -> list[dict]:
 
 
 def _write(path: Path, fields: tuple[str, ...], rows: list[dict]) -> bool:
+    """**옆에 다 쓴 뒤 한 번에 바꿔 끼운다.**
+
+    예전에는 대상 파일을 곧바로 열어(`"w"`) 잘라내고 썼다. 도중에 예외가
+    나면 축적해 온 기록이 **반쯤 잘린 채로 남는다** — 되돌릴 수 없는 자료라
+    그건 실패가 아니라 손실이다. `os.replace` 는 같은 파일시스템 안에서
+    원자적이라(윈도우 포함) 덮어쓰기가 끝나거나 아예 안 일어나거나 둘 중
+    하나가 된다.
+    """
+    tmp = path.with_name(path.name + ".tmp")
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", encoding=_ENCODING, newline="") as fh:
+        with tmp.open("w", encoding=_ENCODING, newline="") as fh:
             writer = csv.DictWriter(fh, fieldnames=list(fields))
             writer.writeheader()
             for row in rows:
                 writer.writerow({k: row.get(k, "") for k in fields})
+        os.replace(tmp, path)
         return True
     except OSError as exc:
         log.warning("회차 기록을 쓰지 못했습니다 (%s): %s", path.name, exc)
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
         return False
 
 
@@ -155,6 +192,21 @@ def _merge_rows(old: list[dict], new: list[dict],
     return out, frozen
 
 
+def _prematch_id(report: Report, match) -> str:
+    """경기 전 스냅샷에 실을 소스 경기 ID (Phase 6-C-2).
+
+    **새로 수집하지 않는다.** 이번 실행이 이미 받아 온 시즌 색인에 이 경기가
+    예정 상태로 들어 있으므로(실측 260052 는 14/14) 그때 ID 를 함께 적어 둔다.
+    나중에 정산할 때 팀명·날짜로 다시 가릴 이유가 없어진다.
+
+    못 가리면 **빈 문자열**이다 — ID 를 지어내지 않는다 (§1-5).
+    """
+    return getattr(find_season_match(
+        report.season_matches or [], match.home.canonical or "",
+        match.away.canonical or "", _kickoff_date(match.kickoff_kst or ""),
+        _SETTLE_WINDOW), "match_id", "") or ""
+
+
 def _match_rows(report: Report) -> list[dict]:
     stamp = report.generated_at
     out = []
@@ -169,6 +221,7 @@ def _match_rows(report: Report) -> list[dict]:
             "home": m.home.display, "away": m.away.display,
             "home_canon": m.home.canonical or "",
             "away_canon": m.away.canonical or "",
+            "match_id": _prematch_id(report, m),
             "odds_home": _fmt(getattr(odds, "home", None), ".2f"),
             "odds_draw": _fmt(getattr(odds, "draw", None), ".2f"),
             "odds_away": _fmt(getattr(odds, "away", None), ".2f"),
@@ -203,43 +256,135 @@ def _round_row(report: Report) -> dict | None:
     }
 
 
-def _settle(rows: list[dict], report: Report) -> int:
-    """이미 기록된 과거 경기의 결과를 시즌 색인으로 채운다.
+# 미정산 사유. **창을 가로질러 같은 문구를 쓴다** — 사유별로 세어 보여
+# 주려면 문자열이 하나여야 한다 (§1-1-10 의 `_merge_missing` 과 같은 뜻).
+NO_CANON = "정규명이 비어 있습니다 (수집 때 팀명 매칭 실패)"
+NO_FINISHED = "색인에 종료된 같은 경기가 없습니다"
+NO_PICK = "팀·날짜로 가리지 못했습니다 (후보 0 또는 2개 이상)"
 
-    **새로 수집하지 않는다** — 이번 실행이 받아 온 색인만 쓴다. 이번 회차의
-    경기는 아직 안 끝났으므로 대개 지난 회차가 채워진다.
+
+@dataclass
+class SettleOutcome:
+    """정산 한 번의 결과. **숫자의 뜻이 겹치지 않게 정의한다** (§14).
+
+        rows      = already + settled_now + unsettled          (언제나 성립)
+        matched   = 색인에서 종료 경기로 **확인된** 행 (이미 정산된 행 포함)
+
+    `matched` 만 다른 셋과 겹친다. 겹친다는 사실을 여기 적어 둔다 — 로그에서
+    네 수를 나란히 보여 주므로 읽는 사람이 합을 맞춰 볼 수 있어야 한다.
     """
-    # 스코어가 있는 종료 경기만 후보다. 짝 고르기 자체는
-    # `models.find_season_match()` 가 한다 — `match_material` 과 **같은
-    # 규칙**을 써야 해서 한 곳에 뒀다(두 벌이면 한쪽만 고쳐져 어긋난다).
-    season = [sm for sm in (report.season_matches or [])
-              if sm.finished and sm.home_goals is not None
-              and sm.away_goals is not None]
-    if not season:
-        return 0
+    round_id: str = ""
+    rows: int = 0
+    matched: int = 0
+    settled_now: int = 0
+    already: int = 0
+    unsettled: int = 0
+    linked_ids: int = 0                       # 이번에 match_id 를 처음 채운 행
+    by_id: int = 0                            # match_id 로 이은 행
+    reasons: dict = field(default_factory=dict)
+    conflicts: list = field(default_factory=list)
 
-    stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-    filled = 0
+    def note(self, reason: str) -> None:
+        self.reasons[reason] = self.reasons.get(reason, 0) + 1
+
+
+def _ready(season) -> list:
+    """스코어가 있는 종료 경기만. 정산 후보는 이것뿐이다."""
+    return [sm for sm in (season or [])
+            if sm.finished and sm.home_goals is not None
+            and sm.away_goals is not None]
+
+
+def _lookup(row: dict, ready: list) -> tuple[object, str, bool]:
+    """이 행에 붙일 종료 경기. (경기|None, 사유, ID 로 이었나).
+
+    **① match_id 정확일치 → ② 팀·날짜 폴백** 순이다 (§2). 두 조회 모두
+    `models` 의 함수를 쓴다 — 중복 ID 를 거부하는 규칙 같은 것을 여기에
+    다시 적으면 두 곳이 어긋난다 (§1-8).
+
+    ID 가 맞으면 팀명·킥오프를 다시 보지 않는다 — 팀 별칭이 바뀌어도
+    (§1-22 의 `Deportivo` 처럼) 그 행은 계속 이어진다. ID 가 없는 옛 행만
+    폴백을 탄다.
+    """
+    mid = (row.get(ID_FIELD) or "").strip()
+    if mid:
+        sm = find_season_match_by_id(ready, mid, finished_only=True)
+        if sm is not None:
+            return sm, "", True
+        # ID 가 있는데 색인에 종료 경기로 없다 = 아직 안 끝났거나 이번
+        # 색인이 그 리그를 담지 않았다. **팀명으로 다시 찾지 않는다** —
+        # 권위 있는 ID 가 아니라고 말하고 있는데 약한 단서로 뒤집지 않는다.
+        return None, NO_FINISHED, False
+
+    home, away = row.get("home_canon", ""), row.get("away_canon", "")
+    if not home or not away:
+        return None, NO_CANON, False
+    sm = find_season_match(ready, home, away,
+                           _kickoff_date(row.get("kickoff_kst", "")),
+                           _SETTLE_WINDOW, finished_only=True)
+    # 같은 팀 짝이 둘 이상(홈/원정 두 경기)이고 날짜로 못 가리면 비워 둔다.
+    # 틀린 결과를 채우는 것이 비어 있는 것보다 나쁘다.
+    return (sm, "", False) if sm is not None else (None, NO_PICK, False)
+
+
+def _apply(row: dict, sm, stamp: str) -> None:
+    """결과 5칸을 채운다. **그 밖의 칸은 손대지 않는다** (§4)."""
+    row["home_goals"] = str(sm.home_goals)
+    row["away_goals"] = str(sm.away_goals)
+    row["result"] = sm.result or ""
+    pick = row.get("pick", "")
+    if pick and row["result"]:
+        row["pick_hit"] = "1" if pick == row["result"] else "0"
+    row["settled_at"] = stamp
+
+
+def settle_rows(rows: list[dict], season, *, round_id: str | None = None,
+                stamp: str | None = None) -> SettleOutcome:
+    """**공유 정산 함수** — `[1]` 수집 경로와 `--settle-round` 가 같이 쓴다.
+
+    정산 로직을 두 군데 두지 않는다 (§17). 다른 것은 `round_id` 로 범위를
+    좁히느냐뿐이고, 채우는 칸·고르는 규칙·덮어쓰지 않는 규칙은 하나다.
+
+    **새로 수집하지 않는다** — 넘겨받은 색인만 쓴다.
+    """
+    out = SettleOutcome(round_id=round_id or "")
+    ready = _ready(season)
+    stamp = stamp or datetime.now().strftime("%Y-%m-%d %H:%M")
+
     for row in rows:
+        if round_id is not None and row.get("round") != round_id:
+            continue
+        out.rows += 1
+        sm, reason, via_id = _lookup(row, ready)
+        if sm is not None:
+            out.matched += 1
+            if via_id:
+                out.by_id += 1
+
         if row.get("result"):
+            # **이미 정산된 행은 다시 쓰지 않는다** (§6). 다만 소스가 다른
+            # 결과를 말하면 그 사실은 남긴다 — 조용히 덮지도, 조용히
+            # 지나치지도 않는다.
+            out.already += 1
+            if sm is not None and (sm.result or "") != row.get("result"):
+                out.conflicts.append(
+                    f"{row.get('round','')}회 {row.get('no','')}번 "
+                    f"{row.get('home','')}–{row.get('away','')}: "
+                    f"기록 {row.get('result')} / 소스 {sm.result}")
             continue
-        sm = find_season_match(
-            season, row.get("home_canon", ""), row.get("away_canon", ""),
-            _kickoff_date(row.get("kickoff_kst", "")), _SETTLE_WINDOW,
-            finished_only=True)
+
         if sm is None:
-            # 같은 팀 짝이 둘 이상(홈/원정 두 경기)이고 날짜로 못 가리면
-            # 비워 둔다. 틀린 결과를 채우는 것이 비어 있는 것보다 나쁘다.
+            out.unsettled += 1
+            out.note(reason)
             continue
-        row["home_goals"] = str(sm.home_goals)
-        row["away_goals"] = str(sm.away_goals)
-        row["result"] = sm.result or ""
-        pick = row.get("pick", "")
-        if pick and row["result"]:
-            row["pick_hit"] = "1" if pick == row["result"] else "0"
-        row["settled_at"] = stamp
-        filled += 1
-    return filled
+
+        _apply(row, sm, stamp)
+        out.settled_now += 1
+        if not (row.get(ID_FIELD) or "").strip() and (sm.match_id or ""):
+            # 옛 행이 권위 있는 ID 를 **처음** 확보했다 (§4 의 예외).
+            row[ID_FIELD] = str(sm.match_id)
+            out.linked_ids += 1
+    return out
 
 
 def _roll_up(round_rows: list[dict], match_rows: list[dict]) -> None:
@@ -286,7 +431,7 @@ def record(report: Report) -> str:
     else:
         round_rows.extend(mine)
 
-    filled = _settle(match_rows, report)
+    res = settle_rows(match_rows, report.season_matches)
     _roll_up(round_rows, match_rows)
 
     match_rows.sort(key=lambda r: (r.get("round", ""), _no(r)))
@@ -299,11 +444,59 @@ def record(report: Report) -> str:
 
     rounds = len({r.get("round", "") for r in match_rows})
     settled = sum(1 for r in match_rows if r.get("result"))
-    extra = f", 이번에 {filled}경기 정산" if filled else ""
+    extra = f", 이번에 {res.settled_now}경기 정산" if res.settled_now else ""
     if frozen:
         extra += f", 사전 스냅샷 보존 {frozen}경기"
+    if res.conflicts:
+        extra += f", 결과 불일치 {len(res.conflicts)}경기"
+    for line in res.conflicts:
+        log.warning("이미 정산된 경기와 소스 결과가 다릅니다 — %s "
+                    "(기록을 그대로 둡니다)", line)
     return (f"ok ({len(report.matches)}경기 기록 · 누적 {rounds}회차 "
             f"{len(match_rows)}경기 · 결과 확보 {settled}경기{extra})")
+
+
+def rows_for(round_id: str) -> list[dict]:
+    """그 회차의 기존 경기 전 기록. **읽기만 한다.**"""
+    return [r for r in _read(MATCH_FILE, MATCH_FIELDS)
+            if r.get("round") == round_id]
+
+
+def settle(round_id: str, season: list[SeasonMatch]
+           ) -> tuple[SettleOutcome | None, str]:
+    """**지정 회차만** 정산하고 CSV 를 갱신한다 (Phase 6-C-2). (결과, 사유).
+
+    `record()` 와 **같은 `settle_rows()`** 를 쓴다. 다른 것은 셋뿐이다.
+
+      · 이 회차 행만 본다 (§5) — 다른 회차를 고치지도 만들지도 않는다.
+      · **경기 전 스냅샷을 새로 만들지 않는다.** 행이 없으면 그렇게 말하고
+        끝낸다. 조용히 만들면 `recorded_at` 이 사후 시각이 되어 그 회차가
+        시장 캘리브레이션 표본에서 영구히 빠진다.
+      · 리포트도 artifact 도 건드리지 않는다 (§9).
+    """
+    rows = _read(MATCH_FILE, MATCH_FIELDS)
+    if not any(r.get("round") == round_id for r in rows):
+        return None, (f"{round_id}회차의 경기 전 기록이 없습니다 — "
+                      f"먼저 회차를 수집하십시오 (메뉴 [1] 또는 "
+                      f"python -m toto --round {round_id}).")
+
+    res = settle_rows(rows, season, round_id=round_id)
+    for line in res.conflicts:
+        log.warning("이미 정산된 경기와 소스 결과가 다릅니다 — %s "
+                    "(기록을 그대로 둡니다)", line)
+    if not res.settled_now and not res.linked_ids:
+        # 바뀐 것이 없으면 쓰지 않는다 — 멀쩡한 파일을 다시 쓸 이유가 없다.
+        return res, ""
+
+    round_rows = _read(ROUND_FILE, ROUND_FIELDS)
+    _roll_up(round_rows, rows)
+    rows.sort(key=lambda r: (r.get("round", ""), _no(r)))
+    round_rows.sort(key=lambda r: r.get("round", ""))
+    if not _write(MATCH_FILE, MATCH_FIELDS, rows):
+        return None, "경기 기록 파일을 쓰지 못했습니다."
+    if round_rows and not _write(ROUND_FILE, ROUND_FIELDS, round_rows):
+        return None, "회차 기록 파일을 쓰지 못했습니다."
+    return res, ""
 
 
 def _no(row: dict) -> int:

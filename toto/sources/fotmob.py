@@ -738,6 +738,114 @@ def season_matches_from(matches: list[dict], competition: str) -> list[SeasonMat
     return out
 
 
+def merge_season(season_out: list, matches: list[dict],
+                 competition: str) -> list:
+    """시즌 색인에 리그 하나의 경기를 합친다 (match_id 중복 제거 + 정렬).
+
+    `enrich()` 안에만 있던 여섯 줄을 꺼냈다 — Phase 6-C-2 의 정산 경로가
+    같은 일을 해야 해서, 두 벌로 두면 한쪽만 고쳐져 색인 모양이 달라진다
+    (§1-8). 같은 경기가 두 리그 피드에 겹쳐 실릴 수 있다.
+    """
+    seen = {sm.match_id for sm in season_out}
+    for sm in season_matches_from(matches, competition):
+        if sm.match_id in seen:
+            continue
+        seen.add(sm.match_id)
+        season_out.append(sm)
+    season_out.sort(key=lambda x: x.sort_key)
+    return season_out
+
+
+# 정산 전용 캐시 키. `league_{key}` 와 **다른 자리**를 쓴다 — 이쪽은 경기
+# 목록만 담은 **부분** 결과라, 같은 키에 쓰면 다음 수집이 순위표·시즌 통계가
+# 빠진 것을 캐시 적중으로 읽는다.
+SEASON_CACHE_KEY = "season_{key}"
+
+
+def season_index(settings: Settings, resolver: TeamResolver,
+                 league_keys, cache=None) -> tuple[list[SeasonMatch], str]:
+    """시즌 경기 색인만 받는다 (Phase 6-C-2 정산용). (색인, 상태 문자열).
+
+    **새 파서를 만들지 않는다.** `read_league()` 과 같은 리그 응답을 같은
+    `_parse_matches()` 로 읽는다 — 다른 것은 순위표·시즌 통계 피드·경기
+    상세를 받지 않는다는 것뿐이다. 정산에 필요한 것은 스코어와 종료
+    여부뿐이라 그 셋은 요청할 이유가 없다.
+
+    **이미 받아 둔 것이 있으면 접속하지 않는다.** 같은 날 `[1]` 을 돌렸으면
+    `league_{key}` 캐시에 경기 목록이 그대로 들어 있다. 전부 캐시로 채워지면
+    브라우저조차 띄우지 않는다.
+
+    그래서 **같은 날 두 번째 정산은 새 결과를 못 볼 수 있다** — 캐시가
+    날짜별이기 때문이다(§1-4). 그 사실을 상태 문자열과 로그에 적고, 다시
+    받으려면 `--no-cache` 를 쓰라고 알린다. 조용히 우회하지 않는다.
+    """
+    keys = [k for k in dict.fromkeys(league_keys) if k in settings.leagues]
+    if not keys:
+        return [], "생략 (리그 미상)"
+
+    raw: dict[str, list] = {}
+    cached_keys: list[str] = []
+    for key in keys:
+        hit = _revive(cache.get("fotmob", f"league_{key}")) if cache else None
+        if hit is not None:
+            raw[key] = hit.get("matches") or []
+            cached_keys.append(key)
+            continue
+        part = cache.get("fotmob", SEASON_CACHE_KEY.format(key=key)) if cache else None
+        if isinstance(part, dict) and part.get("_v") == _CACHE_VERSION:
+            raw[key] = part.get("matches") or []
+            cached_keys.append(key)
+
+    missing = [k for k in keys if k not in raw]
+    failed: list[str] = []
+    if missing:
+        with FotMobBrowser(settings, cache=cache) as browser:
+            if not browser.available:
+                return [], "실패 (브라우저 기동 불가)"
+            for key in missing:
+                matches = _read_season(browser, settings, key, resolver, cache)
+                if matches is None:
+                    failed.append(key)
+                    continue
+                raw[key] = matches
+
+    season: list[SeasonMatch] = []
+    for key in keys:
+        merge_season(season, raw.get(key) or [], key)
+
+    finished = sum(1 for sm in season if sm.finished)
+    state = "ok" if not failed else "부분"
+    note = f"{state} ({len(keys) - len(failed)}/{len(keys)}리그, " \
+           f"{len(season)}경기 중 종료 {finished}경기"
+    if cached_keys:
+        note += f", 캐시 {len(cached_keys)}리그 — 다시 받으려면 --no-cache"
+    if failed:
+        note += f", 실패 {'·'.join(failed)}"
+    return season, note + ")"
+
+
+def _read_season(browser: "FotMobBrowser", settings: Settings, league_key: str,
+                 resolver: TeamResolver, cache) -> list[dict] | None:
+    """리그 응답 1회 → 경기 목록. 실패하면 None (빈 목록과 다르다, §1-6)."""
+    league_id = resolve_league_id(browser, settings, league_key,
+                                  cache=cache, resolver=resolver)
+    if league_id is None:
+        return None
+    data = browser.get_json(browser.abs_url(LEAGUE_PATH.format(id=league_id)))
+    if data is None:
+        log.error("[%s] FotMob 리그 응답을 받지 못했습니다 (id=%d).",
+                  league_key, league_id)
+        return None
+    matches = _parse_matches(data, resolver)
+    log.info("[%s] FotMob 경기 %d개 (종료 %d) — 정산용 색인",
+             league_key, len(matches),
+             sum(1 for m in matches if m["finished"]))
+    if cache:
+        cache.set("fotmob", SEASON_CACHE_KEY.format(key=league_key),
+                  {"_v": _CACHE_VERSION, "matches": matches})
+    return matches
+
+
 # --------------------------------------------------------------------------
 # 경기 상세 (matchDetails) — 시즌 통계에 없는 지표는 여기에만 있다
 # --------------------------------------------------------------------------
@@ -1368,15 +1476,10 @@ def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None,
     # 시즌 경기 색인 (Phase 2). 같은 경기가 두 리그 피드에 겹쳐 실릴 수 있어
     # match_id 로 한 번만 담고, kickoff 오름차순으로 정렬해 둔다.
     if season_out is not None:
-        seen_ids = {sm.match_id for sm in season_out}
         for league_key in leagues:
-            for sm in season_matches_from(
-                    (data.get(league_key) or {}).get("matches", []), league_key):
-                if sm.match_id in seen_ids:
-                    continue
-                seen_ids.add(sm.match_id)
-                season_out.append(sm)
-        season_out.sort(key=lambda x: x.sort_key)
+            merge_season(season_out,
+                         (data.get(league_key) or {}).get("matches", []),
+                         league_key)
         no_time = sum(1 for sm in season_out if sm.kickoff is None)
         log.info("시즌 경기 색인 %d경기 (종료 %d) — Phase 2 시점 분석용%s",
                  len(season_out), sum(1 for sm in season_out if sm.finished),

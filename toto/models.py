@@ -1338,6 +1338,30 @@ def as_of_from_match(match) -> datetime | None:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=KST)
 
 
+def in_kst(dt: datetime) -> datetime:
+    """비교용으로 **KST aware** 로 옮긴다 (Phase 6-C-2).
+
+    예전에는 `find_season_match` 가 `m.kickoff.replace(tzinfo=None)` 로
+    **표시만 떼어** 비교했다. 그런데 `SeasonMatch.kickoff` 은 FotMob 이
+    `...Z` 로 주는 **UTC** 이고, 호출부가 넘기는 시각은 `kickoff_kst` 에서
+    온 **KST** 다. 표시를 떼면 naive UTC 와 naive KST 를 직접 빼는 셈이라,
+    **옳게 짝지은 경기에도 9시간이 남았다** (Phase 6-C-1 에서 실물 67경기로
+    확인: 창을 8시간으로 줄이면 67/67 이 0/67 이 된다).
+
+    고치는 방법은 창을 넓히거나 줄이는 것이 아니라 **기준을 하나로
+    맞추는 것**이다. 여기서는 KST 로 모은다.
+
+      · aware 면 `astimezone(KST)` — 시각을 바꾸지 않고 표기만 옮긴다.
+      · naive 면 KST 로 읽는다. `as_of_from_match` 와 **같은 근거**다 —
+        이 프로젝트에서 시간대 표시 없이 도는 시각은 `kickoff_kst` 계열이고
+        필드 이름이 이미 KST 라고 밝히고 있다.
+
+    **양쪽이 다 naive 면 결과가 예전과 정확히 같다** — 같은 표시를 붙였으므로
+    차이가 달라지지 않는다. 즉 이 변경은 aware 쪽에서만 값을 바꾼다.
+    """
+    return dt.astimezone(KST) if dt.tzinfo is not None else dt.replace(tzinfo=KST)
+
+
 def find_season_match(season: list[SeasonMatch], home: str, away: str,
                       kickoff: datetime | None, window: timedelta,
                       finished_only: bool = False) -> SeasonMatch | None:
@@ -1349,13 +1373,37 @@ def find_season_match(season: list[SeasonMatch], home: str, away: str,
 
     `roundlog._settle()` 과 `match_material` 이 **같은 규칙**을 써야 해서
     여기에 둔다. 두 곳에 베껴 두면 한쪽만 고쳐져 조용히 어긋난다.
+
+    시각 비교는 `in_kst()` 로 **기준을 하나로 모은 뒤**에 한다 — 표시를 떼어
+    직접 빼지 않는다 (Phase 6-C-2, 위 함수 설명 참고).
     """
     hits = [m for m in season
             if m.home_team == home and m.away_team == away
             and not (finished_only and not m.finished)]
     if kickoff is not None:
+        target = in_kst(kickoff)
         hits = [m for m in hits if m.kickoff is not None
-                and abs(m.kickoff.replace(tzinfo=None) - kickoff) <= window]
+                and abs(in_kst(m.kickoff) - target) <= window]
+    return hits[0] if len(hits) == 1 else None
+
+
+def find_season_match_by_id(season: list[SeasonMatch], match_id: str,
+                            finished_only: bool = False) -> SeasonMatch | None:
+    """소스 경기 ID 로 찾는다 (Phase 6-C-2). 없으면 None.
+
+    **새 식별자를 발명하는 것이 아니다.** `SeasonMatch.match_id` 는 FotMob 이
+    준 값이고, 정산은 그것을 알고 있으면 팀명·날짜로 다시 가릴 이유가 없다 —
+    팀 별칭이 바뀌어도(§1-22) 시간대가 어긋나도 ID 는 그대로다.
+
+    같은 ID 가 둘 이상이면 **고르지 않는다.** `enrich` 가 ID 로 중복을
+    거르므로 정상 색인에서는 일어나지 않지만, 일어났다면 색인이 깨진 것이고
+    그때 하나를 집으면 조용히 틀린다.
+    """
+    if not match_id:
+        return None
+    hits = [m for m in season
+            if str(m.match_id) == str(match_id)
+            and not (finished_only and not m.finished)]
     return hits[0] if len(hits) == 1 else None
 
 

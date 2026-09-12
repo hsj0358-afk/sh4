@@ -43,11 +43,11 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 
 from .models import (AWAY, DRAW, HOME, MatchAnalysis, Report, TeamAnalysis,
-                     find_season_match)
+                     as_of_from_match, find_season_match)
 from .settings import ROOT
 
 log = logging.getLogger("toto")
@@ -230,15 +230,13 @@ def _status_of(match, report: Report) -> tuple[str, object]:
 
     상태는 **시즌 색인의 `finished`** 에서만 온다. 킥오프와 지금 시각을
     비교해 추정하지 않는다 — 색인에서 못 찾으면 '확인 불가' 다.
+
+    킥오프 해석은 `models.as_of_from_match()` 를 쓴다 (Phase 6-C-2). 예전에는
+    여기서 따로 `strptime` 을 돌려 **naive** 를 넘겼는데, 그러면 UTC 로 온
+    색인 시각과 기준이 달라 9시간이 남았다 (§1-28). 파싱 규칙을 두 벌 두지
+    않는다 (§1-8).
     """
-    when = None
-    raw = (getattr(match, "kickoff_kst", "") or "").strip()
-    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d"):
-        try:
-            when = datetime.strptime(raw, fmt)
-            break
-        except ValueError:
-            continue
+    when = as_of_from_match(match)
     sm = find_season_match(report.season_matches or [],
                            match.home.canonical, match.away.canonical,
                            when, MATCH_WINDOW)

@@ -28,6 +28,7 @@ pytest 없이도 돈다:  python tests/test_rerender.py
 from __future__ import annotations
 
 import ast
+import inspect
 import json
 import logging
 import re
@@ -185,9 +186,20 @@ def test_b2_rerender_never_names_a_collector():
         assert banned not in body, banned
 
 
+def _main_src() -> str:
+    """`cli.main()` 의 본문만.
+
+    예전에는 파일 전체에서 `str.index` 로 위치를 쟀는데, 수집기를 지연
+    import 하는 **다른 함수**가 파일 앞쪽에 생기면(6-C-2 의 `_settle_round`)
+    첫 등장 위치가 그리로 옮겨 가 엉뚱한 판정이 된다. 재는 자리는 언제나
+    `main()` 안이다 — 거기가 분기가 실제로 일어나는 곳이다.
+    """
+    return inspect.getsource(cli.main)
+
+
 def test_b3_the_branch_sits_before_the_collection():
     """수집 구간 **앞에서** 갈라진다 — 한 줄이라도 뒤면 의미가 없다."""
-    src = Path(cli.__file__).read_text(encoding="utf-8")
+    src = _main_src()
     branch = src.index("if args.rerender_artifact is not None:")
     for name in COLLECTORS:
         assert branch < src.index(f"from .sources import {name}"), name
@@ -195,7 +207,7 @@ def test_b3_the_branch_sits_before_the_collection():
 
 def test_b4_no_cache_or_resolver_is_built():
     """캐시·팀 해석기도 만들지 않는다 — 저장본은 이미 해석이 끝난 값이다."""
-    src = Path(cli.__file__).read_text(encoding="utf-8")
+    src = _main_src()
     branch = src.index("if args.rerender_artifact is not None:")
     assert branch < src.index("resolver = TeamResolver()")
     assert branch < src.index("cache = Cache(")

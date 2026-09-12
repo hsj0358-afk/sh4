@@ -191,10 +191,13 @@ def test_b4_settlement_only_fills_result_fields():
         kickoff=datetime(2026, 9, 12, 14, 0), kickoff_aware=False,
         home_team="Home1", away_team="Away1",
         home_goals=2, away_goals=1, finished=True)]
-    assert roundlog._settle([row], rep) == 1
+    assert roundlog.settle_rows([row], rep.season_matches).settled_now == 1
     assert row["result"] == "H" and row["pick_hit"] == "1"
     for f in roundlog.MATCH_FIELDS:
         if f not in roundlog.RESULT_FIELDS:
+            # `match_id` 는 옛 행이 처음 확보할 때만 채워진다 (6-C-2 §4).
+            if f == roundlog.ID_FIELD and not frozen[f]:
+                continue
             assert row[f] == frozen[f], f
 
 
@@ -209,7 +212,7 @@ def test_b5_already_settled_rows_are_not_resettled():
         kickoff=datetime(2026, 9, 12, 14, 0), kickoff_aware=False,
         home_team="Home1", away_team="Away1",
         home_goals=2, away_goals=1, finished=True)]
-    assert roundlog._settle([row], rep) == 0
+    assert roundlog.settle_rows([row], rep.season_matches).settled_now == 0
     assert row["result"] == "D"
 
 
@@ -467,8 +470,16 @@ def test_e8_reuses_roundlog_reader():
 
 
 def test_e9_cli_market_eval_does_not_collect():
-    """수집 구간 **앞**에서 갈라진다 — `--rerender-artifact` 와 같은 자리."""
-    src = (ROOT / "toto" / "cli.py").read_text(encoding="utf-8")
+    """수집 구간 **앞**에서 갈라진다 — `--rerender-artifact` 와 같은 자리.
+
+    재는 자리는 `main()` **안**이다. 파일 전체에서 찾으면, 수집기를 지연
+    import 하는 다른 함수가 앞쪽에 생길 때(6-C-2 의 `_settle_round`) 첫
+    등장 위치가 그리로 옮겨 가 엉뚱한 판정이 된다.
+    """
+    import inspect
+
+    from toto import cli
+    src = inspect.getsource(cli.main)
     i = src.index("args.market_eval")
     j = src.index("from .sources import")
     assert i < j, "market-eval 분기가 수집 구간 뒤에 있다"
@@ -490,7 +501,7 @@ def test_f1_end_to_end_round_trip():
             kickoff=datetime(2026, 9, 12, 14, 0), kickoff_aware=False,
             home_team="Home1", away_team="Away1",
             home_goals=2, away_goals=1, finished=True)]
-        roundlog._settle(rows, nxt)
+        roundlog.settle_rows(rows, nxt.season_matches)
 
         s = marketeval.evaluate(rows)
         assert s.evaluated == 1, s.exclusion_counts

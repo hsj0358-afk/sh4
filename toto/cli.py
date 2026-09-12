@@ -106,6 +106,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help="쌓인 회차 기록으로 시장 기준선 캘리브레이션을 잰다 "
                         "(data/round_matches.csv 를 읽기만 한다. 수집하지 "
                         "않고 아무것도 고치지 않는다)")
+    p.add_argument("--settle-round", dest="settle_round", default=None,
+                   metavar="ROUND",
+                   help="그 회차의 실제 경기 결과만 채운다. 경기 전 "
+                        "스냅샷(배당·확률·recorded_at)은 건드리지 않고 "
+                        "리포트도 다시 만들지 않는다")
     p.add_argument("--no-cache", action="store_true",
                    help="캐시를 무시하고 새로 수집")
     p.add_argument("--open", action="store_true",
@@ -318,6 +323,87 @@ def _rerender(args, settings) -> int:
     return 0
 
 
+def _league_keys(rows: list[dict], settings, round_id: str) -> list[str]:
+    """이 회차가 어느 리그 색인을 필요로 하나.
+
+    **회차 목록을 다시 받지 않는다.** 이미 기록된 행의 `league`(한국어 표기)
+    를 `settings.league_of()` 로 되읽는다 — 그 함수가 `ko`·별칭을 이미 알고
+    있어서 새 표를 만들 이유가 없다 (§1-8).
+
+    행의 리그가 비어 있던 회차를 위해 저장본(4-C)도 본다. **읽기만 한다.**
+    """
+    keys: list[str] = []
+    for row in rows:
+        key = settings.league_of(row.get("league", ""))
+        if key and key not in keys:
+            keys.append(key)
+    if keys:
+        return keys
+    from . import artifact
+    saved, _why = artifact.load(round_id)
+    for match in getattr(saved, "matches", None) or []:
+        if match.league and match.league not in keys:
+            keys.append(match.league)
+    if keys:
+        log.info("경기 기록에 리그가 없어 저장본에서 읽었습니다: %s",
+                 ", ".join(keys))
+    return keys
+
+
+def _settle_round(args, settings) -> int:
+    """지정 회차의 **결과만** 채운다 (Phase 6-C-2).
+
+    리포트를 다시 만들지 않고, 저장본(4-C)도 건드리지 않는다 — 저장본은
+    킥오프 전 스냅샷이고 이 명령은 경기가 끝난 뒤에 도는 것이라, 다시 쓰면
+    그 회차가 시장 캘리브레이션 표본에서 사라진다 (§1-27).
+    """
+    from . import roundlog
+
+    round_id = str(args.settle_round).strip()
+    rows = roundlog.rows_for(round_id)
+    print(f"\n▶ 회차 결과 정산\n  회차: {round_id}\n")
+    if not rows:
+        log.error("%s회차의 경기 전 기록이 없습니다 (%s). 먼저 회차를 "
+                  "수집하십시오 — 메뉴 [1] 또는 python -m toto --round %s",
+                  round_id, roundlog.MATCH_FILE, round_id)
+        return 1
+
+    keys = _league_keys(rows, settings, round_id)
+    if not keys:
+        log.error("이 회차의 리그를 알 수 없어 색인을 받을 수 없습니다 "
+                  "(경기 기록의 league 열과 저장본 둘 다 비어 있습니다).")
+        return 1
+
+    from .sources import fotmob
+    resolver = TeamResolver()
+    cache = Cache(enabled=not args.no_cache)
+    season, status = fotmob.season_index(settings, resolver, keys, cache=cache)
+    log.info("시즌 색인: %s", status)
+
+    res, why = roundlog.settle(round_id, season)
+    if res is None:
+        log.error("정산하지 못했습니다 — %s", why)
+        return 1
+
+    print(f"  기존 pre-match 기록: {res.rows}경기")
+    print(f"  FotMob 종료 경기: {res.matched}경기  (이미 정산된 행 포함)")
+    print(f"  이번 정산: {res.settled_now}경기")
+    print(f"  이미 정산됨: {res.already}경기")
+    print(f"  미정산: {res.unsettled}경기")
+    for reason, n in sorted(res.reasons.items(), key=lambda x: -x[1]):
+        print(f"    · {n}경기  {reason}")
+    if res.by_id:
+        print(f"  match_id 로 이은 경기: {res.by_id}")
+    if res.linked_ids:
+        print(f"  match_id 를 처음 채운 옛 행: {res.linked_ids}")
+    for line in res.conflicts:
+        print(f"  ⚠ 결과 불일치 (기록을 그대로 둡니다): {line}")
+    print("\n  pre-match snapshot 보존: OK "
+          "(배당·확률·recorded_at·픽은 건드리지 않습니다)")
+    print(f"  기록 파일: {roundlog.MATCH_FILE}\n")
+    return 0
+
+
 def _panel_only(report: Report, args, settings, panel_file) -> int:
     """저장된 회차 분석 결과에 패널 파일만 얹는다. **수집하지 않는다.**"""
     try:
@@ -377,6 +463,13 @@ def main(argv: list[str] | None = None) -> int:
         print(marketeval.format_summary(
             marketeval.evaluate(marketeval.load_rows())))
         return 0
+
+    # ---- 0-c. 회차 결과만 정산 (Phase 6-C-2) -----------------------------
+    # 여기도 **수집 구간 앞**이다. 리그 색인 한 장만 받고 `round_matches.csv`
+    # 의 결과 칸만 채운다 — 베트맨·피나클·후스코어드를 부르지 않고, 리포트도
+    # 저장본도 다시 만들지 않는다.
+    if args.settle_round:
+        return _settle_round(args, settings)
 
     # ---- 0. 저장된 회차 분석 결과로 되돌아가기 (Phase 4-C) ---------------
     # 패널 파일만 주고 그 회차의 artifact 가 있으면 **수집을 다시 하지

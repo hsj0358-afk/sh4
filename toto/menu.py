@@ -83,6 +83,13 @@ TOOLS = [
     ("5", "저장된 점검 응답 다시 분석",
      "접속하지 않고 [4]가 저장해 둔 응답에서 지표 위치를 찾습니다.",
      "probe-analyze"),
+    # [6] 은 개발 도구가 아니라 **운영 단계**다 (경기가 끝난 뒤 결과를
+    # 붙인다). 다만 Phase 6-C-2 는 CLI 를 먼저 안정화하는 단계라 메뉴 번호
+    # 체계를 건드리지 않고 여기에 둔다 — 운영 메뉴로 올릴지는 실제로 몇
+    # 회차 돌려 본 뒤에 정한다.
+    ("6", "회차 결과 정산 (경기 종료 후)",
+     "이미 기록된 회차에 실제 경기 결과만 채웁니다. 배당·확률·기록 시각은 "
+     "그대로 두고 리포트도 다시 만들지 않습니다.", "settle"),
 ]
 
 
@@ -341,6 +348,20 @@ def run_menu() -> int | None:
             return 1
         args = built
 
+    # 회차 결과 정산 (Phase 6-C-2). **회차를 비워 둘 수 없다** — 정산은
+    # 지정한 회차 하나만 손대는 것이 규칙이라(§5) 자동 탐지가 없다.
+    # 리포트를 만들지 않으므로 `--open` 을 붙이지 않는다.
+    if args == "settle":
+        rnd = _ask("정산할 회차 번호 (예: 260052): ")
+        if rnd is None:
+            print("입력이 끝나 실행하지 않았습니다.")
+            return 1
+        if not rnd.strip():
+            print("회차를 지정해야 합니다 — 정산은 회차 하나만 처리합니다.")
+            return 1
+        from .cli import main as cli_main
+        return ("settle", cli_main(["--settle-round", rnd.strip()]))
+
     # 진단·점검 도구는 별도 스크립트 (리포트를 만들지 않으므로 따로 표시)
     if args in ("diagnose", "probe", "probe-analyze"):
         from pathlib import Path
@@ -405,6 +426,9 @@ def _report(result) -> int:
         print("진단을 마쳤습니다. 위 출력을 복사해서 전달하세요.")
     elif kind == "serve":
         print("공유를 마쳤습니다.")
+    elif kind == "settle":
+        print("정산을 마쳤습니다. 경기 전 기록은 그대로입니다 "
+              "(data/round_matches.csv).")
     else:
         print("완료했습니다. 리포트는 reports 폴더에 있습니다.")
     return code

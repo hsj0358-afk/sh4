@@ -199,6 +199,54 @@ def _header_index(rows: list[list[str]], *names: str, hdr: int = 0) -> int | Non
 
 
 # --------------------------------------------------------------------------
+# 팀 통계 탭 주소 — 페이지가 스스로 가리키는 곳에서 찾는다
+# --------------------------------------------------------------------------
+# 리그 요약 화면(`…/stages/<id>/show/…`)에는 팀별 Shots pg 표가 없고 형제 탭에
+# 있다 (§3-9). 그 주소를 설정에 박지 않는 이유는 **시즌·stage 번호가 해마다
+# 바뀌기** 때문이다 — 박으면 다음 시즌에 조용히 빈 값이 된다 (§1-4 의 '경로를
+# 박지 말고 모양으로 찾는다' 와 같은 이유).
+_STAGE_SEG = re.compile(r"/stages/(\d+)/([A-Za-z]+)", re.I)
+_HREF_RE = re.compile(r'href="([^"]{5,200})"', re.I)
+_CANONICAL_RE = re.compile(
+    r'<link[^>]+rel="canonical"[^>]+href="([^"]+)"', re.I)
+# 관측된 구간 이름 (2026-09-12 실물: show · fixtures · teamstatistics ·
+# playerstatistics · refereestatistics). 팀 통계는 이 하나다.
+_STAT_SEGMENT = "teamstatistics"
+
+
+def _stat_page_path(html: str) -> str:
+    """리그 페이지의 링크에서 팀 통계 탭 주소를 찾는다. 없으면 빈 문자열.
+
+    **이 페이지와 같은 stage 의 링크만** 고른다 — 사이드 메뉴에 다른 대회의
+    링크가 수백 개 들어 있어(실측 466개), stage 로 묶지 않으면 엉뚱한 리그의
+    통계를 가져올 수 있다 (§1-1-1 과 같은 종류의 사고다).
+    """
+    if not html:
+        return ""
+    links = _HREF_RE.findall(html)
+    canon = _CANONICAL_RE.search(html)
+    stage = ""
+    if canon:
+        hit = _STAGE_SEG.search(canon.group(1))
+        if hit:
+            stage = hit.group(1)
+    if not stage:                       # canonical 이 없으면 가장 많이 나온 stage
+        counts: dict[str, int] = {}
+        for href in links:
+            hit = _STAGE_SEG.search(href)
+            if hit:
+                counts[hit.group(1)] = counts.get(hit.group(1), 0) + 1
+        if not counts:
+            return ""
+        stage = max(sorted(counts), key=lambda s: counts[s])
+    for href in links:
+        hit = _STAGE_SEG.search(href)
+        if hit and hit.group(1) == stage and hit.group(2).lower() == _STAT_SEGMENT:
+            return href
+    return ""
+
+
+# --------------------------------------------------------------------------
 # 리그 페이지 → 팀별 순위표 + 통계
 # --------------------------------------------------------------------------
 def read_league(browser: WhoScoredBrowser, settings: Settings,
@@ -320,7 +368,31 @@ def read_league(browser: WhoScoredBrowser, settings: Settings,
             st.goals_against = _int(row, idx["ga"])
 
     # 3) 팀 통계 (Shots pg / Possession% / Pass% / AerialsWon / Rating)
-    for table in soup.find_all("table"):
+    #
+    # **이 표는 리그 요약 화면에 없다** (§3-9, 2026-09-12 실측). 받아 온
+    # 페이지에는 순위표와 톱5 위젯뿐이고 `shots pg` 라는 문구가 EPL 730KB ·
+    # 라리가 1,225KB 어디에도 0회다 — DOM 에도 `<script>` 에도. 팀별 표는
+    # 형제 탭에 따로 있다.
+    #
+    # 주소를 기억으로 지어내지 않고 **페이지 자신의 링크**에서 찾는다 —
+    # 시즌·stage 번호가 해마다 바뀌므로 설정에 박으면 다음 시즌에 썩는다.
+    stat_soup, stat_path = soup, _stat_page_path(html)
+    if stat_path:
+        stat_html = browser.get_html(browser.abs_url(stat_path),
+                                     wait_selector="table")
+        if stat_html:
+            stat_soup = _soup(stat_html)
+            if cache is not None:
+                cache.save_debug("whoscored", f"page_stats_{league_key}",
+                                 stat_html, failed=False)
+        else:
+            log.warning("[%s] 팀 통계 탭을 받지 못했습니다: %s",
+                        league_key, stat_path)
+    else:
+        log.warning("[%s] 팀 통계 탭 링크가 리그 페이지에 없습니다 — "
+                    "Shots pg 는 비게 됩니다.", league_key)
+
+    for table in stat_soup.find_all("table"):
         rows = _table_rows(table)
         if len(rows) < 3:
             continue
@@ -331,8 +403,19 @@ def read_league(browser: WhoScoredBrowser, settings: Settings,
         i_pass = _header_index(rows, "pass%", "passsuccess", "pass success", hdr=hdr)
         i_aerial = _header_index(rows, "aerialswon", "aerials won", hdr=hdr)
         i_rating = _header_index(rows, "rating", hdr=hdr)
-        if not any(x is not None for x in (i_shots, i_poss, i_pass, i_rating)):
+        # **팀 열이 있어야 하고, 지표 열은 팀 열과 다른 칸이어야 한다.**
+        # `_header_index` 는 부분일치까지 하므로, 이 조건이 없으면 리그
+        # 요약의 톱5 위젯이 통과한다 — 머리글이 `['Possession']`·`['Ratings']`
+        # 한 칸뿐이라 `i_poss=0`·`i_rating=0` 이 되고 그 0번 칸은 지표가
+        # 아니라 **팀 이름 칸**이다 (§3-9 실측: 표 [6]·[11]·[16] 세 개가
+        # 실제로 통과했고, [16] 은 아예 선수 표였다).
+        if i_team is None:
             continue
+        cols = tuple(None if x == i_team else x
+                     for x in (i_shots, i_poss, i_pass, i_aerial, i_rating))
+        if not any(x is not None for x in cols):
+            continue
+        i_shots, i_poss, i_pass, i_aerial, i_rating = cols
         for row in rows[hdr + 1:]:
             canon = _row_team(row, resolver, i_team)
             if not canon:
@@ -343,6 +426,16 @@ def read_league(browser: WhoScoredBrowser, settings: Settings,
             st.pass_success = _f(row, i_pass) or st.pass_success
             st.aerials_won_pg = _f(row, i_aerial) or st.aerials_won_pg
             st.rating = _f(row, i_rating) or st.rating
+
+    # 조용히 비우지 않는다 (§1-6-1). 이 값이 없으면 `season.shots` ·
+    # `season.on_target_rate` · `season.xg_per_shot` 세 지표가 통째로 빈다.
+    shots_done = sum(1 for v in out.values() if v["stats"].shots_pg is not None)
+    if shots_done:
+        log.info("[%s] 팀 통계 %d팀 (Shots pg)", league_key, shots_done)
+    else:
+        log.warning("[%s] 팀 통계를 한 팀도 읽지 못했습니다 — Shots pg 열이 있는 "
+                    "표를 찾지 못했습니다. 원본: %s", league_key,
+                    f"cache/<날짜>/whoscored/FAILED_page_stats_{league_key}.html")
 
     # 다음에 파서를 고칠 때 쓸 수 있도록 원본을 항상 남긴다.
     # (실패했을 때만 남기면, 이번처럼 "표는 찾았는데 값이 전부 0" 인
@@ -416,7 +509,9 @@ def _f(row: list[str], i: int | None) -> float | None:
 
 # 캐시 형식/파싱 로직이 바뀌면 이 값을 올린다. 옛 캐시는 자동으로 버려진다.
 # (파서를 고쳐도 같은 날 저장된 잘못된 캐시가 계속 쓰이는 것을 막는다)
-_LEAGUE_CACHE_VERSION = 2
+# 2 → 3: 팀 통계를 형제 탭에서 읽는다 (§3-9). 옛 캐시에는 `shots_pg` 가
+#        통째로 비어 있으므로 그대로 읽으면 고친 것이 반영되지 않는다.
+_LEAGUE_CACHE_VERSION = 3
 
 
 def _freeze_league(data: dict) -> dict:

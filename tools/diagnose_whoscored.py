@@ -338,19 +338,30 @@ def stat_table_verdict(raw: str, tables: list) -> None:
         print(f"      {field:<15} " + ("; ".join(marks) if marks
                                        else "문서에 없음"))
 
-    # ② 파서의 실제 판정. `if not any(...)` 가 3절의 통과 조건이다.
-    accepted = []
+    # ② 파서의 실제 판정. **3절의 통과 조건을 그대로 옮긴다** — 팀 열이 있고,
+    #    지표 열이 팀 열과 다른 칸이어야 한다 (§3-9). 진단이 자기 규칙을 쓰면
+    #    수집과 어긋나 "진단은 통과인데 값이 안 들어온다" 가 된다.
+    accepted, near = [], []
     for i, table in enumerate(tables):
         rows = _table_rows(table)
         if len(rows) < 3:
             continue
         hdr = _find_header(rows)
+        i_team = _header_index(rows, "team", "club", hdr=hdr)
         idx = {field: _header_index(rows, *names, hdr=hdr)
                for field, names in STAT_HEADERS}
-        keys = ("shots_pg", "possession", "pass_success", "rating")
-        if not any(idx[k] is not None for k in keys):
-            continue
-        accepted.append((i, hdr, idx, rows))
+        hits = {f: v for f, v in idx.items() if v is not None and v != i_team}
+        if i_team is not None and hits:
+            accepted.append((i, hdr, i_team, idx, rows))
+        elif any(v is not None for v in idx.values()):
+            near.append((i, hdr, i_team, rows))
+
+    for i, hdr, i_team, rows in near:
+        why = ("팀 열이 없다" if i_team is None
+               else "지표 열이 팀 열과 같은 칸이다")
+        print(f"      · 표 [{i}] 거름 ({why}) 머리글: {rows[hdr][:8]}")
+        for r in rows[hdr + 1:hdr + 3]:
+            print(f"          데이터: {r[:8]}")
 
     if not accepted:
         print("      → 3절을 통과하는 표가 **하나도 없다**.")
@@ -358,9 +369,9 @@ def stat_table_verdict(raw: str, tables: list) -> None:
         print("        있는데 머리글이 다른 것인지는 위 ① 줄이 가른다.")
         return
 
-    for i, hdr, idx, rows in accepted:
+    for i, hdr, i_team, idx, rows in accepted:
         got = ", ".join(f"{f}={idx[f]}" for f, _ in STAT_HEADERS)
-        print(f"      → 표 [{i}] 통과 (머리글 r{hdr}): {got}")
+        print(f"      → 표 [{i}] 통과 (머리글 r{hdr}, 팀 열 {i_team}): {got}")
         print(f"        머리글: {rows[hdr][:14]}")
         # 데이터 행을 함께 찍는다. 3절은 통과한 표의 **열 번호로 값을 읽으므로**,
         # 그 번호가 가리키는 칸이 실제로 무엇인지 봐야 값이 옳은지 알 수 있다.
@@ -464,11 +475,14 @@ def main(argv: list[str] | None = None) -> int:
     # 리그 페이지와 팀 페이지는 **묻는 것이 다르다** — 리그는 "팀 링크가 있나",
     # 팀은 "강점/약점 문구가 있나". 앞에서부터 잘라 내면 리그 파일만 3개
     # 나오고 정작 정성 데이터 질문에는 답이 안 나온다. 종류별로 골라 담는다.
+    # 팀 통계 탭(`page_stats_*`)도 리그 원본과 같은 갈래다 — 3절 판정이
+    # 실제로 보아야 하는 것이 그쪽이다 (§3-9).
     league = sorted(target.glob("FAILED_page_league_*.html"))
+    stats = sorted(target.glob("FAILED_page_stats_*.html"))
     team = sorted(target.glob("FAILED_team_*.html"))
     rest = [f for f in sorted(target.glob("FAILED_*.html"))
-            if f not in league and f not in team]
-    files = league[:2] + team[:2] + rest[:2]
+            if f not in league and f not in team and f not in stats]
+    files = league[:2] + stats[:2] + team[:2] + rest[:2]
     if not files:
         files = sorted(target.glob("*.html"))[:3]
     if not files:
@@ -476,7 +490,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     print(f"대상 폴더: {target}")
-    print(f"  리그 원본 {len(league)}개 · 팀 원본 {len(team)}개 · 그 밖 {len(rest)}개"
+    print(f"  리그 원본 {len(league)}개 · 팀 통계 탭 {len(stats)}개 · "
+          f"팀 원본 {len(team)}개 · 그 밖 {len(rest)}개"
           f"  →  {len(files)}개를 봅니다")
     for f in files:
         summarize(f)

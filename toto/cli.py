@@ -102,6 +102,10 @@ def build_parser() -> argparse.ArgumentParser:
                    metavar="FILE",
                    help="저장된 회차 분석 결과(data/artifacts/<회차>.json)를 "
                         "지금 코드로 다시 렌더한다. 수집하지 않는다")
+    p.add_argument("--market-eval", action="store_true",
+                   help="쌓인 회차 기록으로 시장 기준선 캘리브레이션을 잰다 "
+                        "(data/round_matches.csv 를 읽기만 한다. 수집하지 "
+                        "않고 아무것도 고치지 않는다)")
     p.add_argument("--no-cache", action="store_true",
                    help="캐시를 무시하고 새로 수집")
     p.add_argument("--open", action="store_true",
@@ -363,6 +367,16 @@ def main(argv: list[str] | None = None) -> int:
     # 여기서 돌려주면 `sources` 는 import 조차 되지 않는다.
     if args.rerender_artifact is not None:
         return _rerender(args, settings)
+
+    # ---- 0-b. 시장 기준선 캘리브레이션 (Phase 6-B) -----------------------
+    # 여기도 **수집 구간 앞**이다. 쌓인 기록을 읽어 재기만 하고 파일을
+    # 고치지 않으며, 잰 값을 `predict.py`·`Match.probs` 에 되돌려 넣지
+    # 않는다 — 이 단계는 측정 전용이다.
+    if args.market_eval:
+        from . import marketeval
+        print(marketeval.format_summary(
+            marketeval.evaluate(marketeval.load_rows())))
+        return 0
 
     # ---- 0. 저장된 회차 분석 결과로 되돌아가기 (Phase 4-C) ---------------
     # 패널 파일만 주고 그 회차의 artifact 가 있으면 **수집을 다시 하지

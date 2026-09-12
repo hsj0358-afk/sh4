@@ -3100,6 +3100,110 @@ pinnacle|whoscored`), 이 분기는 그 구간 **앞에서** 돌려준다. 그�
 
 회귀 테스트: `python tests/test_rerender.py` (26개).
 
+### 1-27. 사전 스냅샷과 시장 캘리브레이션 (Phase 6) — `toto/marketeval.py`
+
+#### 6-A 가 찾은 것 — **모델 확률이 없다**
+
+백테스트 기반을 만들려고 저장소를 뜯어 보니 전제가 하나 틀려 있었다.
+
+```python
+# analyze.attach_probabilities → predict.additive_probabilities(odds)
+Match.probs = 피나클 배당에서 가산 마진만 뺀 값
+```
+
+`apply_veto` 는 **어디에서도 호출되지 않고**(grep 0건, 정의부뿐), xPTS 는
+2-D 의 **과거 집계**에만 쓰인다(`analysis.py:2342`). 패널·사회자가 내는 것은
+스코어이지 확률이 아니다.
+
+> **`Match.probs` 는 시장 확률이다.** 이 시스템에는 대상 경기의 승·무·패에
+> 대한 **독립적인 모델 확률이 없다.**
+
+그래서 "우리 확률 vs 시장 확률 vs 실제" 3열 비교는 **성립하지 않는다** —
+앞의 두 열이 같은 수다. 모르고 진행하면 자기 자신과의 비교표를 만들게 된다.
+지금 잴 수 있는 것은 `Market ↔ Actual` 하나뿐이고, 그것만 잰다.
+
+**`model_probability` 칸을 만들지 않았다.** 없는 것을 자리만 만들어 두면
+다음 사람이 그 표로 "우리가 시장보다 낫다" 를 말하게 된다.
+
+#### 6-A 가 찾은 누수 — 덮어쓰기 둘
+
+artifact 는 **킥오프 전 스냅샷**이다 (실물 260052: 배당 수집이 킥오프 23시간
+전, 시즌 색인의 종료 경기 최대 kickoff 이 회차보다 5일 앞). 그런데 두 곳이
+그것을 조용히 지웠다.
+
+| 자리 | 무엇이 일어났나 |
+|---|---|
+| `artifact.save()` | 무조건 덮어써서, 결과가 나온 뒤 같은 회차를 다시 돌리면 **사전 스냅샷이 사후 스냅샷으로 교체**됐다 |
+| `roundlog.record()` | 같은 회차 행을 **통째로 교체**해서 `odds_*`·`p_*` 가 사후 값으로 바뀌었다 (`result` 는 보존됐지만 확률이 바뀌면 그 회차는 표본이 아니다) |
+
+둘 다 **시각을 기준으로** 막았다. 아직 한 경기도 시작하지 않았으면 그대로
+덮어쓴다 — 그때는 옛것도 새것도 사전 스냅샷이고, 수집이 반쯤 실패한 뒤 다시
+돌리는 것이 정상 흐름이다. **경기가 시작한 뒤부터 언다.**
+
+  · `artifact.is_prematch()` 는 회차에서 **가장 이른** 킥오프를 본다.
+    막히면 `생략 (사전 스냅샷 보존 …)` 이고 §1-6 의 어휘 그대로다. 파일이
+    아예 없으면 늦게라도 남긴다 — 평가에서 빼면 되고 그 판정은
+    `recorded_at` 이 한다.
+  · `roundlog._merge_rows()` 는 **경기마다** 판정한다. 결과 칸
+    (`RESULT_FIELDS`)은 `_settle()` 이 나중에 채우므로 아무것도 잃지 않는다.
+    이번 회차 목록에서 빠진 옛 행도 버리지 않는다 — 기록은 축적이 목적이다.
+  · **시각을 모르면 언다.** 모르는 채로 사전 값을 갈아 끼우는 것보다
+    보존하는 편이 안전하다.
+
+#### 킥오프 해석을 `models` 로 옮겼다
+
+`artifact` 도 "이 회차가 시작했나" 를 물어야 했는데, **`artifact` 는
+`analysis` 를 import 할 수 없다** — 저장본이 분석을 다시 만들지 않는다는
+보증이 그 import 금지로 지켜지고 있다(`test_panel_audit.test_j8`). 그렇다고
+파싱을 한 벌 더 만들면 두 곳이 어긋난다.
+
+그래서 `as_of_from_match` 와 `KST` 를 **`models` 로 옮기고**
+`analysis` 가 같은 객체를 다시 내보낸다 (`analysis.as_of_from_match is
+models.as_of_from_match`). §1-14 가 `find_season_match` 를 `roundlog` 에서
+꺼내 `models` 에 둔 것과 같은 이유다. **부르는 쪽은 한 곳도 바뀌지 않았다.**
+
+#### 새 CSV 를 만들지 않았다
+
+`roundlog` 의 `data/round_matches.csv` 가 이미 필요한 칸을 전부 갖고 있다 —
+`marketeval` 은 그것을 읽기만 하고 `roundlog._read()` 를 그대로 쓴다(§1-8).
+
+**`p_home`·`p_draw`·`p_away` 는 시장 확률이다.** 이름이 중립적이라 모델
+확률로 오해하기 쉬워 여기와 모듈 설명에 적어 둔다.
+
+#### 평가 대상은 다섯 조건을 전부 만족해야 한다
+
+시장 확률 3개가 다 있고 **합이 1 근처** · 실제 결과가 있음 · **확률이
+킥오프 전에 기록됨**(`recorded_at < kickoff_kst`) · 중복 아님 · 회차·번호로
+식별됨. 하나라도 모자라면 빼고 **왜 뺐는지 전부 남긴다**. `None` 을 0 으로
+바꾸지 않는다.
+
+#### 지표 — 정의를 적어 둔다
+
+| | |
+|---|---|
+| `market_favorite_accuracy` | 시장 확률이 가장 높던 결과와 실제가 겹친 비율. **적중률이 아니다** — 이 프로그램은 픽을 추천한 적이 없다 (§1-3) |
+| `brier_score` | 다중분류 `(1/N) Σ Σ (p−y)²`, **0~2**. /2 로 나누는 관례를 쓰지 않았다 |
+| `log_loss` | `−(1/N) Σ ln p(실제)`. 0 은 `LOG_EPS=1e-15` 로 자르고 그 사실을 숨기지 않는다 |
+| `calibration_table` | 경기 하나가 **세 쌍**(승·무·패)을 낸다. 구간마다 표본 수·평균 예측·실제 빈도. **빈 구간은 `None`** 이고 표본이 적은 구간은 해석하지 않는다 |
+
+표본이 없으면 전부 `None` 이다 — 0 이 아니다.
+
+#### 측정만 한다
+
+잰 값을 `predict.py`·`Match.probs` 에 되돌려 넣지 않는다. `marketeval` 은
+`predict` 를 **import 하지 않고**(AST 테스트) 추천·확신도를 만들지 않는다.
+`--market-eval` 은 `--rerender-artifact` 와 **같은 자리**(수집 구간 앞)에서
+갈라진다 — 별도 프로세스로 돌린 뒤 `sys.modules` 를 보면 `toto.sources*` 가
+하나도 없다(실측).
+
+#### 표본은 지금 0 이다
+
+`data/round_matches.csv` 가 아직 없고 artifact 는 1개(260052)인데 그 회차의
+결과는 **다음 회차를 돌릴 때** 시즌 색인에 들어온다. **"시장 캘리브레이션
+결과가 좋다/나쁘다" 를 적을 수 없다** — 0건이다.
+
+회귀 테스트: `python tests/test_market_eval.py` (44개).
+
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
 260052 실행이 남긴 것은 후스코어드 `팀명 매칭 실패` 5건과 `강점 0개` 3팀이다.
@@ -3684,6 +3788,7 @@ python -m toto --validate-panel-result F.json  # 검사만 (붙이지 않는다)
 python -m toto --audit-panel-result F.json  # 회차 구조 감사 (4-C)
 python -m toto --paste-panel-result F.json  # 3단계 Moderator 결과 원문 → 반영 (4-F)
 python -m toto --rerender-artifact data/artifacts/260052.json   # 저장본만 다시 렌더 · 수집 0회 (5-E3a §1-25)
+python -m toto --market-eval               # 시장 기준선 캘리브레이션 · 읽기만 한다 (6-B §1-27)
 #  메뉴 [4] 가 위 셋을 한 번에 한다 — panel_results/ 에 JSON 을 넣고 고르면 된다 (§1-20)
 python tests/test_league_matching.py       # 리그·팀 매칭 회귀 · 팀 식별 §1-22·1-26 (29개)
 python tests/test_match_details.py         # 경기 상세 파싱 회귀 (36개)
@@ -3723,6 +3828,7 @@ python tests/test_direction_axis.py        # 지표 방향·직접 비교 축 5-
 python tests/test_radar_geometry.py        # 레이더 viewBox·라벨·축 순서 5-D1 §1-24 (18개)
 python tests/test_rerender.py              # 저장본 재렌더 진입점 5-E3a §1-25 (26개)
 python tests/test_report_compaction.py     # 리포트 문구 압축 5-E2 §1-26 (27개)
+python tests/test_market_eval.py           # 사전 스냅샷 불변·시장 캘리브레이션 6-B §1-27 (44개)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)
 python tools/probe_sources.py --browser    # 소스 구조 점검

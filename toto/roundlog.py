@@ -61,6 +61,15 @@ MATCH_FIELDS = (
 # 짝이 시즌에 두 번(홈/원정) 나오므로 날짜로 갈라야 한다.
 _SETTLE_WINDOW = timedelta(days=4)
 
+# 경기가 끝난 뒤 `_settle()` 이 채우는 칸. **나머지는 전부 사전 스냅샷**이고
+# 경기가 시작한 뒤에는 바꾸지 않는다 (Phase 6-B).
+#
+# 배당·확률·픽은 **그 시점의 관측**이다. 같은 회차를 결과가 나온 뒤 다시
+# 돌렸다는 이유로 새 값을 덮어쓰면, 그 회차는 시장 캘리브레이션 표본으로
+# 쓸 수 없게 된다 — 사후 배당으로 사후 결과를 맞히는 셈이기 때문이다.
+RESULT_FIELDS = ("home_goals", "away_goals", "result", "pick_hit",
+                 "settled_at")
+
 
 def _fmt(value, spec: str = "") -> str:
     """숫자 → 문자열. **없으면 빈칸**이다 (0 이 아니다)."""
@@ -110,6 +119,40 @@ def _kickoff_date(text: str) -> datetime | None:
         except ValueError:
             continue
     return None
+
+
+def _started(kickoff_kst: str, now: datetime) -> bool:
+    """이 경기가 이미 시작했나.
+
+    **시각을 모르면 시작한 것으로 본다** — 모르는 채로 사전 값을 갈아
+    끼우는 것보다 보존하는 편이 안전하다.
+    """
+    kickoff = _kickoff_date(kickoff_kst)
+    return kickoff is None or now >= kickoff
+
+
+def _merge_rows(old: list[dict], new: list[dict],
+                now: datetime) -> tuple[list[dict], int]:
+    """같은 회차의 기존 행과 이번 행을 합친다 → (행 목록, 보존한 수).
+
+    예전에는 같은 회차 행을 **통째로 교체**해서, 결과가 나온 뒤 다시 돌리면
+    `odds_*`·`p_*` 가 사후 값으로 바뀌었다 (Phase 6-A 에서 찾은 누수 지점).
+    이제 경기가 시작한 뒤에는 **기존 행을 그대로 둔다** — 결과 칸은
+    `_settle()` 이 나중에 채우므로 아무것도 잃지 않는다.
+
+    이번 회차 목록에서 빠진 옛 행도 버리지 않는다. 기록은 축적이 목적이다.
+    """
+    kept = {r.get("no", ""): r for r in old}
+    out, frozen = [], 0
+    for row in new:
+        prev = kept.pop(row.get("no", ""), None)
+        if prev is not None and _started(row.get("kickoff_kst", ""), now):
+            out.append(prev)
+            frozen += 1
+        else:
+            out.append(row)
+    out.extend(kept.values())
+    return out, frozen
 
 
 def _match_rows(report: Report) -> list[dict]:
@@ -221,15 +264,27 @@ def record(report: Report) -> str:
     if report.round_id == "DEMO":
         return "생략 (데모는 기록하지 않습니다)"
 
-    match_rows = [r for r in _read(MATCH_FILE, MATCH_FIELDS)
-                  if r.get("round") != report.round_id]
-    match_rows.extend(_match_rows(report))
+    now = datetime.now()
+    stored = _read(MATCH_FILE, MATCH_FIELDS)
+    match_rows = [r for r in stored if r.get("round") != report.round_id]
+    merged, frozen = _merge_rows(
+        [r for r in stored if r.get("round") == report.round_id],
+        _match_rows(report), now)
+    match_rows.extend(merged)
 
-    round_rows = [r for r in _read(ROUND_FILE, ROUND_FIELDS)
-                  if r.get("round") != report.round_id]
+    stored_rounds = _read(ROUND_FILE, ROUND_FIELDS)
+    round_rows = [r for r in stored_rounds if r.get("round") != report.round_id]
+    mine = [r for r in stored_rounds if r.get("round") == report.round_id]
     this_round = _round_row(report)
-    if this_round is not None:
+    if mine and frozen:
+        # 경기 행을 얼렸으면 회차 행도 사전 스냅샷이다 — 승산·합계가 그때의
+        # 배당에서 나온 값이라 같이 보존해야 짝이 맞는다. 정산 칸은 아래
+        # `_roll_up()` 이 이 행에 그대로 채운다.
+        round_rows.extend(mine)
+    elif this_round is not None:
         round_rows.append(this_round)
+    else:
+        round_rows.extend(mine)
 
     filled = _settle(match_rows, report)
     _roll_up(round_rows, match_rows)
@@ -245,6 +300,8 @@ def record(report: Report) -> str:
     rounds = len({r.get("round", "") for r in match_rows})
     settled = sum(1 for r in match_rows if r.get("result"))
     extra = f", 이번에 {filled}경기 정산" if filled else ""
+    if frozen:
+        extra += f", 사전 스냅샷 보존 {frozen}경기"
     return (f"ok ({len(report.matches)}경기 기록 · 누적 {rounds}회차 "
             f"{len(match_rows)}경기 · 결과 확보 {settled}경기{extra})")
 

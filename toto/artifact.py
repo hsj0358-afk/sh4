@@ -41,7 +41,7 @@ from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
-from .models import Report, revive_report
+from .models import Report, as_of_from_match, revive_report
 from .settings import ROOT
 
 log = logging.getLogger("toto")
@@ -60,6 +60,36 @@ DROPPED = ("shot_aggregates", "shot_matches", "opponent_matches")
 def path_for(round_id: str, outdir: Path | None = None) -> Path:
     base = Path(outdir) if outdir is not None else ARTIFACT_DIR
     return base / FILENAME.format(round=round_id or "unknown")
+
+
+def _earliest_kickoff(report: Report) -> datetime | None:
+    """이 회차에서 **가장 먼저 시작하는** 경기의 kickoff (KST aware).
+
+    시각을 새로 파싱하지 않는다 — 분석이 `as_of` 를 만들 때 쓰는 것과
+    **같은 함수**다 (`models.as_of_from_match`, §1-8). 두 곳에 두면 한쪽만
+    고쳐져 "분석은 사전인데 저장은 사후" 처럼 어긋난다.
+
+    `analysis` 를 import 하지 않는다 — 저장본이 분석을 다시 만들지 않는다는
+    보증이 그 import 금지로 지켜지고 있다(`test_j8`). 그래서 규칙을
+    `models` 로 옮겼다.
+    """
+    times = [t for t in (as_of_from_match(m) for m in report.matches) if t]
+    return min(times) if times else None
+
+
+def is_prematch(report: Report, now: datetime | None = None) -> bool:
+    """이 회차가 아직 **한 경기도 시작하지 않았나** (Phase 6-B).
+
+    **시각을 모르면 사전이라고 단정하지 않는다.** 모르는 채로 사전 스냅샷을
+    갈아 끼우는 것보다 보존하는 편이 안전하다 (§1-5 와 같은 태도).
+    """
+    first = _earliest_kickoff(report)
+    if first is None:
+        return False
+    now = now or datetime.now(first.tzinfo)
+    if now.tzinfo is None:                      # naive 는 같은 시간대로 읽는다
+        now = now.replace(tzinfo=first.tzinfo)
+    return now < first
 
 
 def _prune(node):
@@ -82,13 +112,26 @@ def to_dict(report: Report) -> dict:
             "report": _prune(asdict(report))}
 
 
-def save(report: Report, outdir: Path | None = None) -> str:
-    """회차 분석 결과를 파일로. 상태 문자열을 돌려준다 (§1-6)."""
+def save(report: Report, outdir: Path | None = None,
+         now: datetime | None = None) -> str:
+    """회차 분석 결과를 파일로. 상태 문자열을 돌려준다 (§1-6).
+
+    **경기가 시작한 뒤에는 기존 저장본을 덮어쓰지 않는다** (Phase 6-B).
+    예전에는 무조건 덮어써서, 결과가 나온 뒤 같은 회차를 다시 돌리면
+    **킥오프 전 스냅샷이 사후 스냅샷으로 조용히 교체**됐다 — 그러면 그 회차는
+    시장 캘리브레이션 표본에서 영구히 사라진다.
+
+    아직 한 경기도 시작하지 않았으면 그대로 덮어쓴다. 그때는 옛것도 새것도
+    사전 스냅샷이고, 수집이 반쯤 실패한 뒤 다시 돌리는 것이 정상 흐름이다.
+    """
     if not report.matches:
         return "생략 (경기 없음)"
     if (report.round_id or "").upper() == "DEMO":
         return "생략 (데모는 저장하지 않습니다)"
     path = path_for(report.round_id, outdir)
+    if path.exists() and not is_prematch(report, now):
+        return ("생략 (사전 스냅샷 보존 — 이미 시작한 회차입니다. "
+                f"다시 저장하려면 {path} 를 지우십시오)")
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         text = json.dumps(to_dict(report), ensure_ascii=False, indent=1)

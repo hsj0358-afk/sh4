@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from .predict import MatchProb, RoundVerdict
 from typing import Any
@@ -1298,6 +1298,44 @@ def revive_report(d: Any) -> Report | None:
                                       (d.get("season_matches") or []))
                           if s is not None]
     return out
+
+
+# 베트맨 경기 시각(`Match.kickoff_kst`)은 한국시간 표기다. 시즌 경기 색인의
+# kickoff 은 FotMob 이 UTC 로 주므로, 비교하려면 한쪽에 시간대를 붙여야 한다.
+# **임의로 정하는 것이 아니라** 필드 이름이 이미 KST 라고 밝히고 있다.
+KST = timezone(timedelta(hours=9))
+
+
+def as_of_from_match(match) -> datetime | None:
+    """`Match.kickoff_kst` → 시간대가 붙은 datetime.
+
+    필드 이름이 KST 라고 밝히고 있으므로 UTC+9 를 붙인다. 시즌 경기 색인의
+    kickoff 은 UTC 라서 시간대가 없으면 비교 자체가 되지 않는다
+    (`matches_before` 가 TypeError 를 삼키고 전부 버린다).
+    파싱하지 못하면 None — 그러면 과거 경기 구간이 비고, 그 사실이 notes 에
+    남는다. 없는 시각을 지어내지 않는다.
+
+    **여기에 둔 이유** (Phase 6-B). 원래 `analysis` 에 있었는데 `artifact` 도
+    "이 회차가 아직 시작하지 않았나" 를 물어야 했다. 그런데 `artifact` 는
+    `analysis` 를 import 하면 안 된다 — 저장본이 분석을 다시 만들지 않는다는
+    보증이 그 import 금지로 지켜지고 있다(`test_j8`). 그렇다고 파싱을 한 벌
+    더 만들면 두 곳이 어긋난다. 그래서 `find_season_match` 와 같은 자리로
+    옮겼다 (§1-14 와 같은 이유). `analysis.as_of_from_match` 는 이것을 그대로
+    다시 내보내므로 부르는 쪽은 바뀌지 않는다.
+    """
+    text = (getattr(match, "kickoff_kst", "") or "").strip()
+    if not text:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(text, fmt).replace(tzinfo=KST)
+        except ValueError:
+            continue
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=KST)
 
 
 def find_season_match(season: list[SeasonMatch], home: str, away: str,

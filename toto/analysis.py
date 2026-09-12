@@ -79,6 +79,8 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
+from .models import KST as models_KST
+from .models import as_of_from_match as models_as_of_from_match
 from .models import (DERIVED, MODEL, OBSERVED, AnalysisAxis, DataQuality,
                      Match, MatchAnalysis, Metric, SeasonMatch, TeamAnalysis,
                      TeamProfile, matches_before)
@@ -90,10 +92,11 @@ SEASON = "season"
 HIGHER_BETTER = "higher_better"
 LOWER_BETTER = "lower_better"
 
-# 베트맨 경기 시각(`Match.kickoff_kst`)은 한국시간 표기다. 시즌 경기 색인의
-# kickoff 은 FotMob 이 UTC 로 주므로, 비교하려면 한쪽에 시간대를 붙여야 한다.
-# **임의로 정하는 것이 아니라** 필드 이름이 이미 KST 라고 밝히고 있다.
-KST = timezone(timedelta(hours=9))
+# 킥오프 시각 해석은 `models` 에 있다 — `artifact` 도 같은 규칙이 필요한데
+# 그쪽은 `analysis` 를 import 할 수 없기 때문이다 (Phase 6-B, §1-8).
+# 이름은 그대로 두어 부르는 쪽이 바뀌지 않는다.
+KST = models_KST
+as_of_from_match = models_as_of_from_match
 
 # 트렌드 밴드. 값이 아니라 라벨이다 — 점수로 바꾸지 않는다.
 HIGHER, LOWER, SIMILAR = "higher", "lower", "similar"
@@ -564,30 +567,6 @@ def detail_window_of(settings: Settings) -> int:
 # --------------------------------------------------------------------------
 # 3. 시점
 # --------------------------------------------------------------------------
-def as_of_from_match(match: Match) -> datetime | None:
-    """`Match.kickoff_kst` → 시간대가 붙은 datetime.
-
-    필드 이름이 KST 라고 밝히고 있으므로 UTC+9 를 붙인다. 시즌 경기 색인의
-    kickoff 은 UTC 라서 시간대가 없으면 비교 자체가 되지 않는다
-    (`matches_before` 가 TypeError 를 삼키고 전부 버린다).
-    파싱하지 못하면 None — 그러면 과거 경기 구간이 비고, 그 사실이 notes 에
-    남는다. 없는 시각을 지어내지 않는다.
-    """
-    text = (getattr(match, "kickoff_kst", "") or "").strip()
-    if not text:
-        return None
-    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
-        try:
-            return datetime.strptime(text, fmt).replace(tzinfo=KST)
-        except ValueError:
-            continue
-    try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=KST)
-
-
 def team_history(season: list[SeasonMatch], team: str,
                  as_of: datetime | None) -> list[SeasonMatch]:
     """`as_of` 이전에 끝난 그 팀의 경기 (오래된 것부터).

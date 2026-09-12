@@ -762,6 +762,24 @@ def read_team(browser: WhoScoredBrowser, settings: Settings, team_url: str,
             cache.save_debug("whoscored", f"team_{canonical}", html)
         return {}
 
+    # 강점만 비고 다른 특성은 온 상태는 **두 가지 뜻이 될 수 있다** — 소스에
+    # 강점이 없는 것과 파서가 놓친 것. 그런데 위 분기는 '전부 실패' 일 때만
+    # 원본을 남기므로, 지금까지 이 상태는 구분할 자료가 한 조각도 남지 않았다
+    # (§1-6-1 의 같은 계열 침묵).
+    #
+    # 5-E2 에서 실물로 확인한 결과 이 상태는 후스코어드가
+    # `Team has no significant strengths` 라고 적어 둔 것이었다 — 그래서
+    # **파서를 고치지 않았고 값도 만들지 않는다.** 다만 다음에 파서가 진짜로
+    # 놓치기 시작하면 같은 침묵이 반복되므로, 그때 볼 원본을 남겨 둔다.
+    # payload 는 한 칸도 바뀌지 않는다 (캐시 판도 그대로).
+    if not chars["strengths"] and (chars["weaknesses"] or chars["style"]):
+        log.info("%s: 강점 0개 (약점 %d개 · 스타일 %d개) — 원본을 남깁니다. "
+                 "소스에 없는 것인지 파서가 놓친 것인지 나중에 가릴 수 있게.",
+                 canonical, len(chars["weaknesses"]), len(chars["style"]))
+        if cache:
+            cache.save_debug("whoscored", f"team_nostrength_{canonical}",
+                             html, failed=False)
+
     if cache:
         cache.set("whoscored", f"team_{canonical}", payload)
     return payload

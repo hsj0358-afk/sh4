@@ -751,13 +751,14 @@ def _direct_compare_block(match: Match) -> str:
         note = ('<p class="meta">표본 크기가 다른 지표 — 그대로 견줄 때 '
                 '주의하십시오: ' + esc(" · ".join(lines)) + '</p>')
     return ('<div class="block"><h4>홈 ↔ 원정 직접 비교</h4>'
+            # 설명은 **블록 맨 위 한 번**이다. 예전에는 같은 축 설명이 그림
+            # 마다 figcaption 으로 또 나와, 한 경기에 같은 문단이 여러 번
+            # 반복됐다 (5-E2). 규칙이 바뀐 것이 아니라 되풀이를 걷었을 뿐이고,
+            # 축 방향·좌표·값은 한 칸도 바뀌지 않았다 (§1-23).
             '<p class="meta">같은 기간·같은 지표를 <b>양쪽 다 값이 있을 때만</b> '
             '한 눈금 위에 놓습니다 · 눈금은 줄마다 따로라 다른 줄과 x 위치를 '
             '견줄 수 없습니다 · ↓ 는 낮을수록 좋은 지표이고 <b>그 줄은 축을 '
-            '반대로</b> 그립니다 (어느 줄이든 오른쪽이 더 좋은 값) · 표본 '
-            '수(n)는 아래 경기력 분석 표에 있고 여기 없는 지표도 거기 전부 '
-            '남아 있습니다 · 지표를 합쳐 종합 점수를 만들지 않고 승·무·패를 '
-            '추천하지 않습니다</p>'
+            '반대로</b> 그립니다 (어느 줄이든 오른쪽이 더 좋은 값)</p>'
             f'{body}{note}</div>')
 
 
@@ -1117,12 +1118,11 @@ def _tally_table(result) -> str:
          for t in result.distribution])
     if not bars:
         return ""
+    # 설명 문단을 걷었다 (5-E2). **확률이 되지 않게 막는 장치는 위 두 가지
+    # 그대로다** — 길이 기준이 최댓값이고 라벨이 횟수다. 그것은 문구가 아니라
+    # 구조였고, 문구만 없앤 것이라 읽히는 방식은 바뀌지 않는다.
     return (f'<p class="lbl">토론 시뮬레이션 {esc(result.simulations)}회의 스코어 분포</p>'
-            f'{bars}'
-            f'<p class="vs">같은 자료를 서로 다른 축에서 읽었을 때 결론이 '
-            f'모인 정도입니다 · 막대는 <b>이 경기에서 가장 많이 나온 스코어</b>를 '
-            f'기준으로 한 상대 길이이고 전체 횟수로 나눈 값이 아닙니다 · '
-            f'<b>확률이 아닙니다</b></p>')
+            f'{bars}')
 
 
 def _adopted_block(result) -> str:
@@ -1177,18 +1177,25 @@ def _moderator_block(result) -> str:
                 f'정리한 것입니다.</p>')
     # 사용자가 3단계에서 얻으려는 답이므로 맨 앞에 놓는다.
     parts = _adopted_block(result)
+    # 공통점·차이·반론·제약·불확실성·시장 기준선과의 관계를 **접이식 하나로**
+    # 묶는다 (5-E2). 다섯이 각각 제목을 달고 펼쳐져 있어 결론(최종 스코어)이
+    # 한참 위로 밀려났다. **내용은 한 글자도 줄이지 않았고 순서도 그대로다** —
+    # 펼치면 전과 같다 (§1-15-3 의 '접는 것은 지우는 것이 아니다').
+    detail = ""
     for field, label in _MODERATOR_ROWS:
         items = getattr(result, field, ()) or ()
         if not items:
             continue
         lis = "".join(f'<li>{_ptext(x)}</li>' for x in items)
-        parts += (f'<p class="lbl">{esc(label)}</p>'
-                  f'<ul class="mnotes">{lis}</ul>')
+        detail += (f'<p class="lbl">{esc(label)}</p>'
+                   f'<ul class="mnotes">{lis}</ul>')
     for field, label in (("market_relation", "시장 기준선과의 관계"),):
         text = getattr(result, field, "") or ""
         if text:
-            parts += (f'<p class="lbl">{esc(label)}</p>'
-                      f'<p class="ptext">{_ptext(text)}</p>')
+            detail += (f'<p class="lbl">{esc(label)}</p>'
+                       f'<p class="ptext">{_ptext(text)}</p>')
+    parts += _details("패널 세부 의견", "공통점 · 차이 · 반론·제약 · 불확실성 · "
+                                   "시장 기준선과의 관계", detail)
     shared = ", ".join(esc(e) for e in result.shared_evidence_ids)
     only_a = ", ".join(esc(e) for e in result.data_only_evidence_ids)
     only_b = ", ".join(esc(e) for e in result.matchup_only_evidence_ids)
@@ -1353,22 +1360,14 @@ def _panel_block(match: Match) -> str:
         # 덧붙이면 같은 말을 두 번 하면서 뜻은 흐려진다 (UI §2).
         # 최초 스코어 스냅샷이 실려 있으면 그것만 적는다 (Phase 4-G).
         # **원문이 생긴 것이 아니다** — 제목도 상태도 그대로다.
+        # 설명 문단을 걷었다 (5-E2). **제목이 이미 상태를 말한다** —
+        # `패널 분석 (사회자 결과만 반영)`. 그 아래에서 "원문이 없습니다"를
+        # 다시 적으면 같은 말을 두 번 하는 것이고, 승/무/패 미추천은 리포트
+        # 하단에 §1-3 의 문장으로 이미 있다. **상태 판정도 값도 그대로다.**
         initial = _initial_line(run, cls="ptext")
         if initial:
-            initial = ('<p class="lbl">1·2단계 최초 예상 스코어</p>'
-                       + initial
-                       + '<p class="meta">각 분석가가 <b>처음</b> 낸 스코어만 '
-                         '옮긴 것입니다 · 요약·근거 같은 분석가 원문은 이번 '
-                         '입력에 없습니다</p>')
-            said = ('아래 종합은 사회자가 낸 것이고 분석가의 <b>최초 예상 '
-                    '스코어만</b> 함께 적습니다')
-        else:
-            said = ('아래 종합은 사회자가 낸 것이고 분석가 각자의 '
-                    '예상 스코어는 <b>표시하지 않습니다</b>')
+            initial = ('<p class="lbl">1·2단계 최초 예상 스코어</p>' + initial)
         return ('<div class="block"><h4>패널 분석 (사회자 결과만 반영)</h4>'
-                '<p class="meta">1·2단계 분석가 원문은 이번 입력에 포함되지 '
-                f'않았습니다 · {said} · '
-                '<b>승/무/패를 추천하지 않습니다</b></p>'
                 f'{initial}'
                 f'{_market_table(run.market_reference)}'
                 f'{_moderator_block(run.moderator)}'

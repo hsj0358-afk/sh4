@@ -422,6 +422,105 @@ def test_260052_pinnacle_gate_now_opens():
 
 
 # --------------------------------------------------------------------------
+# 3-C. 시즌 색인을 깎던 이름 하나 (Phase 5-E2)
+# --------------------------------------------------------------------------
+# 260052 에서 후스코어드가 `팀명 매칭 실패` 를 다섯 건 남겼다. 넷은 표기가
+# 짧아진 것뿐이고(`R. Vallecano`·`R. Madrid`·`C. Vigo`·`A. Club`) 같은 팀의
+# **전체 이름이 다른 자리에서 이미 붙어** 자료가 하나도 빠지지 않았다.
+#
+# 다섯째만 달랐다. `R. Santander` 는 정규명 자체가 표에 없어서 FotMob 이
+# **그 팀이 낀 경기를 전부 버렸고**, 라리가 시즌 경기 색인이 한 팀치(38경기)
+# 모자랐다. 그래서 이 팀만 등록했다 — 경고를 0으로 만들려고 넣은 것이 아니다.
+#
+# 넣은 표기는 **후스코어드가 실제로 보낸 두 가지뿐**이다.
+#   · 순위표 표기      `R. Santander`
+#   · 팀 링크 slug     /teams/56/show/spain-racing-santander
+# 한국어 표기와 FotMob 표기는 관측하지 못해 넣지 않았다 (§1-22).
+
+# 표기가 짧아졌을 뿐인 넷 — **일부러 등록하지 않는다.** 등록해야 할 이유는
+# 자료 손실이지 경고 건수가 아니고, 이 넷은 손실이 없다.
+DIAGNOSTIC_ONLY = ("R. Vallecano", "R. Madrid", "C. Vigo", "A. Club")
+
+
+def test_racing_santander_resolves_from_observed_spellings():
+    r = TeamResolver()
+    for name in ("R. Santander", "Racing Santander"):
+        got = r.resolve(name, learn=False, quiet=True)
+        assert got == "Racing Santander", f"{name} → {got}"
+
+
+def test_racing_santander_carries_a_league():
+    """리그를 모르면 순위표·배당 조회가 통째로 불가능하다."""
+    assert TeamResolver().league_of("Racing Santander") == "laliga"
+
+
+def test_racing_santander_does_not_hijack_neighbours():
+    """`Racing`·`Santander` 가 기존 팀을 가로채지 않는다.
+
+    부분일치는 양방향이라 짧은 낱말이 들어오면 번지기 쉽다 (§1-1-1).
+    """
+    r = TeamResolver()
+    for name, want in (("Real Sociedad", "Real Sociedad"),
+                       ("소시에다", "Real Sociedad"),
+                       ("Real Madrid", "Real Madrid"),
+                       ("Rayo Vallecano", "Rayo Vallecano"),
+                       ("Real Betis", "Real Betis"),
+                       ("Real Oviedo", "Real Oviedo"),
+                       ("Celta Vigo", "Celta Vigo"),
+                       ("Athletic Club", "Athletic Club")):
+        got = r.resolve(name, learn=False, quiet=True)
+        assert got == want, f"{name} → {got} (기대 {want})"
+
+
+def test_every_existing_representation_resolves_to_its_own_canonical():
+    """표에 실린 **모든 표기**가 자기 정규명으로 돌아오는가.
+
+    파일을 고치기 전에 돌린 충돌 시뮬레이션을 테스트로 고정한다 — 정규명·
+    ko·en 을 전부 훑는다. 새 이름이 기존 해석을 한 건이라도 가로채면 여기서
+    깨진다. 표를 직접 읽는 이유는 그것이 **실제로 배포되는 자료**이고,
+    resolver 내부를 들여다보지 않아도 같은 것을 물을 수 있어서다.
+    """
+    import yaml
+    path = Path(__file__).resolve().parent.parent / "data" / "teams.yaml"
+    table = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    r = TeamResolver()
+    bad, seen = [], 0
+    for canonical, entry in table.items():
+        entry = entry or {}
+        names = [canonical] + [str(x) for x in (entry.get("ko") or ())] \
+                            + [str(x) for x in (entry.get("en") or ())]
+        for name in names:
+            seen += 1
+            got = r.resolve(name, learn=False, quiet=True)
+            if got != canonical:
+                bad.append((name, canonical, got))
+    assert seen > 600, seen          # 표가 통째로 안 읽히면 빈손으로 통과한다
+    assert not bad, bad[:8]
+
+
+def test_short_whoscored_abbreviations_are_left_alone():
+    """넷은 **등록하지 않은 상태 그대로**여야 한다.
+
+    자료 손실이 없는데 별칭을 넣으면, 다음에 비슷한 축약이 나왔을 때
+    '경고가 뜨니 넣는다' 가 규칙이 된다. 그 넷이 실제로 미등록인지 본다 —
+    누군가 조용히 추가하면 이 테스트가 먼저 말해 준다.
+    """
+    r = TeamResolver()
+    got = {n: r.resolve(n, learn=False, quiet=True) for n in DIAGNOSTIC_ONLY}
+    assert all(v is None for v in got.values()), got
+
+
+def test_full_names_behind_those_abbreviations_still_resolve():
+    """축약을 안 넣어도 **전체 이름은 그대로 붙는다** — 그래서 손실이 없다."""
+    r = TeamResolver()
+    for name, want in (("Rayo Vallecano", "Rayo Vallecano"),
+                       ("Real Madrid", "Real Madrid"),
+                       ("Celta Vigo", "Celta Vigo"),
+                       ("Athletic Club", "Athletic Club")):
+        assert r.resolve(name, learn=False, quiet=True) == want
+
+
+# --------------------------------------------------------------------------
 # 4. K/J리그 회귀 — 기존 매핑이 그대로 살아 있는가
 # --------------------------------------------------------------------------
 DOMESTIC = {

@@ -348,8 +348,9 @@ def test_d8_report_says_moderator_only():
     assert panelimport.attach(res, report) == 14
     html = render.render_report(report, Settings())
     # 4-F UI: 제목부터 상태를 밝힌다. "하지 않았습니다" 로 적지 않는다.
+    # 5-E2 에서 본문 설명을 걷었다 — **제목이 이미 상태를 말한다.**
     assert "패널 분석 (사회자 결과만 반영)" in html
-    assert "1·2단계 분석가 원문은 이번 입력에 포함되지 않았습니다" in html
+    assert "1·2단계 분석가 원문은 이번 입력에 포함되지 않았습니다" not in html
     assert "Moderator 결과만 반영" in html          # 요약 카드
     assert "이 경기는 패널 분석을 하지 않았습니다" in html   # 9·13·14번
 

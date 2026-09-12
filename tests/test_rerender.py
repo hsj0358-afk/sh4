@@ -320,7 +320,7 @@ def test_e3_lower_is_better_axis_is_reversed():
     """5-D 의 축 반전이 이 경로에서도 그대로다."""
     html = _rendered()
     assert "축을 반대로" in html
-    assert "오른쪽이 그 지표에서 더 좋은 값" in html
+    assert "오른쪽이 더 좋은 값" in html
     assert "오른쪽 끝이 그 줄의 큰 값" not in html
 
 

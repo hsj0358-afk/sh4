@@ -95,7 +95,11 @@ def test_a3_the_missing_analysts_are_stated_once():
     """같은 말을 제목과 본문에 두 번 적지 않는다."""
     report, _res = _moderator_only_report()
     card = _card(_html(report), 1)
-    assert card.count("1·2단계 분석가 원문은 이번 입력에 포함되지 않았습니다") == 1
+    # 5-E2 에서 본문 설명을 **걷었다** — 제목 `패널 분석 (사회자 결과만
+    # 반영)` 이 이미 같은 말을 한다. 두 번 적지 않는다는 규칙은 그대로이고,
+    # 이제 한 번도 되풀이하지 않는다.
+    assert "1·2단계 분석가 원문은 이번 입력에 포함되지 않았습니다" not in card
+    assert card.count("패널 분석 (사회자 결과만 반영)") == 1
 
 
 def test_a4_skipped_is_not_the_same_as_moderator_only():
@@ -181,16 +185,24 @@ def test_b3_nothing_is_deleted_only_moved():
     for must in ("시즌 지표 비교 (수집한 값 전부)", "경기력 분석 · 시즌",
                  "리그 내 위치", "홈 ↔ 원정 직접 비교"):
         assert must in card, must
-    body = card.split("<details")[1]
+    # 5-E2 에서 패널 세부 의견 접힘이 하나 더 생겨 `split[1]` 이 그 쪽을
+    # 가리키게 됐다. 세는 자리가 아니라 **그 접힘의 내용**을 본다.
+    rest = card[card.index("상세 경기력 지표"):]
+    body = rest.split("<details")[0]          # 다음 접힘 전까지
     for must in ("시즌 지표 비교", "경기력 분석 · 시즌"):
         assert must in body, f"{must} 가 접힘 밖으로 나갔다"
 
 
 def test_b4_details_are_not_split_into_many_clicks():
-    """창마다 접으면 클릭 지옥이 된다 (§8)."""
+    """창마다 접으면 클릭 지옥이 된다 (§8).
+
+    5-E2 에서 하나 늘어 **셋**이다 — 상세 경기력 지표 · 근거·상대전적 ·
+    패널 세부 의견. 규칙이 지키려는 것은 개수 자체가 아니라 '창마다 접지
+    않는다' 이고, 셋은 그 선 안이다. 늘리려면 이 줄을 먼저 고쳐야 한다.
+    """
     report, _res = _moderator_only_report()
     card = _card(_html(report), 1)
-    assert card.count("<details") <= 2, card.count("<details")
+    assert card.count("<details") <= 3, card.count("<details")
 
 
 def test_b5_empty_detail_group_is_not_rendered():
@@ -217,12 +229,17 @@ def test_b7_core_blocks_stay_open():
 
 
 def test_b8_moderator_conclusion_is_not_collapsed():
-    """사회자의 결론·불확실성은 핵심 판단 맥락이다 (§6)."""
+    """사회자의 **결론**은 접힘 밖이다 (§6).
+
+    5-E2 에서 불확실성은 `패널 세부 의견` 접힘 안으로 옮겼다 — 지운 것이
+    아니라 옮긴 것이고, 결론(최종 예상 스코어와 그 문장)은 그대로 밖이다.
+    """
     report, _res = _moderator_only_report()
     card = _card(_html(report), 1)
     head = card.split("<details")[0]
     assert "토론 결과 1번 경기의 예상 스코어는 0-1 입니다." in head
-    assert "표본이 6경기로 좁다" in head
+    assert "표본이 6경기로 좁다" not in head, "불확실성이 아직 밖에 있다"
+    assert "표본이 6경기로 좁다" in card, "불확실성이 사라졌다"
 
 
 # --------------------------------------------------------------------------

@@ -408,7 +408,8 @@ def test_c28_detail_block_marks_the_snapshot_as_scores_only():
     report, _res = _imported(FIXTURE_B)
     card = _text(_card(_html(report), 1))
     assert "1·2단계 최초 예상 스코어" in card
-    assert "분석가 원문은 이번 입력에 포함되지 않았습니다" in card
+    # 5-E2: 설명 문단은 걷었지만 **스냅샷 자체와 그 제목은 그대로다.**
+    assert "분석가 원문은 이번 입력에 포함되지 않았습니다" not in card
 
 
 # ==========================================================================
@@ -513,9 +514,12 @@ def test_e36_form_is_not_inside_a_collapsed_block():
 def test_e37_detail_metrics_and_evidence_stay_collapsed():
     """§22·§29-34·35 — 4-F 의 접힘 둘은 그대로다."""
     card = _card(_html(_demo_report(True)), 1)
-    assert card.count("<details") == 2
+    # 5-E2 에서 `패널 세부 의견` 이 셋째로 들어왔다. 4-F 의 둘은 그대로이고
+    # 셋 다 기본 닫힘이다.
+    assert card.count("<details") == 3, card.count("<details")
     assert re.search(r"<details[^>]*\bopen\b", card) is None
     assert "상세 경기력 지표" in card and "근거 · 상대전적" in card
+    assert "패널 세부 의견" in card
 
 
 def test_e38_panel_sits_between_comparison_and_the_collapses():

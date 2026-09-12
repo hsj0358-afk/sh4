@@ -281,9 +281,13 @@ def test_d5_rows_are_independent():
 
 def test_d6_the_caption_states_both_orientations():
     """§12 — 설명이 한 방향만 말하면 뒤집힌 줄이 오류처럼 보인다."""
+    # 5-E2: 설명은 **블록 맨 위 한 번**이다. 그림마다 같은 문단을 다시
+    # 적으면 한 경기에 여러 번 반복된다 — 그림에서는 걷고 블록에 남겼다.
     svg = charts.dumbbell([_row("실점", 1.67, 1.00, True)], "홈", "원정")
-    assert "축을 반대로" in svg
-    assert "오른쪽이 그 지표에서 더 좋은 값" in svg
+    assert "축을 반대로" not in svg, "그림이 블록 설명을 되풀이한다"
+    html = render._direct_compare_block(_match())
+    assert "축을 반대로" in html
+    assert "오른쪽이 더 좋은 값" in html
 
 
 def test_d7_the_block_header_says_it_too():

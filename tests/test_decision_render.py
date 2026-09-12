@@ -140,9 +140,12 @@ def test_b4_lower_is_better_metrics_are_marked():
     # Phase 5-D 에서 ↓ 가 표시에 그치지 않게 됐다 — 그 줄은 축을 뒤집어
     # 그리므로 어느 줄이든 오른쪽이 더 좋은 값이다. 예전 캡션의 "점의 위치가
     # 우열을 뜻하지 않습니다" 는 더 이상 사실이 아니라 바뀌었다.
+    # 5-E2 에서 같은 축 설명이 그림마다 되풀이되던 figcaption 을 걷고
+    # **블록 맨 위 한 번**만 남겼다. 설명의 내용과 축 방향은 그대로다.
     assert "축을 반대로" in html
-    assert "오른쪽이 그 지표에서 더 좋은 값" in html
+    assert "오른쪽이 더 좋은 값" in html
     assert "점의 위치가 우열을 뜻하지 않습니다" not in html
+    assert html.count("축을 반대로") == 1, "축 설명이 되풀이된다"
 
 
 def test_b5_unequal_sample_sizes_are_reported_not_hidden():
@@ -191,10 +194,11 @@ def test_b9_direct_compare_never_recommends():
     text = _text(render._direct_compare_block(_match()))
     for banned in ("홈승", "원정승", "승리 예상", "유력"):
         assert banned not in text, banned
-    # `"종합 점수"` 를 금지어로 두면 이 블록이 스스로 적은 부정문
-    # ("종합 점수를 만들지 않고")에 걸린다 — 부정문이 있는지를 본다.
-    assert "종합 점수를 만들지 않고" in text
-    assert "승·무·패를 추천하지 않습니다" in text
+    # 5-E2 에서 부정문("종합 점수를 만들지 않고")을 걷었다 — 리포트 하단에
+    # §1-3 의 같은 문장이 이미 있어 되풀이였다. 부정문이 사라졌으므로
+    # **이제 낱말 자체를 금지할 수 있다** — 더 센 검사다.
+    for banned in ("종합 점수", "추천"):
+        assert banned not in text, banned
 
 
 # --------------------------------------------------------------------------
@@ -241,7 +245,10 @@ def test_c6_distribution_labels_are_counts():
     text = _text(html)
     assert "18회" in text and "9회" in text and "3회" in text
     assert "%" not in text, "분포를 백분율로 적었다"
-    assert "확률이 아닙니다" in text
+    # 5-E2 에서 설명 문단을 걷었다. **확률이 되지 않게 막는 것은 원래
+    # 문구가 아니라 구조였다** — 길이 기준이 최댓값이고(`test_c7`)
+    # 라벨이 횟수다. 그 둘은 그대로다.
+    assert "확률" not in text
 
 
 def test_c7_distribution_bar_ignores_the_round_count():

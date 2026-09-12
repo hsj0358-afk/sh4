@@ -484,14 +484,11 @@ def dumbbell(rows: list[dict], home_name: str, away_name: str,
     # f-string 표현식 안에 줄바꿈을 두지 않는다 (3.11 에서 문법 오류다).
     keys = legend([(C_HOME, f"{home_name} (채운 점)"),
                    (C_AWAY, f"{away_name} (속 빈 점)")])
-    return (f'<figure class="chart">{svg}{keys}'
-            f'<figcaption>각 줄은 <b>그 줄만의 눈금</b>입니다. 보통 지표는 '
-            f'왼쪽 끝이 0 이고 오른쪽으로 갈수록 값이 커집니다. '
-            f'↓ 가 붙은 <b>낮을수록 좋은 지표는 축을 반대로</b> 그려 왼쪽 끝이 '
-            f'그 줄의 큰 값이고 오른쪽 끝이 0 입니다 — 그래서 어느 줄이든 '
-            f'<b>오른쪽이 그 지표에서 더 좋은 값</b>입니다. 줄이 다르면 단위가 '
-            f'달라 x 위치를 서로 견줄 수 없고, 지표를 합쳐 종합 점수를 만들지 '
-            f'않습니다.</figcaption></figure>')
+    # 축 설명(눈금이 줄마다 다르다 · ↓ 는 축을 반대로 그린다)은 **블록 맨 위에
+    # 한 번** 있다 — `render._direct_compare_block`. 같은 문단을 그림마다 다시
+    # 적으면 한 경기에 여러 번 반복된다 (5-E2). 범례는 남긴다: 채운 점/속 빈
+    # 점이 어느 팀인지는 설명이 아니라 그림을 읽는 데 필요한 정보다.
+    return f'<figure class="chart">{svg}{keys}</figure>'
 
 
 # --------------------------------------------------------------------------

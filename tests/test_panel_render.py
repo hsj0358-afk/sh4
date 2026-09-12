@@ -200,7 +200,6 @@ def test_b5d_debate_distribution_renders_as_counts():
     assert "토론 시뮬레이션 30회의 스코어 분포" in html
     assert "18회" in html and "9회" in html and "3회" in html
     assert "양쪽 절충" in html, "절충 스코어의 출처가 안 보인다"
-    assert "확률이 아닙니다" in html
     block = html[html.index("토론 시뮬레이션 30회"):html.index("공통점")]
     assert "%" not in _text(block), "분포를 백분율로 그렸다"
 

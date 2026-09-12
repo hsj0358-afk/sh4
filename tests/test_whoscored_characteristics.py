@@ -320,6 +320,122 @@ def test_d2_weakness_topic_matches_for_crossmatch():
     assert "counter" in _topics_of(got["weaknesses"])
 
 
+# ------------------------------------------------- 강점 0개의 두 가지 뜻 (5-E2)
+# 260052 에서 입스위치·셀타비고·헤타페 셋만 강점이 0개였다(약점은 왔다).
+# 사용자가 그 세 팀의 후스코어드 페이지를 직접 열어 확인한 결과
+# `(Team has no significant strengths)` 라고 적혀 있었다 — **소스에 없는
+# 것이지 파서가 놓친 것이 아니다.** 그래서 파서를 고치지 않았다.
+#
+# 다만 이 상태는 지금까지 자료를 한 조각도 남기지 않았다. `read_team` 은
+# '전부 실패' 일 때만 원본을 남기므로, 강점만 빈 경우는 다음에 파서가 진짜로
+# 놓치기 시작해도 같은 침묵이 반복된다. 원본만 남긴다 — **값은 만들지 않는다.**
+NO_STRENGTH = """<html><head><title>Getafe - Football Statistics</title></head>
+<body><div class="sws-content character-card singular">
+  <div class="col12-lg-6 strengths">
+    <h3><span style="color: #35AB53;">+</span> Strengths</h3>
+    <div class="grid">(Team has no significant strengths)</div>
+  </div>
+  <div class="col12-lg-6 weaknesses">
+    <h3><span style="color: #CA2027;">-</span> Weaknesses</h3>
+    <div class="grid">%s%s</div>
+  </div>
+</div></body></html>""" % (_character("Defending set pieces", "Weak"),
+                           _character("Defending crosses", "Weak"))
+
+
+class _StubCache:
+    """`Cache` 흉내 — 저장 호출만 기록한다. 디스크를 쓰지 않는다."""
+
+    def __init__(self):
+        self.debug: list[tuple] = []
+        self.saved: dict = {}
+
+    def get(self, ns, key):
+        return None
+
+    def set(self, ns, key, value):
+        self.saved[(ns, key)] = value
+
+    def save_debug(self, ns, key, body, failed=True):
+        self.debug.append((ns, key, failed, len(body)))
+
+
+class _StubBrowser:
+    def __init__(self, html):
+        self.html = html
+
+    def abs_url(self, url):
+        return "https://example.invalid" + url
+
+    def get_html(self, url, wait_selector=None):
+        return self.html
+
+
+class _StubSettings:
+    whoscored = {"recent_form_count": 5}
+
+
+def _read(html):
+    from toto.normalize import TeamResolver
+    from toto.sources import whoscored as W
+    cache = _StubCache()
+    payload = W.read_team(_StubBrowser(html), _StubSettings(), "/teams/1/show/x",
+                          "Getafe", TeamResolver(), cache)
+    return payload, cache
+
+
+def test_g1_no_strength_page_yields_zero_strengths():
+    """`(Team has no significant strengths)` 는 항목이 아니다."""
+    payload, _ = _read(NO_STRENGTH)
+    assert payload["strengths"] == [], payload["strengths"]
+
+
+def test_g2_weaknesses_are_not_copied_into_strengths():
+    """빈 칸을 다른 칸으로 채우지 않는다 (§1-5)."""
+    payload, _ = _read(NO_STRENGTH)
+    assert len(payload["weaknesses"]) == 2, payload["weaknesses"]
+    assert not set(payload["strengths"]) & set(payload["weaknesses"])
+
+
+def test_g3_raw_page_is_kept_so_the_two_states_can_be_told_apart():
+    _, cache = _read(NO_STRENGTH)
+    keys = [k for _, k, _, _ in cache.debug]
+    assert any("nostrength" in k for k in keys), keys
+
+
+def test_g4_that_save_is_not_marked_as_a_failure():
+    """수집은 성공했다. `failed=True` 로 남기면 진짜 경고를 흘려보게 된다
+    (§3-1 의 리그 페이지와 같은 이유)."""
+    _, cache = _read(NO_STRENGTH)
+    for _, key, failed, _size in cache.debug:
+        if "nostrength" in key:
+            assert failed is False, (key, failed)
+
+
+def test_g5_normal_page_leaves_no_extra_debug_file():
+    payload, cache = _read(REAL)
+    assert payload["strengths"], payload
+    assert not [k for _, k, _, _ in cache.debug if "nostrength" in k], cache.debug
+
+
+def test_g6_payload_shape_is_unchanged():
+    """저장 형식이 바뀌지 않았다 — 그래서 캐시 판을 올리지 않았다 (§1-4)."""
+    payload, cache = _read(NO_STRENGTH)
+    assert set(payload) == {"_v", "strengths", "weaknesses", "style",
+                            "form", "missing"}, sorted(payload)
+    assert payload["_v"] == _TEAM_CACHE_VERSION == 1
+    assert cache.saved[("whoscored", "team_Getafe")] is payload
+
+
+def test_g7_all_empty_page_keeps_the_old_single_warning():
+    """아무것도 못 읽은 페이지는 **예전 경로 그대로**다 — 원본 하나만 남고
+    payload 는 빈 dict 다. 새 분기가 그 앞에 끼어들면 안 된다."""
+    payload, cache = _read("<html><body><p>nothing</p></body></html>")
+    assert payload == {}, payload
+    keys = [k for _, k, _, _ in cache.debug]
+    assert keys == ["team_Getafe"], keys
+
+
 # --------------------------------------------------------------------------
 def main() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]

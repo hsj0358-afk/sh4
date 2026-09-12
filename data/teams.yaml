@@ -149,6 +149,15 @@ Osasuna:
   ko: [오사수나]
   en: [CA Osasuna]
   league: laliga
+Racing Santander:
+  # 5-E2. 이 팀이 표에 없어서 FotMob 이 이 팀의 경기를 전부 버렸고, 시즌 경기
+  # 색인이 760 → 722 로 한 팀치(38경기) 모자랐다. 그 여파로 Elche·Getafe 의
+  # 최근 구간 표본이 4경기가 아니라 3경기였다 (§1-26).
+  # **관측한 표기만 넣는다** — 후스코어드가 실제로 보낸 두 가지다
+  # (링크 /teams/56/show/spain-racing-santander · 순위표 표기 'R. Santander').
+  # 한국어 표기와 FotMob 표기는 아직 관측하지 못해 넣지 않았다.
+  en: [R. Santander]
+  league: laliga
 Rayo Vallecano:
   ko: [라요바예카노, 라요 바예카노]
   en: [Rayo]

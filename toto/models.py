@@ -1,0 +1,1428 @@
+"""분석 파이프라인이 주고받는 데이터 구조.
+
+수집(sources) → 정규화(normalize) → 분석(analyze) → 렌더링(render) 전 구간에서
+이 데이터클래스들만 오간다. 어떤 소스가 실패해도 해당 필드만 None/빈값으로 남고
+나머지는 그대로 흐르도록 모든 선택 필드에 기본값을 준다.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field, asdict
+
+from datetime import datetime, timedelta, timezone
+
+from .predict import MatchProb, RoundVerdict
+from typing import Any
+
+# --------------------------------------------------------------------------
+# 결과 코드
+# --------------------------------------------------------------------------
+HOME, DRAW, AWAY = "H", "D", "A"
+RESULT_KO = {HOME: "승", DRAW: "무", AWAY: "패"}
+
+
+# --------------------------------------------------------------------------
+# 팀
+# --------------------------------------------------------------------------
+@dataclass
+class TeamRef:
+    """경기에 등장하는 한 팀의 식별 정보.
+
+    베트맨은 한글, 피나클/후스코어드는 영문 팀명을 쓰기 때문에
+    `name_ko`(베트맨 표기)와 `canonical`(영문 정규명)을 함께 들고 다닌다.
+    """
+    name_ko: str = ""
+    canonical: str = ""          # 영문 정규 팀명 (매칭 키)
+    display: str = ""            # 리포트에 표시할 이름
+    whoscored_url: str = ""
+    fotmob_id: str = ""          # FotMob 팀 ID (팀 상세 조회용)
+    matched: bool = True         # 별칭 매칭 성공 여부
+
+    def __post_init__(self) -> None:
+        if not self.display:
+            self.display = self.name_ko or self.canonical
+
+
+@dataclass
+class FormEntry:
+    """최근 경기 1건."""
+    date: str = ""
+    opponent: str = ""
+    home: bool = True            # 이 팀이 홈이었는지
+    goals_for: int = 0
+    goals_against: int = 0
+    result: str = DRAW           # W/D/L 을 HOME/DRAW/AWAY 가 아닌 자체 코드로
+
+    @property
+    def points(self) -> int:
+        return {"W": 3, "D": 1, "L": 0}.get(self.result, 0)
+
+    @property
+    def score(self) -> str:
+        return f"{self.goals_for}-{self.goals_against}"
+
+
+@dataclass
+class TeamStats:
+    """리그 순위표 + 후스코어드 팀 통계.
+
+    값이 없는 항목은 None 으로 둔다. 백분위 계산과 레이더 차트는
+    None 인 항목을 건너뛴다.
+    """
+    # 순위표
+    rank: int | None = None
+    played: int | None = None
+    wins: int | None = None
+    draws: int | None = None
+    losses: int | None = None
+    goals_for: int | None = None
+    goals_against: int | None = None
+    points: int | None = None
+
+    # 홈/원정 분리 성적 ('장소 특화도' 축은 승점만이 아니라 득실차도 본다)
+    home_played: int | None = None
+    home_points: int | None = None
+    home_goals_for: int | None = None
+    home_goals_against: int | None = None
+    away_played: int | None = None
+    away_points: int | None = None
+    away_goals_for: int | None = None
+    away_goals_against: int | None = None
+
+    # 팀 통계 (경기당 평균)
+    shots_pg: float | None = None
+    shots_on_target_pg: float | None = None
+    shots_against_pg: float | None = None      # 피슈팅 — 경기별 슛맵에서만 나온다
+    shots_on_target_against_pg: float | None = None
+    key_passes_pg: float | None = None
+    # FotMob 시즌 통계 피드에서 오는 항목 (리그 카탈로그 29종 중 쓰는 것)
+    big_chances_pg: float | None = None        # 결정적 기회 — '공격 창출력'
+    big_chances_missed_pg: float | None = None
+    touches_opp_box_pg: float | None = None    # 상대 박스 터치 — '경기 지배력'
+    accurate_passes_pg: float | None = None
+    poss_won_att_3rd_pg: float | None = None   # 상대 진영 볼 탈취
+    saves_pg: float | None = None
+    clearances_pg: float | None = None
+    corners_pg: float | None = None
+    clean_sheets: float | None = None
+    possession: float | None = None
+    pass_success: float | None = None
+    pass_success_opp_half: float | None = None  # 상대 진영 패스 성공률
+    aerials_won_pg: float | None = None
+    tackles_pg: float | None = None
+    interceptions_pg: float | None = None
+    dribbles_pg: float | None = None
+    fouls_pg: float | None = None
+    rating: float | None = None
+
+    # 기대득점 — 시즌 누계와 그 표본 경기수를 함께 둔다. FotMob 의 xG 표는
+    # 순위표와 경기수가 다를 수 있어(집계 시점 차이) 따로 나눠야 정확하다.
+    xg_total: float | None = None
+    xga_total: float | None = None
+    xg_played: int | None = None
+    # 소스가 경기당 값을 직접 주는 경우 (후스코어드 등)
+    xg_pg_raw: float | None = None
+    xga_pg_raw: float | None = None
+
+    # ---- 시즌 통계 피드 (FotMob stats.teams[]) ----------------------------
+    # 전부 그 소스가 주는 단위 그대로다. 이름 끝의 _pg 는 '경기당', 없으면 누계.
+    set_piece_goals: float | None = None            # 누계
+    set_piece_goals_conceded: float | None = None   # 누계
+    penalties_won: float | None = None              # 누계
+    penalties_conceded: float | None = None         # 누계
+    yellow_cards: float | None = None               # 누계
+    red_cards: float | None = None                  # 누계
+    accurate_crosses_pg: float | None = None
+    accurate_long_balls_pg: float | None = None
+
+    # ---- 경기 상세 집계 (최근 N경기) --------------------------------------
+    # 시즌 누계가 아니라 **최근 N경기 표본의 합계**다. 시즌 지표와 의미가
+    # 다르므로 이름에 _recent 를 붙여 섞이지 않게 한다. 경기당 값이 필요하면
+    # 아래 _recent_pg 속성을 쓴다 (recent_matches 로 나눈 값).
+    recent_matches: int | None = None               # 받아 온 경기 수
+    # 지표마다 표본이 다를 수 있다 — 어떤 경기에는 npxG 가 없고 슈팅만 있다.
+    # 그런 지표를 recent_matches 로 나누면 빠진 경기를 0 으로 친 것과 같아져
+    # 값이 조용히 낮아진다. 그래서 {필드 이름: 그 지표가 실제로 있던 경기 수}
+    # 를 따로 들고 다니며 그것으로 나눈다. None 이면 정보가 없다는 뜻이라
+    # recent_matches 로 되돌아간다 (fill_stats 가 다른 필드와 똑같이 다루도록
+    # 기본값을 빈 dict 가 아니라 None 으로 뒀다).
+    recent_counts: dict | None = None
+    npxg_recent: float | None = None
+    npxga_recent: float | None = None
+    xgot_recent: float | None = None
+    xgot_against_recent: float | None = None
+    xg_open_play_recent: float | None = None
+    xg_set_play_recent: float | None = None
+    shots_recent: float | None = None
+    shots_against_recent: float | None = None
+    shots_on_target_recent: float | None = None
+    shots_on_target_against_recent: float | None = None
+    shots_inside_box_recent: float | None = None
+    shots_outside_box_recent: float | None = None
+
+    # ---- 파생 지표 ----
+    @property
+    def goals_for_pg(self) -> float | None:
+        if self.goals_for is None or not self.played:
+            return None
+        return self.goals_for / self.played
+
+    @property
+    def goals_against_pg(self) -> float | None:
+        if self.goals_against is None or not self.played:
+            return None
+        return self.goals_against / self.played
+
+    @property
+    def goal_diff(self) -> int | None:
+        if self.goals_for is None or self.goals_against is None:
+            return None
+        return self.goals_for - self.goals_against
+
+    @property
+    def points_pg(self) -> float | None:
+        if self.points is None or not self.played:
+            return None
+        return self.points / self.played
+
+    @property
+    def home_points_pg(self) -> float | None:
+        if self.home_points is None or not self.home_played:
+            return None
+        return self.home_points / self.home_played
+
+    @property
+    def away_points_pg(self) -> float | None:
+        if self.away_points is None or not self.away_played:
+            return None
+        return self.away_points / self.away_played
+
+    @property
+    def shot_accuracy(self) -> float | None:
+        if not self.shots_pg or self.shots_on_target_pg is None:
+            return None
+        return self.shots_on_target_pg / self.shots_pg * 100
+
+    @property
+    def defensive_actions_pg(self) -> float | None:
+        if self.tackles_pg is None and self.interceptions_pg is None:
+            return None
+        return (self.tackles_pg or 0.0) + (self.interceptions_pg or 0.0)
+
+    # ---- 6축 레이더용 파생 지표 ------------------------------------------
+    # 각 축은 재료가 하나라도 없으면 None 을 돌려준다. 반쪽짜리 값으로
+    # 축을 채우면 리그 백분위가 왜곡돼서, 차라리 축을 빼는 편이 낫다.
+    @property
+    def home_goal_diff_pg(self) -> float | None:
+        if self.home_goals_for is None or self.home_goals_against is None \
+                or not self.home_played:
+            return None
+        return (self.home_goals_for - self.home_goals_against) / self.home_played
+
+    @property
+    def away_goal_diff_pg(self) -> float | None:
+        if self.away_goals_for is None or self.away_goals_against is None \
+                or not self.away_played:
+            return None
+        return (self.away_goals_for - self.away_goals_against) / self.away_played
+
+    @property
+    def conversion_rate(self) -> float | None:
+        """슈팅 대비 득점 전환율(%) — '공격 효율성' 축의 재료."""
+        if not self.shots_pg or self.goals_for_pg is None:
+            return None
+        return self.goals_for_pg / self.shots_pg * 100
+
+    @property
+    def xg_pg(self) -> float | None:
+        if self.xg_pg_raw is not None:
+            return self.xg_pg_raw
+        if self.xg_total is None or not self.xg_played:
+            return None
+        return self.xg_total / self.xg_played
+
+    @property
+    def xga_pg(self) -> float | None:
+        if self.xga_pg_raw is not None:
+            return self.xga_pg_raw
+        if self.xga_total is None or not self.xg_played:
+            return None
+        return self.xga_total / self.xg_played
+
+    @property
+    def finishing_delta(self) -> float | None:
+        """실제 득점 − xG. 양수면 기대 이상으로 넣고 있다는 뜻.
+
+        FotMob 도 xgDiff 를 주지만 부호 규칙이 문서화돼 있지 않아 쓰지 않는다.
+        득점은 순위표에서 이미 확보했으므로 직접 뺀다.
+        """
+        if self.goals_for is None or self.xg_total is None:
+            return None
+        return self.goals_for - self.xg_total
+
+    @property
+    def defending_delta(self) -> float | None:
+        """실제 실점 − 피xG. 음수면 기대보다 덜 실점하고 있다는 뜻."""
+        if self.goals_against is None or self.xga_total is None:
+            return None
+        return self.goals_against - self.xga_total
+
+    # ---- 최근 N경기 표본의 경기당 값 --------------------------------------
+    # 전부 `_recent` 합계를 `recent_matches` 로 나눈 파생값이다. 시즌 지표
+    # (xg_pg 등)와 표본이 다르므로 이름으로 구분해 둔다. 표본이 없으면 None —
+    # 0 으로 채우면 '0개를 기록했다'는 실제 값과 구분되지 않는다.
+    def _per_recent(self, name: str) -> float | None:
+        total = getattr(self, name)
+        if total is None:
+            return None
+        n = (self.recent_counts or {}).get(name) or self.recent_matches
+        if not n:
+            return None
+        return total / n
+
+    @property
+    def npxg_recent_pg(self) -> float | None:
+        return self._per_recent("npxg_recent")
+
+    @property
+    def npxga_recent_pg(self) -> float | None:
+        return self._per_recent("npxga_recent")
+
+    @property
+    def xgot_recent_pg(self) -> float | None:
+        return self._per_recent("xgot_recent")
+
+    @property
+    def xgot_against_recent_pg(self) -> float | None:
+        return self._per_recent("xgot_against_recent")
+
+    @property
+    def xg_open_play_recent_pg(self) -> float | None:
+        return self._per_recent("xg_open_play_recent")
+
+    @property
+    def xg_set_play_recent_pg(self) -> float | None:
+        return self._per_recent("xg_set_play_recent")
+
+    @property
+    def shots_recent_pg(self) -> float | None:
+        return self._per_recent("shots_recent")
+
+    @property
+    def shots_against_recent_pg(self) -> float | None:
+        return self._per_recent("shots_against_recent")
+
+    @property
+    def shots_on_target_recent_pg(self) -> float | None:
+        return self._per_recent("shots_on_target_recent")
+
+    @property
+    def shots_on_target_against_recent_pg(self) -> float | None:
+        return self._per_recent("shots_on_target_against_recent")
+
+    @property
+    def shots_inside_box_recent_pg(self) -> float | None:
+        return self._per_recent("shots_inside_box_recent")
+
+    @property
+    def shots_outside_box_recent_pg(self) -> float | None:
+        return self._per_recent("shots_outside_box_recent")
+
+    @property
+    def inside_box_shot_share(self) -> float | None:
+        """박스 안 슈팅 비율(%). 슈팅의 '질' 을 거칠게 가늠한다."""
+        inside, outside = self.shots_inside_box_recent, self.shots_outside_box_recent
+        if inside is None or outside is None:
+            return None
+        total = inside + outside
+        return None if total <= 0 else inside / total * 100.0
+
+    @property
+    def xgot_delta_recent(self) -> float | None:
+        """xGOT − npxG. 양수면 기대보다 좋은 코스로 때리고 있다는 뜻."""
+        if self.xgot_recent is None or self.npxg_recent is None:
+            return None
+        return self.xgot_recent - self.npxg_recent
+
+    # ---- 시즌 누계를 경기당으로 -------------------------------------------
+    # 피드가 누계로 주는 항목들. 리그 안에서도 팀마다 소화 경기수가 달라서
+    # (연기·스플릿) 누계를 그대로 나란히 두면 경기를 더 치른 팀이 부풀려진다.
+    def _per_played(self, name: str) -> float | None:
+        total = getattr(self, name)
+        if total is None or not self.played:
+            return None
+        return total / self.played
+
+    @property
+    def set_piece_goals_pg(self) -> float | None:
+        return self._per_played("set_piece_goals")
+
+    @property
+    def set_piece_goals_conceded_pg(self) -> float | None:
+        return self._per_played("set_piece_goals_conceded")
+
+    @property
+    def penalties_won_pg(self) -> float | None:
+        return self._per_played("penalties_won")
+
+    @property
+    def penalties_conceded_pg(self) -> float | None:
+        return self._per_played("penalties_conceded")
+
+    @property
+    def yellow_cards_pg(self) -> float | None:
+        return self._per_played("yellow_cards")
+
+    @property
+    def red_cards_pg(self) -> float | None:
+        return self._per_played("red_cards")
+
+    @property
+    def set_piece_goal_share(self) -> float | None:
+        """득점 중 세트피스 비중(%). 어떻게 넣는 팀인지 가늠한다."""
+        if self.set_piece_goals is None or not self.goals_for:
+            return None
+        return self.set_piece_goals / self.goals_for * 100.0
+
+    @property
+    def defensive_solidity(self) -> float | None:
+        """피슈팅의 역수 — 적게 맞을수록 높다. '수비 견고함' 축.
+
+        역수를 그대로 쓰지 않고 백분위 단계에서 invert 로 뒤집는 방법도 있지만,
+        제안대로 '역수'를 값으로 두면 지표 비교표에도 그대로 쓸 수 있다.
+        """
+        if not self.shots_against_pg:
+            return None
+        return 1.0 / self.shots_against_pg
+
+
+def fill_stats(dst: TeamStats, src: TeamStats, overwrite: bool = False) -> int:
+    """src 의 값으로 dst 의 빈 칸을 채운다. 채운 항목 수를 돌려준다.
+
+    한 팀의 지표를 두 소스가 나눠서 들고 있다 — 순위표·홈원정 승점은 FotMob,
+    점유율·패스성공률·평점은 후스코어드다. 나중에 붙는 소스가 앞서 채운 값을
+    None 으로 덮어쓰면 안 되므로, 기본은 '비어 있을 때만' 채운다.
+    """
+    filled = 0
+    for name in src.__dataclass_fields__:
+        value = getattr(src, name)
+        if value is None:
+            continue
+        if overwrite or getattr(dst, name) is None:
+            setattr(dst, name, value)
+            filled += 1
+    return filled
+
+
+@dataclass
+class TeamProfile:
+    """한 팀에 대해 수집한 모든 것."""
+    team: TeamRef
+    league: str = ""
+    stats: TeamStats = field(default_factory=TeamStats)
+    strengths: list[str] = field(default_factory=list)
+    weaknesses: list[str] = field(default_factory=list)
+    style_of_play: list[str] = field(default_factory=list)
+    form: list[FormEntry] = field(default_factory=list)     # 최신순
+    missing_players: list[dict] = field(default_factory=list)
+    rest_days: int | None = None
+    source_ok: bool = False       # 후스코어드 수집 성공 여부
+    # Phase 1-C 슛 이벤트 계층. {"all6": RecentShotAggregate, "home3": ...}
+    # TeamStats 가 아니라 여기 둔다 — 구조가 있는 값이라 fill_stats 의
+    # 스칼라 병합 규칙에 맞지 않고, 기존 지표 계산에 끼어들면 안 된다.
+    shot_aggregates: dict = field(default_factory=dict)
+    # **경기별** 슛 집계 [MatchShotAggregate] (최신순). 창(`shot_aggregates`)은
+    # 지표별 합계와 표본 수만 들고 있어서, "xG 와 슈팅이 **둘 다** 있는 경기"
+    # 처럼 지표를 가로질러 표본을 맞춰야 하는 계산(2-B 의 비율 지표)을 할 수
+    # 없다. 그래서 원재료를 함께 싣는다. 수집·캐시는 이미 하고 있었고
+    # (`fotmob._attach_shot_aggregates`) 여기로 넘겨 주기만 하면 된다.
+    shot_matches: list = field(default_factory=list)
+    # **상대 팀**의 같은 경기 집계 [MatchShotAggregate] (`shot_matches` 와
+    # 같은 경기, match_id 로 짝을 맞춘다). 상대가 그 경기에 몇 슛을 쳤고
+    # npxG 가 얼마였는지가 곧 우리의 피슛·npxGA 다 (Phase 2-C).
+    # 상대는 **숫자 teamId**(`opponent_id`, P0-1)로 잇는다 — 팀명이 아니다.
+    opponent_matches: list = field(default_factory=list)
+
+    @property
+    def form_points(self) -> int:
+        return sum(f.points for f in self.form)
+
+
+# --------------------------------------------------------------------------
+# 배당률
+# --------------------------------------------------------------------------
+@dataclass
+class Odds:
+    """피나클 배당률 스냅샷 (decimal odds)."""
+    home: float | None = None
+    draw: float | None = None
+    away: float | None = None
+
+    # 아시안 핸디캡 (홈 기준 라인)
+    ah_line: float | None = None
+    ah_home: float | None = None
+    ah_away: float | None = None
+
+    # 오버/언더
+    ou_line: float | None = None
+    ou_over: float | None = None
+    ou_under: float | None = None
+
+    fetched_at: str = ""
+    source: str = ""              # "arcadia-api" / "playwright" / ""
+
+    @property
+    def available(self) -> bool:
+        return None not in (self.home, self.draw, self.away)
+
+
+# --------------------------------------------------------------------------
+# 상대전적
+# --------------------------------------------------------------------------
+@dataclass
+class H2HEntry:
+    date: str = ""
+    home_team: str = ""
+    away_team: str = ""
+    home_goals: int = 0
+    away_goals: int = 0
+    competition: str = ""
+
+    def result_for(self, canonical: str) -> str:
+        """주어진 팀 기준 W/D/L."""
+        if self.home_goals == self.away_goals:
+            return "D"
+        winner = self.home_team if self.home_goals > self.away_goals else self.away_team
+        return "W" if winner == canonical else "L"
+
+
+@dataclass
+class H2H:
+    entries: list[H2HEntry] = field(default_factory=list)   # 최신순
+    home_wins: int = 0
+    draws: int = 0
+    away_wins: int = 0
+    source_ok: bool = False
+
+    @property
+    def total(self) -> int:
+        return self.home_wins + self.draws + self.away_wins
+
+
+# --------------------------------------------------------------------------
+# Phase 2 분석 결과 (P0-3 — 그릇만 만든다. 계산은 P1 이후)
+# --------------------------------------------------------------------------
+# 값의 출처. `HOME/DRAW/AWAY` 처럼 모듈 상수로 둔다 (Enum 을 새로 들이지 않는다).
+#   observed — 소스가 준 원본 그대로 (득점·xG·슈팅…)
+#   derived  — 원본에서 계산 (npxG/슛, 박스 안 비율, 득점−npxG…)
+#   model    — 모델 산출 (xPTS, 포아송 확률…)
+OBSERVED, DERIVED, MODEL = "observed", "derived", "model"
+PROVENANCE = (OBSERVED, DERIVED, MODEL)
+
+# 신호가 가리키는 방향. 합산하지 않고 그대로 나열하기 위한 라벨이다.
+NEUTRAL, UNKNOWN = "NEUTRAL", "UNKNOWN"
+LEANS = (HOME, DRAW, AWAY, NEUTRAL, UNKNOWN)
+
+
+@dataclass
+class Metric:
+    """분석 지표 한 칸.
+
+    **모든 숫자를 이걸로 감싸지 않는다.** 리포트에 근거로 나가거나 출처·표본을
+    함께 밝혀야 하는 값에만 쓴다. 중간 계산은 평범한 float 로 둔다.
+
+    `value=None` 은 '계산하지 못했다'는 뜻이고 0 이 아니다 (CLAUDE.md §1-5).
+    `sample_count` 는 **이 지표의** 표본 수다 — 축 전체의 경기 수와 다를 수
+    있다(Phase 1-B 에서 실제로 겪은 사고).
+    """
+    name: str = ""                  # 내부 키 (예: "npxg_per_shot")
+    label: str = ""                 # 사람이 읽을 이름 (예: "슛당 npxG")
+    value: float | None = None
+    provenance: str = OBSERVED      # OBSERVED / DERIVED / MODEL
+    period: str = ""                # "season" · "recent6" · "home6" …
+    sample_count: int | None = None  # 이 지표에 실제로 값이 있던 경기 수
+    unit: str = ""                  # "" · "%" · "per_match" …
+    note: str = ""
+    # 값이 클수록 좋은가 (2-A §9). "higher_better" | "lower_better" | ""
+    # **빈 문자열은 '방향을 정하지 않았다'는 뜻이지 중립이라는 뜻이 아니다.**
+    # 슈팅처럼 많다고 좋은지 단정할 수 없는 지표는 비워 둔다. 이 값을 점수로
+    # 바꾸거나 부호를 곱해 합산하지 않는다 — 표시용 메타데이터다.
+    direction: str = ""
+    # 같은 정보를 가리키는 지표 묶음 (2-B §15). "volume" · "chance_quality" ·
+    # "execution" · "sustainability_gap" · "outcome" …
+    # **점수 계산용이 아니다.** 2-I 근거 요약에서 같은 사실을 세 번 세지
+    # 않으려고 붙이는 메타데이터다 (xG·npxG·xG/슛은 같은 이야기다).
+    group: str = ""
+    # 이 값이 **어느 피드에서** 왔나 (`standings` · `shotmap` · …).
+    source: str = ""
+    # 그 피드에서 **어떻게 만들어졌나** (`final_score` · `match_stat` ·
+    # `shot_events` …).
+    #
+    # 이 둘이 필요한 이유는 실물에서 겪은 사고다. 풀럼의 시즌 xG 1.33 은
+    # 경기 스탯 값이고 최근 xG 1.39 는 슛맵을 합산한 값이라, **같은 한 경기**
+    # 인데도 0.06 이 달랐다. 그 차이를 빼서 "최근 xG 가 시즌보다 +0.06" 이라고
+    # 적으면 측정 방식의 차이를 경기력 변화로 둔갑시킨 것이 된다. 그래서 두
+    # 값을 빼기 전에 원천과 산출 방식이 같은지 먼저 본다.
+    measurement_basis: str = ""
+    # **두 값을 뺀 지표에서만** 채운다 (2-D §11). 실제 6경기와 xG 4경기를
+    # 비교할 때 뺄 수 있는 것은 **양쪽이 다 있는 4경기**뿐이고, 그 4가 여기
+    # 들어간다. `sample_count` 는 '이 지표에 값이 있던 경기 수'라는 뜻이라
+    # 차이 지표에서는 같은 수가 되지만, **개념이 다르므로** 따로 적는다 —
+    # requested(요청한 창) · available(확보한 경기) · sample_count(그 지표의
+    # 표본) · common_sample_count(양쪽 공통) 넷은 서로 다른 수다.
+    common_sample_count: int | None = None
+
+    @property
+    def known(self) -> bool:
+        return self.value is not None
+
+
+@dataclass
+class AnalysisAxis:
+    """분석 축 하나 (기회의 질·수비·홈원정 …).
+
+    축마다 전용 dataclass 를 7개 만들지 않는다 — 아직 각 축의 최종 필드
+    구성이 확정되지 않았고, 확정되기 전에 모양을 박으면 P2~P6 에서 매번
+    구조를 뜯어야 한다. 축은 **이름이 붙은 지표 묶음**이라는 공통점이
+    있으므로 그 공통 그릇 하나로 둔다.
+
+    `requested_matches` 는 요청한 창(예: 최근 6경기), `available_matches` 는
+    실제로 쓸 수 있었던 경기 수다. 둘을 같은 수로 뭉뚱그리지 않는다.
+    """
+    name: str = ""
+    metrics: dict[str, Metric] = field(default_factory=dict)
+    requested_matches: int | None = None
+    available_matches: int | None = None
+    notes: list[str] = field(default_factory=list)
+
+    def get(self, key: str) -> Metric | None:
+        return self.metrics.get(key)
+
+    def value(self, key: str) -> float | None:
+        m = self.metrics.get(key)
+        return m.value if m else None
+
+
+@dataclass
+class MatchupPair:
+    """공격 지표 1개 ↔ 상대 수비 지표 1개 (2-G).
+
+    곱하거나 더해서 하나의 점수로 만들지 않는다 — 두 값을 나란히 두고
+    읽는 사람이 판단한다.
+    """
+    concept: str = ""               # "chance_volume" · "chance_quality" …
+    label: str = ""
+    attack: Metric | None = None
+    defense: Metric | None = None
+    direction: str = ""             # "home_attack" | "away_attack"
+    note: str = ""
+
+
+@dataclass
+class Signal:
+    """독립 신호 하나 (2-H). **합산하지 않는다.**
+
+    `lean` 은 방향 라벨일 뿐 점수가 아니다. 신호 개수를 세어 최종 픽을
+    만들지 않는다 — "5개가 홈을 가리킨다"까지가 결과다.
+    """
+    name: str = ""
+    lean: str = UNKNOWN             # HOME/DRAW/AWAY/NEUTRAL/UNKNOWN
+    strength: str = ""              # "low" | "medium" | "high" (표본 기반)
+    basis: str = ""                 # 무엇을 보고 정했나
+    sample_count: int | None = None
+    provenance: str = OBSERVED
+    note: str = ""
+
+
+@dataclass
+class EvidenceItem:
+    """근거 한 줄 (2-I).
+
+    같은 정보를 여러 번 세지 않도록 축별 대표만 만든다. `side` 는 이 근거가
+    지지하는 쪽이고, `counter=True` 면 그 쪽을 **반박**하는 근거다.
+    """
+    claim: str = ""
+    side: str = NEUTRAL             # HOME / DRAW / AWAY
+    counter: bool = False
+    metric: str = ""
+    value: float | None = None
+    comparison: str = ""            # 무엇과 견줬나 (상대·리그평균 …)
+    period: str = ""
+    sample_count: int | None = None
+    provenance: str = OBSERVED
+    axis: str = ""                  # 어느 분석 축에서 나왔나 (중복 방지용)
+
+    # ---- Phase 2-G 에서 더한 칸 (전부 기본값이 있어 옛 저장본도 살아난다) ----
+    # 이 근거가 **어느 팀에 관한 것인가**. `side`(HOME/DRAW/AWAY)와 다르다 —
+    # side 는 '어느 결과를 지지하나' 라서 추천으로 읽힌다. 2-G 는 그것을
+    # 만들지 않으므로 side 를 NEUTRAL 로 두고 팀만 적는다.
+    team: str = ""
+    # 기존 `Metric.group` taxonomy 에서 온다 (attack / defense / result …).
+    # **장소(venue)는 category 가 아니다** — 그건 context 다.
+    category: str = ""
+    # 어떤 표본 문맥인가: overall · recent · venue · schedule.
+    # `period`(recent6 · home6 …)와 중복 저장하지 않는다 — period 는 '어느
+    # 구간' 이고 context 는 '어떤 종류의 비교' 다 (2-E 설계 §12).
+    context: str = ""
+    # **같은 사실인가**를 정하는 의미 열쇠. 축이 달라도 이것이 같으면 한
+    # 근거로 합친다 (2-G §5). 지표 이름이 아니라 '무엇을 말하는가' 다.
+    finding_kind: str = ""
+    # 이 근거를 지지하는 지표들. **개수가 근거의 강도가 아니다** (§19·§20).
+    supporting_metrics: list[str] = field(default_factory=list)
+    # 같은 사실을 함께 말한 분석 축들. 대표를 골라도 나머지가 사라지지
+    # 않게 여기 남긴다 (§5-2).
+    supporting_axes: list[str] = field(default_factory=list)
+    source: str = ""
+    measurement_basis: str = ""
+
+
+@dataclass
+class DataQuality:
+    """분석 축별 데이터 상태 (2-J).
+
+    **종합 confidence 점수를 만들지 않는다.** 축별로 쓸 수 있었는지와 왜
+    못 썼는지만 남긴다. 표본이 기준 미만이면 값을 만들지 않고 여기에
+    `degraded_reason` 을 적는다.
+    """
+    # {축 이름: {"available": bool, "requested": int, "available_matches": int,
+    #            "degraded_reason": str, "coverage": float|None}}
+    axes: dict[str, dict] = field(default_factory=dict)
+    source_status: dict[str, str] = field(default_factory=dict)
+    notes: list[str] = field(default_factory=list)
+
+    def mark(self, axis: str, available: bool, requested: int | None = None,
+             available_matches: int | None = None, reason: str = "") -> None:
+        self.axes[axis] = {"available": available, "requested": requested,
+                           "available_matches": available_matches,
+                           "degraded_reason": reason}
+
+    def unavailable(self) -> list[str]:
+        return [k for k, v in self.axes.items() if not v.get("available")]
+
+
+@dataclass
+class TeamAnalysis:
+    """한 팀의 Phase 2 분석 결과 묶음.
+
+    **축이 None 이면 '아직 계산하지 않았거나 표본이 모자라 만들지 않았다'는
+    뜻이다.** 빈 축 객체를 넣어 분석이 끝난 것처럼 보이게 하지 않는다.
+    """
+    team: str = ""                  # 정규명 (프로젝트 canonical)
+    fotmob_id: int | None = None    # 숫자 teamId (슛 계층과 잇는 열쇠)
+    is_home: bool | None = None
+
+    time_context: AnalysisAxis | None = None        # 2-A
+    chance_quality: AnalysisAxis | None = None      # 2-B
+    defensive_quality: AnalysisAxis | None = None   # 2-C
+    sustainability: AnalysisAxis | None = None      # 2-D
+    venue_context: AnalysisAxis | None = None       # 2-E
+    schedule_strength: AnalysisAxis | None = None   # 2-F
+    data_quality: DataQuality | None = None         # 2-J
+
+    AXES = ("time_context", "chance_quality", "defensive_quality",
+            "sustainability", "venue_context", "schedule_strength")
+
+    def computed_axes(self) -> list[str]:
+        """실제로 값이 들어간 축 이름."""
+        return [a for a in self.AXES if getattr(self, a) is not None]
+
+
+@dataclass
+class MatchAnalysis:
+    """한 경기의 Phase 2 분석 결과.
+
+    `Match.probs`(피나클 배당 확률)와 **별개의 객체**다. 여기서 확률을
+    다시 계산하거나 배당 확률과 합치지 않는다.
+
+    최종 승무패를 담는 필드는 두지 않는다 — 구조적으로 추천을 표현할 수
+    없어야 한다(CLAUDE.md §1-3).
+
+    `as_of` 는 이 분석의 시점 기준이다. 과거 경기를 고를 때 이 시각보다
+    앞선 것만 쓴다(`Report.matches_before`). `generated_at` 은 두지 않는다 —
+    `Report.generated_at` 이 이미 있고, 리포트 한 부의 생성 시각은 하나면
+    충분하다.
+    """
+    home: TeamAnalysis | None = None
+    away: TeamAnalysis | None = None
+    matchup: list[MatchupPair] = field(default_factory=list)
+    conflicts: list[Signal] = field(default_factory=list)
+    evidence: list[EvidenceItem] = field(default_factory=list)
+    data_quality: DataQuality | None = None
+    # 모델 산출값 전용 축 (xPTS·포아송 확률…). observed/derived 축과 섞지
+    # 않으려고 자리를 따로 뒀다. `probs`(피나클 배당 확률)와는 무관하며
+    # 서로 합치지 않는다.
+    model: AnalysisAxis | None = None
+    as_of: datetime | None = None   # 시점 기준
+
+    def evidence_for(self, side: str, counter: bool = False
+                     ) -> list[EvidenceItem]:
+        return [e for e in self.evidence
+                if e.side == side and e.counter is counter]
+
+    def signals_by_lean(self) -> dict[str, int]:
+        """방향별 신호 **개수**. 이것으로 픽을 만들지 않는다 —
+        '몇 개가 어느 쪽을 가리키는지'를 그대로 보여주기 위한 집계다."""
+        out: dict[str, int] = {}
+        for s in self.conflicts:
+            out[s.lean] = out.get(s.lean, 0) + 1
+        return out
+
+    @property
+    def has_conflict(self) -> bool:
+        leans = {s.lean for s in self.conflicts} - {NEUTRAL, UNKNOWN}
+        return len(leans) > 1
+
+
+def _revive_metric(d: Any) -> Metric | None:
+    return Metric(**d) if isinstance(d, dict) else None
+
+
+def _revive_axis(d: Any) -> AnalysisAxis | None:
+    if not isinstance(d, dict):
+        return None
+    out = AnalysisAxis(**{k: v for k, v in d.items() if k != "metrics"})
+    out.metrics = {k: m for k, m in
+                   ((k, _revive_metric(v)) for k, v in
+                    (d.get("metrics") or {}).items()) if m is not None}
+    return out
+
+
+# --------------------------------------------------------------------------
+# Phase 3-B — 패널 (LLM 해석 계층)
+# --------------------------------------------------------------------------
+# 여기 있는 것은 **분석이 아니라 해석**이다. Phase 2 가 만든 사실(축·근거)과
+# 시장 확률을 읽어 두 전문가가 각자 해석한 결과를 담는다. 그래서 자리도
+# `MatchAnalysis` 안이 아니라 `Match` 옆이다.
+#
+# 네 가지 불변조건이 이 dataclass 들의 모양으로 강제된다.
+#
+#   1. Market Reference 는 분석가가 아니다 — `PanelOpinion` 이 아니고 role 도
+#      없다. 확률만 담는 별도 구조다.
+#   2. 두 분석가는 **같은 `PanelPayload` 객체**를 받는다 — 그래서 payload 를
+#      역할별로 나눠 담는 필드가 없다.
+#   3. 근거 ID 는 전역 공유다 — 패널이 자기 ID 를 만들지 않는다.
+#   4. 예상 스코어에서 승무패를 파생하지 않는다 — `winner`·`pick`·`lean`·
+#      `recommendation`·`confidence` 필드가 **없어야** 하고, 그것을 만드는
+#      property 도 없어야 한다.
+@dataclass(frozen=True)
+class MarketReference:
+    """시장이 제시하는 외부 기준값. **분석가가 아니다** (불변조건 1).
+
+    기존 `MatchProb`·`Odds` 에서 **읽기만** 한다. 확률을 다시 계산하지 않고,
+    `pick`·`p_pick`·`favorite`·`toss_up` 같은 **선택값 계열은 싣지 않는다** —
+    그것을 넘기면 패널에게 시장의 픽을 알려 주는 셈이 되고, 그 순간
+    Market Reference 가 조용히 세 번째 분석가가 된다.
+    """
+    source: str = ""                # Odds.source ("arcadia-api" / …)
+    as_of: str = ""                 # Odds.fetched_at (원본 그대로 문자열)
+    home_probability: float | None = None
+    draw_probability: float | None = None
+    away_probability: float | None = None
+    overround: float | None = None
+
+
+@dataclass(frozen=True)
+class PanelOpinion:
+    """한 분석가의 해석. **의견만 담는다.**
+
+    실패·재시도 같은 운영 상태는 여기 넣지 않는다 (`PanelRun` 이 맡는다) —
+    섞으면 "의견이 있는데 실패했다" 같은 모호한 값이 생긴다.
+
+    **예상 스코어는 정수 둘이다.** `"2-1"` 문자열로 두지 않는 이유는, 문자열
+    이면 파싱이 생기고 파싱이 생기면 비교가 생기고 비교는 승무패로 미끄러지기
+    때문이다. 모르면 `None, None` 이다 (0-0 은 실제 예측이라 다르다).
+    """
+    role: str = ""                  # panel.DATA_ANALYST / MATCHUP_ANALYST
+    predicted_home: int | None = None
+    predicted_away: int | None = None
+    summary: str = ""
+    rationale: tuple[str, ...] = ()
+    evidence_ids: tuple[str, ...] = ()   # payload 안에 있는 ID 만
+    model: str = ""
+    prompt_version: str = ""
+
+
+@dataclass(frozen=True)
+class InitialScore:
+    """1·2단계 분석가가 **처음** 낸 예상 스코어 한 쌍 (Phase 4-G).
+
+    **의견이 아니다.** `PanelOpinion` 은 요약·근거·지지 지표를 함께 담는
+    '해석' 이고, 이것은 스코어 두 개뿐인 **스냅샷**이다. 3단계 결과만
+    붙여넣는 경로에는 분석가 원문이 오지 않는데(§1-15-2), 그렇다고 최초
+    스코어까지 잃을 이유는 없어서 이 자리를 따로 뒀다.
+
+    이 값이 있다고 `opinions` 가 생기지 않는다 — `is_moderator_only()` 의
+    판정은 그대로이고, 리포트도 "두 전문가의 해석" 이라고 적지 않는다.
+    스코어가 있다는 것과 의견이 있다는 것은 다른 사실이다.
+
+    스코어는 `PanelOpinion` 과 같은 규칙이다: 0 이상 정수 또는 `None`.
+    `0` 은 실제 예측(무득점)이라 `None` 과 다르다.
+    """
+    role: str = ""                  # panel.DATA_ANALYST / MATCHUP_ANALYST
+    home: int | None = None
+    away: int | None = None
+
+    @property
+    def label(self) -> str:
+        """`"2-1"`. 둘 중 하나라도 없으면 빈 문자열이다 — 0 으로 채우지 않는다."""
+        if self.home is None or self.away is None:
+            return ""
+        return f"{self.home}-{self.away}"
+
+
+@dataclass(frozen=True)
+class ScoreTally:
+    """토론 라운드 하나하나가 도달한 스코어와 그 횟수 (3-C 시뮬레이션).
+
+    **확률이 아니다.** 같은 자료를 서로 다른 축에서 출발해 여러 번 토론했을
+    때 결론이 얼마나 같은 곳에 모이는가를 센 것이고, 그 스코어가 실제로
+    나올 확률이 아니다. 백분율로 바꾸거나 확률처럼 부르지 않는다.
+    """
+    home: int = 0
+    away: int = 0
+    count: int = 0
+    # 그 스코어가 어디서 왔나. "data_analyst" · "matchup_tactical_analyst" ·
+    # "compromise"(두 의견 어느 쪽도 처음에 내지 않았고 토론에서 나온 것).
+    origin: str = ""
+
+    @property
+    def label(self) -> str:
+        return f"{self.home}-{self.away}"
+
+
+@dataclass(frozen=True)
+class ModeratorResult:
+    """두 의견을 **토론시켜 종합**한 결과 (Phase 3-C).
+
+    **세 번째 분석가가 아니다.** 새 통계를 만들지 않고, 두 전문가의 의견을
+    서로 부딪혀 이 경기의 예상 스코어 하나에 이른다.
+
+    **스코어는 토론에서 나온 것이지 평균이 아니다.** 처음에는 스코어 칸을
+    아예 두지 않았고(평균을 막으려고), 다음에는 두 의견이 낸 조합으로만
+    제한했다. 그런데 토론에서는 **절충 스코어**가 나올 수 있다 — 어느 쪽도
+    처음에 내지 않았지만 서로의 근거를 받아들이면 도달하는 값이다. 그래서
+    제약을 한 겹 옮겼다.
+
+        채택할 수 있는 값 = `distribution` 에 실제로 나타난 스코어
+
+    `distribution` 은 시뮬레이션한 토론 라운드들의 결과 빈도표이고, 각 항목은
+    **정수 스코어**다. 그래서 `1.5-1` 은 여전히 만들어질 수 없고(정수가 아님),
+    "두 값을 더해 반으로 나눈" 값도 어느 라운드에서도 도달하지 않았다면
+    분포에 없어 거부된다. 검증은 `moderator.parse_result()` 가 한다.
+
+    `adopted_from` 은 **어느 역할의 처음 스코어와 같은가**다. 둘 다 같은
+    스코어를 냈으면 둘 다 들어가고, **절충 스코어면 비어 있다.** 고를 근거가
+    없으면 스코어는 `None` 이고 `conclusion` 에 왜 고르지 못했는지가 남는다 —
+    억지로 고른 값보다 빈 칸이 낫다 (§1-5).
+
+    `winner`·`wdl`·`pick`·`lean`·`recommendation`·`confidence`·`strength`·
+    `favorite`·`probability` 칸은 **여전히 없다** — 있으면 그 자체가 추천이
+    된다. 채택한 스코어는 예상 스코어일 뿐이고, 그것을 승/무/패로 바꾸는
+    코드가 이 프로젝트에 없다(테스트로 고정).
+    """
+    status: str = ""                # 생략 / 실패(사유) / ok
+    # **실제로 본 역할**. 하나만 봤으면 하나만 들어간다 — 둘을 본 것처럼
+    # 보이면 안 된다. 개수는 `len()` 으로 알 수 있으므로 따로 세지 않는다.
+    panels_seen: tuple[str, ...] = ()
+    # 근거 ID 는 **기존 순서**로 정렬한다. 집합 순회 순서를 그대로 내보내면
+    # 같은 입력에서 실행마다 다른 줄이 나온다.
+    shared_evidence_ids: tuple[str, ...] = ()
+    data_only_evidence_ids: tuple[str, ...] = ()
+    matchup_only_evidence_ids: tuple[str, ...] = ()
+    common_points: tuple[str, ...] = ()
+    differences: tuple[str, ...] = ()
+    counterpoints: tuple[str, ...] = ()
+    # 종합 예상 스코어. **두 의견이 낸 스코어 중 하나 그대로**이고, 고르지
+    # 못했으면 둘 다 None 이다. 0 은 실제 예측이라 None 과 다르다.
+    adopted_home: int | None = None
+    adopted_away: int | None = None
+    adopted_from: tuple[str, ...] = ()   # 그 스코어를 낸 역할(들). 절충이면 ()
+    # 토론 시뮬레이션. `simulations` 는 돌린 라운드 수이고 `distribution` 의
+    # count 합과 같아야 한다 (파서가 검사한다).
+    simulations: int = 0
+    distribution: tuple[ScoreTally, ...] = ()
+    # 사람이 가장 먼저 읽는 칸. "토론 결과 예상 스코어는 X-Y 이고 이유는 …"
+    # 을 2~4문장으로. 고르지 못했으면 왜 고를 수 없었는지가 들어간다.
+    #
+    # 예전에는 `score_comparison`("두 스코어의 차이 설명")도 함께 있었는데,
+    # 채택이 생긴 뒤로는 같은 말을 두 번 하는 칸이 됐다 — 실물에서
+    # "두 의견이 낸 스코어는 2-1로 같으며 홈·원정 값 모두 일치합니다" 처럼
+    # `conclusion` 이 이미 말한 것을 되풀이했다. 그래서 없앴다.
+    conclusion: str = ""
+    market_relation: str = ""       # 시장 기준선과의 관계 (투표가 아님)
+    uncertainty: tuple[str, ...] = ()
+    model: str = ""
+    prompt_version: str = ""
+
+
+@dataclass(frozen=True)
+class PanelRun:
+    """한 경기의 패널 실행 결과 (의견 + 운영 상태).
+
+    `opinions` 는 **성공한 의견만** 담는다. 실패한 역할은 `role_status` 에
+    사유가 남고 가짜 의견을 만들지 않는다.
+    """
+    status: str = ""                # 생략 / 실패(사유) / 부분 (n/m) / ok (n/m)
+    opinions: tuple[PanelOpinion, ...] = ()
+    role_status: dict[str, str] = field(default_factory=dict)
+    market_reference: MarketReference | None = None
+    evidence_ids: tuple[str, ...] = ()   # 이 경기에서 쓸 수 있던 근거 ID 전부
+    payload_hash: str = ""
+    # Phase 3-C. 의견이 하나도 없으면 None 이다 (종합할 것이 없다).
+    moderator: ModeratorResult | None = None
+    # Phase 4-G. 1·2단계의 **최초 예상 스코어만** 옮겨 둔 스냅샷.
+    # `opinions` 와 **별개 칸**이다 — 여기에 값이 있어도 분석가 원문이
+    # 있는 것이 아니다 (`InitialScore` 참고). 옛 결과에는 없으므로 기본은
+    # 빈 튜플이고, 그때는 리포트가 종합 스코어만 보여 준다.
+    initial_scores: tuple[InitialScore, ...] = ()
+
+    def opinion(self, role: str) -> PanelOpinion | None:
+        for item in self.opinions:
+            if item.role == role:
+                return item
+        return None
+
+    def initial_score(self, role: str) -> InitialScore | None:
+        for item in self.initial_scores:
+            if item.role == role:
+                return item
+        return None
+
+
+_MODERATOR_TUPLES = ("panels_seen", "shared_evidence_ids",
+                     "data_only_evidence_ids", "matchup_only_evidence_ids",
+                     "common_points", "differences", "counterpoints",
+                     "adopted_from", "uncertainty")
+
+
+def revive_moderator(d: Any) -> ModeratorResult | None:
+    if not isinstance(d, dict):
+        return None
+    body = dict(d)
+    for key in _MODERATOR_TUPLES:
+        body[key] = tuple(body.get(key) or ())
+    body["distribution"] = tuple(
+        ScoreTally(**t) for t in (d.get("distribution") or ())
+        if isinstance(t, dict))
+    return ModeratorResult(**body)
+
+
+def revive_panel_run(d: Any) -> PanelRun | None:
+    """dict → PanelRun. `asdict` 가 tuple 을 list 로 풀어 놓으므로 되감는다."""
+    if not isinstance(d, dict):
+        return None
+    market = d.get("market_reference")
+    return PanelRun(
+        moderator=revive_moderator(d.get("moderator")),
+        status=d.get("status", ""),
+        opinions=tuple(
+            PanelOpinion(**{**o,
+                            "rationale": tuple(o.get("rationale") or ()),
+                            "evidence_ids": tuple(o.get("evidence_ids") or ())})
+            for o in (d.get("opinions") or []) if isinstance(o, dict)),
+        role_status=dict(d.get("role_status") or {}),
+        market_reference=(MarketReference(**market)
+                          if isinstance(market, dict) else None),
+        evidence_ids=tuple(d.get("evidence_ids") or ()),
+        payload_hash=d.get("payload_hash", ""),
+        initial_scores=tuple(
+            InitialScore(**s) for s in (d.get("initial_scores") or [])
+            if isinstance(s, dict)))
+
+
+def revive_team_analysis(d: Any) -> TeamAnalysis | None:
+    """dict → TeamAnalysis. dataclass 중첩은 asdict 가 풀어 놓으므로 되감는다."""
+    if not isinstance(d, dict):
+        return None
+    out = TeamAnalysis(team=d.get("team", ""), fotmob_id=d.get("fotmob_id"),
+                       is_home=d.get("is_home"))
+    for axis in TeamAnalysis.AXES:
+        setattr(out, axis, _revive_axis(d.get(axis)))
+    dq = d.get("data_quality")
+    out.data_quality = DataQuality(**dq) if isinstance(dq, dict) else None
+    return out
+
+
+def revive_match_analysis(d: Any) -> MatchAnalysis | None:
+    if not isinstance(d, dict):
+        return None
+    out = MatchAnalysis(as_of=d.get("as_of"))
+    out.model = _revive_axis(d.get("model"))
+    out.home = revive_team_analysis(d.get("home"))
+    out.away = revive_team_analysis(d.get("away"))
+    out.matchup = [MatchupPair(**{k: v for k, v in p.items()
+                                  if k not in ("attack", "defense")},
+                               attack=_revive_metric(p.get("attack")),
+                               defense=_revive_metric(p.get("defense")))
+                   for p in (d.get("matchup") or []) if isinstance(p, dict)]
+    out.conflicts = [Signal(**s) for s in (d.get("conflicts") or [])
+                     if isinstance(s, dict)]
+    out.evidence = [EvidenceItem(**e) for e in (d.get("evidence") or [])
+                    if isinstance(e, dict)]
+    dq = d.get("data_quality")
+    out.data_quality = DataQuality(**dq) if isinstance(dq, dict) else None
+    return out
+
+
+# --------------------------------------------------------------------------
+# 경기
+# --------------------------------------------------------------------------
+@dataclass
+class Match:
+    """승무패 14경기 중 한 경기."""
+    no: int                       # 1~14
+    league: str = ""              # config_toto.yaml 의 리그 키
+    league_ko: str = ""
+    home: TeamRef = field(default_factory=TeamRef)
+    away: TeamRef = field(default_factory=TeamRef)
+    kickoff_kst: str = ""         # "2026-08-09 20:00"
+
+    # 수집물
+    odds: Odds = field(default_factory=Odds)
+    probs: MatchProb | None = None       # 보정 확률 + argmax 픽
+    home_profile: TeamProfile | None = None
+    away_profile: TeamProfile | None = None
+    h2h: H2H = field(default_factory=H2H)
+
+    # 분석 산출물
+    radar: dict[str, Any] = field(default_factory=dict)
+    matchup_notes: list[dict] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)   # 경고/누락 안내
+    # Phase 2 분석 결과. None = 아직 계산하지 않음.
+    # `probs`(피나클 배당 확률)와 **별개**이며 서로 덮어쓰지 않는다.
+    analysis: MatchAnalysis | None = None
+    # Phase 3-B 패널 해석. `--panel` 없이는 언제나 None 이다.
+    # **`MatchAnalysis` 안에 넣지 않는다** — 저쪽은 관측·계산된 사실이고
+    # 이쪽은 그 사실에 대한 해석이라 층이 다르다. 섞으면 패널이 분석 결과인
+    # 것처럼 읽히고, 패널이 새 근거를 만드는 구조로 미끄러진다.
+    panel: PanelRun | None = None
+
+    @property
+    def title(self) -> str:
+        return f"{self.home.display} vs {self.away.display}"
+
+
+@dataclass
+class SeasonMatch:
+    """시즌에 이미 치러졌거나 예정된 경기 1건 (Phase 2 의 과거 경기 색인).
+
+    회차 14경기를 담는 `Match` 와 목적이 다르다 — 이쪽은 배당·확률·프로필이
+    없는 **기록**이고, 시점별 분석(2-F 상대 강도)이 "그 경기 이전에 무슨 일이
+    있었나"를 묻기 위한 것이다.
+
+    ## 팀 식별자가 두 벌인 이유
+
+    이 프로젝트의 정규 식별자는 **팀명 문자열**(`TeamResolver` 가 만든
+    canonical name)이고, 슛 계층은 **FotMob 숫자 teamId** 로 돈다. 둘은
+    서로 다른 체계라서 하나로 합치면 한쪽이 조용히 끊긴다. 그래서 둘 다
+    들고 다닌다.
+
+      · `home_team` / `away_team`         정규명 (프로젝트 canonical)
+      · `home_fotmob_id` / `away_fotmob_id` 숫자 (슛 계층·순위표와 연결)
+
+    팀명만으로 과거 경기를 잇지 않는다.
+
+    ## kickoff
+
+    `kickoff` 는 정렬·시점 비교에 쓰는 datetime 이다. 원본 문자열이 UTC 표시
+    (`...Z`)면 **timezone 을 가진** datetime 이 되고, 표시가 없으면 naive 로
+    두고 `kickoff_aware=False` 로 남긴다. **임의의 시간대를 가정하지 않는다.**
+    파싱에 실패하면 `kickoff=None` 이고 `kickoff_raw` 에 원본이 남는다.
+    """
+    match_id: str = ""
+    competition: str = ""         # 내부 리그 키 (이 경기를 어느 리그 피드에서 얻었나)
+    kickoff: datetime | None = None
+    kickoff_raw: str = ""         # 원본 문자열 (파싱 실패해도 근거를 남긴다)
+    kickoff_aware: bool = False   # timezone 정보가 있었나
+    home_team: str = ""           # 정규명
+    away_team: str = ""
+    home_fotmob_id: int | None = None
+    away_fotmob_id: int | None = None
+    home_goals: int | None = None
+    away_goals: int | None = None
+    finished: bool = False
+
+    @property
+    def sort_key(self) -> tuple:
+        """kickoff 오름차순, 같으면 match_id 로 안정 정렬.
+
+        kickoff 가 없는 경기는 **뒤로** 보낸다 — 시점을 모르는 경기를 과거
+        구간에 끼워 넣으면 시점 비교가 무너진다.
+        """
+        if self.kickoff is None:
+            return (1, "", str(self.match_id))
+        return (0, self.kickoff.isoformat(), str(self.match_id))
+
+    @property
+    def result(self) -> str | None:
+        """홈 기준 H/D/A. 종료되지 않았거나 점수가 없으면 None."""
+        if not self.finished or self.home_goals is None or self.away_goals is None:
+            return None
+        if self.home_goals > self.away_goals:
+            return HOME
+        return DRAW if self.home_goals == self.away_goals else AWAY
+
+
+def matches_before(season: list[SeasonMatch], as_of: datetime | None,
+                   finished_only: bool = True) -> list[SeasonMatch]:
+    """`as_of` **이전에 시작한** 경기만. Phase 2-F 누수 방지의 기본 장치.
+
+    - 기준은 **엄격한 부등호** `kickoff < as_of` 다. 같은 시각에 시작한 경기는
+      **포함하지 않는다** — 그 경기 결과가 아직 나오지 않았기 때문이다.
+      (같은 날 15:00 경기는 20:00 경기 분석에 쓸 수 있지만, 15:00 경기끼리는
+      서로를 쓸 수 없다.)
+    - `kickoff` 가 없는 경기는 시점을 알 수 없으므로 **항상 제외**한다.
+    - `as_of` 가 None 이면 빈 목록. "기준이 없으니 전부"가 아니다 — 그렇게
+      두면 실수로 미래가 섞인다.
+    - 기본은 **종료된 경기만**. 예정 경기를 과거처럼 쓰면 안 된다.
+
+    tz-aware 와 naive 를 섞어 비교하면 파이썬이 TypeError 를 낸다. 그런
+    경기는 비교 자체를 하지 않고 제외하며, 호출부가 세어 볼 수 있도록
+    조용히 빠뜨리기만 한다(추측해서 시간대를 붙이지 않는다).
+    """
+    if as_of is None:
+        return []
+    out = []
+    for m in season:
+        if m.kickoff is None:
+            continue
+        if finished_only and not m.finished:
+            continue
+        try:
+            if m.kickoff < as_of:
+                out.append(m)
+        except TypeError:          # aware ↔ naive 혼용 — 비교 불가
+            continue
+    out.sort(key=lambda x: x.sort_key)
+    return out
+
+
+def _revive_dt(value) -> datetime | None:
+    """ISO 문자열 → datetime. **시간대를 지어내지 않는다** (§1-1-4).
+
+    문자열에 표시가 없으면 naive 로 되살아나고, `...+09:00` 이면 aware 로
+    되살아난다 — 저장 전과 같은 상태다.
+    """
+    if isinstance(value, datetime):
+        return value
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def revive_season_match(d: Any) -> SeasonMatch | None:
+    if not isinstance(d, dict):
+        return None
+    body = dict(d)
+    body["kickoff"] = _revive_dt(body.get("kickoff"))
+    return SeasonMatch(**body)
+
+
+def revive_match(d: Any) -> Match | None:
+    """dict → Match. **분석 결과를 다시 계산하지 않는다** — 되감기만 한다.
+
+    슛 계층(`TeamProfile.shot_aggregates`·`shot_matches`·`opponent_matches`)은
+    **되살리지 않는다.** 그것은 Phase 2 분석의 *입력*이고 분석은 이미 끝나
+    `Match.analysis` 에 들어 있다. 리포트 렌더링도 쓰지 않는다(테스트로
+    확인). 되살릴 수 없는 것을 되살린 척하지 않으려고 비운 채 둔다.
+    """
+    if not isinstance(d, dict):
+        return None
+    out = Match(no=d.get("no", 0), league=d.get("league", ""),
+                league_ko=d.get("league_ko", ""),
+                kickoff_kst=d.get("kickoff_kst", ""))
+    for side in ("home", "away"):
+        ref = d.get(side)
+        if isinstance(ref, dict):
+            setattr(out, side, TeamRef(**ref))
+    odds = d.get("odds")
+    out.odds = Odds(**odds) if isinstance(odds, dict) else Odds()
+    probs = d.get("probs")
+    out.probs = MatchProb(**probs) if isinstance(probs, dict) else None
+    for side in ("home_profile", "away_profile"):
+        setattr(out, side, _revive_profile(d.get(side)))
+    h2h = d.get("h2h")
+    if isinstance(h2h, dict):
+        out.h2h = H2H(
+            entries=[H2HEntry(**e) for e in (h2h.get("entries") or [])
+                     if isinstance(e, dict)],
+            home_wins=h2h.get("home_wins", 0), draws=h2h.get("draws", 0),
+            away_wins=h2h.get("away_wins", 0),
+            source_ok=h2h.get("source_ok", False))
+    out.radar = dict(d.get("radar") or {})
+    out.matchup_notes = [dict(n) for n in (d.get("matchup_notes") or [])
+                         if isinstance(n, dict)]
+    out.notes = list(d.get("notes") or [])
+    out.analysis = revive_match_analysis(d.get("analysis"))
+    if out.analysis is not None:
+        out.analysis.as_of = _revive_dt(out.analysis.as_of)
+    out.panel = revive_panel_run(d.get("panel"))
+    return out
+
+
+def _revive_profile(d: Any) -> TeamProfile | None:
+    if not isinstance(d, dict):
+        return None
+    ref = d.get("team")
+    out = TeamProfile(team=TeamRef(**ref) if isinstance(ref, dict)
+                      else TeamRef(), league=d.get("league", ""))
+    stats = d.get("stats")
+    out.stats = TeamStats(**stats) if isinstance(stats, dict) else TeamStats()
+    out.strengths = list(d.get("strengths") or [])
+    out.weaknesses = list(d.get("weaknesses") or [])
+    out.style_of_play = list(d.get("style_of_play") or [])
+    out.form = [FormEntry(**f) for f in (d.get("form") or [])
+                if isinstance(f, dict)]
+    out.missing_players = [dict(m) for m in (d.get("missing_players") or [])
+                           if isinstance(m, dict)]
+    out.rest_days = d.get("rest_days")
+    out.source_ok = bool(d.get("source_ok"))
+    return out
+
+
+def revive_report(d: Any) -> Report | None:
+    """dict → Report. 회차 분석 결과를 **다시 수집하지 않고** 되살린다."""
+    if not isinstance(d, dict):
+        return None
+    out = Report(round_id=d.get("round_id", ""),
+                 generated_at=d.get("generated_at", ""))
+    out.matches = [m for m in (revive_match(x) for x in
+                               (d.get("matches") or [])) if m is not None]
+    out.warnings = list(d.get("warnings") or [])
+    out.source_status = dict(d.get("source_status") or {})
+    verdict = d.get("verdict")
+    out.verdict = RoundVerdict(**verdict) if isinstance(verdict, dict) else None
+    out.season_matches = [s for s in (revive_season_match(x) for x in
+                                      (d.get("season_matches") or []))
+                          if s is not None]
+    return out
+
+
+# 베트맨 경기 시각(`Match.kickoff_kst`)은 한국시간 표기다. 시즌 경기 색인의
+# kickoff 은 FotMob 이 UTC 로 주므로, 비교하려면 한쪽에 시간대를 붙여야 한다.
+# **임의로 정하는 것이 아니라** 필드 이름이 이미 KST 라고 밝히고 있다.
+KST = timezone(timedelta(hours=9))
+
+
+def as_of_from_match(match) -> datetime | None:
+    """`Match.kickoff_kst` → 시간대가 붙은 datetime.
+
+    필드 이름이 KST 라고 밝히고 있으므로 UTC+9 를 붙인다. 시즌 경기 색인의
+    kickoff 은 UTC 라서 시간대가 없으면 비교 자체가 되지 않는다
+    (`matches_before` 가 TypeError 를 삼키고 전부 버린다).
+    파싱하지 못하면 None — 그러면 과거 경기 구간이 비고, 그 사실이 notes 에
+    남는다. 없는 시각을 지어내지 않는다.
+
+    **여기에 둔 이유** (Phase 6-B). 원래 `analysis` 에 있었는데 `artifact` 도
+    "이 회차가 아직 시작하지 않았나" 를 물어야 했다. 그런데 `artifact` 는
+    `analysis` 를 import 하면 안 된다 — 저장본이 분석을 다시 만들지 않는다는
+    보증이 그 import 금지로 지켜지고 있다(`test_j8`). 그렇다고 파싱을 한 벌
+    더 만들면 두 곳이 어긋난다. 그래서 `find_season_match` 와 같은 자리로
+    옮겼다 (§1-14 와 같은 이유). `analysis.as_of_from_match` 는 이것을 그대로
+    다시 내보내므로 부르는 쪽은 바뀌지 않는다.
+    """
+    text = (getattr(match, "kickoff_kst", "") or "").strip()
+    if not text:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(text, fmt).replace(tzinfo=KST)
+        except ValueError:
+            continue
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=KST)
+
+
+def in_kst(dt: datetime) -> datetime:
+    """비교용으로 **KST aware** 로 옮긴다 (Phase 6-C-2).
+
+    예전에는 `find_season_match` 가 `m.kickoff.replace(tzinfo=None)` 로
+    **표시만 떼어** 비교했다. 그런데 `SeasonMatch.kickoff` 은 FotMob 이
+    `...Z` 로 주는 **UTC** 이고, 호출부가 넘기는 시각은 `kickoff_kst` 에서
+    온 **KST** 다. 표시를 떼면 naive UTC 와 naive KST 를 직접 빼는 셈이라,
+    **옳게 짝지은 경기에도 9시간이 남았다** (Phase 6-C-1 에서 실물 67경기로
+    확인: 창을 8시간으로 줄이면 67/67 이 0/67 이 된다).
+
+    고치는 방법은 창을 넓히거나 줄이는 것이 아니라 **기준을 하나로
+    맞추는 것**이다. 여기서는 KST 로 모은다.
+
+      · aware 면 `astimezone(KST)` — 시각을 바꾸지 않고 표기만 옮긴다.
+      · naive 면 KST 로 읽는다. `as_of_from_match` 와 **같은 근거**다 —
+        이 프로젝트에서 시간대 표시 없이 도는 시각은 `kickoff_kst` 계열이고
+        필드 이름이 이미 KST 라고 밝히고 있다.
+
+    **양쪽이 다 naive 면 결과가 예전과 정확히 같다** — 같은 표시를 붙였으므로
+    차이가 달라지지 않는다. 즉 이 변경은 aware 쪽에서만 값을 바꾼다.
+    """
+    return dt.astimezone(KST) if dt.tzinfo is not None else dt.replace(tzinfo=KST)
+
+
+def find_season_match(season: list[SeasonMatch], home: str, away: str,
+                      kickoff: datetime | None, window: timedelta,
+                      finished_only: bool = False) -> SeasonMatch | None:
+    """회차 경기 하나를 시즌 색인에서 찾는다. **못 가리면 None 이다.**
+
+    같은 팀 짝이 시즌에 두 번(홈/원정) 나오므로 팀명만으로는 가릴 수 없다.
+    날짜를 아는데 창 안에 맞는 것이 없으면 **비워 둔다** — 틀린 짝을 붙이는
+    것이 빈 것보다 나쁘다 (§1-6-2 의 자동 정산 규칙과 같다).
+
+    `roundlog._settle()` 과 `match_material` 이 **같은 규칙**을 써야 해서
+    여기에 둔다. 두 곳에 베껴 두면 한쪽만 고쳐져 조용히 어긋난다.
+
+    시각 비교는 `in_kst()` 로 **기준을 하나로 모은 뒤**에 한다 — 표시를 떼어
+    직접 빼지 않는다 (Phase 6-C-2, 위 함수 설명 참고).
+    """
+    hits = [m for m in season
+            if m.home_team == home and m.away_team == away
+            and not (finished_only and not m.finished)]
+    if kickoff is not None:
+        target = in_kst(kickoff)
+        hits = [m for m in hits if m.kickoff is not None
+                and abs(in_kst(m.kickoff) - target) <= window]
+    return hits[0] if len(hits) == 1 else None
+
+
+def find_season_match_by_id(season: list[SeasonMatch], match_id: str,
+                            finished_only: bool = False) -> SeasonMatch | None:
+    """소스 경기 ID 로 찾는다 (Phase 6-C-2). 없으면 None.
+
+    **새 식별자를 발명하는 것이 아니다.** `SeasonMatch.match_id` 는 FotMob 이
+    준 값이고, 정산은 그것을 알고 있으면 팀명·날짜로 다시 가릴 이유가 없다 —
+    팀 별칭이 바뀌어도(§1-22) 시간대가 어긋나도 ID 는 그대로다.
+
+    같은 ID 가 둘 이상이면 **고르지 않는다.** `enrich` 가 ID 로 중복을
+    거르므로 정상 색인에서는 일어나지 않지만, 일어났다면 색인이 깨진 것이고
+    그때 하나를 집으면 조용히 틀린다.
+    """
+    if not match_id:
+        return None
+    hits = [m for m in season
+            if str(m.match_id) == str(match_id)
+            and not (finished_only and not m.finished)]
+    return hits[0] if len(hits) == 1 else None
+
+
+@dataclass
+class Report:
+    """리포트 한 부."""
+    round_id: str = ""            # 회차
+    generated_at: str = ""
+    matches: list[Match] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    source_status: dict[str, str] = field(default_factory=dict)
+    verdict: RoundVerdict | None = None   # 회차 승산 (지침 §5)
+    # 시즌 경기 색인 (Phase 2). kickoff 오름차순으로 정렬해 둔다.
+    season_matches: list[SeasonMatch] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    def matches_before(self, as_of: datetime | None,
+                       finished_only: bool = True) -> list[SeasonMatch]:
+        """`as_of` 이전 경기만 (모듈 함수와 같은 규칙)."""
+        return matches_before(self.season_matches, as_of, finished_only)

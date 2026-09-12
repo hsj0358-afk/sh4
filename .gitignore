@@ -11,3 +11,13 @@ venv/
 # 생성물
 reports/
 *.log
+
+# 토토 분석기 생성물
+cache/
+data/teams.learned.yaml
+data/last_round.txt
+data/teams.league.yaml
+
+# 회차 분석 저장본 (Phase 4-C). 재실행으로 다시 만들 수 있고 회차당 수백 KB
+# 라 커밋하지 않는다 — 축적이 목적인 data/rounds.csv 와 다르다 (§1-6-2).
+data/artifacts/

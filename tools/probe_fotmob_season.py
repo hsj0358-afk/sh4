@@ -1,8 +1,21 @@
 """FotMob 과거 시즌 요청이 production path 에서 통하는가 — 진단 전용 (6-D-6A).
 
-## 왜 이 도구가 필요한가
+## 답은 나왔다 (2026-09-14 · 사용자 PC · id 73 · 2025/2026)
 
-6-D-6(Historical Season Acquisition)이 **네트워크 계층에서 막혀 BLOCKED** 다.
+    1) ?id=73                      200 · 247,537 B · selected 2026/2027  ← 최신
+    2) ?id=73&season=2025%2F2026   200 · 810,612 B · selected 2025/2026  ← PASS
+    3) 2) + &ccode3=KOR            200 · 810,612 B · selected 2025/2026  ← 2)와 같다
+
+**`season=` 하나면 통한다. `ccode3` 는 무의미하다. `overview.season` 은
+요청과 무관하게 최신 시즌을 적으므로 판정에 쓰지 않는다** (셋 다 2026/2027
+이었다). 자세한 것은 CLAUDE.md §1-33.
+
+이 도구는 그대로 남는다 — 다른 리그·다른 시즌을 물으려면 다시 돌리면 된다.
+아래는 이 도구를 만들 때의 사정이고, 판정 기준은 그때와 같다.
+
+## 왜 이 도구가 필요했나
+
+6-D-6(Historical Season Acquisition)이 **네트워크 계층에서 막혀 BLOCKED** 였다.
 원격 세션에서는 fotmob.com 이 차단돼 있어(CLAUDE.md §2-1) 답할 수 없는 질문이
 정확히 하나 남았다.
 

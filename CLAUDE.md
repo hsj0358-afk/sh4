@@ -3638,10 +3638,12 @@ UCL = 리그 페이즈 + 녹아웃   ← 하나의 population
 `f"league_{key}"` 를 조립했다). **시즌을 안 주면 예전 키와 글자까지 같아**
 기존 캐시가 그대로 읽힌다.
 
-지금 아무 호출부도 시즌을 넘기지 않는다 — 과거 시즌 요청이 production 경로
-에서 되는지 확인되지 않았고(6-D-6·6-D-6A **BLOCKED**), 확인되지 않은 요청을
-보낼 수 없으니 받아 둘 응답도 없다. **`LEAGUE_PATH` 는 한 글자도 바뀌지
-않았다**(테스트로 고정) — `season=`·`ccode3`·`x-mas` 어느 것도 넣지 않았다.
+지금 아무 호출부도 시즌을 넘기지 않는다. 6-D-7 당시에는 과거 시즌 요청이
+production 경로에서 되는지 확인되지 않아서였고(6-D-6·6-D-6A BLOCKED),
+**그 질문은 뒤에 답이 났다 — §1-33.** `season=` 하나면 통하고 `ccode3` 는
+무의미하다. 다만 **무엇을 언제 받을지가 6-D-6 소관**이라 호출부는 그대로다.
+**`LEAGUE_PATH` 는 한 글자도 바뀌지 않았다**(테스트로 고정) —
+`season=`·`ccode3`·`x-mas` 어느 것도 넣지 않았다.
 
 **캐시 판을 10 으로 올렸다.** 저장되는 `matches` 의 모양이 **실제로**
 달라졌기 때문이다 — `id` 가 int 에서 str 이 되고 같은 ID 가 한 건으로 합쳐진다.
@@ -3796,6 +3798,59 @@ laliga: 342}`). 그래서 **목 UCL → 토 EPL 같은 실제 인접**은 fixtur
 시간순으로 서는 것(아스널·레알·아틀레틱 5팀 겹침)까지다.
 
 회귀 테스트: `python tests/test_match_timeline.py` (55개).
+
+### 1-33. 과거 시즌 요청은 통한다 (Phase 6-D-6A 결과) — `season=` 하나뿐
+
+6-D-6(과거 시즌 수집)이 **네트워크 계층에서 막혀** BLOCKED 였다. 이 저장소의
+원격 세션은 fotmob.com 이 차단돼 있어(§2-1) 요청을 보낼 수가 없었고, 확인되지
+않은 요청을 production 경로에 넣을 수는 없다 (§1-4).
+
+사용자 PC 에서 `tools/probe_fotmob_season.py` 를 돌려 답이 나왔다
+(2026-09-14 · 리그 id 73 = 유로파리그 · production `FotMobBrowser.get_raw()`
+그대로 · `x-mas` 를 만들지 않고 다른 HTTP 클라이언트를 쓰지 않았다).
+
+| 요청 | status | bytes | `details.selectedSeason` |
+|---|---|---|---|
+| `?id=73` | 200 | 247,537 | `2026/2027` ← 최신 시즌이 온다 |
+| `?id=73&season=2025%2F2026` | 200 | **810,612** | **`2025/2026`** |
+| 위 + `&ccode3=KOR` | 200 | 810,612 | `2025/2026` |
+
+**① `season=` 하나면 된다.** production 경로 그대로 통하고 `x-mas` 를 손으로
+만들 필요가 없다. `details.latestSeason` 은 셋 다 `2026/2027` 로 남아 있어,
+받은 것이 최신 시즌이 아니라는 것이 응답 안에서 갈린다.
+
+**② `ccode3` 는 아무것도 하지 않는다 — 넣지 않는다.** 2)와 3)의 바이트 수와
+실린 시즌 필드가 **전부 같다**. 효과가 관측되지 않은 파라미터를 "있으면
+안전하겠지" 로 붙이지 않는다. `tests/test_continental_collection.py` 의
+`test_h5` 가 소스에 `ccode3` 가 없는 것을 고정하는데, 그 근거가 이제
+"BLOCKED 라서 지어내지 않는다" 가 아니라 **"실측해 보니 무의미하다"** 다.
+
+**③ `overview.season` 은 선택된 시즌이 아니다.** 2025/26 을 받은 응답 안에서도
+`2026/2027` 이라고 적혀 있다 — 세 요청 전부 그랬다. 이 칸을 보고 "무엇을
+받았나" 를 판정하면 과거 시즌을 받아 놓고 최신 시즌인 줄 알게 된다.
+
+```
+무엇을 받았나   details.selectedSeason          ← 권위
+                table[].data.selectedSeason     ← 표 단위로 같은 말
+                table[].data.isCurrentSeason    ← 최신 시즌이면 True
+지금이 언제인가  details.latestSeason
+받을 수 있는 것  allAvailableSeasons             ← 시즌 목록을 코드에 박지 않는다
+무관             overview.season                 ← 요청과 무관하게 최신을 적는다
+```
+
+**과거 시즌 응답이 3배 크다** (247KB → 810KB). 시즌이 끝나 일정이 다 차 있기
+때문이다 — 여러 시즌을 받을 설계를 할 때 이 크기를 어림에 쓴다.
+
+**실측은 한 리그·한 시즌이다.** id 73 의 2025/2026 이고, 다른 리그나 더 오래된
+시즌이 같은지는 확인하지 않았다. 궁금하면 같은 도구를 그대로 다시 돌린다 —
+진단 전용이라 수집 흐름을 건드리지 않는다.
+
+**수집은 아직 구현하지 않았다.** 자리는 6-D-7 이 만들어 뒀고
+(`league_cache_key(key, season)` — 시즌을 주면 `league_ucl_2025-2026` 처럼
+다른 칸에 앉는다), `LEAGUE_PATH` 는 한 글자도 바뀌지 않았으며 아무 호출부도
+시즌을 넘기지 않는다. **무엇을 언제 어느 모집단으로 받을지는 6-D-6 소관**이고
+그 사양이 아직 없다 — 여기서 지어내지 않는다. 이 절이 적는 것은 **막혀 있던
+질문의 답**까지다.
 
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
@@ -4450,7 +4505,7 @@ python tests/test_strict_resolution.py     # 대회 팀명 정확일치 전용 6
 python tests/test_index_isolation.py       # 색인 모집단 분리 6-D-5 §1-30 (48개)
 python tests/test_continental_collection.py # 대륙대회 수집·중복 제거 6-D-7 §1-31 (50개)
 python tests/test_match_timeline.py        # 팀 경기 시간축·휴식·밀도 6-D-8 §1-32 (55개)
-python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A)
+python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)
 python tools/probe_sources.py --browser    # 소스 구조 점검

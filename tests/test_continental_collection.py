@@ -16,9 +16,13 @@ fixture 는 **실물 응답에서 잘라낸 것**이다 (`tests/fixtures/fotmob/
 continental/`). 구조를 지어내지 않았고 값도 관측된 그대로다.
 
 **live 수집은 검증하지 않는다.** 이 저장소의 원격 세션에서 fotmob.com 이
-차단돼 있고(§2-1), 과거 시즌 요청이 production 경로에서 되는지도 확인되지
-않았다(6-D-6·6-D-6A BLOCKED). 여기서 PASS 하는 것은 **parser·dedup·색인
-격리**이지 live acquisition 이 아니다.
+차단돼 있다(§2-1). 여기서 PASS 하는 것은 **parser·dedup·색인 격리**이지
+live acquisition 이 아니다.
+
+과거 시즌 요청은 뒤에 사용자 PC 실측으로 답이 났다 — `season=` 하나면 통하고
+`ccode3` 는 무의미하다(§1-33). 그래도 이 파일의 H 절은 **6-D-7 이 URL 을
+건드리지 않았다**는 사실을 그대로 고정한다. 받을 수 있다는 것과 받기로
+정하는 것은 다른 일이고, 뒤쪽은 6-D-6 소관이다.
 
 pytest 없이도 돈다:  python tests/test_continental_collection.py
 """
@@ -520,7 +524,17 @@ def test_h4_cache_key_has_no_path_separator():
 
 
 def test_h5_no_season_query_was_added_to_the_url():
-    """6-D-6 이 BLOCKED 이므로 과거 시즌 요청을 지어내지 않는다 (§14)."""
+    """URL 은 그대로다 — 받을 수 있는 것과 받기로 정한 것은 다르다 (§14).
+
+    6-D-7 당시의 근거는 "BLOCKED 라 지어내지 않는다" 였다. 실측 뒤 근거가
+    둘로 갈렸다 (§1-33).
+
+      · `season=`  통하는 것이 확인됐다. 넣지 않은 이유는 **무엇을 언제 받을지가
+                   6-D-6 소관**이기 때문이지 못 받아서가 아니다.
+      · `ccode3`   2)와 3) 응답의 바이트 수와 시즌 필드가 **전부 같았다.**
+                   효과가 관측되지 않은 파라미터를 붙이지 않는다.
+      · `x-mas`    production 경로가 알아서 붙인다. 손으로 만들지 않는다.
+    """
     assert F.LEAGUE_PATH == "/api/data/leagues?id={id}"
     src = (ROOT / "toto" / "sources" / "fotmob.py").read_text(encoding="utf-8")
     assert "ccode3" not in src

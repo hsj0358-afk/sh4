@@ -308,6 +308,10 @@ def read_league(browser: WhoScoredBrowser, settings: Settings,
 
     soup = _soup(html)
     out: dict[str, dict] = {}
+    # 대륙대회·컵대회에서는 팀명을 정확일치로만 해석한다 (Phase 6-D-4).
+    # 국내리그는 `strict_team_match()` 가 False 라 예전 동작 그대로다.
+    strict = settings.strict_team_match(league_key)
+    blocked_at = len(resolver.strict_blocked)
 
     # 1) 팀 페이지 링크 수집
     #    후스코어드가 경로를 소문자로 바꿨다(/Teams/... → /teams/{id}/show/...).
@@ -318,7 +322,7 @@ def read_league(browser: WhoScoredBrowser, settings: Settings,
         if "/teams/" not in href.lower():
             continue
         name = a.get_text(" ", strip=True)
-        canon = resolver.resolve(name, learn=False) if name else None
+        canon = resolver.resolve(name, learn=False, strict=strict) if name else None
         if not canon:
             continue
         entry = out.setdefault(canon, {"stats": TeamStats(), "url": ""})
@@ -352,7 +356,7 @@ def read_league(browser: WhoScoredBrowser, settings: Settings,
             played = _int(row, i_pl)
             if played is None:
                 continue
-            canon = _row_team(row, resolver, i_team)
+            canon = _row_team(row, resolver, i_team, strict=strict)
             if not canon:
                 continue
             st = out.setdefault(canon, {"stats": TeamStats(), "url": ""})["stats"]
@@ -417,7 +421,7 @@ def read_league(browser: WhoScoredBrowser, settings: Settings,
             continue
         i_shots, i_poss, i_pass, i_aerial, i_rating = cols
         for row in rows[hdr + 1:]:
-            canon = _row_team(row, resolver, i_team)
+            canon = _row_team(row, resolver, i_team, strict=strict)
             if not canon:
                 continue
             st = out.setdefault(canon, {"stats": TeamStats(), "url": ""})["stats"]
@@ -475,13 +479,23 @@ def read_league(browser: WhoScoredBrowser, settings: Settings,
 
     log.info("후스코어드 %s — 팀 %d개 수집 (경기수 확보 %d팀)",
              league_key, len(out), with_played)
+    # strict 가 켜진 대회에서만 한 줄 더 남긴다. **국내리그 출력은 그대로다.**
+    note = resolver.strict_note(blocked_at)
+    if note:
+        log.warning("[%s] 팀 식별(정확일치 전용): 해석 %d팀 · 추측 차단 %s",
+                    league_key, len(out), note)
     if cache:
         cache.set("whoscored", f"league_{league_key}", _freeze_league(out))
     return out
 
 
-def _row_team(row: list[str], resolver: TeamResolver, i_team: int | None) -> str | None:
-    """행에서 팀명을 찾아 정규명으로 바꾼다."""
+def _row_team(row: list[str], resolver: TeamResolver, i_team: int | None,
+              strict: bool = False) -> str | None:
+    """행에서 팀명을 찾아 정규명으로 바꾼다.
+
+    `strict` 는 대륙대회·컵대회에서 켠다 (Phase 6-D-4) — 그때는 정확일치가
+    아니면 붙이지 않는다. 국내리그는 기본값 False 라 동작이 그대로다.
+    """
     candidates = []
     if i_team is not None and i_team < len(row):
         candidates.append(row[i_team])
@@ -490,7 +504,7 @@ def _row_team(row: list[str], resolver: TeamResolver, i_team: int | None) -> str
         cand = re.sub(r"^\d+\s*", "", cand or "").strip()
         if len(cand) < 2 or _NUM_RE.fullmatch(cand or ""):
             continue
-        canon = resolver.resolve(cand, learn=False, quiet=True)
+        canon = resolver.resolve(cand, learn=False, quiet=True, strict=strict)
         if canon:
             return canon
     return None

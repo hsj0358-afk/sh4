@@ -291,6 +291,31 @@ class Settings:
                         key, kind, key, "·".join(COMPETITION_TYPES))
         return False
 
+    def strict_team_match(self, key: str) -> bool:
+        """이 대회의 팀명을 **정확일치로만** 해석해야 하나 (Phase 6-D-4).
+
+        국내리그는 참가팀이 20~28팀이고 전부 `data/teams.yaml` 에 있으므로,
+        부분일치·토큰 유사도가 표기 흔들림("맨체스터시티(홈)")을 흡수하는
+        쪽이 이득이었다. 대회는 반대다 — 실측한 유럽 대륙대회 2025/26 은
+        36팀 중 우리가 아는 것이 11팀뿐이었고, 나머지 25팀은 **아무 데도
+        붙지 말아야 하는 이름**이다. 그 상태에서 부분일치를 켜 두면 모르는
+        이름이 아는 이름에 들러붙는다.
+
+            Rangers  →  Angers   (별칭 'angers' ⊂ 'rangers')
+
+        실측에서 `Rangers vs Roma` 가 `Angers vs Roma` 로 색인에 들어갔고
+        순위표에는 정규명 `Angers` 에 Rangers 의 `fotmob_id 8548` 이 붙었다.
+        경고는 한 줄도 나오지 않았다 — **없는 것보다 틀린 것이 나쁘다**(§1-5).
+
+        판정은 `league_type()` 하나에서 파생한다. `owns_team_league()` 와
+        지금은 같은 답을 주지만 **묻는 것이 다르다** — 저쪽은 "이 표로 소속을
+        고쳐도 되나", 이쪽은 "이 표의 이름을 추측해도 되나"다. 한쪽 정책이
+        바뀔 때 다른 쪽이 조용히 따라가면 안 되므로 자리를 나눠 둔다.
+
+        **모르는 종류는 strict 다.** 국내리그로 확인된 것만 추측을 허용한다.
+        """
+        return self.league_type(key) != LEAGUE
+
     @property
     def ws_delay(self) -> float:
         return float(self.whoscored.get("delay_sec", 4.0))

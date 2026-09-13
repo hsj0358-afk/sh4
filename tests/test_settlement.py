@@ -547,10 +547,24 @@ def test_j2_roundlog_still_fetches_nothing():
 
 
 def test_j3_no_new_result_parser_in_fotmob():
-    """색인 전용 경로도 **같은 `_parse_matches`** 를 쓴다 (§17)."""
+    """색인 전용 경로도 **같은 `_parse_matches`** 를 쓴다 (§17).
+
+    호출 문자열을 그대로 찾던 것을 AST 로 바꿨다 — 6-D-4 가 `strict=` 인자를
+    더하면서 철자가 달라졌는데, 이 테스트가 지키려는 것은 **인자 목록이 아니라
+    '색인 경로가 자기 파서를 새로 만들지 않는다'** 이기 때문이다. 6-C-2 에서
+    `test_j4` 를 줄 검색 → AST 로 옮긴 것과 같은 이유다 (§1-28).
+    """
     src = (ROOT / "toto" / "sources" / "fotmob.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    fn = next(n for n in ast.walk(tree)
+              if isinstance(n, ast.FunctionDef) and n.name == "_read_season")
+    called = {n.func.id for n in ast.walk(fn)
+              if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+    assert "_parse_matches" in called, "색인 경로가 공용 파서를 쓰지 않는다"
+    assert not {c for c in called if "parse" in c} - {"_parse_matches"}, \
+        f"색인 경로에 다른 파서가 생겼다: {called}"
+
     body = src[src.index("def _read_season("):]
-    assert "_parse_matches(data, resolver)" in body
     for word in ("score", "goals"):
         assert f'"{word}"' not in body.split("def ", 2)[0], word
 

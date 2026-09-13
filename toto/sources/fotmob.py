@@ -364,13 +364,17 @@ def read_league(browser: FotMobBrowser, settings: Settings, league_key: str,
                   league_key, league_id)
         return {"teams": {}, "matches": []}
 
-    teams = _parse_standings(data, resolver, league_key)
-    matches = _parse_matches(data, resolver)
+    # 대륙대회·컵대회에서는 팀명을 정확일치로만 해석한다 (Phase 6-D-4).
+    # 국내리그는 `strict_team_match()` 가 False 라 예전 동작 그대로다.
+    strict = settings.strict_team_match(league_key)
+    teams = _parse_standings(data, resolver, league_key, strict=strict)
+    matches = _parse_matches(data, resolver, strict=strict)
     _attach_form(teams, matches, int(settings.whoscored.get("recent_form_count", 6)))
 
     feeds = settings.fotmob.get("team_stats") or DEFAULT_TEAM_STAT_FEEDS
     if teams and feeds:
-        read_team_stats(browser, data, teams, resolver, feeds, league_key)
+        read_team_stats(browser, data, teams, resolver, feeds, league_key,
+                        strict=strict)
 
     # 시즌 통계에 없는 지표(npxG·xGOT·총슈팅·피슈팅·박스 안팎)는 경기 상세에만
     # 있다. 0 으로 두면 이 단계를 통째로 건너뛴다.
@@ -397,10 +401,16 @@ def read_league(browser: FotMobBrowser, settings: Settings, league_key: str,
 
 
 def _parse_standings(data: Any, resolver: TeamResolver,
-                     league_key: str) -> dict[str, dict]:
-    """순위표 블록들을 정규명 → {stats, fotmob_id, page_url} 로 접는다."""
+                     league_key: str, strict: bool = False) -> dict[str, dict]:
+    """순위표 블록들을 정규명 → {stats, fotmob_id, page_url} 로 접는다.
+
+    `strict` 는 대륙대회·컵대회에서 켠다 (Phase 6-D-4). 실측에서 이 함수가
+    정규명 `Angers` 에 Rangers 의 `fotmob_id 8548` 을 붙였다 — 순위표 한 줄이
+    엉뚱한 팀의 시즌 지표가 되는 자리라, 막을 곳이 여기다.
+    """
     out: dict[str, dict] = {}
     unmatched: list[str] = []
+    blocked_at = len(resolver.strict_blocked)
 
     for block in _standings_blocks(data):
         # xg 는 all/home/away 와 나란히 있는 또 하나의 표다. 리그 응답 한 번에
@@ -412,7 +422,8 @@ def _parse_standings(data: Any, resolver: TeamResolver,
             for row in rows:
                 if not _is_team_row(row):
                     continue
-                canon = resolver.resolve(str(row.get("name")), learn=False, quiet=True)
+                canon = resolver.resolve(str(row.get("name")), learn=False,
+                                         quiet=True, strict=strict)
                 if not canon:
                     unmatched.append(str(row.get("name")))
                     continue
@@ -428,6 +439,12 @@ def _parse_standings(data: Any, resolver: TeamResolver,
         # 리그 전체가 안 맞는지, 한두 팀만 안 맞는지 구분되게 남긴다.
         log.debug("[%s] FotMob 팀명 미매칭 %d건: %s", league_key,
                   len(set(unmatched)), sorted(set(unmatched))[:6])
+    # strict 가 켜진 대회에서만 한 줄 더 남긴다. **국내리그 출력은 그대로다.**
+    note = resolver.strict_note(blocked_at)
+    if note:
+        log.warning("[%s] 팀 식별(정확일치 전용): 해석 %d팀 · 미해석 %d팀 · "
+                    "추측 차단 %s", league_key, len(out),
+                    len(set(unmatched)), note)
     return out
 
 
@@ -583,7 +600,8 @@ def _pick_value(node: dict) -> float | None:
     return best[1] if best else None
 
 
-def _parse_stat_feed(data: Any, resolver: TeamResolver) -> dict[str, float]:
+def _parse_stat_feed(data: Any, resolver: TeamResolver,
+                     strict: bool = False) -> dict[str, float]:
     """통계 피드 → {정규명: 값}.
 
     피드의 정확한 스키마를 본 적이 없어서 경로를 박지 않는다. '팀 이름으로
@@ -592,7 +610,7 @@ def _parse_stat_feed(data: Any, resolver: TeamResolver) -> dict[str, float]:
     """
     out: dict[str, float] = {}
     for node in _walk(data):
-        canon = _find_team_name(node, resolver)
+        canon = _find_team_name(node, resolver, strict=strict)
         if not canon or canon in out:
             continue
         value = _pick_value(node)
@@ -601,7 +619,8 @@ def _parse_stat_feed(data: Any, resolver: TeamResolver) -> dict[str, float]:
     return out
 
 
-def _find_team_name(node: dict, resolver: TeamResolver) -> str | None:
+def _find_team_name(node: dict, resolver: TeamResolver,
+                    strict: bool = False) -> str | None:
     """이 dict 가 가리키는 팀. 자기 필드에 없으면 한 단계 아래까지 본다.
 
     피드에 따라 이름이 같은 층에 있기도 하고
@@ -620,7 +639,8 @@ def _find_team_name(node: dict, resolver: TeamResolver) -> str | None:
             # 지표 이름("possession_percentage_team")이 팀명 매칭을 타지 않게 한다
             if "_" in value and " " not in value:
                 continue
-            canon = resolver.resolve(value, learn=False, quiet=True)
+            canon = resolver.resolve(value, learn=False, quiet=True,
+                                     strict=strict)
             if canon:
                 return canon
         if depth == 0 and _pick_value(node) is None:
@@ -630,7 +650,8 @@ def _find_team_name(node: dict, resolver: TeamResolver) -> str | None:
 
 def read_team_stats(browser: FotMobBrowser, league_data: Any,
                     teams: dict[str, dict], resolver: TeamResolver,
-                    feeds: list[dict], league_key: str) -> int:
+                    feeds: list[dict], league_key: str,
+                    strict: bool = False) -> int:
     """시즌 팀 통계 피드를 받아 teams 의 TeamStats 를 채운다. 채운 지표 수."""
     available = _stat_feeds(league_data)
     if not available:
@@ -649,7 +670,7 @@ def read_team_stats(browser: FotMobBrowser, league_data: Any,
         if data is None:
             log.warning("[%s] 통계 피드 '%s' 를 받지 못했습니다.", league_key, feed)
             continue
-        values = _parse_stat_feed(data, resolver)
+        values = _parse_stat_feed(data, resolver, strict=strict)
         if not values:
             log.warning("[%s] 통계 피드 '%s' 에서 팀·값을 찾지 못했습니다 "
                         "(구조가 예상과 다릅니다).", league_key, feed)
@@ -666,12 +687,21 @@ def read_team_stats(browser: FotMobBrowser, league_data: Any,
     return filled
 
 
-def _parse_matches(data: Any, resolver: TeamResolver) -> list[dict]:
-    """경기 목록을 정규명 기준으로 평평하게 만든다."""
+def _parse_matches(data: Any, resolver: TeamResolver,
+                   strict: bool = False) -> list[dict]:
+    """경기 목록을 정규명 기준으로 평평하게 만든다.
+
+    `strict` 는 대륙대회·컵대회에서 켠다 (Phase 6-D-4). 한쪽이라도 해석되지
+    않으면 아래에서 그 경기를 버리므로, 여기서 추측을 막으면 `merge_season`
+    까지 가짜 경기가 내려가지 않는다 — 실측의 `Rangers vs Roma` →
+    `Angers vs Roma`(match_id 4947788)가 그 경로였다.
+    """
     out = []
     for raw in _match_list(data):
-        home = resolver.resolve(str(raw["home"].get("name")), learn=False, quiet=True)
-        away = resolver.resolve(str(raw["away"].get("name")), learn=False, quiet=True)
+        home = resolver.resolve(str(raw["home"].get("name")), learn=False,
+                                quiet=True, strict=strict)
+        away = resolver.resolve(str(raw["away"].get("name")), learn=False,
+                                quiet=True, strict=strict)
         if not home or not away or home == away:
             continue
         hg, ag = _goals(raw)
@@ -836,7 +866,8 @@ def _read_season(browser: "FotMobBrowser", settings: Settings, league_key: str,
         log.error("[%s] FotMob 리그 응답을 받지 못했습니다 (id=%d).",
                   league_key, league_id)
         return None
-    matches = _parse_matches(data, resolver)
+    matches = _parse_matches(data, resolver,
+                             strict=settings.strict_team_match(league_key))
     log.info("[%s] FotMob 경기 %d개 (종료 %d) — 정산용 색인",
              league_key, len(matches),
              sum(1 for m in matches if m["finished"]))

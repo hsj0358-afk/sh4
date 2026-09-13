@@ -92,6 +92,9 @@ class TeamResolver:
         self._memo: dict[str, str | None] = {}
         self._learned: dict[str, str] = {}   # 원본 표기 → 정규명 (신규 학습분)
         self._dirty = False
+        # strict 모드가 막은 추측. (원문, 붙을 뻔한 정규명, 경로).
+        # **막았다는 사실 자체가 진단 자료다** — 조용히 비우지 않는다(§1-6-1).
+        self.strict_blocked: list[tuple[str, str, str]] = []
         self._load()
 
     # ---- 로딩 -----------------------------------------------------------
@@ -139,34 +142,37 @@ class TeamResolver:
 
     # ---- 해석 -----------------------------------------------------------
     def resolve(self, name: str, learn: bool = True,
-                quiet: bool = False) -> str | None:
+                quiet: bool = False, strict: bool = False) -> str | None:
         """팀명 → 정규명. 못 찾으면 None.
 
         quiet: 매칭 실패를 경고로 남기지 않는다. JSON 트리를 훑으며
         "이 문자열이 팀명인가?"를 시험 삼아 물을 때 쓴다 — 그때는 실패가
         정상이고, 경고를 남기면 로그가 수천 줄로 불어난다.
+
+        strict: **정확일치만 인정한다** (Phase 6-D-4). 부분일치·토큰 유사도로
+        다른 팀에 붙이지 않고 `None` 을 돌려준다. 대륙대회·컵대회 수집에서
+        쓴다 — 판정은 `settings.strict_team_match(리그키)` 가 한다.
+        기본값이 `False` 라서 국내리그 경로는 한 줄도 바뀌지 않는다.
         """
         if not name or not name.strip():
             return None
 
-        memo_key = (name.strip(), learn)
+        memo_key = (name.strip(), learn, strict)
         if memo_key in self._memo:
             return self._memo[memo_key]
 
-        result = self._resolve_uncached(name, learn, quiet)
+        result = self._resolve_uncached(name, learn, quiet, strict)
         self._memo[memo_key] = result
         return result
 
-    def _resolve_uncached(self, name: str, learn: bool,
-                          quiet: bool = False) -> str | None:
-        key = normalize_name(name)
-        if not key:
-            if not quiet:
-                log.warning("팀명 정규화 결과가 비었음: %r", name)
-            return None
-        if key in self._index:
-            return self._index[key]
+    def _fuzzy_candidate(self, name: str, key: str) -> tuple[str, str] | None:
+        """정확일치가 없을 때의 추측 후보. `(정규명, 경로)` · 없으면 None.
 
+        기존 `_resolve_uncached` 의 폴백 두 단계를 **그대로** 옮긴 것이다
+        (순서·문턱·조기반환까지 동일). 한 벌만 두는 이유는 strict 모드가
+        같은 판정을 다시 해야 하기 때문이다 — 두 곳에 두면 '막은 것'과
+        '붙인 것'의 기준이 갈린다 (§1-8).
+        """
         # 부분 문자열 매칭: "맨체스터시티(홈)" 같은 군더더기 표기 대응.
         # 양쪽 모두 최소 길이를 요구한다 — 짧은 키는 엉뚱한 팀에 들러붙는다.
         if len(key) >= 3:
@@ -174,9 +180,7 @@ class TeamResolver:
                 if len(alias_key) < 3:
                     continue
                 if alias_key in key or key in alias_key:
-                    if learn:
-                        self._learn(name, canonical)
-                    return canonical
+                    return canonical, f"부분일치 '{alias_key}'"
 
         # 토큰 유사도: 영문 표기 차이 대응 ("Wolverhampton Wanderers" ↔ "Wolverhampton")
         best, best_score = None, 0.0
@@ -190,13 +194,59 @@ class TeamResolver:
                 if score > best_score:
                     best, best_score = canonical, score
         if best and best_score >= 0.5:
+            return best, f"토큰 유사도 {best_score:.2f}"
+        return None
+
+    def _resolve_uncached(self, name: str, learn: bool,
+                          quiet: bool = False,
+                          strict: bool = False) -> str | None:
+        key = normalize_name(name)
+        if not key:
+            if not quiet:
+                log.warning("팀명 정규화 결과가 비었음: %r", name)
+            return None
+        if key in self._index:
+            return self._index[key]
+
+        found = self._fuzzy_candidate(name, key)
+
+        if strict:
+            # 추측 후보가 있어도 **붙이지 않는다.** 다만 무엇을 막았는지는
+            # 남긴다 — 그게 이 모드가 일하고 있다는 유일한 증거다.
+            if found:
+                canonical, how = found
+                self.strict_blocked.append((name.strip(), canonical, how))
+                # quiet 은 '이 문자열이 팀명인가' 를 수천 번 묻는 자리에서
+                # 켠다. 거기서 건건이 경고하면 로그가 도배되므로 수준만
+                # 낮추고, 건수는 호출부가 한 줄로 요약한다.
+                (log.debug if quiet else log.warning)(
+                    "대회 팀명 추측 차단: %r → %r (%s). 정확일치가 아니므로 "
+                    "미해석으로 둡니다.", name.strip(), canonical, how)
+            elif not quiet:
+                log.warning("팀명 매칭 실패: %r", name)
+            return None
+
+        if found:
+            canonical, _ = found
             if learn:
-                self._learn(name, best)
-            return best
+                self._learn(name, canonical)
+            return canonical
 
         if not quiet:
             log.warning("팀명 매칭 실패: %r", name)
         return None
+
+    def strict_note(self, since: int = 0) -> str:
+        """`since` 번째 이후로 strict 가 막은 추측 요약. 없으면 빈 문자열.
+
+        두 소스가 같은 문구를 쓰도록 여기 둔다 (§1-8).
+        """
+        rows = self.strict_blocked[since:]
+        if not rows:
+            return ""
+        head = ", ".join(f"{raw}→{canon}" for raw, canon, _ in rows[:4])
+        more = f" 외 {len(rows) - 4}건" if len(rows) > 4 else ""
+        return f"{len(rows)}건 ({head}{more})"
 
     def _learn(self, alias: str, canonical: str) -> None:
         key = normalize_name(alias)

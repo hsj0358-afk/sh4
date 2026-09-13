@@ -3329,6 +3329,93 @@ python -m toto --settle-round 260052 --no-cache # 오늘 캐시를 무시하고 
 
 회귀 테스트: `python tests/test_settlement.py` (55개).
 
+### 1-29. 대회 팀명은 정확일치로만 해석한다 (Phase 6-D-4)
+
+**부분일치가 리그에서는 이득이고 대회에서는 손해다.** 방향이 반대라서
+전역 정책 하나로는 둘 다 옳을 수 없다.
+
+| | 참가팀 | 우리가 아는 팀 | 부분일치가 하는 일 |
+|---|---|---|---|
+| 국내리그 | 20~28 | **전부** | `맨체스터시티(홈)` 같은 군더더기를 흡수한다 |
+| 대회 | 36~124 | 5~22 | **모르는 이름이 아는 이름에 들러붙는다** |
+
+실측(6-D-6C)에서 이렇게 됐다.
+
+```
+Rangers  →  Angers        (별칭 'angers' ⊂ 'rangers')
+
+_parse_matches    Rangers vs Roma  →  Angers vs Roma  (match_id 4947788)
+_parse_standings  정규명 Angers 에 Rangers 의 fotmob_id 8548
+```
+
+경고는 한 줄도 없었다. **팀을 못 찾은 것과 다른 팀으로 잘못 찾은 것은
+다른 상태**이고 후자가 훨씬 나쁘다 (§1-5). 없는 값은 리포트가 `데이터 없음`
+으로 적지만, 틀린 값은 그냥 사실처럼 보인다.
+
+**`resolve(..., strict=True)` 한 인자로 막는다.** 새 resolver 를 만들지
+않았고 `teams.yaml` 도 건드리지 않았다.
+
+  · strict 가 인정하는 것은 **정규화 후 정확일치 둘뿐**이다 — 정규명 자체와
+    `teams.yaml` 의 별칭. `M. City`·`브렌트퍼`·`AT마드`·`R. Santander` 는
+    그대로 산다. **별칭을 지우는 변경이 아니다.**
+  · 막는 것은 **부분 문자열·토큰 유사도** 두 폴백이다. 그 둘을
+    `_fuzzy_candidate()` 하나로 묶어 두었다 — 비-strict 는 그것을 채택하고
+    strict 는 **같은 것을 보고 버린다.** 두 벌로 두면 '막은 기준'과 '붙인
+    기준'이 갈린다 (§1-8).
+  · **막았다는 사실을 남긴다.** `strict_blocked` 에 `(원문, 붙을 뻔한 정규명,
+    경로)` 가 쌓이고 `strict_note()` 가 한 줄로 요약한다. 조용히 비지
+    않는다 (§1-6-1).
+  · **strict 는 학습하지 않는다.** 정확일치는 `_learn()` 을 타지 않으므로
+    `learn=True` 로 불러도 `_dirty` 가 False 다.
+
+**판정은 `settings.strict_team_match(키)` 하나다** — `league_type()` 에서
+파생하고, **미지정·`league` = 비-strict**, `continental`·`cup`·**모르는 값**
+= strict. 키 이름이나 대회명 문자열로 분기하지 않는다(테스트로 고정).
+
+`owns_team_league()`(6-D-3)와 지금은 같은 답을 주지만 **묻는 것이 다르다** —
+저쪽은 "이 표로 소속을 고쳐도 되나", 이쪽은 "이 표의 이름을 추측해도 되나"다.
+한쪽 정책이 바뀔 때 다른 쪽이 조용히 따라가면 안 되므로 자리를 나눠 뒀다.
+
+**켜지는 자리는 대회 수집 경로뿐이고, 지금은 한 번도 켜지지 않는다.**
+`config_toto.yaml` 의 여덟 리그가 전부 비-strict 라 기존 동작이 그대로다
+(테스트가 이것을 고정한다). 대회를 설정에 넣는 것은 다음 Phase 소관이다.
+
+```
+fotmob.read_league / _read_season  →  _parse_standings · _parse_matches ·
+                                      read_team_stats → _parse_stat_feed → _find_team_name
+whoscored.read_league              →  팀 링크 · _row_team
+```
+
+  · `strict` 의 기본값은 **전부 `False`** 다. 안 고친 호출부는 예전 동작이다.
+  · **Pinnacle 은 건드리지 않았다** — 대회 수집 경로가 아직 없고, 없는 경로에
+    안전장치를 먼저 넣지 않는다.
+  · `_roster_hits()`(리그 ID 판별)도 그대로다 — 거기서는 `league_of(canon) ==
+    league_key` 를 함께 요구해서 대회 키로는 어차피 0이 된다.
+
+**커버리지를 늘리는 Phase 가 아니다.** 실측에서 strict 가 깎은 것은 전부
+가짜였다.
+
+| 대회 | 순위표 팀 | 색인 경기 | 차단 |
+|---|---|---|---|
+| UCL 2025/26 | 22 → 22 | 78 → 78 | 0 |
+| **UEL 2025/26** | 12 → **11** | 27 → **26** | 1 (`Rangers→Angers`) |
+| Conference 2025/26 | 5 → 5 | 9 → 9 | 0 |
+| UEL 2026/27 | 13 → **12** | 19 → **15** | 1 (`Lillestrøm→Lille`) |
+| **FA Cup 2025/26** | 0 → 0 | 18 → **14** | **6** |
+
+`--demo`(662,013) · `--rerender-artifact 260052`(940,119) · 경기자료
+MD(1,206,254)가 **바이트까지 같고**, 260052 회차의 팀 표기 56개와
+`teams.yaml` 의 697개 표기가 기존과 **한 건도 다르지 않다**(구버전 모듈과
+1,394회 대조).
+
+회귀 테스트: `python tests/test_strict_resolution.py` (39개).
+
+**곁가지로 테스트 하나를 고쳤다.** `test_settlement.test_j3` 가 호출 문자열
+`"_parse_matches(data, resolver)"` 를 그대로 찾고 있어서 `strict=` 인자가
+붙자 깨졌다. 그 테스트가 지키려는 것은 **인자 목록이 아니라 '색인 경로가
+자기 파서를 새로 만들지 않는다'** 이므로, 6-C-2 의 `test_j4` 처럼 줄 검색을
+AST 로 옮겼다 (§1-28). 불변조건은 그대로다.
+
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
 260052 실행이 남긴 것은 후스코어드 `팀명 매칭 실패` 5건과 `강점 0개` 3팀이다.
@@ -3978,6 +4065,7 @@ python tests/test_report_compaction.py     # 리포트 문구 압축 5-E2 §1-26
 python tests/test_market_eval.py           # 사전 스냅샷 불변·시장 캘리브레이션 6-B §1-27 (44개)
 python tests/test_settlement.py            # 결과 정산·match_id·시간대 6-C-2 §1-28 (55개)
 python tests/test_competition_guard.py     # 대회 피드의 소속 오염 차단 6-D-3 §3-5 (20개)
+python tests/test_strict_resolution.py     # 대회 팀명 정확일치 전용 6-D-4 §1-29 (39개)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)
 python tools/probe_sources.py --browser    # 소스 구조 점검

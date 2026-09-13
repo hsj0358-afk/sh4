@@ -1494,11 +1494,26 @@ def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None,
     # 순위표에 실제로 올라 있는 리그로 소속을 정정한다. 승강이 반영되지 않은
     # 표는 배당 조회를 통째로 엉뚱한 리그로 보낸다(2026 시즌 대구·수원FC·
     # 인천·부천이 그랬다).
+    #
+    # **국내리그 피드에서만 정정한다** (Phase 6-D-3). 대륙대회·컵대회의 참가팀
+    # 표에는 같은 권위가 없다 — 챔피언스리그 표에 아스널이 있다고 해서 아스널의
+    # 소속이 챔피언스리그인 것이 아니다. 막지 않으면 `data/teams.league.yaml`
+    # 에 영구 저장되고 다음 회차부터 전부 어긋난다(6-D-2 에서 재현 확인).
+    #
+    # 판정은 `settings.owns_team_league()` 가 한다 — 여기서 키 이름이나 대회명
+    # 문자열로 분기하지 않는다.
     moved = 0
+    guarded = []
     for league_key in leagues:
+        if not settings.owns_team_league(league_key):
+            guarded.append(league_key)
+            continue
         for canon in (data.get(league_key) or {}).get("teams", {}):
             if resolver.set_league(canon, league_key):
                 moved += 1
+    if guarded:
+        log.info("소속 정정에서 제외한 대회: %s — 국내리그가 아니라 참가팀 표를 "
+                 "팀 소속의 권위로 삼지 않습니다.", ", ".join(guarded))
     if moved:
         for match in matches:
             own = (resolver.league_of(match.home.canonical)

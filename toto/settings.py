@@ -196,6 +196,27 @@ def load_yaml(path: Path) -> dict:
         return {}
 
 
+# --------------------------------------------------------------------------
+# 대회의 종류 (Phase 6-D-3)
+# --------------------------------------------------------------------------
+# 가르는 것은 하나다 — **그 대회의 순위표를 팀 소속의 권위로 삼을 수 있는가.**
+#
+# `fotmob.enrich()` 는 받아 온 순위표의 팀에 `resolver.set_league()` 를 불러
+# 소속을 정정한다(§3-5: "실제 순위표가 권위다"). 국내리그에서는 옳다 — 승강이
+# 매 시즌 일어나고 표를 손으로 고치면 반드시 한 시즌 늦는다.
+#
+# 그런데 **대륙대회·컵대회의 참가팀 표에는 같은 권위가 없다.** 챔피언스리그
+# 참가팀 표에 아스널이 있다고 해서 아스널의 소속이 챔피언스리그인 것이 아니다.
+# 그대로 두면 `data/teams.league.yaml` 에 `Arsenal: ucl` 이 **영구 저장**되고
+# (그 파일이 `data/teams.yaml` 보다 우선한다), 다음 회차부터 배당 조회·레이더
+# 모집단·피드 선택이 전부 어긋난다. Phase 6-D-2 에서 production 함수로
+# 재현해 확인했다.
+LEAGUE = "league"              # 국내리그 — 순위표가 소속의 권위다
+CONTINENTAL = "continental"    # 대륙대회 (UCL·UEL…) — 권위가 아니다
+CUP = "cup"                    # 컵대회 (FA컵·코리아컵…) — 권위가 아니다
+COMPETITION_TYPES = (LEAGUE, CONTINENTAL, CUP)
+
+
 @dataclass
 class Settings:
     betman: dict = field(default_factory=dict)
@@ -233,6 +254,42 @@ class Settings:
 
     def league_ko(self, key: str) -> str:
         return (self.leagues.get(key) or {}).get("ko", key)
+
+    def league_type(self, key: str) -> str:
+        """이 대회의 종류. **적히지 않았으면 국내리그로 읽는다.**
+
+        기존 설정 여덟 리그에는 이 칸이 없다. 없다고 갑자기 non-league 로
+        취급하면 그 순간 소속 정정이 통째로 멈춰 승강 반영이 한 시즌 늦는다
+        (§3-5 가 막으려던 바로 그 상태다). 그래서 **미지정 = `league`** 이고,
+        그것이 이 칸을 더하기 전의 동작과 정확히 같다.
+
+        값이 적혀 있으면 **그대로** 돌려준다 — 모르는 값을 조용히 `league` 로
+        바꾸지 않는다. 판정은 `owns_team_league()` 가 한다.
+        """
+        raw = (self.leagues.get(key) or {}).get("type")
+        text = str(raw).strip().lower() if raw is not None else ""
+        return text or LEAGUE
+
+    def owns_team_league(self, key: str) -> bool:
+        """이 대회의 순위표로 팀 소속을 정정해도 되나 (Phase 6-D-3).
+
+        **`league` 로 확인된 대회만 참이다.** 모르는 값은 막는다 — 엉뚱한
+        소속을 영구 저장하는 것보다 정정하지 않는 편이 낫다(§1-1-1 이 리그
+        ID 를 "가리지 못하면 임의로 고르지 않고 실패한다" 로 둔 것과 같은
+        태도). 다만 오타를 조용히 삼키지 않도록 사유를 남긴다.
+
+        판정을 여기 한 곳에 둔다 — 부르는 쪽이 `== "league"` 를 다시 적으면
+        규칙이 두 곳이 된다 (§1-8).
+        """
+        kind = self.league_type(key)
+        if kind == LEAGUE:
+            return True
+        if kind not in COMPETITION_TYPES:
+            log.warning("대회 종류를 알 수 없습니다: %s (type=%r). 팀 소속 "
+                        "정정에서 제외합니다 — config_toto.yaml 의 "
+                        "leagues.%s.type 을 %s 중 하나로 적어 주세요.",
+                        key, kind, key, "·".join(COMPETITION_TYPES))
+        return False
 
     @property
     def ws_delay(self) -> float:

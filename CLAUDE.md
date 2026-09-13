@@ -3667,6 +3667,26 @@ DOM 에 1회 있다고 했는데 제목 노드로는 잡히지 않았다. 추측
 이 파일이 `teams.yaml` 보다 우선한다. **팀의 소속 리그를 손으로 단정하지
 말고 순위표 결과를 따른다.**
 
+**그 권위는 국내리그에만 있다 (Phase 6-D-3).** 대륙대회·컵대회의 참가팀
+표에는 같은 권위가 없다 — 챔피언스리그 표에 아스널이 있다고 해서 아스널의
+소속이 챔피언스리그인 것이 아니다. 막지 않으면 `teams.league.yaml` 에
+`Arsenal: ucl` 이 영구 저장되고 다음 회차부터 배당 조회·레이더 모집단·피드
+선택이 전부 어긋난다 (6-D-2 에서 production 함수로 재현 확인: 5/5팀 오염 ·
+`_league_dirty=True`).
+
+  · 가르는 칸은 `config_toto.yaml` 의 `leagues.<키>.type`
+    (`league`·`continental`·`cup`). **적지 않으면 `league`** 라서 기존 여덟
+    리그는 동작이 그대로다. 모르는 값은 막고 사유를 남긴다 — 엉뚱한 소속을
+    영구 저장하는 것보다 정정하지 않는 편이 낫다 (§1-1-1 과 같은 태도).
+  · 막는 자리는 **부르는 쪽**이다. `set_league()` 는 한 줄도 바꾸지 않았고,
+    `fotmob.enrich()` 가 `settings.owns_team_league(key)` 로 먼저 묻는다.
+    키 이름이나 대회명 문자열로 분기하지 않는다(테스트로 고정).
+  · `set_league()` 를 부르는 production 코드는 **저장소 전체에서 한 곳**이고,
+    두 소스 모듈의 `resolve()` 는 전부 `learn=False` 라 별칭도 오염되지
+    않는다 — 둘 다 테스트가 고정한다.
+
+회귀 테스트: `python tests/test_competition_guard.py` (20개).
+
 ### 3-6. 검증되지 않은 소스
 
 - **FBref** — 실제 브라우저로도 Cloudflare 403. 다섯 차례 모두 실패. 제외.
@@ -3957,6 +3977,7 @@ python tests/test_rerender.py              # 저장본 재렌더 진입점 5-E3a
 python tests/test_report_compaction.py     # 리포트 문구 압축 5-E2 §1-26 (27개)
 python tests/test_market_eval.py           # 사전 스냅샷 불변·시장 캘리브레이션 6-B §1-27 (44개)
 python tests/test_settlement.py            # 결과 정산·match_id·시간대 6-C-2 §1-28 (55개)
+python tests/test_competition_guard.py     # 대회 피드의 소속 오염 차단 6-D-3 §3-5 (20개)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)
 python tools/probe_sources.py --browser    # 소스 구조 점검

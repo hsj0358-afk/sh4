@@ -6,10 +6,9 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 
 from . import analysis
-from .models import Match, TeamStats
+from .models import Match, TeamStats, as_of_from_match, rest_context
 from .predict import additive_probabilities, round_winnability
 from .settings import Settings
 
@@ -216,32 +215,57 @@ def build_matchup(matches: list[Match]) -> None:
 # --------------------------------------------------------------------------
 # 휴식일
 # --------------------------------------------------------------------------
-_DATE_FORMATS = ("%Y-%m-%d", "%d-%b-%y", "%d/%m/%Y", "%d-%m-%Y", "%d-%b-%Y")
+# `_DATE_FORMATS` 와 `_parse_date` 는 6-D-8 에서 걷어냈다 — 폼의 날짜
+# **문자열**을 달력으로 빼던 자리이고, 그것이 고치려던 결함 자체였다.
+# 남겨 두면 다음 사람이 다시 부른다 (§1-23).
 
 
-def _parse_date(text: str) -> datetime | None:
-    for fmt in _DATE_FORMATS:
-        try:
-            return datetime.strptime(text.strip(), fmt)
-        except (ValueError, AttributeError):
-            continue
-    return None
+def build_rest_days(matches: list[Match],
+                    season_matches: list | None = None) -> None:
+    """직전 공식 경기 이후 휴식 (Phase 6-D-8 에서 속을 갈아 끼웠다).
 
+    **예전 구현이 세 군데에서 틀렸다.**
 
-def build_rest_days(matches: list[Match]) -> None:
-    """직전 경기 이후 휴식일 계산 (킥오프와 최근 경기 날짜가 모두 있을 때만)."""
+    ```python
+    kickoff = _parse_date(match.kickoff_kst.split(" ")[0])   # ① 날짜만 본다
+    last    = _parse_date(profile.form[0].date)              # ② 한 리그의 폼
+    delta   = (kickoff - last).days                          # ③ 달력 뺄셈
+    ```
+
+      ① `kickoff_kst` 의 **시각을 버리고** 날짜만 남겼다.
+      ② `profile.form` 은 `read_league` 가 받은 **한 리그**의 경기로만
+         만들어진다. 목요일 UCL 을 치르고 토요일 EPL 을 뛴 팀의 직전 경기가
+         **지난 주 EPL** 로 잡혔다.
+      ③ 그 폼의 날짜는 FotMob 의 **UTC 날짜**(`_utc_time(raw)[:10]`)인데
+         왼쪽은 KST 날짜라, 날짜 경계 근처에서 실제 간격과 어긋났다.
+
+    지금은 시즌 경기 색인에서 **대회를 가로지르는 시간축**을 만들고 그
+    직전 경기와 datetime 을 뺀다 — 규칙은 `models.rest_context()` 한 곳에만
+    있다 (§1-8).
+
+    **`season_matches` 가 없으면 아무 값도 만들지 않는다.** 폼으로 되돌아가지
+    않는다 — 그게 고치려던 바로 그 경로다. 값이 없으면 `None` 이고 0 이
+    아니다 (§1-5). `--demo` 가 이 경우인데, 예전 구현도 데모에서는 폼 날짜가
+    킥오프보다 뒤라 게이트에 걸려 **28칸 전부 `None`** 이었다 — 그래서 데모
+    출력은 바뀌지 않는다.
+    """
+    season = list(season_matches or [])
+    if not season:
+        return
     for match in matches:
-        kickoff = _parse_date((match.kickoff_kst or "").split(" ")[0])
+        kickoff = as_of_from_match(match)
         if kickoff is None:
             continue
-        for profile in (match.home_profile, match.away_profile):
-            if profile is None or not profile.form:
+        for side in ("home", "away"):
+            profile = getattr(match, f"{side}_profile")
+            ref = getattr(match, side)
+            team = getattr(ref, "canonical", "") or getattr(ref, "display", "")
+            if profile is None or not team:
                 continue
-            last = _parse_date(profile.form[0].date)
-            if last is not None:
-                delta = (kickoff - last).days
-                if 0 <= delta <= 60:
-                    profile.rest_days = delta
+            ctx = rest_context(season, team, kickoff)
+            profile.rest_days = ctx.rest_days
+            profile.rest_hours = ctx.rest_hours
+            profile.match_density = dict(ctx.window_counts)
 
 
 def run_all(matches: list[Match], settings: Settings,
@@ -255,7 +279,7 @@ def run_all(matches: list[Match], settings: Settings,
     attach_probabilities(matches)
     build_radar(matches, settings)
     build_matchup(matches)
-    build_rest_days(matches)
+    build_rest_days(matches, season_matches)
     # Phase 2-A. 기존 산출물(probs·radar·matchup)을 건드리지 않고
     # `Match.analysis` 에만 붙는다.
     analysis.attach_time_context(matches, settings, season_matches)

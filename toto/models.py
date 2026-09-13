@@ -424,7 +424,15 @@ class TeamProfile:
     style_of_play: list[str] = field(default_factory=list)
     form: list[FormEntry] = field(default_factory=list)     # 최신순
     missing_players: list[dict] = field(default_factory=list)
+    # 직전 공식 경기 이후 휴식 (Phase 6-D-8). **대회를 가로질러** 잰다 —
+    # 목요일 UCL 을 치르고 토요일 EPL 을 뛰면 직전 경기는 그 UCL 이다.
+    # `rest_days` 는 옛 이름·옛 타입 그대로라 화면 문구(`휴식 N일`)가 바뀌지
+    # 않는다. 다만 뜻이 **달력 날짜 차이에서 실제 경과시간의 내림**으로
+    # 바뀌었다. `rest_hours` 가 그 원값이다.
     rest_days: int | None = None
+    rest_hours: float | None = None
+    # {창(일): 그 구간의 공식 경기 수} — 최근 경기 밀도. 옛 저장본에는 없다.
+    match_density: dict = field(default_factory=dict)
     source_ok: bool = False       # 후스코어드 수집 성공 여부
     # Phase 1-C 슛 이벤트 계층. {"all6": RecentShotAggregate, "home3": ...}
     # TeamStats 가 아니라 여기 둔다 — 구조가 있는 값이라 fill_stats 의
@@ -1351,6 +1359,12 @@ def _revive_profile(d: Any) -> TeamProfile | None:
     out.missing_players = [dict(m) for m in (d.get("missing_players") or [])
                            if isinstance(m, dict)]
     out.rest_days = d.get("rest_days")
+    # 6-D-8 이전 저장본에는 이 둘이 없다 — 없으면 없는 채로 되살린다(§1-5).
+    out.rest_hours = d.get("rest_hours")
+    density = d.get("match_density")
+    # JSON 왕복을 거치면 창 번호가 문자열이 되므로 int 로 되돌린다.
+    out.match_density = ({int(k): int(v) for k, v in density.items()}
+                         if isinstance(density, dict) else {})
     out.source_ok = bool(d.get("source_ok"))
     return out
 
@@ -1433,6 +1447,133 @@ def in_kst(dt: datetime) -> datetime:
     차이가 달라지지 않는다. 즉 이 변경은 aware 쪽에서만 값을 바꾼다.
     """
     return dt.astimezone(KST) if dt.tzinfo is not None else dt.replace(tzinfo=KST)
+
+
+# --------------------------------------------------------------------------
+# 팀 경기 시간축 (Phase 6-D-8)
+# --------------------------------------------------------------------------
+# 최근 경기 밀도를 세는 창 (일). 코드에 흩어 두지 않고 여기 한 곳에 둔다.
+REST_WINDOW_DAYS = (7, 10, 14)
+
+
+@dataclass
+class RestContext:
+    """직전 공식 경기와의 간격 (Phase 6-D-8).
+
+    **경기 모델을 새로 만들지 않는다** — 시간축은 `SeasonMatch` 를 그대로
+    시간순으로 늘어놓은 것이고, 이 dataclass 는 거기서 **계산된 수**만 담는다.
+
+    `rest_hours` 가 원값이고 `rest_days` 는 그것을 **내림**한 정수다.
+    `rest_days` 를 먼저 구해 24 를 곱하지 않는다 — 그러면 calendar 계산이
+    시간 계산인 척하게 된다.
+    """
+    previous_match_id: str = ""
+    previous_kickoff: datetime | None = None
+    previous_competition: str = ""
+    rest_hours: float | None = None
+    rest_days: int | None = None
+    # {창(일): 그 구간에 킥오프가 있던 같은 팀 공식 경기 수}
+    window_counts: dict = field(default_factory=dict)
+
+
+def team_timeline(season: list[SeasonMatch], team: str, *,
+                  competition: str | None = None,
+                  finished_only: bool = True) -> list[SeasonMatch]:
+    """그 팀의 공식 경기를 **시간순으로** 늘어놓는다 (Phase 6-D-8).
+
+    **대회를 가로지르는 것이 이 함수의 존재 이유다.** 예전에는 직전 경기를
+    `profile.form[0]` 에서 찾았는데, 그 폼은 `read_league` 가 받은 **한 리그**
+    의 경기로만 만들어진다. 그래서 목요일 UCL → 토요일 EPL 인 팀의 '직전
+    경기' 가 지난 주 EPL 경기로 잡혔다.
+
+        목 UCL · 토 EPL   →  직전 경기는 **목 UCL** 이어야 한다
+
+    `competition=None`(기본)이면 대회로 거르지 않는다 — 6-D-5 의
+    `scope_to_competition` 을 그대로 쓰므로 '대회 표시가 없는 옛 색인' 규칙도
+    같이 따라온다. **이것은 문맥이지 분석 모집단이 아니다** — 분석 모집단은
+    `team_history(..., competition=…)` 이 따로 좁힌다 (§1-30).
+
+    거르는 것 셋, 전부 사유가 있다.
+
+      · **킥오프를 모르는 경기** — 시간축에 놓을 자리가 없다.
+      · **종료되지 않은 과거 경기** (`finished_only`) — 킥오프가 지났는데
+        끝나지 않았다면 연기됐을 가능성이 크고, 치르지 않은 경기를 휴식
+        기준으로 삼으면 휴식이 실제보다 짧게 나온다. `matches_before` 의
+        기본값과 같은 태도다.
+      · **경기 ID 가 없거나 겹치는 경기** — 같은 경기가 두 번 서면 밀도가
+        부풀고, ID 없는 조각은 §1-1-4 대로 애초에 색인에 담기지 않는다.
+
+    정렬은 `sort_key`(kickoff 오름차순 · 동시각은 match_id) 하나뿐이라
+    입력 순서에 기대지 않는다.
+    """
+    if not team:
+        return []
+    pool, _ = scope_to_competition(list(season or []), competition)
+    seen: set[str] = set()
+    out: list[SeasonMatch] = []
+    for m in sorted(pool, key=lambda x: x.sort_key):
+        if team not in (m.home_team, m.away_team):
+            continue
+        if m.kickoff is None:
+            continue
+        if finished_only and not m.finished:
+            continue
+        key = str(m.match_id)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(m)
+    return out
+
+
+def rest_context(season: list[SeasonMatch], team: str,
+                 kickoff: datetime | None, *,
+                 competition: str | None = None,
+                 windows: tuple = REST_WINDOW_DAYS) -> RestContext:
+    """이 경기 직전의 실제 휴식과 최근 경기 밀도 (Phase 6-D-8).
+
+    **달력 날짜를 빼지 않는다.** 양쪽을 `in_kst()` 로 같은 기준에 모은 뒤
+    datetime 을 뺀다 — 예전 구현은 `kickoff_kst` 의 날짜 부분과 FotMob 의
+    **UTC 날짜**를 빼서, 날짜 경계 근처에서 실제 간격과 다른 값이 나왔다.
+
+    **직전 경기는 이 경기보다 킥오프가 엄격히 빠른 것 중 마지막**이다.
+    같은 시각 경기는 직전으로 치지 않는다 — 선후를 알 수 없기 때문이고,
+    `matches_before` 가 엄격한 `<` 를 쓰는 것과 같은 이유다 (§1-1-4).
+
+    **없으면 `None` 이다. 0 이 아니다** (§1-5). 시즌 첫 경기가 그 경우다 —
+    휴식이 0시간이었던 것이 아니라 잴 직전 경기가 없다.
+
+    창 경계는 **양쪽 다 열려 있다** — `현재 − N일 < 킥오프 < 현재`.
+    정확히 N일 전 경기는 **들어가지 않는다.** 주 1회 같은 시각에 치르는 팀은
+    `matches_last_7d` 가 0 으로 나온다는 뜻이라 직관과 어긋날 수 있는데,
+    경계를 정해 두지 않는 것보다는 정해 두고 테스트로 고정하는 편이 낫다.
+    """
+    out = RestContext()
+    if kickoff is None:
+        return out
+    now = in_kst(kickoff)
+    line = team_timeline(season, team, competition=competition)
+    past = [m for m in line if in_kst(m.kickoff) < now]
+
+    # **밀도의 0 과 '모른다' 를 가른다** (§1-5). 이 팀이 시간축에 한 번도
+    # 나오지 않으면 색인이 이 팀을 모르는 것이라 창을 비워 둔다. 시간축에는
+    # 있는데 과거 경기가 없으면(시즌 첫 경기) **0 이 관측값**이다.
+    if line:
+        for days in windows:
+            edge = now - timedelta(days=int(days))
+            out.window_counts[int(days)] = sum(
+                1 for m in past if edge < in_kst(m.kickoff))
+    if not past:
+        return out                    # 직전 경기가 없으면 휴식은 None 이다
+
+    previous = past[-1]
+    out.previous_match_id = str(previous.match_id)
+    out.previous_kickoff = previous.kickoff
+    out.previous_competition = previous.competition
+    gap = now - in_kst(previous.kickoff)
+    out.rest_hours = gap.total_seconds() / 3600.0
+    out.rest_days = int(out.rest_hours // 24)
+    return out
 
 
 def find_season_match(season: list[SeasonMatch], home: str, away: str,

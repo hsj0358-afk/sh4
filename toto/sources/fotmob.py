@@ -56,9 +56,33 @@ LEAGUE_PATH = "/api/data/leagues?id={id}"
 ALL_LEAGUES_PATH = "/api/data/allLeagues"
 
 # 캐시 형식이나 파싱 로직이 바뀌면 올린다. 옛 캐시는 자동으로 버려진다.
-_CACHE_VERSION = 9
+# 10 (6-D-7): 저장되는 `matches` 의 모양이 실제로 달라졌다 — 경기 ID 를
+#   `match_id_of()` 로 읽으면서 `id` 가 int 에서 str 이 되고, 같은 ID 가 두
+#   경로에 실린 경기가 한 건으로 합쳐진다. 안 올리면 같은 날 재실행이 옛
+#   모양을 그대로 읽어 고친 것이 반영되지 않는다 (§1-4).
+_CACHE_VERSION = 10
 
 _SCORE_RE = re.compile(r"(\d+)\s*[-:]\s*(\d+)")
+
+
+def league_cache_key(league_key: str, season: str | None = None) -> str:
+    """리그·대회 응답의 캐시 자리 (Phase 6-D-7).
+
+    **대회가 곧 캐시 정체다.** `ucl` 과 `uel` 과 `epl` 은 서로 다른 키라
+    섞일 수 없다 — 예전부터 그랬고 바뀌지 않았다.
+
+    `season` 은 **시즌까지 정체에 넣어야 할 때를 위한 자리**다. 주지 않으면
+    예전 키와 **글자까지 같다**(`league_epl`) — 기존 캐시가 그대로 읽힌다.
+
+    지금은 아무 호출부도 시즌을 넘기지 않는다. 과거 시즌 요청이 production
+    경로에서 되는지 확인되지 않았기 때문이고(6-D-6·6-D-6A = BLOCKED),
+    확인되지 않은 요청을 보낼 수 없으니 받아 둘 응답도 없다. 그 사실을
+    자리로 남겨 둔다 — 6-D-6 이 풀리면 **여기 한 곳만** 넘기면 되고,
+    `ucl 2025/2026` 과 `ucl 2026/2027` 이 자동으로 다른 칸에 앉는다.
+    """
+    if not season:
+        return f"league_{league_key}"
+    return f"league_{league_key}_{str(season).strip().replace('/', '-')}"
 
 
 class FotMobBrowser(StealthBrowser):
@@ -110,16 +134,89 @@ def _is_match(item: Any) -> bool:
             and isinstance(away.get("name"), str))
 
 
+def match_id_of(raw: dict) -> str:
+    """이 경기 노드의 **소스 경기 ID**. 없으면 빈 문자열 (Phase 6-D-7).
+
+    **소스가 같은 값을 두 이름으로 준다.** 실측 UEL 2025/26 응답에서
+
+        fixtures.allMatches[]              → `id`       (189건)
+        playoff.…rounds[].matchups[].matches[] → `matchId`  (45건)
+
+    이고, 그 45개의 `matchId` 는 **전부 allMatches 의 `id` 와 같은 값**이다
+    (45/45 일치). 예전에는 `id` 만 봐서 playoff 쪽이 ID 없는 경기로 보였고,
+    그래서 같은 경기가 **두 벌**로 남았다 — 한 벌은 `id` 로, 다른 한 벌은
+    `팀명|팀명|킥오프` 라는 임시 키로.
+
+    이름을 두 곳에서 각각 읽으면 그때부터 '무엇이 경기 ID 인가' 가 두 곳에
+    적히게 되므로 여기 한 곳에만 둔다 (§1-8).
+
+    **팀 짝을 ID 로 쓰지 않는다.** 같은 두 팀이 한 대회에서 리그 페이즈와
+    토너먼트에서 두 번 만날 수 있어, 팀 짝으로 가르면 한 경기가 사라진다.
+    """
+    for key in ("id", "matchId"):
+        value = raw.get(key)
+        if isinstance(value, bool):
+            continue                       # True 는 int 의 하위형이다 (§1-9)
+        if isinstance(value, int) and value == 0:
+            continue                       # 숫자 0 은 예전에도 '없음' 이었다
+        if isinstance(value, (int, str)) and str(value).strip():
+            return str(value).strip()
+    return ""
+
+
+def _merge_match_records(a: dict, b: dict) -> dict:
+    """같은 ID 로 두 경로에서 발견된 경기 노드 둘을 하나로 합친다.
+
+    **`fill_stats(overwrite=False)` 와 같은 규칙이다** (§1-1) — 비어 있는
+    칸만 채우고 **이미 있는 값을 덮어쓰지 않는다.** 어느 경로가 authoritative
+    인지 확인되지 않았으므로, 덮어쓰는 대신 더 많이 아는 쪽을 바탕으로 삼고
+    모자란 칸만 메운다.
+
+    **입력 순서에 기대지 않는다.** 바탕을 고르는 기준이 (칸 수 → 값이 있는
+    칸 수 → 키 이름) 셋이라 `merge(a, b)` 와 `merge(b, a)` 가 같은 결과를
+    낸다(테스트로 고정). `_walk` 는 스택이라 순회 순서가 문서 순서와 다른데
+    (§1-1-2), 그 순서에 결과가 달리면 같은 응답에서 다른 색인이 나온다.
+
+    킥오프처럼 **양쪽에 다 있는데 값이 다른** 칸은 바탕 값을 그대로 두고
+    건드리지 않는다 — 실측에서 경로에 따라 1~2시간 차이가 관측됐고, 어느
+    쪽이 옳은지 확인되지 않은 상태에서 시간대를 보정하면 추측이 된다.
+    """
+    def weight(node: dict) -> tuple:
+        filled = sum(1 for v in node.values() if v not in (None, "", [], {}))
+        return (len(node), filled, sorted(node))
+
+    base, other = (a, b) if weight(a) >= weight(b) else (b, a)
+    merged = dict(base)
+    for key, value in other.items():
+        if merged.get(key) in (None, "", [], {}) and value not in (None, "", [], {}):
+            merged[key] = value
+    return merged
+
+
 def _match_list(data: Any) -> list[dict]:
-    """시즌 경기 목록. id 로 중복을 제거한다(여러 섹션에 같은 경기가 실린다)."""
+    """시즌 경기 목록. **소스 경기 ID 로 중복을 제거한다.**
+
+    응답은 같은 경기를 여러 섹션에 싣는다(일정·playoff 브래킷·툴팁 위젯).
+    ID 가 있으면 그것이 유일한 식별자이고, 같은 ID 가 두 번 나오면
+    `_merge_match_records` 로 **합친다** — 먼저 만난 것을 남기고 버리면
+    나중 경로에만 있는 칸(`round`·`status` 등)을 잃는다.
+
+    ID 가 없는 노드는 예전 그대로 `팀명|팀명|킥오프` 로 모은다. 이건 식별자가
+    아니라 **마지막 수단**이고, 그래서 ID 가 있는 경기와 절대 섞이지 않도록
+    키 앞에 표시를 붙여 공간을 나눠 둔다.
+    """
     out: dict[str, dict] = {}
     for node in _walk(data):
         if not _is_match(node):
             continue
-        key = str(node.get("id") or
-                  f"{node['home'].get('name')}|{node['away'].get('name')}|"
-                  f"{_utc_time(node)}")
-        out.setdefault(key, node)
+        mid = match_id_of(node)
+        key = f"id:{mid}" if mid else (
+            f"noid:{node['home'].get('name')}|{node['away'].get('name')}|"
+            f"{_utc_time(node)}")
+        if key in out:
+            out[key] = _merge_match_records(out[key], node)
+        else:
+            out[key] = node
     return list(out.values())
 
 
@@ -345,7 +442,7 @@ def resolve_league_id(browser: FotMobBrowser, settings: Settings,
 def read_league(browser: FotMobBrowser, settings: Settings, league_key: str,
                 resolver: TeamResolver, cache=None) -> dict:
     """Returns: {"teams": {정규명: {...}}, "matches": [정규화된 경기...]}"""
-    cached = cache.get("fotmob", f"league_{league_key}") if cache else None
+    cached = cache.get("fotmob", league_cache_key(league_key)) if cache else None
     revived = _revive(cached)
     if revived is not None:
         log.info("[%s] FotMob 캐시 사용 (팀 %d개). 새로 받으려면 캐시 비우기를 쓰세요.",
@@ -396,7 +493,7 @@ def read_league(browser: FotMobBrowser, settings: Settings, league_key: str,
 
     result = {"teams": teams, "matches": matches}
     if cache:
-        cache.set("fotmob", f"league_{league_key}", _freeze(result))
+        cache.set("fotmob", league_cache_key(league_key), _freeze(result))
     return result
 
 
@@ -706,8 +803,12 @@ def _parse_matches(data: Any, resolver: TeamResolver,
             continue
         hg, ag = _goals(raw)
         out.append({
-            # 경기 ID 는 경기 상세(matchDetails)를 부를 때 쓴다
-            "id": raw.get("id"),
+            # 경기 ID 는 경기 상세(matchDetails)를 부를 때 쓴다.
+            # `match_id_of` 를 거치는 이유는 소스가 이 값을 `id` 로도
+            # `matchId` 로도 주기 때문이다 (Phase 6-D-7) — 여기서 `id` 만
+            # 읽으면 playoff 경로로 온 경기가 ID 없는 경기가 되어 시즌
+            # 색인에서 통째로 빠진다.
+            "id": match_id_of(raw) or None,
             "date": _utc_time(raw)[:10],
             "utc": _utc_time(raw),
             "home": home,
@@ -816,7 +917,7 @@ def season_index(settings: Settings, resolver: TeamResolver,
     raw: dict[str, list] = {}
     cached_keys: list[str] = []
     for key in keys:
-        hit = _revive(cache.get("fotmob", f"league_{key}")) if cache else None
+        hit = _revive(cache.get("fotmob", league_cache_key(key))) if cache else None
         if hit is not None:
             raw[key] = hit.get("matches") or []
             cached_keys.append(key)

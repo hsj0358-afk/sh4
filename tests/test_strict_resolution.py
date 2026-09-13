@@ -140,15 +140,21 @@ def test_a6_unknown_key_is_not_strict():
     assert _settings(epl=None).strict_team_match("없는키") is False
 
 
-def test_a7_real_config_has_no_strict_league():
-    """**실제 config 의 여덟 리그가 전부 비-strict 다.**
+DOMESTIC_KEYS = {"epl", "laliga", "bundesliga", "seriea",
+                 "ligue1", "kleague1", "kleague2", "jleague"}
 
-    이 Phase 는 기존 수집 동작을 한 칸도 바꾸지 않는다. 대회를 설정에
-    추가하는 것은 다음 Phase 소관이다.
+
+def test_a7_real_config_has_no_strict_league():
+    """**실제 config 의 국내 여덟 리그가 전부 비-strict 다.**
+
+    6-D-7 이 대회 셋을 같은 표에 등록하면서 '설정의 모든 항목이 비-strict'
+    로는 더 못 적는다. 지키려던 것은 처음부터 **국내리그 수집 동작이
+    바뀌지 않는다**는 것이므로 그 여덟을 직접 가려 확인한다.
     """
     s = load_settings()
-    strict = [k for k in s.leagues if s.strict_team_match(k)]
-    assert strict == [], f"strict 로 판정된 기존 리그가 있다: {strict}"
+    assert DOMESTIC_KEYS <= set(s.leagues), "국내리그 항목이 사라졌다"
+    strict = [k for k in DOMESTIC_KEYS if s.strict_team_match(k)]
+    assert strict == [], f"strict 로 판정된 국내리그가 있다: {strict}"
 
 
 def test_a8_decision_derives_from_league_type():
@@ -527,10 +533,22 @@ def test_h1_analysis_layer_untouched():
 
 
 def test_h2_no_competition_added_to_config():
-    """설정에 대회를 추가하지 않았다 (§25-1)."""
+    """설정에 **대회를 더해도 국내 여덟은 그대로**다.
+
+    6-D-4 에서는 "대회를 추가하지 않았다" 로 적었다 — 그 Phase 의 범위가
+    그랬기 때문이다. 6-D-7 이 UCL·UEL·Conference 를 등록하는 Phase 이므로
+    범위가 옮겨졌고, 남는 불변조건은 **국내 여덟이 빠지거나 성격이 바뀌지
+    않는다**는 것이다. 새로 들어오는 항목은 전부 국내리그가 **아니어야**
+    한다 — 국내리그를 조용히 더하면 회차 수집 대상이 달라진다.
+    """
     s = load_settings()
-    assert set(s.leagues) == {"epl", "laliga", "bundesliga", "seriea",
-                              "ligue1", "kleague1", "kleague2", "jleague"}
+    assert DOMESTIC_KEYS <= set(s.leagues), "국내 여덟이 빠졌다"
+    for key in DOMESTIC_KEYS:
+        assert s.league_type(key) == LEAGUE, key
+    for key in set(s.leagues) - DOMESTIC_KEYS:
+        assert s.league_type(key) != LEAGUE, f"{key}: 국내리그로 등록됐다"
+        assert s.strict_team_match(key) is True, key
+        assert s.owns_team_league(key) is False, key
 
 
 def test_h3_season_param_not_added():

@@ -1081,7 +1081,7 @@ toto/render.py:536
 옛 캐시를 읽어 수정이 반영되지 않는다 — 실제로 이것 때문에 두 번 헛돌았다.
 
 ```
-toto/sources/fotmob.py:59     _CACHE_VERSION = 9   (1-B 2→3→4→5, 1-C 6, Phase 2 P0-1 7 · P0-2 8 · 2-C 9)
+toto/sources/fotmob.py:59     _CACHE_VERSION = 10  (1-B 2→3→4→5, 1-C 6, Phase 2 P0-1 7 · P0-2 8 · 2-C 9 · 6-D-7 10)
 toto/sources/whoscored.py     _LEAGUE_CACHE_VERSION = 3   (5-E1 팀 통계 탭 §3-9)
 ```
 
@@ -3544,6 +3544,140 @@ return [m for m in matches_before(season, as_of)
 
 회귀 테스트: `python tests/test_index_isolation.py` (48개).
 
+### 1-31. 대륙대회 수집 (Phase 6-D-7) — `match_id_of()` · 대회 셋 등록
+
+**국내리그와 대륙대회는 별개의 모집단이다** (6-D-5 가 만든 경계). 이 Phase 는
+그 경계 위에 UCL·UEL·Conference 를 **실제로 올려 놓는다.**
+
+#### 대회 셋을 `leagues` 표에 등록했다
+
+새 namespace 를 만들지 않았다 — `league_type()` 이 이미 종류를 가르므로 칸
+하나면 충분하고, 표를 나누면 리그 ID 해석·캐시·팀명 해석이 두 벌이 된다.
+
+```yaml
+ucl:        {type: continental, fotmob_id: 42}
+uel:        {type: continental, fotmob_id: 73}
+conference: {type: continental, fotmob_id: 10216}
+```
+
+`type: continental` 하나가 셋을 한꺼번에 정한다 — `owns_team_league=False`
+(6-D-3: 이 표로 팀의 국내 소속을 고치지 않는다) · `strict_team_match=True`
+(6-D-4: 정확일치로만 해석한다). **리그 ID 는 설정에만 둔다** — 파서에 숫자를
+박으면 대회가 늘 때마다 코드를 고쳐야 한다(§1-1-1). 테스트가 소스에 그
+숫자가 없는지 AST 로 검사한다.
+
+**등록해도 국내 회차 수집은 달라지지 않는다.** `enrich()` 는 회차 경기의
+리그와 팀 소속에서 키를 모으는데, 베트맨 회차에 대륙대회가 없고 `teams.yaml`
+의 어떤 팀도 소속이 대륙대회가 아니다 — 실물 260052 로 확인했다
+(`수집할 키 = ['epl', 'laliga']`).
+
+#### 소스가 같은 경기 ID 를 **두 이름**으로 준다
+
+이번 Phase 가 실제로 고친 결함이다. 실측 UEL 2025/26 응답에서
+
+```
+fixtures.allMatches[]                  → `id`       189건
+playoff.…rounds[].matchups[].matches[] → `matchId`   45건 (전부 위 189 안의 값)
+```
+
+`_match_list` 가 `id` 만 보고 있어서 브래킷 쪽은 **ID 없는 경기**로 보였고,
+`팀명|팀명|킥오프` 라는 임시 키로 따로 남았다. 결과가 둘이다.
+
+  · 같은 경기가 **두 벌**로 남아 폼·맞대결·경기상세가 한 경기를 두 번 센다.
+  · 브래킷으로만 온 경기는 `_parse_matches` 가 `raw.get("id")` → `None` 으로
+    적어 **시즌 색인에서 통째로 빠진다.**
+
+`match_id_of(raw)` 가 그 규칙을 **한 곳**에 둔다 — `id` 또는 `matchId`.
+`_match_list` 와 `_parse_matches` 가 같은 함수를 쓰므로 두 곳이 어긋날 수
+없다 (§1-8). 숫자 `0` 과 `True` 는 ID 가 아니다(§1-9, 그리고 `0` 은 예전에도
+'없음' 이었다 — 옛 동작을 그대로 보존했다).
+
+**팀 짝을 ID 로 쓰지 않는다.** 같은 두 팀이 한 대회에서 리그 페이즈와
+토너먼트에서 두 번 만날 수 있고, 팀 짝으로 가르면 한 경기가 사라진다.
+
+#### 중복은 버리지 않고 **합친다**
+
+먼저 만난 것을 남기고 버리면 나중 경로에만 있는 칸(`round`·`status`)을 잃는다.
+`_merge_match_records` 가 **`fill_stats(overwrite=False)` 와 같은 규칙**으로
+비어 있는 칸만 채운다 (§1-1).
+
+  · **입력 순서에 기대지 않는다.** 바탕을 (칸 수 → 값이 있는 칸 수 → 키 이름)
+    으로 고르므로 `merge(a,b) == merge(b,a)` 다. `_walk` 는 스택이라 순회
+    순서가 문서 순서와 다른데(§1-1-2), 그 순서에 결과가 달리면 같은 응답에서
+    다른 색인이 나온다.
+  · **양쪽에 다 있는데 값이 다른 칸은 건드리지 않는다.** 실측에서 경로에 따라
+    킥오프가 1~2시간 달랐고, 어느 쪽이 옳은지 확인되지 않은 상태에서 시간대를
+    보정하면 그건 추측이다 (§1-4).
+
+실물 세 대회 측정 — 걸러낸 것이 전부 같은 경기의 사본이고 새 경기를 만들지
+않는다(`고유 ID == allMatches`):
+
+| | walk | dedup | 고유 ID | allMatches | strict 팀 | SeasonMatch |
+|---|---|---|---|---|---|---|
+| UCL 2025/26 | 1,004 | 301 | **189** | 189 | 22 | 78 |
+| UEL 2025/26 | 1,004 | 305 | **189** | 189 | 11 | 26 |
+| Conference | 896 | 269 | **153** | 153 | 5 | 9 |
+
+**커버리지를 보정하지 않는다** (§1-5). UEL 은 36팀 중 11팀만 해석되고 나머지
+25팀은 `teams.yaml` 에 없다 — 그 상태가 정답이다. 실측에서 strict 가
+`Rangers→Angers` 를 실제로 한 건 막았다(§1-29).
+
+#### 단계는 metadata 이지 모집단이 아니다
+
+리그 페이즈와 녹아웃을 **하나의 대회 모집단**으로 둔다. `SeasonMatch.stage`
+를 만들지 않았다 — 지금 기능상 필요하지 않고, 없는 칸을 미리 만들면 그것이
+곧 두 번째 competition namespace 가 된다.
+
+```
+UCL = 리그 페이즈 + 녹아웃   ← 하나의 population
+```
+
+#### 캐시 — 대회가 곧 정체, 시즌은 자리만 뒀다
+
+`league_cache_key(key, season=None)` 하나로 모았다(예전에는 세 곳에서
+`f"league_{key}"` 를 조립했다). **시즌을 안 주면 예전 키와 글자까지 같아**
+기존 캐시가 그대로 읽힌다.
+
+지금 아무 호출부도 시즌을 넘기지 않는다 — 과거 시즌 요청이 production 경로
+에서 되는지 확인되지 않았고(6-D-6·6-D-6A **BLOCKED**), 확인되지 않은 요청을
+보낼 수 없으니 받아 둘 응답도 없다. **`LEAGUE_PATH` 는 한 글자도 바뀌지
+않았다**(테스트로 고정) — `season=`·`ccode3`·`x-mas` 어느 것도 넣지 않았다.
+
+**캐시 판을 10 으로 올렸다.** 저장되는 `matches` 의 모양이 **실제로**
+달라졌기 때문이다 — `id` 가 int 에서 str 이 되고 같은 ID 가 한 건으로 합쳐진다.
+형식이 그대로일 때는 올리지 않는다는 규칙(§1-4)의 조건을 만족한 경우다.
+
+#### 값이 바뀌지 않았다
+
+`--demo` 662,013 · `--rerender-artifact 260052` 940,119 · 경기자료 MD
+1,206,254 **전부 그대로**이고, 260052 저장본이 그대로 읽히며 그 색인에
+대륙대회 경기가 **0건**이다. `teams.learned.yaml`·`teams.league.yaml` 생성
+없음.
+
+**live 수집은 검증하지 못했다.** 원격 세션에서 fotmob.com 이 차단돼 있다
+(§2-1). 이 Phase 가 PASS 한 것은 **parser·dedup·색인 격리**이고 실제 수집이
+아니다 — 실물 응답(HAR)으로 파서를 돌려 확인한 것까지다.
+
+#### 옛 Phase 의 '범위' 단언 넷을 옮겼다
+
+6-D-4 가 "대회를 설정에 추가하지 않았다" 를 테스트로 적어 두었는데, 6-D-7 이
+바로 그것을 하는 Phase 다. **불변조건은 그대로 두고 범위만 옮겼다** —
+§1-29 의 `test_settlement.test_j3` 와 같은 방식이다.
+
+  · `test_a2`·`test_a7`·`test_h2` — "설정의 **모든** 항목이 …" → "**국내
+    여덟**이 …". 새로 들어온 항목은 국내리그가 **아니어야** 한다는 검사를
+    더했다 (국내리그를 조용히 더하면 회차 수집 대상이 달라진다).
+  · `test_j2` — docstring 을 실제로 제외하도록 고쳤다. 설명에 "docstring 은
+    제외한다" 고 적어 두고 구현이 그러지 않아 실측을 적은 docstring 이 두 번
+    걸렸다. docstring 은 분기를 만들 수 없으므로 지키는 것은 그대로다.
+  · `test_43`(moderator)·`test_21f`(panel) — `fotmob._CACHE_VERSION == 9` 라는
+    **남의 모듈 숫자**를 못 박고 있었다. 지키려는 것은 '패널 캐시가 소스 캐시와
+    독립' 이므로, 소스 번호를 **참조하지 않는다**는 AST 검사로 바꿨다 — 숫자
+    핀보다 강하다.
+
+회귀 테스트: `python tests/test_continental_collection.py` (50개).
+fixture 는 실물 응답에서 잘라냈다 — `tests/fixtures/fotmob/continental/`.
+
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
 260052 실행이 남긴 것은 후스코어드 `팀명 매칭 실패` 5건과 `강점 0개` 3팀이다.
@@ -4195,6 +4329,8 @@ python tests/test_settlement.py            # 결과 정산·match_id·시간대 
 python tests/test_competition_guard.py     # 대회 피드의 소속 오염 차단 6-D-3 §3-5 (20개)
 python tests/test_strict_resolution.py     # 대회 팀명 정확일치 전용 6-D-4 §1-29 (39개)
 python tests/test_index_isolation.py       # 색인 모집단 분리 6-D-5 §1-30 (48개)
+python tests/test_continental_collection.py # 대륙대회 수집·중복 제거 6-D-7 §1-31 (50개)
+python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)
 python tools/probe_sources.py --browser    # 소스 구조 점검

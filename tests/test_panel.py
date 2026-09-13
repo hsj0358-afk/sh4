@@ -712,9 +712,22 @@ def test_21e_cache_never_stores_the_api_key():
 
 
 def test_21f_source_cache_version_is_untouched():
-    from toto.sources import fotmob
-    assert fotmob._CACHE_VERSION == 9, "소스 캐시 버전을 건드렸다"
+    """패널 캐시 번호는 소스 캐시 번호와 **독립이다** (§1-9).
+
+    예전에는 `fotmob._CACHE_VERSION == 9` 를 못 박았는데, 그건 그때의
+    스냅샷이지 이 테스트가 지키는 불변조건이 아니다 — 소스 파서가 바뀌어
+    판이 올라가는 것은 정상이고(6-D-7 에서 9→10), 그때 패널 테스트가 깨질
+    이유가 없다. 패널 번호가 그대로이고 소스 번호를 참조하지 않는지 본다.
+    """
+    import ast
+    from pathlib import Path
+
     assert panel.PANEL_CACHE_VERSION == 1
+    src = (Path(__file__).resolve().parent.parent
+           / "toto" / "panel.py").read_text(encoding="utf-8")
+    for node in ast.walk(ast.parse(src)):
+        if isinstance(node, ast.Attribute):
+            assert node.attr != "_CACHE_VERSION", "소스 캐시 번호에 종속됐다"
 
 
 # --------------------------------------------------------------------------

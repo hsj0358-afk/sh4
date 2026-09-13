@@ -867,10 +867,28 @@ def test_42_corrupt_cache_is_a_miss():
 
 
 def test_43_cache_versions_are_independent():
+    """사회자 캐시 번호는 소스 캐시 번호와 **무관하다.**
+
+    예전에는 `fotmob._CACHE_VERSION == 9` 로 적었는데, 그러면 소스 쪽의
+    정당한 판 올림(6-D-7 의 9→10)이 사회자 테스트를 깨뜨린다 — 남의 모듈이
+    가진 숫자를 여기서 못 박을 이유가 없다. 지키려는 것은 **둘이 서로를
+    따라가지 않는다**는 것이므로 그것을 직접 확인한다.
+    """
+    import ast
+    from pathlib import Path
+
     assert moderator.MODERATOR_CACHE_VERSION == 1
     assert moderator.CACHE_SOURCE != panel.CACHE_SOURCE
-    from toto.sources import fotmob
-    assert fotmob._CACHE_VERSION == 9, "소스 캐시 버전을 건드렸다"
+
+    # 소스 캐시 번호를 읽어다 쓰지 않는다 — 읽으면 그 순간 종속된다.
+    root = Path(__file__).resolve().parent.parent
+    for rel in ("toto/moderator.py", "toto/panel.py"):
+        src = (root / rel).read_text(encoding="utf-8")
+        assert "_CACHE_VERSION" not in src.replace(
+            "MODERATOR_CACHE_VERSION", "").replace("PANEL_CACHE_VERSION", ""), rel
+        for node in ast.walk(ast.parse(src)):
+            if isinstance(node, ast.Attribute):
+                assert node.attr != "_CACHE_VERSION", rel
 
 
 def test_44_cache_never_stores_the_api_key():

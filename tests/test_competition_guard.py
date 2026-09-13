@@ -40,7 +40,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from toto import settings as settings_mod                     # noqa: E402
 from toto.models import Match, TeamProfile, TeamRef, TeamStats  # noqa: E402
 from toto.normalize import TeamResolver                        # noqa: E402
-from toto.settings import CONTINENTAL, CUP, LEAGUE, Settings   # noqa: E402
+from toto.settings import (COMPETITION_TYPES, CONTINENTAL, CUP,  # noqa: E402
+                           LEAGUE, Settings)
 from toto.settings import load_settings                        # noqa: E402
 from toto.sources import fotmob                                # noqa: E402
 
@@ -130,12 +131,26 @@ def test_a1_missing_type_is_read_as_league():
 
 
 def test_a2_real_config_has_no_type_and_still_owns():
-    """실제 `config_toto.yaml` 의 리그 전부가 예전과 같이 동작한다."""
+    """**국내리그 항목**은 `type` 없이도 예전과 같이 동작한다.
+
+    6-D-7 이 `type: continental` 인 대회를 같은 표에 등록하면서, '설정의 모든
+    항목에 type 이 없다' 는 형태로는 더 못 적는다. 이 테스트가 지키려던 것은
+    처음부터 **기존 여덟 리그가 칸 하나 없이도 소속 권위를 유지한다**는 것
+    이므로(§3-5), 그 여덟을 직접 가려 확인한다 — 범위가 옮겨진 것이지
+    불변조건이 약해진 것이 아니다.
+    """
     s = load_settings()
     assert s.leagues, "설정을 읽지 못했다"
-    for key, cfg in s.leagues.items():
-        assert "type" not in cfg, f"{key}: 이번 Phase 는 기존 항목을 건드리지 않는다"
+    domestic = [k for k, cfg in s.leagues.items() if "type" not in cfg]
+    assert len(domestic) >= 8, f"국내리그 항목이 사라졌다: {domestic}"
+    for key in domestic:
         assert s.owns_team_league(key) is True, key
+        assert s.strict_team_match(key) is False, key
+    # type 이 적힌 항목은 전부 아는 값이어야 한다 — 오타면 소속 정정이
+    # 조용히 꺼진다.
+    for key, cfg in s.leagues.items():
+        if "type" in cfg:
+            assert s.league_type(key) in COMPETITION_TYPES, (key, cfg["type"])
 
 
 def test_b1_league_type_owns():
@@ -301,11 +316,26 @@ def test_j2_no_hardcoded_competition_keys_or_names():
     """`ucl`·`champions` 같은 이름으로 분기하지 않는다 (§5·§16).
 
     문자열 상수만 본다 — 주석·docstring 은 설명이라 제외한다.
+
+    **docstring 을 실제로 빼도록 고쳤다.** `ast.Constant` 에는 docstring 도
+    들어와서, 설명에 적어 둔 제외 규칙이 지켜지지 않고 있었다 — 실측을 적은
+    docstring 때문에 두 번 걸렸다(6-D-4 는 문장을 바꿔 피했다). docstring 은
+    분기를 만들 수 없으므로 빼도 이 테스트가 지키는 것은 그대로다.
     """
     for rel in ("toto/sources/fotmob.py", "toto/settings.py"):
         tree = ast.parse((ROOT / rel).read_text(encoding="utf-8"))
+        docstrings = set()
         for node in ast.walk(tree):
-            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if isinstance(node, (ast.Module, ast.ClassDef,
+                                 ast.FunctionDef, ast.AsyncFunctionDef)):
+                first = node.body[0] if node.body else None
+                if (isinstance(first, ast.Expr)
+                        and isinstance(first.value, ast.Constant)
+                        and isinstance(first.value.value, str)):
+                    docstrings.add(id(first.value))
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Constant) and isinstance(node.value, str)
+                    and id(node) not in docstrings):
                 low = node.value.lower()
                 for banned in ("ucl", "uel", "champions", "europa", "fa_cup"):
                     assert banned not in low, f"{rel}: 상수 {node.value!r}"

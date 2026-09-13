@@ -200,11 +200,15 @@ def _prematch_id(report: Report, match) -> str:
     나중에 정산할 때 팀명·날짜로 다시 가릴 이유가 없어진다.
 
     못 가리면 **빈 문자열**이다 — ID 를 지어내지 않는다 (§1-5).
+
+    이 경기의 대회 안에서만 찾는다 (Phase 6-D-5). 같은 두 팀이 같은 주에
+    리그와 컵을 치르면 ±4일 창에 둘이 들어와 지금은 `None` 이 되는데, 그건
+    안전하게 실패한 것이지 옳게 찾은 것이 아니다.
     """
     return getattr(find_season_match(
         report.season_matches or [], match.home.canonical or "",
         match.away.canonical or "", _kickoff_date(match.kickoff_kst or ""),
-        _SETTLE_WINDOW), "match_id", "") or ""
+        _SETTLE_WINDOW, competition=match.league or ""), "match_id", "") or ""
 
 
 def _match_rows(report: Report) -> list[dict]:
@@ -305,6 +309,12 @@ def _lookup(row: dict, ready: list) -> tuple[object, str, bool]:
     ID 가 맞으면 팀명·킥오프를 다시 보지 않는다 — 팀 별칭이 바뀌어도
     (§1-22 의 `Deportivo` 처럼) 그 행은 계속 이어진다. ID 가 없는 옛 행만
     폴백을 탄다.
+
+    **폴백에 대회 경계를 걸지 않았다** (Phase 6-D-5). CSV 의 `league` 칸은
+    `m.league_ko or m.league` 라 **한국어 표시명일 때도 있고 내부 키일 때도
+    있어** 대회 키로 쓸 수 없다. 칸을 새로 만들면 되지만 그건 스키마 변경이고,
+    이 폴백은 창 안에 둘이 들어오면 `None` 으로 **안전하게 실패**한다 —
+    틀린 결과를 채우지는 않는다. 경계가 필요해지면 그때 칸을 만든다.
     """
     mid = (row.get(ID_FIELD) or "").strip()
     if mid:

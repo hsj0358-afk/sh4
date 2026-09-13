@@ -1196,6 +1196,79 @@ def matches_before(season: list[SeasonMatch], as_of: datetime | None,
     return out
 
 
+def in_competition(season: list[SeasonMatch],
+                   competition: str | None) -> list[SeasonMatch]:
+    """그 대회의 경기만 남긴다 (Phase 6-D-5 의 population 경계).
+
+    **왜 필요한가.** 색인은 지금까지 국내리그만 담았고, 한 팀은 국내리그
+    하나에만 속하므로 "팀 이름으로 고르면 그 팀의 리그 경기" 가 저절로
+    성립했다 — 실측 260052 에서 두 대회 이상에 나오는 팀이 **0명**이다.
+    대륙대회가 들어오는 순간 그 전제가 깨진다. 리버풀은 `epl` 과 `ucl`
+    양쪽에 있고, 팀 이름만으로 고르면 두 대회가 한 표본으로 섞인다 —
+    최근 폼·시즌 경기 수·상대 강도·xPTS 가 전부 함께 오염된다.
+
+    **비어 있으면 거르지 않는다.** `competition` 이 `None` 이나 빈 문자열
+    이면 받은 그대로 돌려준다 — 대상 대회를 모르는 호출부(리그 미상 경기,
+    기존 테스트)의 동작을 바꾸지 않기 위해서다. "모르니까 전부" 는 여기서는
+    **기존 동작의 보존**이지 새 정책이 아니다.
+
+    `matches_before()` 와 **직교한다.** 저쪽은 시점, 이쪽은 모집단이다.
+    순서를 바꿔 적용해도 결과가 같다(테스트로 고정).
+    """
+    if not competition:
+        return list(season)
+    return [m for m in season if m.competition == competition]
+
+
+def competitions_in(season: list[SeasonMatch]) -> dict[str, int]:
+    """{대회 키: 경기 수}. 진단·로그용이며 판정에 쓰지 않는다."""
+    out: dict[str, int] = {}
+    for m in season:
+        out[m.competition] = out.get(m.competition, 0) + 1
+    return out
+
+
+def is_labeled(season: list[SeasonMatch]) -> bool:
+    """이 색인이 대회를 표시하고 있나. 한 경기라도 표시가 있으면 참이다."""
+    return any(m.competition for m in season)
+
+
+# `scope_to_competition()` 이 거르지 **않은** 이유. 사유가 없으면(빈 문자열)
+# 실제로 걸렀다는 뜻이다 — 호출부가 로그에 적을 수 있게 낱말로 돌려준다
+# (§1-6: '없다' 와 '안 걸렀다' 를 같은 말로 적지 않는다).
+SCOPE_NO_TARGET = "대상 대회 미상"
+SCOPE_UNLABELED = "색인에 대회 표시 없음"
+
+
+def scope_to_competition(season: list[SeasonMatch],
+                         competition: str | None
+                         ) -> tuple[list[SeasonMatch], str]:
+    """분석 모집단을 그 대회로 좁힌다. `(경기목록, 거르지 않은 사유)`.
+
+    `in_competition()` 이 **순수한 거르기**라면 이쪽은 **정책**이다 — 언제
+    거르지 않는지를 여기 한 곳에만 적는다 (§1-8). 거르지 않는 경우가 둘이고,
+    둘 다 "모르니까 전부" 가 아니라 **기존 동작의 보존**이다.
+
+    | 상황 | 왜 거르지 않나 |
+    |---|---|
+    | 대상 대회를 모른다 (`""`) | 리그 미상 경기·기존 테스트의 뜻을 바꾸지 않는다 (§8) |
+    | 색인에 대회 표시가 하나도 없다 | 6-D-5 이전 저장본이다. 거르면 **전부 사라진다** |
+
+    두 번째가 `artifact` 호환의 핵심이다. `SeasonMatch.competition` 의 기본값이
+    `""` 라 옛 저장본은 되살아날 때 전부 빈 문자열인데, 그것을 `"epl"` 로
+    거르면 722경기가 0경기가 된다 — 분석이 통째로 빈다.
+
+    **표시가 있는데 그 대회가 없으면 빈 목록이 맞다.** 그때는 "그 대회 경기를
+    담지 않은 색인" 이고, 있지도 않은 모집단을 다른 대회 경기로 채우는 것이
+    이 Phase 가 막으려는 바로 그 오염이다.
+    """
+    if not competition:
+        return list(season), SCOPE_NO_TARGET
+    if not is_labeled(season):
+        return list(season), SCOPE_UNLABELED
+    return in_competition(season, competition), ""
+
+
 def _revive_dt(value) -> datetime | None:
     """ISO 문자열 → datetime. **시간대를 지어내지 않는다** (§1-1-4).
 
@@ -1364,7 +1437,8 @@ def in_kst(dt: datetime) -> datetime:
 
 def find_season_match(season: list[SeasonMatch], home: str, away: str,
                       kickoff: datetime | None, window: timedelta,
-                      finished_only: bool = False) -> SeasonMatch | None:
+                      finished_only: bool = False,
+                      competition: str = "") -> SeasonMatch | None:
     """회차 경기 하나를 시즌 색인에서 찾는다. **못 가리면 None 이다.**
 
     같은 팀 짝이 시즌에 두 번(홈/원정) 나오므로 팀명만으로는 가릴 수 없다.
@@ -1376,7 +1450,15 @@ def find_season_match(season: list[SeasonMatch], home: str, away: str,
 
     시각 비교는 `in_kst()` 로 **기준을 하나로 모은 뒤**에 한다 — 표시를 떼어
     직접 빼지 않는다 (Phase 6-C-2, 위 함수 설명 참고).
+
+    `competition` 을 주면 그 대회 안에서만 찾는다 (Phase 6-D-5). 이 조회는
+    **팀 짝 + 날짜**라는 가장 약한 식별 단계라(§15) 같은 두 팀이 같은 주에
+    리그와 컵을 치르면 창 안에 둘이 들어온다. 지금은 둘이면 `None` 으로
+    안전하게 실패하지만, 그건 '못 찾았다' 이지 '옳게 찾았다' 가 아니다.
+    **`find_season_match_by_id()` 에는 이 인자를 두지 않는다** — 소스 경기
+    ID 는 그 자체로 권위 있는 식별자라 대회로 좁힐 이유가 없다.
     """
+    season, _ = scope_to_competition(season, competition)
     hits = [m for m in season
             if m.home_team == home and m.away_team == away
             and not (finished_only and not m.finished)]

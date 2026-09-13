@@ -239,7 +239,8 @@ def _status_of(match, report: Report) -> tuple[str, object]:
     when = as_of_from_match(match)
     sm = find_season_match(report.season_matches or [],
                            match.home.canonical, match.away.canonical,
-                           when, MATCH_WINDOW)
+                           when, MATCH_WINDOW,
+                           competition=match.league or "")
     if sm is None:
         return "확인 불가 (시즌 색인에서 이 경기를 가리지 못했습니다)", None
     return ("종료" if sm.finished else "예정"), sm

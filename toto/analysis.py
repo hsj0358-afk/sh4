@@ -83,7 +83,8 @@ from .models import KST as models_KST
 from .models import as_of_from_match as models_as_of_from_match
 from .models import (DERIVED, MODEL, OBSERVED, AnalysisAxis, DataQuality,
                      Match, MatchAnalysis, Metric, SeasonMatch, TeamAnalysis,
-                     TeamProfile, matches_before)
+                     TeamProfile, competitions_in, matches_before,
+                     scope_to_competition)
 from .settings import Settings
 
 log = logging.getLogger(__name__)
@@ -568,14 +569,26 @@ def detail_window_of(settings: Settings) -> int:
 # 3. 시점
 # --------------------------------------------------------------------------
 def team_history(season: list[SeasonMatch], team: str,
-                 as_of: datetime | None) -> list[SeasonMatch]:
+                 as_of: datetime | None,
+                 competition: str | None = None) -> list[SeasonMatch]:
     """`as_of` 이전에 끝난 그 팀의 경기 (오래된 것부터).
 
     cutoff 는 `models.matches_before` 하나만 쓴다 — 여기서 다시 날짜를
-    비교하지 않는다.
+    비교하지 않는다. 모집단 경계도 마찬가지로 `models.scope_to_competition`
+    하나만 쓴다 — 거르기도 **거르지 않는 예외**(대회 표시가 없는 옛 저장본)도
+    거기 한 곳에 있다. 여기서 직접 견주면 예외가 두 벌이 된다 (§1-8).
+
+    **`competition=None` 은 '모든 공식대회' 가 아니다.** '대회로 거르지
+    않는다' 이고, 그것이 이 함수의 **기존 동작**이다 (Phase 6-D-5 §8).
+    지금까지 이 함수가 안전했던 것은 규칙 덕분이 아니라 **색인이 국내리그만
+    담았기 때문**이다 — 실측 260052 에서 두 대회 이상에 나오는 팀이 0명이라
+    '팀 이름으로 고르면 그 팀의 리그 경기' 가 저절로 성립했다. 대륙대회가
+    색인에 들어오면 그 전제가 깨지므로, 대상 대회를 아는 호출부는 그것을
+    넘겨 모집단을 명시한다.
     """
     if not team:
         return []
+    season, _ = scope_to_competition(season, competition)
     return [m for m in matches_before(season, as_of)
             if team in (m.home_team, m.away_team)]
 
@@ -3067,9 +3080,21 @@ def build_schedule_strength(profile: TeamProfile | None, team: str,
 def build_team_analysis(profile: TeamProfile | None, team: str,
                         season_matches: list[SeasonMatch] | None,
                         as_of: datetime | None, settings: Settings,
-                        is_home: bool | None = None) -> TeamAnalysis:
+                        is_home: bool | None = None,
+                        competition: str = "") -> TeamAnalysis:
+    """여섯 축을 만든다. `competition` 은 **모집단 경계**다 (Phase 6-D-5).
+
+    경계를 **여기 한 번만** 적용한다. 축마다 걸면 여섯 곳이 어긋날 수 있고,
+    축 안쪽에는 걸 자리가 네 군데(`team_history` · `known_ids` ·
+    `allowed_ids` · `opponent_record`)나 있다. 좁힌 목록을 넘기면 그 넷이
+    전부 같은 모집단을 본다 — 이것이 6-D-5 가 고른 **단일 관문**이다.
+
+    빈 문자열이면 거르지 않는다 — 이 함수의 기존 동작이다 (§8).
+    """
     quality = DataQuality()
     out = TeamAnalysis(team=team, is_home=is_home, data_quality=quality)
+    season_matches, _ = scope_to_competition(list(season_matches or []),
+                                             competition)
     ref = getattr(profile, "team", None) if profile else None
     raw_id = getattr(ref, "fotmob_id", "") if ref else ""
     try:
@@ -3119,11 +3144,29 @@ def attach_time_context(matches: list[Match], settings: Settings,
 
     `Match.probs`(피나클 배당 확률)는 건드리지 않는다. 리포트 렌더링도
     아직 이 값을 읽지 않으므로 화면은 그대로다 (시각화는 Phase 3).
+
+    **경기마다 자기 대회 안에서만 본다** (Phase 6-D-5). 예전에는 색인 전체를
+    14경기 전부에 그대로 넘겼다 — 색인이 국내리그만 담고 한 팀이 리그 하나에만
+    속하던 동안에는 팀 이름 필터가 우연히 같은 일을 했지만, 대륙대회가 들어오면
+    리버풀이 `epl` 과 `ucl` 양쪽에 있어 두 대회가 한 표본이 된다.
+
+    **`Match.league` 를 대륙대항전 식별자로 바꾸지 않는다** — 여기서는 읽기만
+    하고, 그 값이 곧 이 경기의 모집단이다.
     """
     season = list(season_matches or [])
     built = 0
+    scoped: dict[str, int] = {}
+    skipped: dict[str, int] = {}
     for match in matches:
         as_of = as_of_from_match(match)
+        # 로그용이다 — 실제 경계는 `build_team_analysis` 가 스스로 건다.
+        # 두 번 계산하지만 같은 함수라 결과가 갈릴 수 없고, 그 덕에 다른
+        # 호출부도 이 함수를 거치지 않고 보호된다.
+        pool, why = scope_to_competition(season, match.league or "")
+        if why:
+            skipped[why] = skipped.get(why, 0) + 1
+        else:
+            scoped[match.league] = len(pool)
         analysis = match.analysis or MatchAnalysis()
         analysis.as_of = as_of
         for side in ("home", "away"):
@@ -3134,7 +3177,7 @@ def attach_time_context(matches: list[Match], settings: Settings,
                 continue
             setattr(analysis, side, build_team_analysis(
                 profile, team, season, as_of, settings,
-                is_home=(side == "home")))
+                is_home=(side == "home"), competition=match.league or ""))
         if analysis.home or analysis.away:
             match.analysis = analysis
             built += 1
@@ -3179,6 +3222,17 @@ def attach_time_context(matches: list[Match], settings: Settings,
             if s.schedule_strength
             and any(k.endswith(".opponent_points")
                     for k in s.schedule_strength.metrics))
+        # 모집단 경계를 **조용히** 걸지 않는다 (§1-6-1). 어느 대회에서 몇
+        # 경기를 봤는지, 거르지 않았다면 왜인지를 적는다 — 값이 비었을 때
+        # "색인이 없어서" 인지 "그 대회 경기가 색인에 없어서" 인지 이 줄로
+        # 갈린다.
+        detail = ", ".join(f"{k or '미상'} {v}경기"
+                           for k, v in sorted(scoped.items()))
+        for why, n in sorted(skipped.items()):
+            detail = f"{detail}, {why} {n}경기" if detail else f"{why} {n}경기"
+        log.info("시즌 색인 모집단: 전체 %d경기 %s → 경기별 %s",
+                 len(season), competitions_in(season) or "(대회 표시 없음)",
+                 detail or "(없음)")
         log.info("팀 분석(2-A 시간축 · 2-B 기회의 질 · 2-C 수비의 질 · "
                  "2-D 지속성 · 2-E 장소 문맥 · 2-F 상대 강도): "
                  "%d경기 · 창 %s · 시즌 색인 %d경기 · 패턴 %d건 · "

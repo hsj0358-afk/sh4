@@ -90,6 +90,19 @@ def _src(obj) -> str:
     return inspect.getsource(obj)
 
 
+def _file_code_only(path: Path) -> str:
+    """파일 하나에서 docstring 을 걷어낸 소스. `_code_only` 의 경로판."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        body = getattr(node, "body", None)
+        if (isinstance(node, (ast.Module, ast.FunctionDef, ast.ClassDef))
+                and body and isinstance(body[0], ast.Expr)
+                and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)):
+            body.pop(0)
+    return ast.unparse(tree)
+
+
 def _code_only(obj) -> str:
     """docstring 을 걷어낸 소스.
 
@@ -602,8 +615,17 @@ def test_h2_old_topic_tables_are_untouched():
 
 
 def test_h3_forbidden_modules_do_not_reference_the_engine():
-    for mod in ("render.py", "match_material.py", "panel.py", "menu.py",
-                "moderator.py", "predict.py", "analysis.py", "evidence.py",
+    """엔진을 볼 이유가 없는 모듈은 엔진을 모른다.
+
+    **6-E-4 에서 범위를 옮겼다.** 6-E-3 때 이 목록은 "전달 경로를 건드리지
+    않았다" 는 범위 선언이었고, 6-E-4 가 정확히 그 전달을 하는 Phase 다
+    (§1-29 의 `test_settlement.test_j3` · §1-31 의 `test_a2` 와 같은 교정).
+    지키려던 것 — **엔진은 한 곳에서만 정의된다** — 은 아래 두 갈래로
+    더 단단히 고정한다.
+    """
+    # 확률·축·수집·메뉴·사회자는 여전히 엔진을 몰라야 한다.
+    for mod in ("menu.py", "moderator.py", "predict.py", "analysis.py",
+                "evidence.py", "panelexport.py",
                 "sources/pinnacle.py", "sources/whoscored.py"):
         path = ROOT / "toto" / mod
         assert path.exists(), path
@@ -611,6 +633,17 @@ def test_h3_forbidden_modules_do_not_reference_the_engine():
         for word in ("relationships", "Relationship", "SemanticUnit",
                      "build_relationships"):
             assert word not in text, f"{mod}: {word}"
+
+    # 소비처 셋은 **읽기만** 한다. 의미 단위·짝을 자기 쪽에 다시 정의하면
+    # 두 곳이 어긋나므로, canonical 모델의 이름을 만지지 못하게 막는다.
+    for mod in ("render.py", "match_material.py", "panel.py"):
+        # docstring 은 걷어낸다 — "`MIRROR` 를 내보내지 않는다" 라고 적어 둔
+        # 설명 때문에 깨지면 안 된다 (`_code_only` 와 같은 이유).
+        code = _file_code_only(ROOT / "toto" / mod)
+        assert "relationships" in code, f"{mod}: 엔진을 쓰지 않는다"
+        for word in ("SemanticUnit", "PAIRS", "_UNITS", "DEFERRED_PAIRS",
+                     "unit_of", "_kind(", "MIRROR", "CONTEST"):
+            assert word not in code, f"{mod}: {word}"
 
 
 def test_h4_engine_is_pure_and_stores_nothing():

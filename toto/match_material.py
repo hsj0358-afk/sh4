@@ -46,8 +46,11 @@ import logging
 from datetime import timedelta
 from pathlib import Path
 
-from .models import (AWAY, DRAW, HOME, MatchAnalysis, Report, TeamAnalysis,
-                     as_of_from_match, find_season_match, in_kst)
+from . import relationships
+from .models import (AWAY, CHAR_OBSERVED_EMPTY, CHAR_PAGE_FAILED,
+                     CHAR_UNRECORDED, DRAW, HOME, MatchAnalysis, Report,
+                     TeamAnalysis, as_of_from_match, characteristic_status,
+                     find_season_match, in_kst)
 from .settings import ROOT
 
 log = logging.getLogger("toto")
@@ -454,11 +457,40 @@ def _h2h(match) -> str:
          for e in h2h.entries]) + "\n"
 
 
+_CHAR_STATUS_KO = {
+    CHAR_OBSERVED_EMPTY: "소스가 '없다' 고 적어 둔 것입니다 (관측된 0이며 "
+                         "수집 실패가 아닙니다)",
+    CHAR_PAGE_FAILED: "팀 페이지를 가져오지 못했습니다 (수집 실패)",
+    CHAR_UNRECORDED: "기록이 없습니다 (수집하지 않았거나 옛 저장본입니다)",
+}
+
+
+def _symmetric_table(rows) -> str:
+    """방향 없는 관계를 **좌우 대칭**으로. `쪽` 칸을 만들지 않는다.
+
+    상성 노트의 `쪽 | 강점 | 상대 약점` 구조를 재사용하면 그 칸이 주체를
+    지정해 버려, 방향이 없는 관계에 주어가 생긴다. 여기서는 양쪽이 각자
+    자기 팀·자기 영역·자기 원문을 갖는다.
+
+    **영역 이름을 공유하지 않는다.** 공격 라벨과 그 수비 라벨로 맺어진
+    관계는 양쪽 영역이 다르다 — 실물 260052 의 브라이턴 세트피스 공격 ↔
+    코번트리 세트피스 수비가 그 경우다.
+    """
+    return _table(["홈", "홈 영역", "홈 특성", "원정", "원정 영역", "원정 특성"],
+                  rows)
+
+
 def _tactical(match) -> str:
     """후스코어드 정성 자료. **없으면 없다고만 적는다.**
 
     포메이션·선발·부상·압박 방식·감독 성향은 이 프로그램이 수집하지 않는다.
     자리를 만들지 않는 것이 그것을 지어내지 않는 가장 확실한 방법이다.
+
+    **특성 원문은 목록으로 낸다** (Phase 6-E-4). 예전에는 `" · ".join(...)`
+    으로 한 칸에 이어 붙였는데, 항목 구분자와 `라벨 · 강도` 의 구분자가 **같은
+    `" · "`** 라 읽는 쪽이 어디서 끊기는지 알 수 없었다 — 실물에서
+    `Counter attacks · Strong · Creating long shot opportunities · Strong`
+    처럼 나왔다. 원문은 한 글자도 바꾸지 않고 **경계만 복원한다.**
     """
     out = ""
     have = False
@@ -466,13 +498,26 @@ def _tactical(match) -> str:
                            ("원정", match.away_profile)):
         if profile is None:
             continue
-        rows = []
-        for name, items in (("강점", profile.strengths),
-                            ("약점", profile.weaknesses),
-                            ("플레이 스타일", profile.style_of_play)):
+        chars = ""
+        for name, items in (("강점 (Strengths)", profile.strengths),
+                            ("약점 (Weaknesses)", profile.weaknesses)):
             if items:
-                rows.append([name, " · ".join(items)])
+                chars += f"{name}:\n\n" + _bullets(items) + "\n"
                 have = True
+            else:
+                # 빈 목록이 네 가지 뜻을 겸하지 않도록 **왜** 비었는지 적는다
+                # (§1-6-1). 상태 판정은 6-E-2 의 함수를 그대로 쓴다.
+                status = characteristic_status(items, profile.team_page_ok)
+                chars += (f"{name}: 없음 — "
+                          + _CHAR_STATUS_KO.get(status, status) + "\n\n")
+        # 플레이 스타일에는 상태를 붙이지 않는다 — 실물 0/28 의 원인이
+        # 소스에 없어서인지 파서가 제목을 못 찾아서인지 확인되지 않았다
+        # (§3-1). 확인되지 않은 것을 관측으로 단언하지 않는다.
+        if profile.style_of_play:
+            chars += ("플레이 스타일 (Style of play):\n\n"
+                      + _bullets(profile.style_of_play) + "\n")
+            have = True
+        rows = []
         # 일정 문맥 (Phase 6-D-9B). **사실값만 옮긴다** — 유리·불리를 적지
         # 않고, 두 팀 수를 견주지 않는다. 휴식은 대회를 가로질러 잰 값이라
         # 직전 경기가 어느 대회였는지를 함께 남긴다.
@@ -496,11 +541,12 @@ def _tactical(match) -> str:
                  if profile.previous_kickoff is not None else ""))if b]
             rows.append(["직전 공식 경기", " · ".join(bits)])
             have = True
+        out += f"**{label} — {profile.team.display}**\n\n" + chars
         if rows:
-            out += f"**{label} — {profile.team.display}**\n\n" + _table(
-                ["항목", "내용"], rows) + "\n"
+            out += _table(["항목", "내용"], rows) + "\n"
     if match.matchup_notes:
-        out += ("상성 노트 (한쪽 강점 ↔ 상대 약점 교차 대조):\n\n" + _table(
+        out += (f"{relationships.KIND_KO[relationships.ADVANTAGE]} "
+                "— 상성 노트 (한쪽 강점 ↔ 상대 약점 교차 대조):\n\n" + _table(
             ["주제", "쪽", "강점", "상대 약점", "설명"],
             [[n.get("topic", "—"),
               {"home": "홈", "away": "원정"}.get(n.get("side"), "—"),
@@ -508,6 +554,29 @@ def _tactical(match) -> str:
               n.get("text", "—")]
              for n in match.matchup_notes]) + "\n")
         have = True
+    # 방향 없는 두 관계 (Phase 6-E-4). `matchup_notes` 는 강점↔약점 전용이라
+    # 이 둘을 담을 수 없다 — 그 칸 이름이 폴라리티를 단언하기 때문이다.
+    # 저장하지 않고 **프로필에서 그때 파생한다** (저장 판을 올리지 않는다).
+    hp, ap = match.home_profile, match.away_profile
+    if hp is not None and ap is not None:
+        home = hp.team.display or hp.team.canonical
+        away = ap.team.display or ap.team.canonical
+        rels = relationships.build_relationships(home, hp, away, ap)
+        for kind, label, group in relationships.grouped(rels):
+            if kind == relationships.ADVANTAGE:
+                continue          # 위 상성 노트가 이미 냈다 — 두 번 적지 않는다
+            rows = []
+            for rel in group:
+                left, right = relationships.side_rows(rel, home)
+                rows.append([left["team"], left["unit"],
+                             left["characteristic"],
+                             right["team"], right["unit"],
+                             right["characteristic"]])
+            out += (f"{label} ({relationships.SYMMETRIC_NOTE[kind]}). "
+                    "**어느 쪽이 유리한지를 말하는 관계가 아닙니다** — 방향이 "
+                    "없으니 한쪽이 상대를 공략한다고 쓰지 마십시오:\n\n"
+                    + _symmetric_table(rows) + "\n")
+            have = True
     if not have:
         out = ("Tactical qualitative data: unavailable — 후스코어드 정성 자료가 "
                "없습니다.\n\n")

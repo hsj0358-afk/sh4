@@ -688,16 +688,25 @@ def test_f6_real_round_six_axes_are_unchanged():
 # G. 범위 — 전달 경로는 6-E-4 소관이다
 # ==========================================================================
 def test_g1_delivery_path_modules_do_not_use_the_new_layer():
-    """`render`·`match_material`·`panel`·`menu`·`moderator` 무변경.
+    """이 계층을 쓸 자격이 없는 모듈은 이 계층을 모른다.
 
-    이 Phase 는 데이터/모델 계층이다. 화면과 경기자료에 새 정보를 흘려보내는
-    것은 6-E-4 이고, 그때 회귀 기준(바이트)이 함께 움직인다.
+    **6-E-4 에서 범위를 옮겼다.** 6-E-2 때 이 목록은 "데이터/모델 계층만
+    만들었고 전달은 6-E-4 소관" 이라는 범위 선언이었고, 6-E-4 가 그 전달을
+    하는 Phase 다 (§1-29 와 같은 교정). 지키려던 것 — **쪼개는 책임은
+    `models.py` 한 곳** (§1-36) — 은 그대로 고정한다.
     """
-    for mod in ("render.py", "match_material.py", "panel.py", "menu.py",
-                "moderator.py", "panelexport.py"):
+    for mod in ("render.py", "menu.py", "moderator.py", "panelexport.py"):
         text = (ROOT / "toto" / mod).read_text(encoding="utf-8")
         for word in ("parse_characteristic", "characteristic_status",
                      "Characteristic", "team_page_ok", "CHAR_OK"):
+            assert word not in text, f"{mod}: {word}"
+
+    # 전달 계층 둘은 **상태만 읽는다.** 원문을 다시 쪼개거나 `Characteristic`
+    # 을 새로 만들지 않는다 — 그러면 파싱 규칙이 두 곳이 된다.
+    for mod in ("panel.py", "match_material.py"):
+        text = (ROOT / "toto" / mod).read_text(encoding="utf-8")
+        assert "characteristic_status" in text, f"{mod}: 상태를 읽지 않는다"
+        for word in ("parse_characteristic", "_CHAR_SEP", "Characteristic("):
             assert word not in text, f"{mod}: {word}"
 
 

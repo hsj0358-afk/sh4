@@ -11,7 +11,7 @@ from __future__ import annotations
 import html
 from datetime import datetime
 
-from . import charts
+from . import charts, relationships
 from .models import Match, Report
 from .settings import Settings
 from .ticket import TICKET_CSS, render_ticket
@@ -419,6 +419,43 @@ def _h2h_block(match: Match) -> str:
     return f'<div class="block"><h4>상대전적</h4>{bar}{table}</div>'
 
 
+def _symmetric_relations(hp, ap) -> str:
+    """방향 없는 관계 두 묶음 (Phase 6-E-4). **주어를 만들지 않는다.**
+
+    `matchup_notes` 는 강점↔약점 전용이라(칸 이름이 폴라리티를 단언한다)
+    이 둘을 담을 수 없다. 저장하지 않고 프로필에서 그때 파생한다.
+
+    위의 상성 노트가 한쪽 색 점으로 **주체**를 표시하는 것과 달리, 여기서는
+    양쪽에 각자 색 점을 찍는다 — 같은 화면에서 '점이 하나면 방향이 있다' 로
+    읽히게 하려는 것이다. 새 CSS 를 만들지 않고 `.lbl` · `.mnotes` · `.vs`
+    를 그대로 쓴다.
+    """
+    if hp is None or ap is None:
+        return ""
+    home = hp.team.display or hp.team.canonical
+    away = ap.team.display or ap.team.canonical
+    out = ""
+    for kind, label, group in relationships.grouped(
+            relationships.build_relationships(home, hp, away, ap)):
+        if kind == relationships.ADVANTAGE:
+            continue          # 위 상성 노트가 이미 냈다 — 두 번 적지 않는다
+        items = ""
+        for rel in group:
+            left, right = relationships.side_rows(rel, home)
+            items += (
+                f'<li><span class="vs">'
+                f'{_swatch(charts.C_HOME)}{esc(left["team"])} · '
+                f'{esc(left["unit"])}: {esc(left["characteristic"])} ↔ '
+                f'{_swatch(charts.C_AWAY)}{esc(right["team"])} · '
+                f'{esc(right["unit"])}: {esc(right["characteristic"])}'
+                f'</span></li>')
+        out += (f'<p class="lbl">{esc(label)} — '
+                f'{esc(relationships.SYMMETRIC_NOTE[kind])}. '
+                f'어느 쪽이 유리한지를 말하는 관계가 아닙니다</p>'
+                f'<ul class="mnotes">{items}</ul>')
+    return out
+
+
 def _traits_block(match: Match) -> str:
     hp, ap = match.home_profile, match.away_profile
     if hp is None or ap is None:
@@ -444,7 +481,11 @@ def _traits_block(match: Match) -> str:
                       f'{esc(note["text"])}'
                       f'<span class="vs">강점: {esc(note["strength"])} ↔ '
                       f'약점: {esc(note["weakness"])}</span></li>')
-        notes = f'<ul class="mnotes">{items}</ul>'
+        notes = (f'<p class="lbl">'
+                 f'{esc(relationships.KIND_KO[relationships.ADVANTAGE])}'
+                 f' — 한쪽 강점이 상대 약점과 맞물립니다</p>'
+                 f'<ul class="mnotes">{items}</ul>')
+    notes += _symmetric_relations(hp, ap)
 
     missing = ""
     for profile, color in ((hp, charts.C_HOME), (ap, charts.C_AWAY)):

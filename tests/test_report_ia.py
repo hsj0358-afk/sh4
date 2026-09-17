@@ -111,14 +111,20 @@ def test_a1_stage_three_message_asks_for_initial_scores():
 
 
 def test_a2_instructions_document_the_field_without_new_prompt_version():
-    """지침에 절이 생겼지만 **프롬프트 버전은 그대로**다 — 1·2·3단계의
-    출력 형식 자체가 바뀐 것이 아니라 3단계가 한 칸을 더 적을 뿐이다."""
-    from toto import moderator, panel
+    """지침에 절이 생겼지만 **4-G 는 프롬프트를 바꾸지 않았다** — 1·2·3단계의
+    출력 형식 자체가 바뀐 것이 아니라 3단계가 한 칸을 더 적을 뿐이다.
+
+    **6-E-4 에서 범위를 옮겼다.** 거기서 맞대결 분석가 프롬프트가 실제로
+    바뀌어(`qualitative` 때문에 "전술 자료가 없습니다" 가 거짓이 됐다)
+    `PANEL_PROMPT_VERSION` 이 3 이 됐다. 4-G 가 지키려던 것 — **`initial_scores`
+    는 지침에만 들어가고 3단계 출력 형식을 바꾸지 않는다** — 은 사회자
+    프롬프트 버전으로 계속 고정한다 (§1-29 와 같은 교정).
+    """
+    from toto import moderator
 
     body = panelexport.project_instructions()
     assert INI in body
     assert "거꾸로 만들지" in body
-    assert panel.PANEL_PROMPT_VERSION == "2"
     assert moderator.MODERATOR_PROMPT_VERSION == "5"
 
 

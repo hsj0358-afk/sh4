@@ -713,8 +713,13 @@ def test_t10_guide_does_not_change_the_instructions_fingerprint():
     Phase 4-G 에서 지침 본문에 `initial_scores` 절이 들어가 지문이 바뀌었다
     (`5044ea86` → `e99bf42f`). **지문이 바뀌는 것이 이 장치의 목적이다** —
     붙여넣은 사본이 낡았다는 것을 그 값으로 알린다 (§1-11-1).
+
+    Phase 6-E-4 에서 또 바뀌었다 (`e99bf42f` → `b389d4f0`). 맞대결 분석가의
+    "전술 자료가 들어 있지 않습니다" 가 `qualitative` 때문에 거짓이 되어
+    고쳤고, `ROLE_PROMPTS` 는 지침 본문에 그대로 실린다. **프로젝트 지침을
+    다시 붙여넣어야 한다.**
     """
-    assert panelexport.instructions_fingerprint() == "e99bf42f"
+    assert panelexport.instructions_fingerprint() == "b389d4f0"
 
 
 def test_s3_conclusion_is_the_first_field_in_the_schema():

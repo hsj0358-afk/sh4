@@ -837,9 +837,31 @@ def test_25c_schema_has_exactly_the_five_keys():
 
 
 def test_25d_evidence_count_is_never_a_score():
+    """근거 개수를 세기로 쓰지 않는다.
+
+    예전에는 `"strength" not in src` 라는 문자열 검색이었는데, 6-E-4 가
+    `qualitative` 에 `strength_side`(강점 쪽)를 실으면서 걸렸다 — 그 낱말은
+    **점수가 아니라 관계의 한쪽**을 가리킨다. 지키려는 것은 낱말의 부재가
+    아니라 '개수·강도를 점수로 만들지 않는다' 이므로, 이름으로 검사한다
+    (§1-29 의 `test_j3` 와 같은 교정).
+    """
     src = inspect.getsource(panel)
     assert "len(evidence_ids)" not in src
-    assert "strength" not in src
+    tree = ast.parse(src)
+    names = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            names.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            names.add(node.attr)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
+                               ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            names.add(node.value)
+    for bad in ("strength_score", "evidence_score", "confidence",
+                "evidence_strength", "weight", "score"):
+        assert bad not in names, bad
 
 
 def test_25e_panels_do_not_see_each_other():

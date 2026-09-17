@@ -41,8 +41,9 @@ import json
 import logging
 from dataclasses import asdict, dataclass, field
 
-from . import llm, moderator
-from .models import (Match, MarketReference, PanelOpinion, PanelRun)
+from . import llm, moderator, relationships
+from .models import (Match, MarketReference, PanelOpinion, PanelRun,
+                     characteristic_status)
 
 log = logging.getLogger(__name__)
 
@@ -56,7 +57,10 @@ ROLE_KO = {DATA_ANALYST: "데이터 분석가",
 # 프롬프트나 출력 스키마가 바뀌면 올린다 — 캐시가 무효화된다.
 # 2: 시장 편향을 **양방향으로** 금지 (4-E §5-3). 그 전에는 시장 추종만
 #    막혀 있고 "시장과 달라야 의미가 있다" 는 반대쪽 편향은 열려 있었다.
-PANEL_PROMPT_VERSION = "2"
+# 3: `qualitative` 가 들어오면서 맞대결 분석가의 "전술 자료가 들어 있지
+#    않습니다" 가 **거짓이 됐다** (6-E-4). 지우지 않고 실제 조건에 맞췄다 —
+#    특성과 관계는 있고, 포메이션·선발·부상·압박 방식·감독 성향은 없다.
+PANEL_PROMPT_VERSION = "3"
 # 패널 캐시 형식 버전. **소스 캐시(fotmob 9)와 무관한 독립 번호다.**
 PANEL_CACHE_VERSION = 1
 CACHE_SOURCE = "panel"
@@ -89,6 +93,9 @@ class PanelPayload:
     conflicts: tuple[dict, ...] = ()
     data_quality: dict = field(default_factory=dict)
     market_reference: MarketReference | None = None
+    # 정성 자료 (Phase 6-E-4). 팀별 특성 **원문**과 6-E-3 이 만든 관계.
+    # 여기서 계산되는 수는 없고, 저장되지도 않는다 — 실행마다 파생한다.
+    qualitative: dict = field(default_factory=dict)
 
     @property
     def evidence_ids(self) -> tuple[str, ...]:
@@ -181,6 +188,96 @@ def evidence_rows(match: Match) -> tuple[dict, ...]:
     return tuple(rows)
 
 
+def _team_characteristics(profile) -> dict:
+    """팀 하나의 정성 **원문**. 다시 쓰지도 의역하지도 않는다 (§1-36).
+
+    `strengths`·`weaknesses`·`style_of_play` 는 수집한 문자열 그대로이고,
+    강도(`Strong`·`Very Weak` …)를 숫자로 바꾸지 않는다. 빈 목록은 칸을
+    만들지 않는다 — 대신 `*_status` 가 **왜 비었는지**를 말한다.
+
+      `ok`             항목이 있다
+      `observed_empty` 소스가 "없다" 고 적어 둔 것이다 (관측된 0, §3-10)
+      `page_failed`    팀 페이지를 못 받았다
+      `unrecorded`     기록이 없다 (옛 저장본 · `--skip-whoscored`)
+
+    이 구분이 없으면 `[]` 하나가 네 가지 뜻을 겸해, 분석가가 수집 실패를
+    '특성 없음' 으로 읽는다 (§1-5·§1-6).
+    """
+    out = {"team": profile.team.display or profile.team.canonical}
+    for name, items in (("strengths", profile.strengths),
+                        ("weaknesses", profile.weaknesses)):
+        if items:
+            out[name] = list(items)
+        else:
+            out[f"{name}_status"] = characteristic_status(
+                items, profile.team_page_ok)
+    # `style_of_play` 에는 상태를 붙이지 않는다. 실물에서 0/28 인데 그 원인이
+    # **소스에 없어서가 아니라 파서가 제목을 못 찾아서**일 수 있다 (§3-1 —
+    # 문서에 문구는 있는데 제목 노드로 잡히지 않았다). `observed_empty` 라고
+    # 적으면 확인되지 않은 것을 관측으로 단언하게 된다 (§1-5).
+    if profile.style_of_play:
+        out["style_of_play"] = list(profile.style_of_play)
+    return out
+
+
+def _qualitative(match: Match) -> dict:
+    """정성 자료 묶음 (Phase 6-E-4). **읽어서 옮길 뿐이다.**
+
+    관계는 6-E-3 의 `build_relationships()` 를 그대로 부른다 — 여기서 새
+    관계를 만들거나 짝을 더하지 않는다. 결과는 저장되지 않고 실행마다
+    프로필에서 다시 파생한다 (캐시·artifact 판을 올리지 않는 이유다).
+
+    **내부 식별자를 싣지 않는다.** `ADVANTAGE`·`COUNTER`·`DIRECT` 대신
+    `relationships.KIND_KO` 의 낱말을 쓰고, `MIRROR`/`CONTEST` 는 아예
+    내보내지 않는다 — 양쪽 단위 이름이 다른 것으로 이미 드러난다.
+
+    **방향은 `상대 약점 공략` 에만 있다.** 나머지 둘은 `home`/`away` 칸을
+    가진 대칭 구조라 주어가 생기지 않는다 (§1-3).
+    """
+    hp, ap = match.home_profile, match.away_profile
+    teams = {}
+    for side, profile in (("home", hp), ("away", ap)):
+        if profile is not None:
+            teams[side] = _team_characteristics(profile)
+    if not teams:
+        return {}
+
+    groups = []
+    if hp is not None and ap is not None:
+        home = hp.team.display or hp.team.canonical
+        away = ap.team.display or ap.team.canonical
+        rels = relationships.build_relationships(home, hp, away, ap)
+        for kind, label, rows in relationships.grouped(rels):
+            items = []
+            for rel in rows:
+                if kind == relationships.ADVANTAGE:
+                    items.append({
+                        "strength_side": {
+                            "team": rel.source_team,
+                            "unit": rel.source_unit.ko,
+                            "characteristic": rel.source_characteristic.raw},
+                        "weakness_side": {
+                            "team": rel.target_team,
+                            "unit": rel.target_unit.ko,
+                            "characteristic": rel.target_characteristic.raw},
+                        "note": (f"{rel.source_team}의 강점이 "
+                                 f"{rel.target_team}의 약점과 맞물립니다")})
+                else:
+                    left, right = relationships.side_rows(rel, home)
+                    items.append({
+                        "home": {k: left[k] for k in
+                                 ("team", "unit", "characteristic")},
+                        "away": {k: right[k] for k in
+                                 ("team", "unit", "characteristic")},
+                        "note": relationships.SYMMETRIC_NOTE[kind]})
+            groups.append({"relation": label, "items": items})
+
+    out = {"teams": teams}
+    if groups:
+        out["relationships"] = groups
+    return out
+
+
 def build_panel_payload(match: Match) -> PanelPayload:
     """한 경기의 자료 묶음. **한 번만 만들어 두 역할이 함께 쓴다.**"""
     data = getattr(match, "analysis", None)
@@ -207,7 +304,8 @@ def build_panel_payload(match: Match) -> PanelPayload:
         evidence=evidence_rows(match),
         conflicts=conflicts,
         data_quality=quality,
-        market_reference=market_reference(match))
+        market_reference=market_reference(match),
+        qualitative=_qualitative(match))
 
 
 def serialize_payload(payload: PanelPayload) -> str:
@@ -292,11 +390,30 @@ Market Reference 를 참고할 수는 있지만, 시장 확률을 해석하는 �
 한 팀의 공격 지표와 상대 팀의 수비 지표를 마주 놓고, 홈/원정 문맥과 상대
 구성을 함께 봅니다.
 
-**중요한 제약**: 이 payload 에는 포메이션·선발 명단·선수·부상·압박 방식·
-감독 성향 같은 전술 자료가 **들어 있지 않습니다.** 그런 것을 아는 것처럼
+`qualitative` 칸에 팀의 **강점·약점**과 그 **관계**가 들어 있습니다. 관계는
+세 종류이고 뜻이 서로 다릅니다.
+
+  · **상대 약점 공략** — 한쪽의 강점이 상대의 약점과 맞물립니다. 방향이
+    있습니다.
+  · **강점 충돌** — 양 팀 모두 그 영역이 강점입니다.
+    **방향이 없습니다.** 어느 쪽이 상대를 누른다고 쓰지 마십시오.
+  · **공통 취약 영역** — 양 팀 모두 그 영역이 약점입니다.
+    **방향이 없습니다.** 어느 쪽이 상대를 공략한다고 쓰지 마십시오.
+
+**중요한 제약**: 이 payload 에는 **포메이션·선발 명단·선수·선수 상태·부상·
+구체적인 압박 방식·감독 성향이 들어 있지 않습니다.** 그런 것을 아는 것처럼
 쓰지 마십시오. 필요하면 "제공된 자료에 없음" 이라고 적으십시오.
 
-당신이 볼 수 있는 것은 지표들의 상대 관계뿐입니다.
+팀 특성은 WhoScored 가 매긴 **닫힌 목록의 라벨과 강도**(`Strong`·
+`Very Strong`·`Weak`·`Very Weak`)입니다. 거기서 전술 배치나 선수 행동을
+추론해 넓히지 마십시오. 강도를 점수로 바꾸거나 합산하지 말고, 관계의
+**개수**를 우열로 쓰지 마십시오.
+
+특성 목록이 비어 있으면 `status` 를 보십시오 — `observed_empty` 는 소스가
+"없다" 고 적어 둔 것이고, `page_failed`·`unrecorded` 는 가져오지 못한
+것입니다. 둘을 같은 말로 쓰지 마십시오.
+
+그 밖에 당신이 볼 수 있는 것은 지표들의 상대 관계뿐입니다.
 """,
 }
 

@@ -335,3 +335,72 @@ def build_relationships(home_team: str, home_profile,
             kind=kind, basis=CONTEST,
             evidence=_evidence(kind, src_team, dst_team, unit, unit, why)))
     return out
+
+
+# ==========================================================================
+# 표시 계층 (Phase 6-E-4)
+#
+# **내부 이름을 화면에 내지 않는다.** `ADVANTAGE`·`COUNTER`·`DIRECT` 는 이
+# 모듈 안에서만 쓰는 식별자이고, 사용자가 읽는 것은 아래 세 낱말이다 —
+# 「카운터」처럼 enum 을 음차한 말도 쓰지 않는다.
+#
+# 자리를 여기로 정한 이유는 `SemanticUnit.ko`(한국어 단위 이름)가 이미 이
+# 모듈에 있기 때문이다. 표시 문자열의 집이 이미 여기이고, 소비처 셋
+# (`panel` · `match_material` · `render`)이 같은 낱말을 쓰려면 한 곳에
+# 있어야 한다 (§1-8).
+#
+# **위의 canonical 모델은 한 글자도 바뀌지 않는다** — `PAIRS`·`_UNITS`·
+# `_kind`·`build_relationships` 는 이 섹션을 모른다.
+# ==========================================================================
+KIND_KO = {
+    ADVANTAGE: "상대 약점 공략",
+    COUNTER: "강점 충돌",
+    DIRECT: "공통 취약 영역",
+}
+
+# 화면에 내는 순서. 집합·사전 순서에 기대지 않는다 (§1-1-14).
+DISPLAY_ORDER = (ADVANTAGE, COUNTER, DIRECT)
+
+# 방향을 주장할 수 있는 것은 `ADVANTAGE` 뿐이다 (`Relationship.directional`).
+# 나머지 둘은 **주어를 만들지 않는다** — 양쪽이 각자 자기 단위와 자기 원문을
+# 갖는 대칭 표기로만 적는다. 홈을 왼쪽에 두는 것은 표시 순서이지 방향이
+# 아니고, 그 사실은 `build_relationships` 의 CONTEST 절에 적혀 있다.
+SYMMETRIC_NOTE = {
+    COUNTER: "양 팀 모두 이 영역이 강점입니다",
+    DIRECT: "양 팀 모두 이 영역이 약점입니다",
+}
+
+
+def side_rows(rel: Relationship, home_team: str) -> tuple[dict, dict]:
+    """대칭 표기용 (홈 쪽, 원정 쪽). **좌우를 팀으로 정한다.**
+
+    `source`/`target` 으로 좌우를 정하면 `COUNTER`·`DIRECT` 에서 홈이
+    오른쪽에 오는 줄이 생겨, 같은 표 안에서 좌우가 뜻하는 바가 줄마다
+    달라진다. 팀으로 고정하면 한 표의 왼쪽 열은 언제나 홈이다.
+
+    `MIRROR` 로 성립한 `COUNTER` 는 양쪽 단위가 **다르다** (한쪽은 공격
+    단위, 다른 쪽은 그 수비 단위). 그래서 단위 이름을 공유하지 않고 쪽마다
+    따로 싣는다 — 실물 260052 의 브라이턴 세트피스 공격 ↔ 코번트리
+    세트피스 수비가 그 경우다.
+    """
+    src = {"team": rel.source_team, "unit": rel.source_unit.ko,
+           "unit_key": rel.source_unit.key,
+           "characteristic": rel.source_characteristic.raw}
+    dst = {"team": rel.target_team, "unit": rel.target_unit.ko,
+           "unit_key": rel.target_unit.key,
+           "characteristic": rel.target_characteristic.raw}
+    return (src, dst) if rel.source_team == home_team else (dst, src)
+
+
+def grouped(relationships: list[Relationship]
+            ) -> list[tuple[str, str, list[Relationship]]]:
+    """`[(kind, 화면 이름, 관계들)]`. **비어 있는 묶음은 내지 않는다.**
+
+    없는 묶음의 제목만 남기면 '재 봤는데 없다' 처럼 보인다 (§1-1-15).
+    """
+    out = []
+    for kind in DISPLAY_ORDER:
+        rows = [r for r in relationships if r.kind == kind]
+        if rows:
+            out.append((kind, KIND_KO[kind], rows))
+    return out

@@ -4290,6 +4290,157 @@ MD 1,206,283(+29) 이고 노트가 17건이 된다.
 강도 숫자화 · 수비→수비 재등록 · 창출→마무리 재등록)을 주입해 전부 잡히는
 것을 확인했다.
 
+### 1-38. 관계 전달 경로 (Phase 6-E-4) — `PanelPayload.qualitative`
+
+6-E-3 이 관계 21건을 만들어 뒀는데 **사용자에게 닿는 것이 17건뿐이었고, 실제
+워크플로에는 0건이 닿았다.** 손실이 두 군데였다.
+
+| 자리 | 들어간 것 | 나온 것 | 잃은 것 |
+|---|---|---|---|
+| `analyze.build_matchup` | 21 (ADVANTAGE 17 · COUNTER 2 · DIRECT 2) | 노트 17 | **COUNTER 2 · DIRECT 2** |
+| `panel.build_panel_payload` | 노트 17 + 특성 212 | — | **전부** |
+
+두 번째가 본체다. 메뉴 `[3]` 이 내보내는 것이 `PanelPayload` 인데, 실물
+260052 에서 **1,992 KB 를 내보내면서 정성 자료가 0 바이트**였다 — `강점`·
+`약점`·`Attacking`·`Defending` 이 7부 전부에서 0회다. 정성 자료가 실린
+파일(`--export-match-material`)은 CLI 전용이라 메뉴에 없다.
+
+#### 세 자리의 역할을 나눈다
+
+```
+Relationship        canonical 내부 모델 (6-E-3, 무변경)
+matchup_notes       legacy ADVANTAGE 호환 투영 (무변경)
+qualitative         6-E-4 의 정성 자료 canonical 전달 블록
+```
+
+**`matchup_notes` 를 늘리지 않았다.** 그 dict 의 칸 이름이 `strength`·
+`weakness` 라 **폴라리티를 단언한다** — COUNTER(강↔강)·DIRECT(약↔약)를 거기
+넣으면 그 칸이 거짓이 된다. 고칠 곳은 노트가 아니라 **노트 옆**이다.
+`analyze.py`·`models.py` 는 한 줄도 바뀌지 않았다.
+
+#### 내부 이름을 화면에 내지 않는다
+
+| 내부 | 화면 | 방향 |
+|---|---|---|
+| `ADVANTAGE` | **상대 약점 공략** | 있다 |
+| `COUNTER` | **강점 충돌** | **없다** |
+| `DIRECT` | **공통 취약 영역** | **없다** |
+
+`COUNTER`·`DIRECT`·`MIRROR`·`CONTEST`·「카운터」가 payload·MD·HTML 어디에도
+나오지 않는다(테스트로 고정). `MIRROR`/`CONTEST` 는 **아예 내보내지 않는다** —
+양쪽 단위 이름이 다른 것으로 이미 드러난다.
+
+**방향 없는 둘은 주어를 만들지 않는다.** payload 의 그 항목은 `source`·
+`target` 이 아니라 **`home`·`away`** 칸을 갖고, MD 표에는 `쪽` 칸이 없으며,
+HTML 은 양쪽에 각자 색 점을 찍는다(상성 노트가 한쪽 점으로 주체를 표시하는
+것과 대비된다). 문장도 `양 팀 모두 이 영역이 강점입니다` 뿐이고
+`→`·공략·우위·유리·앞선다 가 없다 — **칸 이름만 대칭이고 문장이 방향을
+만들면 소용없다**는 것을 돌연변이 5가 실제로 보여 줬다.
+
+**`ADVANTAGE` 의 '상대 약점 공략' 은 정상 표현이라 이 검사의 대상이 아니다.**
+
+**좌우는 `source` 가 아니라 팀으로 정한다** (`side_rows`). `source` 로 정하면
+줄마다 좌우의 뜻이 달라진다 — 실물 경기 10 은 원정이 `source` 인데도 홈이
+왼쪽이다.
+
+**`MIRROR` 로 성립한 `COUNTER` 는 양쪽 단위가 다르다.** 실물 경기 10 이
+`코번트리 세트피스 수비(Strong) ↔ 브라이턴 세트피스 공격(Strong)` 이고, 단위
+이름을 공유하지 않고 쪽마다 따로 싣는다.
+
+#### 원문은 원문 그대로
+
+`strengths`·`weaknesses`·`style_of_play` 를 문자열 그대로 싣는다. 의역하지
+않고 강도를 숫자로 바꾸지 않는다. 실물 212개가 payload·MD 양쪽에서
+**212/212 보존**된다.
+
+**빈 목록에 사유를 붙인다** (§1-6-1). 6-E-2 의 `characteristic_status()` 를
+그대로 부르고, 값이 없을 때만 `strengths_status`·`weaknesses_status` 가
+생긴다. **`style_of_play` 에는 붙이지 않는다** — 실물 0/28 의 원인이 소스에
+없어서인지 파서가 제목을 못 찾아서인지 확인되지 않았고(§3-1), `observed_empty`
+라고 적으면 확인되지 않은 것을 관측으로 단언하게 된다.
+
+  · 저장본 260052 는 6-E-2 **이전**이라 `team_page_ok` 가 없어 `unrecorded`
+    로 나온다. 그것이 정답이다 — 그 저장본에는 팀 페이지를 받았는지에 대한
+    기록이 실제로 없다. 새로 수집하면 `observed_empty` 가 된다.
+
+#### §9 구분자 — 원문을 고치지 않고 경계만 복원한다
+
+MD 의 특성 칸이 `" · ".join(items)` 였는데, 항목 구분자와 `라벨 · 강도` 의
+구분자가 **같은 `" · "`** 라 어디서 끊기는지 알 수 없었다.
+
+```
+전  | 강점 | Counter attacks · Strong · Creating long shot opportunities · Strong |
+후  - Counter attacks · Strong
+    - Creating long shot opportunities · Strong
+```
+
+표 칸을 목록으로 바꿨을 뿐 **원문은 한 글자도 바뀌지 않았다.** `<br>` 같은
+표시용 기호를 원문에 끼워 넣지 않는다.
+
+#### 저장하지 않는다
+
+관계는 **runtime 파생**이다. `_TEAM_CACHE_VERSION` 1 · `_LEAGUE_CACHE_VERSION`
+3 · `ARTIFACT_VERSION` 1 이 전부 그대로이고 artifact 에 새 칸이 없다. 저장본에
+프로필 원문이 살아 있어 재렌더 경로에서도 같은 관계가 다시 만들어진다.
+
+**사회자 입력은 커지지 않았다.** `moderator.build_input()` 이 칸을 **명시적으로
+골라** 담으므로 `qualitative` 가 자동으로 딸려 가지 않는다 (§1-10 의 축소 규칙
+그대로). 실측으로 `03_사회자자료.md` 에 `qualitative` 도 `Aerial duels` 도 없다.
+
+#### 프롬프트가 거짓이 됐다 — 지우지 않고 고쳤다
+
+맞대결 분석가의 「전술 자료가 **들어 있지 않습니다**」가 `qualitative` 때문에
+참이 아니게 됐다. 문구를 걷어내지 않고 **실제 조건에 맞췄다** — 특성과 관계는
+있고, 포메이션·선발 명단·선수 상태·부상·압박 방식·감독 성향은 없다. 세 관계의
+뜻과 "방향이 없습니다" 도 프롬프트에 적었다.
+
+`PANEL_PROMPT_VERSION` 2 → **3** 이고 **지침 지문이 `e99bf42f` → `b389d4f0`**
+으로 바뀐다 — `ROLE_PROMPTS` 가 `project_instructions()` 에 그대로 실리기
+때문이다. **프로젝트 지침을 다시 붙여넣어야 한다** (§1-11-1).
+`MODERATOR_PROMPT_VERSION` 은 5 그대로다.
+
+#### 회귀 기준이 움직인다
+
+| | 전 | 후 |
+|---|---|---|
+| `--demo` | 666,019 | **668,447** |
+| `--rerender-artifact 260052` | 940,119 | **942,802** |
+| 경기자료 MD | 1,206,254 | **1,209,043** |
+| payload (14경기) | 1,894,007 | 1,911,574 (**+0.93%**) |
+
+**나머지는 한 칸도 바뀌지 않았다** — 변경 전 트리(`git archive HEAD`)와 대조해
+저장 축 `442dfaa32b784ae9` · 시장 `1b4de28026e7a774` · 정성 원문
+`aaa258d0cb57b026` · 저장 노트 `ac3b5e1bb6e7f894`(18건) · 재계산 노트
+`b4d9283a97158f71`(17건)이 전부 같다. `predict.py`·`sources/pinnacle.py`·
+`moderator.py`·`analyze.py`·`models.py`·`evidence.py`·`menu.py`·`fixtures.py`·
+`panelexport.py`·`artifact.py`·`sources/whoscored.py`·`config_toto.yaml`·
+`data/teams.yaml`·`briefing/` **diff 0줄**.
+
+**저장본의 ADVANTAGE 는 18건이고 재계산은 17건이다.** 260052 는 6-E-3 **이전**
+에 저장돼 옛 노트를 담고 있고, 재렌더는 다시 계산하지 않는다 (§1-25). 방향
+없는 두 묶음은 파생이라 늘 새로 만들어지므로, 옛 저장본을 재렌더하면 그
+카드에서만 둘의 기준이 다르다. 새로 수집하면 양쪽 다 6-E-3 기준이다.
+
+#### 기존 테스트 넷의 범위를 옮겼다 — 기대값을 바꾼 것이 아니다
+
+  · `test_relationship_engine.test_h3` · `test_qualitative_characteristics.
+    test_g1` — 6-E-3·6-E-2 가 "전달 경로를 건드리지 않았다" 고 적어 둔 **범위
+    선언**이고, 6-E-4 가 그 전달을 하는 Phase 다 (§1-29·§1-31 과 같은 교정).
+    지키려던 것은 더 단단히 고정했다 — 소비처 셋은 **읽기만** 하고
+    `PAIRS`·`_UNITS`·`SemanticUnit`·`parse_characteristic`·`_CHAR_SEP` 를
+    만지지 못한다.
+  · `test_report_ia.test_a2` — 4-G 가 "프롬프트를 바꾸지 않았다" 를 패널
+    버전으로 고정하고 있었다. 사회자 버전으로 옮겼다.
+  · `test_panel.test_25d` — `"strength" not in src` 라는 문자열 검색이
+    `strength_side`(강점 쪽)에 걸렸다. 그 낱말은 **점수가 아니라 관계의 한쪽**
+    이라, 지키려는 것(개수·강도를 점수로 만들지 않는다)을 이름 검사로 바꿨다.
+
+회귀 테스트: `python tests/test_relationship_delivery.py` (50개).
+돌연변이 10건(COUNTER 를 노트에 주입 · DIRECT 를 공격 문장으로 · enum 노출 ·
+COUNTER 에 방향 부여 · 대칭 note 에 공략 문구 · payload 칸 누락 · 강도 숫자화 ·
+artifact 저장 · 역할별 payload 칸 · MD 구분자 원상복귀)을 주입해 **전부**
+잡히는 것을 확인했다.
+
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
 260052 실행이 남긴 것은 후스코어드 `팀명 매칭 실패` 5건과 `강점 0개` 3팀이다.
@@ -4947,6 +5098,7 @@ python tests/test_population_integrity.py  # 모집단 무결성·대표 팀 항
 python tests/test_schedule_context.py      # 일정 문맥·휴식·경기 밀도 6-D-9B §1-35 (32개)
 python tests/test_qualitative_characteristics.py  # 정성 특성 구조화·상태 6-E-2 §1-36 (44개)
 python tests/test_relationship_engine.py   # 정성 관계 엔진·의미 단위 6-E-3 §1-37 (45개)
+python tests/test_relationship_delivery.py # 관계 전달 경로·qualitative 6-E-4 §1-38 (50개)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)

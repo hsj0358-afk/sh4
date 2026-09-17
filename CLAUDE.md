@@ -4177,6 +4177,119 @@ Strong`·`Weak`·`Very Weak`)으로 수렴한다.
 돌연변이 7건(원문 버리기 · 숫자화 · `None`→`False` · 상태 무시 · 배선 누락 둘)
 을 주입해 전부 잡히는 것을 확인했다.
 
+### 1-37. 정성 특성 관계 엔진 (Phase 6-E-3) — `toto/relationships.py`
+
+6-E-2 가 원문을 손실 없이 구조화했고, 이 Phase 는 그 위에서 **어떤 특성이
+어떤 특성과 맞물리는가**를 정한다. 규칙 기반이고 같은 입력이면 같은 결과가
+나온다 — ML 도 LLM 도 쓰지 않는다.
+
+**고친 것은 의미 단위다.** 옛 `analyze._TOPICS` 는 실측 라벨을 키워드
+부분일치로 14개 주제에 욱여넣었고, 그래서 한 주제가 서로 다른 의미를 삼켰다.
+
+```
+set_piece  ← Attacking set pieces · Defending set pieces
+              · Shooting from direct free kicks       ← 공격·수비가 한 축
+finishing  ← Creating scoring chances · Finishing scoring chances
+                                                      ← 창출·마무리가 한 축
+```
+
+실물 260052 의 18건 중 **6건이 그래서 틀렸다** — `Defending set pieces` ×
+`Defending set pieces`(양쪽 다 수비, 공이 흐르지 않는다) 2건, `Creating
+scoring chances` × `Finishing scoring chances`(창출 ≠ 마무리) 2건,
+`Finishing scoring chances` 끼리(자기 마무리끼리) 2건. 동시에 자명한 짝을
+놓쳤다 — `Creating chances through individual skill` 의 짝인 `Defending
+against skillful players` 가 어떤 주제에도 매핑되지 않았다.
+
+**의미 단위는 라벨 하나당 하나다.** 실측 24개 고유 라벨이 각각 자기 단위를
+갖는다(강점 14 + 약점 14 − 양쪽에 다 나오는 4). 그러면 위 병합이 **구조적으로
+불가능**하다. 역할은 넷이다 — `ATTACKING`·`DEFENDING`·`CONTESTED`(같은
+라벨로 맞붙는다)·`OWN`(상대와의 관계를 라벨이 말하지 않는다).
+
+**짝은 라벨 문구가 스스로 말하는 것만 등록한다** (`PAIRS` 8쌍 + 대칭 1).
+
+```
+"Attacking down the wings"  →  "Defending against attacks down the wings"
+                                        └ 수비 라벨이 공격 개념을 문자 그대로 품는다
+```
+
+§1-1-9 의 `COMPARABLE_SOURCES` 와 같은 태도다 — "축구적으로 비슷해 보인다"
+로 늘리지 않는다. 등록하지 않은 후보 둘은 `DEFERRED_PAIRS` 에 **사유와 함께**
+남겼다: `Coming back from losing positions ↔ Protecting the lead`(공유 토큰이
+없다 — 'losing position = 상대의 lead' 는 도메인 추론이다) ·
+`Shooting from direct free kicks ↔ Avoiding fouling in dangerous areas`
+(2단계 추론이다).
+
+**관계의 종류는 폴라리티로 정하고 구조는 따로 적는다.**
+
+| `kind` | source | target | 뜻 |
+|---|---|---|---|
+| `ADVANTAGE` | 강점 | 약점 | A의 강점이 B의 약점을 향한다 (방향 있음) |
+| `COUNTER` | 강점 | 강점 | A의 강점이 B의 강점을 마주한다 |
+| `DIRECT` | 약점 | 약점 | 같은 단위에서 양쪽 다 약하다 |
+| `NONE` | — | — | 짝이 없다 — **만들지 않는다** (§1-5) |
+
+`basis` 가 `MIRROR`(공격↔수비 짝) / `CONTEST`(같은 라벨)를 따로 기록한다.
+
+- **강도를 숫자로 바꾸지 않는다.** `Characteristic` 을 통째로 들고 다녀
+  원문·강도가 보존되고, 엔진이 강도끼리 크기를 비교하지 않는다. 순서 관계
+  (`Very Weak < Weak < Strong < Very Strong`)도 쓰지 않았다 — 점수화는 별도
+  설계가 필요하다.
+- **주체와 대상을 나눈다.** "A의 강점이 B의 약점을 향한다" 와 그 반대는 같은
+  사실의 다른 관점이라 `source_*`/`target_*` 로 갈라 둔다. 대칭 경합에서
+  양쪽 폴라리티가 같으면 방향을 주장할 근거가 없어 `source` 가 **홈 우선**
+  이고, 그것이 표시 순서일 뿐임을 `kind` 가 말해 준다.
+- **결정적이다.** `PAIRS` 등록 순서로 (홈이 공격 → 원정이 공격), 그다음 대칭
+  경합. 집합·사전 순서에 기대지 않는다 (§1-1-14 와 같은 이유).
+- 단위 표에 없는 라벨이 나오면 `unknown_labels()` 가 잡아 실행 로그에 적는다 —
+  조용히 0건이 되지 않는다 (§1-6-1).
+
+**`matchup_notes` 로는 `ADVANTAGE` 만 나간다.** 노트 dict 의 칸 이름이
+`strength`/`weakness` 라 폴라리티를 단언하는데, `COUNTER`·`DIRECT` 를 그
+칸에 넣으면 그 자리가 거짓이 된다. 둘은 엔진 반환값에 남고 **전달은 다음
+Phase 소관**이다. 노트의 다섯 칸과 문장 형식은 그대로라 `render._traits_block`
+과 `match_material._tactical` 이 **한 줄도 바뀌지 않았다.**
+
+**`_TOPICS`·`_TOPIC_KO`·`_topics_of` 는 지우지 않았다** — `_topics_of` 가
+`tests/test_whoscored_characteristics.py` 의 파서 회귀에서 아직 쓰인다.
+상성 판정에서는 빠졌고(테스트로 고정) 제거는 그 테스트를 함께 옮겨야 하는
+별도 정리다.
+
+**실물 260052 old/new.**
+
+```
+OLD 18 → NEW 17   유지 12 · 사라짐 6 · 새로 5
+사라짐  5·10 Defending set pieces × Defending set pieces
+        6·7  Creating scoring chances × Finishing scoring chances
+        8·13 Finishing scoring chances × Finishing scoring chances
+새로    6·7·12 Creating scoring chances → Stopping opponents from creating chances
+        12     Creating chances through individual skill → Defending against skillful players
+        13     Stealing the ball from the opposition → Keeping possession of the ball
+엔진 전체  ADVANTAGE 17 · COUNTER 2 · DIRECT 2
+```
+
+**데모 픽스처를 실물 어휘로 바꿨다.** `Scoring goals from set pieces` 처럼
+그럴듯하게 지어낸 문구였는데, 키워드 부분일치일 때는 노트가 나왔지만(19건)
+라벨 단위로 판정하자 **0건**이 됐다. 빈 블록을 남기는 대신 데모를 실물 모양에
+맞췄다 — §1-19 에서 레이더 두 축이 데모에서만 비어 있을 때 한 것과 같은
+판단이다. 형식도 `"<라벨> · <강도>"` 로 실물과 같게 했다(데모 23건).
+그래서 **`--demo` 가 662,013 → 666,019 bytes 로 바뀐다** — 의도한 변화다.
+
+**저장본 경로는 바이트까지 같다.** `--rerender-artifact 260052` 940,119 ·
+경기자료 MD 1,206,254 가 그대로인 이유는 저장본이 **다시 계산되지 않기**
+때문이다 (§1-25). 같은 저장본을 **재계산하면** 리포트 940,035(−84) ·
+MD 1,206,283(+29) 이고 노트가 17건이 된다.
+
+**그 재계산에서도 나머지는 한 칸도 바뀌지 않았다** — 여섯 축
+`b8f7faba96cbd3ff` · 시장 `e9134ccb133ab5ef` · 정성 원문 212건
+`65bea46a3fc91078` · H2H 0건 · `_TOPICS`/`_TOPIC_KO` `e4e6ea5e47c647ef`.
+캐시 판(팀 1 · 리그 3)과 `ARTIFACT_VERSION` 1 도 그대로다 — 엔진은 순수
+파생이라 **저장 필드를 만들지 않았다.**
+
+회귀 테스트: `python tests/test_relationship_engine.py` (45개).
+돌연변이 7건(set_piece 재병합 · finishing 재병합 · 방향 뒤집기 · 무근거 관계 ·
+강도 숫자화 · 수비→수비 재등록 · 창출→마무리 재등록)을 주입해 전부 잡히는
+것을 확인했다.
+
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
 260052 실행이 남긴 것은 후스코어드 `팀명 매칭 실패` 5건과 `강점 0개` 3팀이다.
@@ -4833,6 +4946,7 @@ python tests/test_match_timeline.py        # 팀 경기 시간축·휴식·밀�
 python tests/test_population_integrity.py  # 모집단 무결성·대표 팀 항목 6-D-9A §1-34 (28개)
 python tests/test_schedule_context.py      # 일정 문맥·휴식·경기 밀도 6-D-9B §1-35 (32개)
 python tests/test_qualitative_characteristics.py  # 정성 특성 구조화·상태 6-E-2 §1-36 (44개)
+python tests/test_relationship_engine.py   # 정성 관계 엔진·의미 단위 6-E-3 §1-37 (45개)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)

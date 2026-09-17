@@ -588,12 +588,19 @@ def test_e6_read_team_payload_shape_is_unchanged():
 # ==========================================================================
 # F. 불변 — 이 Phase 가 건드리지 않기로 한 것
 # ==========================================================================
-def test_f1_build_matchup_is_untouched():
-    """Test G — 관계 엔진은 6-E-3 소관이다."""
-    src = _src(analyze.build_matchup) + _src(analyze._topics_of)
-    for word in ("Characteristic", "parse_characteristic", "characteristics(",
-                 "characteristic_status", "team_page_ok", "intensity"):
-        assert word not in src, f"관계 엔진이 6-E-2 를 끌어썼다: {word}"
+def test_f1_matchup_reads_the_layer_but_does_not_reimplement_it():
+    """6-E-2 때 이 테스트는 **범위 선언**이었다 — "관계 판정은 6-E-3 소관".
+
+    6-E-3 이 바로 그것을 하는 Phase 라 범위를 옮긴다 (§1-29·§1-31 의 선례).
+    지키려던 것은 '6-E-2 계층을 베끼지 않는다' 이므로 그것만 남긴다 —
+    상성 경로는 이제 `relationships` 를 **부르되** 파싱·상태 판정을 다시
+    구현하지 않는다.
+    """
+    src = _src(analyze.build_matchup)
+    assert "relationships." in src, "상성이 관계 엔진을 부르지 않는다"
+    for word in ("parse_characteristic", "characteristic_status",
+                 "team_page_ok", 'split(" · "', 'rsplit(" · "'):
+        assert word not in src, f"6-E-2 계층을 베꼈다: {word}"
 
 
 def test_f2_topic_tables_are_pinned():
@@ -605,8 +612,15 @@ def test_f2_topic_tables_are_pinned():
     assert len(analyze._TOPICS) == 14, len(analyze._TOPICS)
 
 
-def test_f3_real_round_matchup_notes_are_unchanged():
-    """Test G (실물) — 260052 의 상성 노트 18건이 그대로다."""
+def test_f3_stored_artifact_keeps_the_notes_it_was_saved_with():
+    """**저장본은 다시 계산되지 않는다** (§1-25).
+
+    6-E-2 때 이 테스트는 상성 18건의 해시를 고정해 '관계 판정을 건드리지
+    않았다' 를 말했다. 6-E-3 이 판정을 고쳐 **재계산하면 17건**이 되지만,
+    저장본을 읽는 경로는 그때 적힌 값을 그대로 되살린다 — 그 사실이 이제
+    이 테스트가 지키는 것이다. 재계산 결과는
+    `tests/test_relationship_engine.py` 의 G절이 대조한다.
+    """
     report = _artifact()
     if report is None:
         return

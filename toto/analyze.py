@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 
-from . import analysis
+from . import analysis, relationships
 from .models import Match, TeamStats, as_of_from_match, rest_context
 from .predict import additive_probabilities, round_winnability
 from .settings import Settings
@@ -141,6 +141,15 @@ def build_radar(matches: list[Match], settings: Settings) -> None:
 # --------------------------------------------------------------------------
 # 후스코어드 특성 문구를 주제어로 묶는다. 홈팀의 강점 주제가 원정팀의 약점
 # 주제와 겹치면 "노려볼 지점"으로 표시한다.
+#
+# **이 표는 Phase 6-E-3 부터 상성 판정에 쓰이지 않는다.** 키워드 부분일치라
+# `set piece` 가 공격·수비 라벨에 동시에 걸리고 `scoring` 이 창출·마무리에
+# 동시에 걸려, 실물에서 수비↔수비·창출↔마무리를 관계로 만들었다. 판정은
+# `toto/relationships.py` 의 **라벨 단위** 표가 한다 (§1-37).
+#
+# 지우지 않은 이유는 `_topics_of` 가 `tests/test_whoscored_characteristics.py`
+# 의 파서 회귀(강도 꼬리표가 붙어도 주제가 잡히나)에서 아직 쓰이기 때문이다.
+# 제거는 그 테스트를 함께 옮겨야 하는 별도 정리다 — 6-E-4 로 미룬다.
 _TOPICS = {
     "set_piece": ["set piece", "corner", "free kick", "free-kick", "dead ball"],
     "aerial": ["aerial", "header", "high ball", "tall"],
@@ -182,34 +191,46 @@ def _topics_of(phrases: list[str]) -> dict[str, str]:
 
 
 def build_matchup(matches: list[Match]) -> None:
-    """홈 강점 ↔ 원정 약점 (및 그 반대) 교차 대조."""
+    """홈 강점 ↔ 원정 약점 (및 그 반대) 교차 대조.
+
+    **판정은 여기서 하지 않는다** — `relationships.build_relationships()` 가
+    라벨 단위로 정하고 이 함수는 결과를 기존 노트 모양으로 옮길 뿐이다
+    (Phase 6-E-3, §1-37).
+
+    **`ADVANTAGE` 만 내보낸다.** 노트 dict 의 키가 `strength`/`weakness` 라
+    폴라리티를 단언하는데, `COUNTER`(강점↔강점)·`DIRECT`(약점↔약점)를 그
+    칸에 넣으면 그 자리가 거짓이 된다. 둘은 엔진 반환값에 그대로 남고
+    화면·자료로 내보내는 것은 전달 경로를 다루는 Phase 소관이다.
+
+    노트의 다섯 칸(`side`·`topic`·`strength`·`weakness`·`text`)과 문장 형식은
+    그대로다 — `render._traits_block` 과 `match_material._tactical` 이 그
+    모양을 읽으므로 여기서 바꾸면 두 소비자가 함께 깨진다.
+    """
     for match in matches:
         hp, ap = match.home_profile, match.away_profile
         if hp is None or ap is None:
             continue
+        home, away = hp.team.display, ap.team.display
         notes = []
-
-        h_str, a_weak = _topics_of(hp.strengths), _topics_of(ap.weaknesses)
-        for topic in h_str.keys() & a_weak.keys():
+        for rel in relationships.build_relationships(home, hp, away, ap):
+            if rel.kind != relationships.ADVANTAGE:
+                continue
             notes.append({
-                "side": "home",
-                "topic": _TOPIC_KO.get(topic, topic),
-                "strength": h_str[topic],
-                "weakness": a_weak[topic],
-                "text": f"{hp.team.display}의 강점이 {ap.team.display}의 약점과 맞물립니다.",
+                "side": "home" if rel.source_team == home else "away",
+                "topic": rel.source_unit.ko,
+                "strength": rel.source_characteristic.raw,
+                "weakness": rel.target_characteristic.raw,
+                "text": (f"{rel.source_team}의 강점이 "
+                         f"{rel.target_team}의 약점과 맞물립니다."),
             })
-
-        a_str, h_weak = _topics_of(ap.strengths), _topics_of(hp.weaknesses)
-        for topic in a_str.keys() & h_weak.keys():
-            notes.append({
-                "side": "away",
-                "topic": _TOPIC_KO.get(topic, topic),
-                "strength": a_str[topic],
-                "weakness": h_weak[topic],
-                "text": f"{ap.team.display}의 강점이 {hp.team.display}의 약점과 맞물립니다.",
-            })
-
         match.matchup_notes = notes
+        unknown = (relationships.unknown_labels(hp)
+                   + [x for x in relationships.unknown_labels(ap)
+                      if x not in relationships.unknown_labels(hp)])
+        if unknown:
+            # 단위 표에 없는 어휘가 나오면 관계가 조용히 빠진다 (§1-6-1).
+            log.info("상성: 의미 단위 표에 없는 특성 %d종 — %s",
+                     len(unknown), ", ".join(unknown[:5]))
 
 
 # --------------------------------------------------------------------------

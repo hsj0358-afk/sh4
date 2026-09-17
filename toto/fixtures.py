@@ -28,18 +28,31 @@ _FIXTURES = [
     ("jleague", "J리그", "비셀고베", "쇼난벨마레"),
 ]
 
+# 정성 특성은 **실측 260052 의 어휘 그대로** 쓴다 (Phase 6-E-3).
+#
+# 예전 목록은 `Scoring goals from set pieces`·`Defending aerially` 처럼
+# 그럴듯하게 지어낸 문구였다. 옛 상성 판정이 키워드 부분일치라 그래도
+# 노트가 나왔지만(데모 19건), 라벨 단위로 판정하게 되면서 **한 건도 나오지
+# 않게 됐다** — 데모가 실물에 없는 어휘를 쓰고 있었기 때문이다.
+#
+# 빈 블록을 남기는 대신 데모를 실물 모양에 맞춘다 — §1-19 에서 레이더 두
+# 축이 데모에서만 비어 있을 때 한 것과 같은 판단이다. 형식도 실물과 같게
+# `"<라벨> · <강도>"` 로 만든다 (§1-36).
 _STRENGTHS = [
-    "Scoring goals from set pieces", "Keeping possession", "Defending aerially",
-    "Creating chances through the middle", "Counter attacking",
-    "Finishing from long shots", "Pressing high up the pitch",
-    "Attacking down the wings",
+    "Attacking set pieces", "Attacking down the wings", "Counter attacks",
+    "Creating chances using through balls", "Creating scoring chances",
+    "Creating chances through individual skill", "Aerial duels",
+    "Stealing the ball from the opposition", "Finishing scoring chances",
 ]
 _WEAKNESSES = [
-    "Defending set pieces", "Conceding on the counter attack",
-    "Defending aerial balls", "Keeping the ball under pressure",
-    "Defending the box", "Poor discipline - fouls conceded",
-    "Struggles against long balls",
+    "Defending set pieces", "Defending against attacks down the wings",
+    "Defending counter attacks", "Defending against through ball attacks",
+    "Stopping opponents from creating chances",
+    "Defending against skillful players", "Aerial duels",
+    "Keeping possession of the ball", "Avoiding individual errors",
 ]
+_STRENGTH_LEVELS = ["Strong", "Very Strong"]
+_WEAKNESS_LEVELS = ["Weak", "Very Weak"]
 _STYLES = [
     "Plays short passes", "Attempts through balls often", "Plays direct football",
     "Builds patiently from the back", "Uses the wings frequently",
@@ -152,8 +165,10 @@ def build_demo_matches() -> list[Match]:
         ap = TeamProfile(team=away_ref, league=key, stats=_stats(rng, away_strong),
                          source_ok=True)
         for profile, strong in ((hp, home_strong), (ap, away_strong)):
-            profile.strengths = rng.sample(_STRENGTHS, 3)
-            profile.weaknesses = rng.sample(_WEAKNESSES, 3)
+            profile.strengths = [f"{x} · {rng.choice(_STRENGTH_LEVELS)}"
+                                 for x in rng.sample(_STRENGTHS, 3)]
+            profile.weaknesses = [f"{x} · {rng.choice(_WEAKNESS_LEVELS)}"
+                                  for x in rng.sample(_WEAKNESSES, 3)]
             profile.style_of_play = rng.sample(_STYLES, 2)
             profile.form = _form(rng, strong, [p for p in pool if p != profile.team.display])
             if rng.random() < 0.6:

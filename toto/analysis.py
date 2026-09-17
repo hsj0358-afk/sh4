@@ -1042,8 +1042,51 @@ def _window_time_check(agg, allowed_ids: set[str], known_ids: set[str]
     """
     ids = [str(x) for x in (_agg_field(agg, "match_ids") or [])]
     future = [i for i in ids if i in known_ids and i not in allowed_ids]
-    unknown = [i for i in ids if i not in known_ids]
+    # **견줄 모집단이 없으면 모집단 판정을 하지 않는다** (Phase 6-D-9A).
+    # `unknown` 은 "이 경기가 이 대회 모집단에 없다" 는 뜻인데, 색인이 통째로
+    # 비어 있으면 그 물음 자체가 성립하지 않는다 — 그때 전부 unknown 으로 보면
+    # 색인을 못 받은 실행(`--demo` · 색인 수집 실패)에서 슛 지표가 통째로
+    # 사라진다. 그것은 오염 차단이 아니라 **자료 부재**이고, 오염원(대륙대회
+    # 경기)도 색인을 통해서만 들어오므로 막을 것도 없다.
+    #
+    # 대회 표시가 없는 옛 색인은 여기 해당하지 않는다 — `scope_to_competition`
+    # 이 그때 색인을 **통째로** 넘겨주므로 `known_ids` 가 차 있다 (§1-30).
+    unknown = ([i for i in ids if i not in known_ids] if known_ids else [])
     return future, unknown
+
+
+def unknown_note(period: str, count: int) -> str:
+    """`unknown` 경기를 뺐다는 한 줄. 네 축이 **같은 문구**를 쓴다 (§1-8)."""
+    return (f"{period_label(period)}: 모집단을 확인하지 못한 경기 {count}건을 "
+            f"슛 지표 표본에서 뺐습니다 (시즌 색인에 없는 경기 ID)")
+
+
+def drop_unknown(rows: list, unknown: list[str]) -> list:
+    """모집단을 확인하지 못한 경기를 표본에서 뺀다 (Phase 6-D-9A).
+
+    **`unknown` 은 '값이 None 인 경기' 가 아니다.** 그 경기 ID 가 이 분석의
+    대회 모집단(좁혀진 시즌 색인)에 없어서 **시점도 소속도 확인할 수 없다**는
+    뜻이다 (`_window_time_check`). 둘을 같은 말로 다루면 안 된다 — 값이 없는
+    경기는 `_mean` 이 이미 표본에서 빼고 있고(§1-1-2), 여기서 빼는 것은
+    **값이 있는데 어느 모집단 것인지 모르는 경기**다.
+
+    예전에는 이 경기들의 숫자가 그대로 평균에 들어가고 메모 한 줄만 붙었다.
+    대륙대회 수집이 켜지면 국내리그 지표에 UCL 경기가 조용히 섞이는 경로가
+    그것이다 (6-D-9 조사 §4①).
+
+    **줄을 빼는 것이지 0 으로 만드는 것이 아니다** (§1-5). 빠진 만큼
+    `Metric.sample_count` 가 작아져 표본이 줄었다는 사실이 그대로 드러나고,
+    남은 경기가 하나도 없으면 값 자체가 만들어지지 않는다.
+
+    슛 계층의 창은 수집 시점에 굳어 다시 자를 수 없지만(§1-1-7), **경기별
+    원재료**(`shot_matches`·`opponent_matches`)는 경기 단위라 이렇게 거를 수
+    있다. 창의 합계만 쓰는 `build_time_context` 는 그럴 수 없어 슛 지표를
+    통째로 내지 않는다 — 규칙은 같고 자료 모양이 다르다.
+    """
+    if not unknown:
+        return rows
+    drop = {str(i) for i in unknown}
+    return [r for r in rows if str(_field(r, "match_id")) not in drop]
 
 
 def build_time_context(profile: TeamProfile | None, team: str,
@@ -1120,14 +1163,21 @@ def build_time_context(profile: TeamProfile | None, team: str,
             axis.notes.append(
                 f"{period_label(period)}: 슛 지표 제외 — 기준시각 이후 경기 "
                 f"{len(future)}건이 창에 들어 있습니다")
+        elif agg is not None and unknown:
+            # **이 축은 창의 합계(`agg.avg()`)를 쓴다.** 경기별 원재료가 아니라
+            # 이미 더해진 수라서 한 경기만 빼낼 수가 없다 — 그래서 거르는 대신
+            # 슛 지표를 통째로 내지 않는다. 예전에는 값을 내고 메모만 붙였는데,
+            # 그러면 모집단을 확인하지 못한 경기의 숫자가 그대로 평균에 남는다
+            # (Phase 6-D-9A). 다른 세 축은 경기별 줄을 쓰므로 `drop_unknown`
+            # 으로 그 경기만 뺀다 — 규칙은 같고 자료 모양이 다르다.
+            axis.notes.append(
+                f"{period_label(period)}: 슛 지표 제외 — 모집단을 확인하지 못한 "
+                f"경기 {len(unknown)}건이 창에 들어 있습니다 (창의 합계라 "
+                f"그 경기만 빼낼 수 없습니다)")
         elif agg is not None:
             values.update(_shot_values(agg))
             if int(shot_available or 0) > available:
                 available = int(shot_available or 0)
-            if unknown:
-                axis.notes.append(
-                    f"{period_label(period)}: 시즌 색인에 없어 시점을 확인하지 "
-                    f"못한 경기 {len(unknown)}건이 슛 지표에 들어 있습니다")
             # 수비 지표는 경기 상세 창 하나에서만 나온다.
             if window == detail_window:
                 values.update(_defense_recent_values(stats))
@@ -1561,6 +1611,11 @@ def build_chance_quality(profile: TeamProfile | None, team: str,
 
         available = int(_agg_field(agg, "available_matches") or 0)
         rows = _match_rows(profile, agg)
+        # 모집단을 확인하지 못한 경기는 표본에서 뺀다 (Phase 6-D-9A). 창 전체를
+        # 버리지 않는다 — 확인된 경기는 그대로 쓰고 표본 수만 작아진다.
+        if unknown:
+            rows = drop_unknown(rows, unknown)
+            available = max(0, available - len(unknown))
         values: dict[str, tuple[float, int | None, str]] = {}
         missing: dict[str, set] = {}      # 이 창에서 값이 없는 지표의 사유
 
@@ -1593,6 +1648,15 @@ def build_chance_quality(profile: TeamProfile | None, team: str,
                     f"{period_label(period)}: 위치를 알 수 없는 슛 "
                     f"{total - inside - outside}개가 있어 박스 안 비율의 "
                     "분모(총슈팅)에 포함돼 있습니다")
+        elif unknown:
+            # **창의 합계로 폴백하지 않는다** (Phase 6-D-9A). 아래 `else` 는
+            # 경기별 원재료가 없을 때 `agg` 의 합계를 쓰는 길인데, 그 합계에는
+            # 방금 뺀 경기의 숫자가 **이미 더해져 있다.** 여기서 폴백하면 줄을
+            # 빼 놓고 같은 수를 뒷문으로 다시 들이는 셈이 된다.
+            axis.notes.append(
+                f"{period_label(period)}: 모집단을 확인한 경기가 남지 않아 "
+                "이 기간을 만들지 않았습니다 (창의 합계는 확인하지 못한 경기를 "
+                "품고 있어 대신 쓸 수 없습니다)")
         else:
             for name, source in _FROM_SHOTS.items():
                 value, n = _agg_avg(agg, source)
@@ -1611,10 +1675,10 @@ def build_chance_quality(profile: TeamProfile | None, team: str,
                 provenance=(DERIVED if name in DERIVED_SPECS else OBSERVED),
                 note=note)
 
+        # 예전에는 "…경기 N건이 **들어 있습니다**" 라고 적었다. 이제 빼므로
+        # 문구가 사실과 어긋난다 — 같은 자리에서 뜻만 뒤집는다 (6-D-9A).
         if unknown:
-            axis.notes.append(
-                f"{period_label(period)}: 시즌 색인에 없어 시점을 확인하지 "
-                f"못한 경기 {len(unknown)}건이 들어 있습니다")
+            axis.notes.append(unknown_note(period, len(unknown)))
         _merge_missing(missing_store, missing, period)
         if quality is not None:
             quality.mark(f"chance_quality.{period}", bool(values),
@@ -1894,6 +1958,13 @@ def build_defensive_quality(profile: TeamProfile | None, team: str,
 
         window_available = int(_agg_field(agg, "available_matches") or 0)
         rows = opponent_rows(profile, agg)
+        # 모집단을 확인하지 못한 경기를 뺀다 (Phase 6-D-9A). `window_available`
+        # 도 함께 줄인다 — 아래에서 `window_available - len(rows)` 를 '상대
+        # 슛맵을 못 이은 경기' 로 세므로, 줄이지 않으면 뺀 경기가 '못 이은
+        # 경기' 로 잘못 보고된다.
+        if unknown:
+            rows = drop_unknown(rows, unknown)
+            window_available = max(0, window_available - len(unknown))
         values: dict[str, tuple[float, int | None, str]] = {}
         missing: dict[str, set] = {}      # 이 창에서 값이 없는 지표의 사유
 
@@ -1937,10 +2008,9 @@ def build_defensive_quality(profile: TeamProfile | None, team: str,
                 note=note,
                 origin=DEFENSIVE_SHOTMAP_ORIGIN.get(name))
 
+        # 예전에는 "들어 있습니다" 였다 — 이제 빼므로 뜻을 뒤집는다 (6-D-9A).
         if unknown:
-            axis.notes.append(
-                f"{period_label(period)}: 시즌 색인에 없어 시점을 확인하지 "
-                f"못한 경기 {len(unknown)}건이 들어 있습니다")
+            axis.notes.append(unknown_note(period, len(unknown)))
         axis.notes.append(
             f"{period_label(period)}: {len(rows)}/{window}경기 (상대 집계 기준)")
         _merge_missing(missing_store, missing, period)
@@ -2288,6 +2358,10 @@ def build_sustainability(profile: TeamProfile | None, team: str,
             continue
 
         rows = _sustain_rows(profile, agg, history, team)
+        # 모집단을 확인하지 못한 경기를 뺀다 (Phase 6-D-9A). 이 축은 표본을
+        # `len(rows)` 로 세므로 줄을 빼면 나머지가 저절로 맞는다.
+        if unknown:
+            rows = drop_unknown(rows, unknown)
         values: dict[str, tuple[float, int | None, str]] = {}
         missing: dict[str, set] = {}
         commons: dict[str, int] = {}       # {지표: 공통 경기 수}
@@ -2369,10 +2443,9 @@ def build_sustainability(profile: TeamProfile | None, team: str,
                 built.common_sample_count = commons[name]
             axis.metrics[metric_key(period, name)] = built
 
+        # 예전에는 "들어 있습니다" 였다 — 이제 빼므로 뜻을 뒤집는다 (6-D-9A).
         if unknown:
-            axis.notes.append(
-                f"{period_label(period)}: 시즌 색인에 없어 시점을 확인하지 "
-                f"못한 경기 {len(unknown)}건이 들어 있습니다")
+            axis.notes.append(unknown_note(period, len(unknown)))
         axis.notes.append(
             f"{period_label(period)}: {len(rows)}/{window}경기 · "
             "공통 표본 " + " · ".join(

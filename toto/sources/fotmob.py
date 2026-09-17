@@ -888,6 +888,51 @@ def merge_season(season_out: list, matches: list[dict],
     return season_out
 
 
+def entry_rank(settings: Settings, league_key: str) -> int:
+    """대표 항목 우선순위. **작을수록 우선**이다 (Phase 6-D-9A).
+
+    국내리그 표가 0, 대륙대회·컵대회 표가 1 이다. 판정은
+    `settings.owns_team_league()` 하나로 한다 — 6-D-3 이 "이 표가 팀의 국내
+    소속을 말할 자격이 있나" 를 묻는 그 함수이고, 여기서 묻는 "이 표가 이 팀의
+    국내 시즌을 대표하나" 는 같은 사실이다. 키 이름이나 대회명 문자열로
+    분기하지 않는다.
+
+    **국내리그끼리 순위를 가르지 않는다.** `league_of(canon) == league_key`
+    까지 보면 `teams.yaml` 의 소속이 낡았을 때(승강 직후) 대표가 바뀌어
+    국내리그만 수집하는 기존 실행의 결과가 달라진다 — 그 정정은 아래
+    `set_league()` 가 따로 한다 (§3-5).
+    """
+    return 0 if settings.owns_team_league(league_key) else 1
+
+
+def team_index(data: dict, leagues, settings: Settings) -> dict[str, dict]:
+    """팀 → 대표 항목. 어느 대회에서 왔든 팀만 알면 찾을 수 있게 한다.
+
+    **대표 항목은 국내리그 표가 이긴다** (Phase 6-D-9A). 예전에는
+    `index.setdefault` 라서 **`sorted(leagues)` 의 알파벳 순서**가 대표를
+    정했다 — `['conference', 'epl']` 이면 컨퍼런스리그 표가 이기고, 그 항목에
+    실린 `stats`·`form`·`shot_aggregates`·`shot_matches`·`opponent_matches` 가
+    **통째로** 그 팀의 시즌 자료가 된다. 국내리그 분석에 대륙대회 한 시즌치가
+    들어앉는 경로다 (6-D-9 조사 §4②).
+
+    **순위를 매길 뿐 덮어쓰지 않는다.** 같은 순위끼리는 `<` 가 거짓이라 먼저
+    온 것이 그대로 남는다 — 국내리그만 수집하는 지금은 모든 항목이 순위 0 이라
+    `setdefault` 와 **동작이 완전히 같다**.
+
+    국내 소속이 없는 팀(대륙대회에만 나오는 팀)은 국내 항목 자체가 없으므로
+    그 대회 항목이 그대로 대표가 된다 — 없는 것을 만들지 않는다 (§1-5).
+    """
+    index: dict[str, dict] = {}
+    rank_of: dict[str, int] = {}
+    for league_key in leagues:
+        rank = entry_rank(settings, league_key)
+        for canon, entry in (data.get(league_key) or {}).get("teams", {}).items():
+            if canon not in index or rank < rank_of[canon]:
+                index[canon] = entry
+                rank_of[canon] = rank
+    return index
+
+
 # 정산 전용 캐시 키. `league_{key}` 와 **다른 자리**를 쓴다 — 이쪽은 경기
 # 목록만 담은 **부분** 결과라, 같은 키에 쓰면 다음 수집이 순위표·시즌 통계가
 # 빠진 것을 캐시 적중으로 읽는다.
@@ -1618,11 +1663,11 @@ def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None,
                  len(season_out), sum(1 for sm in season_out if sm.finished),
                  f", 시각 해석 실패 {no_time}건" if no_time else "")
 
-    # 팀 → 항목 통합 색인. 어느 리그에서 왔든 팀만 알면 찾을 수 있게 한다.
-    index: dict[str, dict] = {}
-    for league_key in leagues:
-        for canon, entry in (data.get(league_key) or {}).get("teams", {}).items():
-            index.setdefault(canon, entry)
+    # 팀 → 대표 항목. **국내리그 표가 대륙대회 표를 이긴다** (Phase 6-D-9A).
+    # 규칙과 그 이유는 `team_index()` 한 곳에 있다 — 여기서 다시 적지 않는다.
+    # 바로 아래 for 문이 이 항목의 stats·form·슛 계층을 프로필로 옮기므로,
+    # 대표를 잘못 고르면 그 팀의 시즌 자료가 통째로 바뀐다.
+    index = team_index(data, leagues, settings)
 
     # 순위표에 실제로 올라 있는 리그로 소속을 정정한다. 승강이 반영되지 않은
     # 표는 배당 조회를 통째로 엉뚱한 리그로 보낸다(2026 시즌 대구·수원FC·

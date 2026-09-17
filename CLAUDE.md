@@ -3852,6 +3852,116 @@ laliga: 342}`). 그래서 **목 UCL → 토 EPL 같은 실제 인접**은 fixtur
 그 사양이 아직 없다 — 여기서 지어내지 않는다. 이 절이 적는 것은 **막혀 있던
 질문의 답**까지다.
 
+### 1-34. 모집단 무결성 (Phase 6-D-9A) — `drop_unknown()` · `team_index()`
+
+6-D-9 조사가 **대륙대회 수집이 켜지는 순간 열리는 경로 둘**을 찾았다. 분석
+기능을 더하는 Phase 가 아니라 **기존 국내리그 분석의 모집단 경계를 지키는**
+Phase 다. 둘 다 오늘은 도달 불가지만(대륙대회 수집이 아직 발화하지 않는다)
+6-D-7 이 등록을 끝냈으므로 실제로 수집하면 바로 열린다.
+
+#### A. `unknown` 슛 집계가 값을 내고 있었다
+
+`_window_time_check()` 는 창의 경기 ID 를 시즌 색인과 대조해 둘을 돌려준다.
+
+```
+future    기준시각 이후 경기      → 예전부터 값을 막았다
+unknown   색인에 없는 경기        → 값을 내고 메모만 붙였다   ← 여기
+```
+
+`known_ids` 는 **좁혀진** 색인에서 나오므로(§1-30), UCL 경기가 슛 창에 섞이면
+`unknown` 이 된다. 예전 동작은 그 숫자를 국내리그 평균에 그대로 넣고
+"…경기 N건이 **들어 있습니다**" 라고 적는 것이었다. 실측 재현에서 xG 1.0 짜리
+세 경기에 9.0 짜리 한 경기가 섞이면 평균이 **3.0** 이 된다 — 1.0 이어야 한다.
+
+**`unknown` 은 '값이 None 인 경기' 가 아니다.** 값이 없는 경기는 `_mean` 이
+이미 표본에서 빼고 있고(§1-1-2), 여기서 막는 것은 **값이 있는데 어느 모집단
+것인지 모르는 경기**다. 둘을 같은 말로 다루지 않는다.
+
+**자료 모양이 달라 처리가 둘로 갈린다. 규칙은 하나다.**
+
+| 축 | 소비하는 것 | 처리 |
+|---|---|---|
+| 2-A `time_context` | 창의 **합계** (`agg.avg()`) | 한 경기만 빼낼 수 없어 **슛 지표를 통째로 내지 않는다** |
+| 2-B `chance_quality` | 경기별 줄 (`_match_rows`) | `drop_unknown()` — 그 경기만 빼고 나머지는 쓴다 |
+| 2-C `defensive_quality` | 경기별 줄 (`opponent_rows`) | 〃 |
+| 2-D `sustainability` | 경기별 줄 (`_sustain_rows`) | 〃 |
+
+`venue_context`·`schedule_strength` 는 슛 계층을 읽지 않아 무관하다.
+
+  · **창 전체를 버리지 않는다.** valid 4 · unknown 1 이면 4경기로 값을 만들고
+    `sample_count` 가 4 가 된다 — 이 프로젝트의 기존 정책 그대로다(§1-1-2 가
+    "지표마다 표본이 다를 수 있다" 로, §1-1-8 이 "둘 다 있는 경기만" 으로 이미
+    같은 태도를 적어 두었다).
+  · **창 합계 폴백이 뒷문이 되지 않는다.** 2-B 는 경기별 원재료가 없으면
+    `_agg_avg`·`_rates_from_window` 로 폴백하는데, 그 합계에는 방금 뺀 경기의
+    숫자가 **이미 더해져 있다.** `unknown` 이 있으면 폴백하지 않는다 — 줄을
+    빼 놓고 같은 수를 뒷문으로 들이면 고친 것이 없다.
+  · **`available_matches` 도 함께 줄인다.** 2-C 는 `window_available - len(rows)`
+    를 '상대 슛맵을 못 이은 경기' 로 세므로, 줄이지 않으면 뺀 경기가 '못 이은
+    경기' 로 잘못 보고된다.
+  · 사유는 `unknown_note()` 한 곳에서 나온다 — 네 축이 같은 문구를 쓴다(§1-8).
+    옛 문구("들어 있습니다")는 이제 거짓이라 **같은 자리에서 뜻만 뒤집었다.**
+
+**견줄 모집단이 없으면 모집단 판정을 하지 않는다.** `known_ids` 가 비면
+`unknown` 은 빈 목록이다. 색인을 통째로 못 받은 실행(`--demo` · 색인 수집
+실패)에서 전부 unknown 으로 보면 슛 지표가 통째로 사라지는데, 그것은 오염
+차단이 아니라 **자료 부재**다 — 오염원도 색인을 통해서만 들어오므로 막을
+것이 없다. 대회 표시가 없는 옛 색인은 여기 해당하지 않는다:
+`scope_to_competition` 이 그때 색인을 **통째로** 넘겨주므로 `known_ids` 가
+차 있다 (§1-30).
+
+#### B. 대표 팀 항목을 알파벳 순서가 정하고 있었다
+
+```python
+# fotmob.enrich — 6-D-9A 이전
+for league_key in leagues:            # leagues = sorted(...)
+    for canon, entry in ...:
+        index.setdefault(canon, entry)     # 먼저 온 대회가 이긴다
+```
+
+`entry` 에는 `stats`·`form`·`shot_aggregates`·`shot_matches`·
+`opponent_matches` 가 **통째로** 들어 있고 바로 아래 for 문이 그것을 프로필로
+옮긴다. 정렬이 알파벳이라 `sorted(['conference','epl'])` 이면 **컨퍼런스리그
+표가 이기고** 그 팀의 시즌 자료가 통째로 대륙대회 것이 된다.
+
+`team_index()` 가 순위를 매긴다 — **국내리그 표 0 · 대회 표 1**, 작을수록
+우선이다.
+
+  · 판정은 `settings.owns_team_league()` 하나다(6-D-3). "이 표가 팀의 국내
+    소속을 말할 자격이 있나" 와 "이 표가 이 팀의 국내 시즌을 대표하나" 는 같은
+    사실이다. 키 이름이나 대회명 문자열로 분기하지 않는다(테스트로 고정).
+  · **순위를 매길 뿐 덮어쓰지 않는다.** 같은 순위끼리는 `<` 가 거짓이라 먼저
+    온 것이 남는다 — 국내리그만 수집하는 지금은 전부 순위 0 이라 `setdefault`
+    와 **결과가 같다**(테스트가 옛 방식과 대조한다).
+  · **국내리그끼리 순위를 가르지 않는다.** `league_of(canon) == league_key`
+    까지 보면 `teams.yaml` 의 소속이 낡았을 때(승강 직후) 대표가 바뀌어 기존
+    실행 결과가 달라진다 — 그 정정은 `set_league()` 소관이다 (§3-5).
+  · 국내 소속이 없는 팀(대륙대회에만 나오는 팀)은 국내 항목 자체가 없으므로
+    그 대회 항목이 그대로 대표다 — 없는 것을 만들지 않는다 (§1-5).
+
+#### 값이 바뀌지 않았다
+
+`--demo` 662,013(생성 시각 줄 제외 해시 동일) · `--rerender-artifact 260052`
+940,119 · 경기자료 MD 1,206,254 **전부 그대로**다. `predict.py`·`pinnacle.py`·
+`moderator.py`·`panel.py`·`briefing/` **diff 0줄**, data·cache 변화 없음.
+캐시 판도 올리지 않았다 — 저장 형식이 바뀌지 않았다.
+
+**기존 테스트 넷을 고쳤다 — 기대값을 바꾼 것이 아니다.**
+
+  · `test_time_context.test_unverifiable_window_is_flagged_not_silently_used`
+    → `..._is_blocked_not_silently_used`. 이름이 지키려던 **'조용히 쓰이지
+    않는다'** 는 그대로이고, '값을 낸다' 는 절반만 이 Phase 가 뒤집었다.
+  · 나머지 셋(`test_chance_quality` 하나 · `test_reason_preservation` 둘)은
+    **픽스처가 '색인에 없음' 으로 '스코어 없음' 을 표현**하고 있었다. 6-D-9A
+    부터 둘은 다른 사유이므로, 픽스처가 뜻하는 바를 그대로 적도록 고쳤다
+    (색인에는 있고 스코어만 없는 경기). 지키려던 불변조건은 그대로다.
+
+**음성 대조로 확인했다** — 새 테스트 27개를 변경 전 코드에 돌리면 **18개가
+깨진다**. 그중 `test_a4` 가 `섞인 값이 새어 나왔다: 3.0` 으로, 위에 적은 오염이
+실제로 일어나던 것을 그대로 보여 준다.
+
+회귀 테스트: `python tests/test_population_integrity.py` (27개).
+
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
 260052 실행이 남긴 것은 후스코어드 `팀명 매칭 실패` 5건과 `강점 0개` 3팀이다.
@@ -4505,6 +4615,7 @@ python tests/test_strict_resolution.py     # 대회 팀명 정확일치 전용 6
 python tests/test_index_isolation.py       # 색인 모집단 분리 6-D-5 §1-30 (48개)
 python tests/test_continental_collection.py # 대륙대회 수집·중복 제거 6-D-7 §1-31 (50개)
 python tests/test_match_timeline.py        # 팀 경기 시간축·휴식·밀도 6-D-8 §1-32 (55개)
+python tests/test_population_integrity.py  # 모집단 무결성·대표 팀 항목 6-D-9A §1-34 (27개)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)

@@ -91,6 +91,28 @@ MATCHED = season(TEAM)          # 색인이 맞는다
 UNMATCHED = season("다른이름")   # 색인에서 이 팀을 못 찾는다
 
 
+def partial_scores() -> list[SeasonMatch]:
+    """색인에는 **네 경기가 다 있고** 스코어는 m0 에만 있다.
+
+    예전 픽스처는 색인에 m0 **하나만** 넣어 '일부만 이어진다' 를 표현했다.
+    그런데 6-D-9A 부터 색인에 없는 경기는 **모집단 미확인**으로 표본에서
+    빠지므로(`drop_unknown`), 그 픽스처로는 '스코어를 못 이었다' 가 아니라
+    '모집단을 확인하지 못했다' 를 시험하게 된다 — 사유가 다르고 문구도 다르다.
+    이 테스트가 지키려는 것은 앞쪽이므로 픽스처가 그것을 그대로 적는다.
+    """
+    out = []
+    for i, m in enumerate(MIDS):
+        scored = (m == "m0")
+        out.append(SeasonMatch(
+            match_id=m, competition="epl",
+            kickoff=datetime(2026, 4, 1 + i, tzinfo=UTC), kickoff_aware=True,
+            home_team=TEAM, away_team="상대",
+            home_goals=1 if scored else None,
+            away_goals=3 if scored else None,
+            finished=True))
+    return out
+
+
 def defense(sm, prof=None, quality=None):
     return analysis.build_defensive_quality(
         prof or profile(), TEAM, sm, AS_OF, WINDOWS,
@@ -175,12 +197,7 @@ def test_3b_reason_is_preserved_in_data_quality():
 
 def test_3c_reason_survives_when_only_some_matches_join():
     """일부만 이어지면 값은 있고, 그 사실이 지표 note 에 남는다."""
-    partial = [SeasonMatch(
-        match_id="m0", competition="epl",
-        kickoff=datetime(2026, 4, 1, tzinfo=UTC), kickoff_aware=True,
-        home_team=TEAM, away_team="상대", home_goals=1, away_goals=3,
-        finished=True)]
-    ax = defense(partial)
+    ax = defense(partial_scores())
     m = ax.get("recent6.goals_against_minus_npxga")
     assert m is not None and m.value is not None
     assert m.sample_count == 1, "이어진 경기만 세야 한다"
@@ -303,13 +320,8 @@ def test_8_reason_survives_serialization():
 
 
 def test_8b_metric_level_note_survives_serialization():
-    partial = [SeasonMatch(
-        match_id="m0", competition="epl",
-        kickoff=datetime(2026, 4, 1, tzinfo=UTC), kickoff_aware=True,
-        home_team=TEAM, away_team="상대", home_goals=1, away_goals=3,
-        finished=True)]
     ta = analysis.build_team_analysis(
-        profile(), TEAM, partial, AS_OF, SETTINGS)
+        profile(), TEAM, partial_scores(), AS_OF, SETTINGS)
     back = revive_match_analysis(asdict(MatchAnalysis(home=ta)))
     m = back.home.defensive_quality.get("recent6.goals_against_minus_npxga")
     assert m is not None and "제외" in m.note, m

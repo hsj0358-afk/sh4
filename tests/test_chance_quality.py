@@ -178,8 +178,16 @@ def test_gaps_use_final_score_not_shotmap_goals():
 
 
 def test_gap_skips_matches_without_a_known_score():
-    rows = [match("m0", xg=1.0), match("m9", xg=5.0)]   # m9 는 색인에 없다
-    axis = build(profile(rows), season(["m0"], goals_for=2))
+    # m9 는 **색인에 있지만 스코어가 없다.** 예전 픽스처는 m9 를 색인에서
+    # 아예 빼서 '스코어 없음' 을 표현했는데, 6-D-9A 부터 색인에 없는 경기는
+    # **모집단 미확인**으로 표본에서 빠진다 — 그러면 이 테스트가 지키려던
+    # "스코어를 아는 경기만 쓴다" 가 아니라 다른 장치를 시험하게 된다.
+    # 둘은 다른 사유이므로 픽스처가 뜻하는 바를 그대로 적는다.
+    rows = [match("m0", xg=1.0), match("m9", xg=5.0)]
+    unscored = SeasonMatch(
+        match_id="m9", competition="epl", kickoff=kick(2), kickoff_aware=True,
+        home_team=TEAM, away_team="Opp9", finished=True)   # goals 없음
+    axis = build(profile(rows), season(["m0"], goals_for=2) + [unscored])
     m = axis.get("recent6.goals_minus_xg")
     assert abs(m.value - 1.0) < 1e-9, "스코어를 아는 경기만 써야 한다"
     assert m.sample_count == 1

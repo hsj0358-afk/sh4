@@ -369,12 +369,26 @@ def test_future_match_in_shot_window_drops_shot_metrics():
     assert axis.value("recent6.goals") == 2.0, "결과 지표는 남아야 한다"
 
 
-def test_unverifiable_window_is_flagged_not_silently_used():
+def test_unverifiable_window_is_blocked_not_silently_used():
+    """모집단을 확인하지 못한 창은 **값을 내지 않는다** (Phase 6-D-9A).
+
+    이 테스트가 지키려는 것은 이름 그대로 **'조용히 쓰이지 않는다'** 이고
+    그것은 그대로다. 바뀐 것은 절반이다 — 예전에는 값을 내고 메모만 붙였는데
+    (`npxg == 1.5`), 그러면 어느 대회 것인지 모르는 경기의 숫자가 국내리그
+    지표의 평균에 그대로 남는다. 대륙대회 수집이 켜지면 그 경로로 UCL 경기가
+    섞인다 (6-D-9 조사 §4①).
+
+    이 축은 창의 **합계**(`agg.avg()`)를 쓰므로 그 경기만 빼낼 수 없어 슛
+    지표를 통째로 내지 않는다. 경기별 줄을 쓰는 2-B·2-C·2-D 는 `drop_unknown`
+    으로 그 경기만 빼고 나머지는 그대로 쓴다 — 규칙은 같고 자료 모양이 다르다.
+    """
     aggs = {"all6": window(111, 6, 2, {"npxg": 3.0}, {"npxg": 2},
                            match_ids=["unknown1", "unknown2"])}
     axis = build(profile(aggregates=aggs), history(HOME_TEAM, 3), kick(30))
-    assert axis.value("recent6.npxg") == 1.5
+    assert axis.get("recent6.npxg") is None, "모집단 미확인 값이 새어 나왔다"
     assert any("확인하지 못한" in n for n in axis.notes), axis.notes
+    # 조용히 비지 않는다 — 결과 지표는 색인에서 오므로 그대로 남는다.
+    assert axis.value("recent6.goals") is not None
 
 
 def test_no_duplicate_cutoff_logic():

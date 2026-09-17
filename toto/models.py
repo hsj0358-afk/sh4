@@ -413,12 +413,133 @@ def fill_stats(dst: TeamStats, src: TeamStats, overwrite: bool = False) -> int:
     return filled
 
 
+# --------------------------------------------------------------------------
+# 정성 특성 (Phase 6-E-2) — 후스코어드 강점/약점의 원문을 **바꾸지 않고** 읽는다
+# --------------------------------------------------------------------------
+# 실물 260052 의 212개 항목이 예외 없이 `"<라벨> · <강도>"` 였다 (구분자가
+# 1개가 아닌 항목 0건 · 빈 문자열 0건). 강도 어휘도 넷뿐이다 —
+# `Strong` / `Very Strong` / `Weak` / `Very Weak`.
+#
+# **그 어휘를 코드에 두지 않는다.** 강도 목록을 상수로 박으면 리그·언어가
+# 바뀔 때 조용히 빗나간다 (§3-1 이 추출기에 대해 정한 것과 같은 이유).
+# 여기서는 **자리**로만 가른다 — 마지막 칸이 강도다.
+_CHAR_SEP = " · "
+
+# 정성 특성 슬롯의 상태. **네 가지를 다 만들지 않았다** — 실물 raw 가
+# 구분해 주는 것만 둔다 (Phase 6-E-2 §3·§11).
+#
+#   `ok`              팀 페이지를 읽었고 항목이 있다
+#   `observed_empty`  팀 페이지를 읽었는데 항목이 없다 — 후스코어드가
+#                     `(Team has no significant strengths)` 라고 적어 둔 상태다
+#                     (§3-10 에서 사용자가 원문으로 확인). **결측이 아니라 관측된 0.**
+#   `page_failed`     팀 페이지를 읽지 못했다 (링크 없음·수집 실패·표에 팀 없음)
+#   `unrecorded`      기록이 없다 (옛 저장본 · `--skip-whoscored`)
+#
+# **'슬롯 미검출' 은 만들지 않았다.** `_extract_characteristics` 가 제목을
+# 못 찾은 경우와 제목은 찾았는데 항목이 없는 경우를 **똑같이 `[]` 로**
+# 돌려주므로, 지금 저장돼 있는 자료로는 그 둘을 가를 수 없다. 가르려면
+# 파서가 제목 검출 여부를 payload 에 실어야 하고 그건 캐시 판 변경이라
+# 실물 HTML 로 확인한 뒤에 할 일이다 (§1-4).
+CHAR_OK = "ok"
+CHAR_OBSERVED_EMPTY = "observed_empty"
+CHAR_PAGE_FAILED = "page_failed"
+CHAR_UNRECORDED = "unrecorded"
+
+
+@dataclass(frozen=True)
+class Characteristic:
+    """정성 항목 하나를 읽은 결과. **원문을 안고 다닌다.**
+
+    `raw` 가 원문 그대로라 되돌릴 때 재조립하지 않는다 — `label + 구분자 +
+    intensity` 로 다시 짜면 구분자가 여럿인 항목에서 어긋날 수 있다.
+
+    **강도를 숫자로 바꾸지 않는다.** `Very Strong` 은 `Very Strong` 이다
+    (§1-1-7·§1-1-13 이 밴드를 점수로 바꾸지 않기로 한 것과 같은 이유).
+    """
+    raw: str = ""
+    label: str = ""
+    intensity: str = ""
+
+    @property
+    def parsed(self) -> bool:
+        """라벨과 강도가 **둘 다** 있나. 구분자가 없던 항목은 False 다."""
+        return bool(self.label) and bool(self.intensity)
+
+
+def parse_characteristic(raw: Any) -> Characteristic | None:
+    """원문 한 줄 → `Characteristic`. 내용이 없으면 `None`.
+
+    세 갈래뿐이고, 실물에서 확인한 것 이상을 만들지 않는다 (§7).
+
+    | 입력 | 결과 |
+    |---|---|
+    | `None` · `""` · 공백뿐 | `None` — 항목이 아니다 |
+    | 구분자 없음 (`"Attacking down the wings"`) | 라벨만 · `parsed=False` |
+    | 구분자 있음 | `rsplit` 으로 **마지막 칸이 강도** |
+
+    구분자 없는 항목은 **가상의 사례가 아니다.** `_extract_characteristics`
+    의 추출 갈래 넷 중 셋(`li` · `span/td/p` · 임베드 JSON)이 구분자 없이
+    문자열을 만든다 — 260052 는 `div.character` 갈래로 와서 전부 구분자가
+    있었을 뿐이다. 그때도 **라벨은 버리지 않는다.**
+
+    구분자가 여럿이면 `rsplit(..., 1)` 이라 라벨 쪽에 남는다. 그 갈래가
+    열 전체를 구분자로 이어 붙이므로 마지막 칸이 강도인 것이 맞고,
+    `raw` 를 그대로 들고 있어 되돌릴 때 손실이 없다.
+    """
+    if not isinstance(raw, str):
+        return None
+    text = raw.strip()
+    if not text:
+        return None
+    if _CHAR_SEP not in text:
+        return Characteristic(raw=raw, label=text, intensity="")
+    label, intensity = text.rsplit(_CHAR_SEP, 1)
+    label, intensity = label.strip(), intensity.strip()
+    if not label or not intensity:
+        # `" · Strong"` 처럼 한쪽이 비면 쪼개지 않는다 — 원문을 라벨로 둔다.
+        return Characteristic(raw=raw, label=text, intensity="")
+    return Characteristic(raw=raw, label=label, intensity=intensity)
+
+
+def characteristics(items: Any) -> list[Characteristic]:
+    """원문 목록 → 해석 결과. **해석 못 한 항목도 원문을 안고 남는다.**
+
+    `[c.raw for c in characteristics(items)]` 가 내용이 있는 원문 목록과
+    같다 — 순서도 글자도 그대로다 (Phase 6-E-2 §13).
+    """
+    out = []
+    for item in items or []:
+        char = parse_characteristic(item)
+        if char is not None:
+            out.append(char)
+    return out
+
+
+def characteristic_status(items: Any, page_ok: bool | None) -> str:
+    """정성 슬롯 하나의 상태. 위 네 상수 중 하나.
+
+    **`source_ok` 를 보지 않는다** (§12). 저쪽은 '어떤 소스가 이 팀의 지표를
+    채웠나' 이고 이쪽은 '팀 페이지에서 특성을 읽었나' 다 — 실물 260052 의
+    입스위치가 `source_ok=True` 인 채로 강점 0개였다. 둘을 한 값으로 묶으면
+    그 상태를 적을 자리가 없어진다.
+    """
+    if items:
+        return CHAR_OK
+    if page_ok is None:
+        return CHAR_UNRECORDED
+    return CHAR_OBSERVED_EMPTY if page_ok else CHAR_PAGE_FAILED
+
+
 @dataclass
 class TeamProfile:
     """한 팀에 대해 수집한 모든 것."""
     team: TeamRef
     league: str = ""
     stats: TeamStats = field(default_factory=TeamStats)
+    # 후스코어드 정성 특성의 **원문 그대로**. 타입을 바꾸지 않는다 —
+    # 구조화된 값이 필요하면 `characteristics(profile.strengths)` 로 읽는다
+    # (Phase 6-E-2). 원문이 저장 형식이라 되돌릴 때 손실이 없고, 이 필드를
+    # 읽는 기존 코드(analyze·render·match_material)가 그대로 돈다.
     strengths: list[str] = field(default_factory=list)
     weaknesses: list[str] = field(default_factory=list)
     style_of_play: list[str] = field(default_factory=list)
@@ -446,6 +567,17 @@ class TeamProfile:
     previous_competition: str = ""
     previous_kickoff: datetime | None = None
     source_ok: bool = False       # 후스코어드 수집 성공 여부
+    # 후스코어드 **팀 페이지**를 읽었나 (Phase 6-E-2). `source_ok` 와 **다른
+    # 개념이다** — 저쪽은 순위표에서 지표를 채웠다는 뜻이고 이쪽은 강점/약점이
+    # 실린 팀 페이지를 실제로 받아 파싱했다는 뜻이다. 실물 260052 의
+    # 입스위치·셀타비고·헤타페가 `source_ok=True` 인 채로 강점 0개였는데,
+    # 이 칸이 없으면 그것이 '수집 실패' 인지 '소스에 강점이 없음' 인지
+    # 가릴 수가 없었다 (§1-6 이 막으려는 바로 그 뭉뚱그림).
+    #
+    # **`None` 은 `False` 가 아니다** — 기록이 없다는 뜻이다. 옛 저장본과
+    # `--skip-whoscored` 실행이 그 경우다. 해석은 `characteristic_status()`
+    # 한 곳에 있다.
+    team_page_ok: bool | None = None
     # Phase 1-C 슛 이벤트 계층. {"all6": RecentShotAggregate, "home3": ...}
     # TeamStats 가 아니라 여기 둔다 — 구조가 있는 값이라 fill_stats 의
     # 스칼라 병합 규칙에 맞지 않고, 기존 지표 계산에 끼어들면 안 된다.
@@ -1394,6 +1526,11 @@ def _revive_profile(d: Any) -> TeamProfile | None:
     out.previous_competition = d.get("previous_competition") or ""
     out.previous_kickoff = _revive_dt(d.get("previous_kickoff"))
     out.source_ok = bool(d.get("source_ok"))
+    # 6-E-2 이전 저장본에는 이 칸이 없다. **`bool()` 로 감싸지 않는다** —
+    # 없는 것을 `False`(팀 페이지를 못 읽었다)로 바꾸면 기록이 없는 상태가
+    # 수집 실패로 둔갑한다 (§1-5). 없으면 `None` 인 채로 되살린다.
+    page_ok = d.get("team_page_ok")
+    out.team_page_ok = None if page_ok is None else bool(page_ok)
     return out
 
 

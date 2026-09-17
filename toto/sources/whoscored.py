@@ -994,6 +994,12 @@ def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None) -> s
                                   ref.canonical)
                     payload = read_team(browser, settings, ref.whoscored_url,
                                         ref.canonical, resolver, cache=cache)
+                    # 팀 페이지를 실제로 읽었나 (Phase 6-E-2). `read_team` 은
+                    # 링크가 없거나 HTML 을 못 받거나 아무것도 파싱하지 못하면
+                    # `{}` 를 준다 — 그 셋이 여기서는 다 '못 읽었다' 이고,
+                    # **강점이 0개인 것과는 다른 상태**다. 지금까지 이 사실이
+                    # 프로필에 남지 않아 둘이 똑같이 `strengths=[]` 로 보였다.
+                    profile.team_page_ok = bool(payload)
                     if payload:
                         profile.strengths = payload.get("strengths") or []
                         profile.weaknesses = payload.get("weaknesses") or []
@@ -1011,6 +1017,10 @@ def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None) -> s
                         if profile.style_of_play:
                             style_done += 1
                 else:
+                    # 표에 팀이 없으면 팀 페이지 주소도 없다 — 읽지 못한 것이
+                    # 맞다. `None`(기록 없음)으로 두면 `--skip-whoscored` 와
+                    # 구분되지 않는다.
+                    profile.team_page_ok = False
                     match.notes.append(
                         f"{ref.display}: 후스코어드에서 팀을 찾지 못했습니다.")
                 setattr(match, f"{side}_profile", profile)

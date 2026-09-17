@@ -4104,6 +4104,79 @@ TeamAnalysis.AXES = (여섯 개 그대로)
 
 회귀 테스트: `python tests/test_schedule_context.py` (32개).
 
+### 1-36. 정성 특성 (Phase 6-E-2) — `models.parse_characteristic()`
+
+후스코어드 강점/약점은 **자유 텍스트가 아니라 닫힌 enum 이다.** 실물 260052
+의 212개 항목이 예외 없이 `"<라벨> · <강도>"` 였고(구분자가 1개가 아닌 항목
+0건 · 빈 문자열 0건), 강점 14종 · 약점 14종 · 강도 넷(`Strong`·`Very
+Strong`·`Weak`·`Very Weak`)으로 수렴한다.
+
+**원문이 곧 저장 형식이다.** `TeamProfile.strengths` 는 `list[str]` 그대로이고
+구조화는 **읽을 때 파생**된다 — 그래서 되돌릴 때 재조립할 것이 없고, 이
+필드를 읽는 기존 코드(`analyze`·`render`·`match_material`)가 한 줄도 바뀌지
+않았다. 캐시 판도 올리지 않았다(§1-4 의 조건).
+
+```
+원문  "Attacking down the wings · Very Strong"
+  → Characteristic(raw=원문, label="Attacking down the wings",
+                   intensity="Very Strong")
+  → c.raw 가 곧 원문 — 왕복이 글자까지 같다
+```
+
+- **강도 어휘를 코드에 두지 않는다.** `Strong` 목록을 상수로 박으면 리그·
+  언어가 바뀔 때 조용히 빗나간다 — §3-1 이 추출기에 정한 것과 같은 이유다.
+  **자리로만 가른다**(`rsplit(sep, 1)` — 마지막 칸이 강도). 그래서 모르는
+  낱말도 그대로 실린다.
+- **숫자로 바꾸지 않는다.** `Very Strong=2` 류의 변환이 없다(AST 테스트).
+- **쪼개는 책임은 `models.py` 한 곳이다.** 소비 모듈이 각자
+  `split(" · ")` 하기 시작하면 규칙이 갈라진다(§1-8). 잇는(`join`) 것은
+  다른 일이라 막지 않는다.
+- 구분자가 없는 항목은 **가상의 사례가 아니다** — `_extract_characteristics`
+  의 추출 갈래 넷 중 셋(`li`·`span/td/p`·임베드 JSON)이 구분자 없이 문자열을
+  만든다. 260052 는 `div.character` 갈래로 와서 전부 있었을 뿐이다.
+  그때도 **라벨은 버리지 않는다**(`parsed=False` 로 남는다).
+
+**`strengths=[]` 하나가 여러 뜻을 겸하고 있었다.** `TeamProfile.team_page_ok`
+이 그것을 가른다 — **`source_ok` 와 다른 개념이다.** 저쪽은 순위표에서 지표를
+채웠다는 뜻이고 이쪽은 강점/약점이 실린 **팀 페이지**를 실제로 받아 파싱했다는
+뜻이다. 실물 입스위치·셀타비고·헤타페가 `source_ok=True` 인 채로 강점 0개였다.
+
+| `team_page_ok` | 항목 | `characteristic_status()` |
+|---|---|---|
+| `True` | 있음 | `ok` |
+| `True` | 없음 | `observed_empty` — 소스가 `(Team has no significant strengths)` 라고 적어 둔 것이다 (§3-10). **결측이 아니라 관측된 0** |
+| `False` | 없음 | `page_failed` — 링크 없음·수집 실패·표에 팀 없음 |
+| `None` | 없음 | `unrecorded` — 옛 저장본 · `--skip-whoscored` |
+
+  · **`None` 을 `False` 로 감싸지 않는다.** 없는 것을 '실패' 로 바꾸면 기록이
+    없는 상태가 수집 실패로 둔갑한다 (§1-5). 저장본 revive 가 그렇게 한다.
+  · **'슬롯 미검출' 은 만들지 않았다.** `_extract_characteristics` 가 제목을
+    못 찾은 경우와 제목은 찾았는데 항목이 없는 경우를 **똑같이 `[]`** 로
+    돌려주므로 지금 자료로는 가를 수 없다. 가르려면 파서가 제목 검출 여부를
+    payload 에 실어야 하고 그건 캐시 판 변경이라 실물 HTML 로 확인한 뒤에
+    할 일이다 (§1-4). **없는 근거로 상태를 만들지 않는다.**
+
+**관계 판정은 여기에 없다.** `build_matchup()`·`_TOPICS`·`_TOPIC_KO` 를 한
+글자도 바꾸지 않았고 실물 260052 의 상성 노트 **18건**이 그대로다(해시 대조).
+6-E-1 이 그 18건 중 6건(33%)이 의미상 틀렸다고 실측했는데, 그 교정은 **6-E-3**
+소관이다. 전달 경로(`render`·`match_material`·`panel`·메뉴 [3])도 무변경이다 —
+**6-E-4** 소관이고, 그때 회귀 기준(바이트)이 함께 움직인다.
+
+> **§1-9 의 전제 한 줄이 낡았다.** "WhoScored 정성 데이터가 한 번도 수집된
+> 적이 없고" 는 260052 에서 더 이상 참이 아니다(강점 25/28 · 약점 28/28 ·
+> 스타일 **0/28**). 그 절이 내린 결론(**`PanelPayload` 에 전술이 없다**)은
+> 코드상 지금도 참이다 — 문장을 고치는 것은 그 경로를 다루는 6-E-4 소관이라
+> 이번에는 손대지 않았다.
+
+변경 전 코드로 잰 기준과 대조해 **한 칸도 바뀌지 않았다** — 여섯 축
+`b8f7faba96cbd3ff` · 상성 노트 `14cb515b42825f2d` · 시장 `e9134ccb133ab5ef` ·
+정성 원문 `65bea46a3fc91078` · H2H 0건, 그리고 `--demo` 662,013 ·
+재렌더 940,119 · 경기자료 MD 1,206,254 bytes 가 전부 그대로다.
+
+회귀 테스트: `python tests/test_qualitative_characteristics.py` (44개).
+돌연변이 7건(원문 버리기 · 숫자화 · `None`→`False` · 상태 무시 · 배선 누락 둘)
+을 주입해 전부 잡히는 것을 확인했다.
+
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
 260052 실행이 남긴 것은 후스코어드 `팀명 매칭 실패` 5건과 `강점 0개` 3팀이다.
@@ -4759,6 +4832,7 @@ python tests/test_continental_collection.py # 대륙대회 수집·중복 제거
 python tests/test_match_timeline.py        # 팀 경기 시간축·휴식·밀도 6-D-8 §1-32 (55개)
 python tests/test_population_integrity.py  # 모집단 무결성·대표 팀 항목 6-D-9A §1-34 (28개)
 python tests/test_schedule_context.py      # 일정 문맥·휴식·경기 밀도 6-D-9B §1-35 (32개)
+python tests/test_qualitative_characteristics.py  # 정성 특성 구조화·상태 6-E-2 §1-36 (44개)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)

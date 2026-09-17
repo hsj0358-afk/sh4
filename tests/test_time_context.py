@@ -564,11 +564,29 @@ def test_season_snapshot_mismatch_is_disclosed():
 
 
 def test_metric_labels_exist_for_every_spec():
+    """모든 지표가 **알려진 단위·갈래**로 분류돼 있다.
+
+    6-D-9B 가 일정 문맥(휴식·경기 수)을 더하면서 어휘가 늘었다 — 시간과 일은
+    `per_match` 도 `%` 도 아니고, 일정은 공격·수비·결과 어디도 아니다.
+    단위를 `count` 로 적어 맞추지 않는다: 43.5 는 개수가 아니라 시간이고,
+    거짓 단위는 화면과 자료에 그대로 실린다 (§1-5).
+
+    **어휘를 늘리되 열어 두지는 않는다** — 새로 들어온 값이 정확히 일정
+    문맥의 것인지 아래에서 다시 확인한다.
+    """
+    units = ("per_match", "count", "per_shot", "%", "hours", "days")
+    families = ("attack", "defense", "result", "schedule")
     for name, (label, unit, direction, group) in analysis.SPECS.items():
         assert label, name
-        assert unit in ("per_match", "count", "per_shot", "%"), name
+        assert unit in units, name
         assert direction in (analysis.HIGHER_BETTER, analysis.LOWER_BETTER, "")
-        assert group in ("attack", "defense", "result"), name
+        assert group in families, name
+
+    # 늘어난 어휘를 쓰는 것은 일정 문맥뿐이다 — 경기력 지표가 조용히
+    # 갈래 밖으로 새어 나가지 않는다.
+    for name, (_l, unit, _d, group) in analysis.SPECS.items():
+        if unit in ("hours", "days") or group == "schedule":
+            assert name in analysis.SCHEDULE_CONTEXT_SPECS, name
 
 
 # --------------------------------------------------------------------------

@@ -433,6 +433,18 @@ class TeamProfile:
     rest_hours: float | None = None
     # {창(일): 그 구간의 공식 경기 수} — 최근 경기 밀도. 옛 저장본에는 없다.
     match_density: dict = field(default_factory=dict)
+    # 직전 공식 경기가 **무엇이었나** (Phase 6-D-9B). `rest_context()` 는
+    # 6-D-8 부터 이 셋을 이미 돌려주고 있었는데 `build_rest_days` 가 수치
+    # 셋만 옮기고 **버렸다.** 그래서 "목요일 UCL 을 뛰고 43시간 뒤 EPL" 이라는
+    # 사실에서 **대회가 무엇이었는지가 사라졌다** — 휴식이 대회를 가로질러
+    # 계산됐다는 것 자체를 확인할 수 없었다.
+    #
+    # 여섯 칸을 한 객체로 다시 묶지 않는다 — 위 셋이 이미 여기 있으므로
+    # `RestContext` 를 통째로 또 담으면 같은 수가 두 벌이 된다.
+    # `current_kickoff` 도 두지 않는다 — `MatchAnalysis.as_of` 가 그 값이다.
+    previous_match_id: str = ""
+    previous_competition: str = ""
+    previous_kickoff: datetime | None = None
     source_ok: bool = False       # 후스코어드 수집 성공 여부
     # Phase 1-C 슛 이벤트 계층. {"all6": RecentShotAggregate, "home3": ...}
     # TeamStats 가 아니라 여기 둔다 — 구조가 있는 값이라 fill_stats 의
@@ -725,6 +737,16 @@ class TeamAnalysis:
     venue_context: AnalysisAxis | None = None       # 2-E
     schedule_strength: AnalysisAxis | None = None   # 2-F
     data_quality: DataQuality | None = None         # 2-J
+
+    # 일정 문맥 (Phase 6-D-9B) — 휴식·최근 경기 밀도·직전 공식 경기.
+    #
+    # **`AXES` 에 넣지 않는다.** 그 목록은 '경기력 축' 레지스트리이고
+    # `panel.py`·`match_material`·`revive` 가 그것을 돌며 축 지표로 다룬다.
+    # 일정 문맥은 "이 팀이 어떤 일정 속에 있었나" 를 적은 **문맥**이지
+    # 경기력이 아니다 — 거기 넣으면 기회의 질·수비의 질과 같은 차원으로
+    # 읽히고, `panel.py`(이번 Phase 수정 금지)의 동작이 파일을 고치지 않고도
+    # 바뀐다. `data_quality` 가 이미 AXES 밖 필드의 선례다.
+    schedule_context: AnalysisAxis | None = None    # 6-D-9B
 
     AXES = ("time_context", "chance_quality", "defensive_quality",
             "sustainability", "venue_context", "schedule_strength")
@@ -1045,6 +1067,8 @@ def revive_team_analysis(d: Any) -> TeamAnalysis | None:
                        is_home=d.get("is_home"))
     for axis in TeamAnalysis.AXES:
         setattr(out, axis, _revive_axis(d.get(axis)))
+    # AXES 밖이라 따로 되감는다 (6-D-9B). 옛 저장본에는 없어 `None` 이 된다.
+    out.schedule_context = _revive_axis(d.get("schedule_context"))
     dq = d.get("data_quality")
     out.data_quality = DataQuality(**dq) if isinstance(dq, dict) else None
     return out
@@ -1365,6 +1389,10 @@ def _revive_profile(d: Any) -> TeamProfile | None:
     # JSON 왕복을 거치면 창 번호가 문자열이 되므로 int 로 되돌린다.
     out.match_density = ({int(k): int(v) for k, v in density.items()}
                          if isinstance(density, dict) else {})
+    # 6-D-9B 이전 저장본에는 이 셋이 없다 — 없으면 없는 채로 되살린다(§1-5).
+    out.previous_match_id = d.get("previous_match_id") or ""
+    out.previous_competition = d.get("previous_competition") or ""
+    out.previous_kickoff = _revive_dt(d.get("previous_kickoff"))
     out.source_ok = bool(d.get("source_ok"))
     return out
 

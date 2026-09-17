@@ -83,7 +83,7 @@ from .models import KST as models_KST
 from .models import as_of_from_match as models_as_of_from_match
 from .models import (DERIVED, MODEL, OBSERVED, AnalysisAxis, DataQuality,
                      Match, MatchAnalysis, Metric, SeasonMatch, TeamAnalysis,
-                     TeamProfile, competitions_in, matches_before,
+                     TeamProfile, competitions_in, in_kst, matches_before,
                      scope_to_competition)
 from .settings import Settings
 
@@ -147,6 +147,12 @@ POISSON_MODEL = "poisson_model"
 # basis 가 되어, 문(`comparison_allowed`·`trend_allowed`)이 둘을 빼는 것을
 # 막지 못한다.
 OPPONENT_RECORD = "opponent_record"
+# **경기 일정 자체**를 잰 값 (Phase 6-D-9B 의 휴식·최근 경기 밀도).
+# 위의 어느 것과도 다른 양이다 — 스코어도 슛도 상대 성적도 아니고 **킥오프
+# 시각의 간격과 경기 수**다. 2-C·2-F 가 각각 자기 basis 를 따로 둔 것과 같은
+# 이유로 나눈다: 나누지 않으면 문(`trend_allowed`·`comparison_allowed`)이
+# "경기당 승점"에서 "휴식 시간"을 빼는 것을 막지 못한다.
+MATCH_SCHEDULE = "match_schedule"
 MIXED_BASIS = "mixed"          # 서로 다른 방식이 섞였다
 
 # xPTS 의 원천. `toto/xpts.py` 의 모델 산출값이며 피나클 배당 확률과 무관하다.
@@ -366,6 +372,27 @@ SOS_SPECS: dict[str, tuple[str, str, str, str]] = {
 }
 SPECS.update(SOS_SPECS)
 
+# ---- Phase 6-D-9B. 일정 문맥 ------------------------------------------------
+# **경기력 지표가 아니다.** "이 팀이 어떤 일정 속에 있었나" 를 적은 문맥이고,
+# 기회의 질·수비의 질과 같은 차원으로 읽히면 안 된다.
+#
+# **방향을 정하지 않는다** — 다섯 개 모두 `""` 다. 휴식이 길수록 좋다고도,
+# 최근 경기가 많을수록 나쁘다고도 적지 않는다. 이 저장소에 그 문턱을 잴
+# 관측이 없고(2-F 가 `thresholds` 를 `{}` 로 비워 둔 것과 같은 상태),
+# 방향을 적는 순간 화면과 근거가 그것을 우열로 읽기 시작한다.
+SCHEDULE_CONTEXT_SPECS: dict[str, tuple[str, str, str, str]] = {
+    "rest_hours":       ("직전 경기 이후 휴식", "hours", "", "schedule"),
+    "rest_days":        ("직전 경기 이후 휴식", "days", "", "schedule"),
+    "matches_last_7d":  ("최근 7일 경기 수", "count", "", "schedule"),
+    "matches_last_10d": ("최근 10일 경기 수", "count", "", "schedule"),
+    "matches_last_14d": ("최근 14일 경기 수", "count", "", "schedule"),
+}
+SPECS.update(SCHEDULE_CONTEXT_SPECS)
+
+# 이 축이 쓰는 기간 이름. 기간이 **하나뿐**이다 — 휴식·밀도는 기준시각 한
+# 점에서 본 사실이라 `season`/`recentN` 같은 표본 구간이 아니다.
+SCHEDULE_PERIOD = "schedule"
+
 # 지표 묶음 (2-B §15). **점수 계산용이 아니다** — 2-I 가 같은 사실을 여러 번
 # 세지 않도록 붙이는 메타데이터다. xG·npxG·슛당 xG 는 같은 이야기의 세 얼굴이다.
 VOLUME = "volume"
@@ -391,6 +418,10 @@ VENUE_GAP_GROUP = "venue_gap"
 # 속하지 않는다. 섞으면 2-I 가 "우리 승점이 높다" 와 "상대가 강했다" 를 같은
 # 근거로 세게 된다.
 SCHEDULE_GROUP = "schedule"
+# 6-D-9B. 일정 문맥은 **상대 강도와도 다른 묶음**이다 — 저쪽은 '상대가 누구
+# 였나'(성적)이고 이쪽은 '언제 뛰었나'(시각·경기 수)다. 같은 묶음에 넣으면
+# 2-I 가 "일정이 빡빡했다" 와 "상대가 강했다" 를 한 근거로 세게 된다.
+SCHEDULE_CONTEXT_GROUP = "schedule_context"
 
 GROUPS: dict[str, str] = {
     "shots": VOLUME, "shots_on_target": VOLUME, "shots_inside_box": VOLUME,
@@ -418,6 +449,8 @@ GROUPS: dict[str, str] = {
 }
 GROUPS.update({name: VENUE_GAP_GROUP for name in VENUE_GAP_SPECS})
 GROUPS.update({name: SCHEDULE_GROUP for name in SOS_SPECS})
+GROUPS.update({name: SCHEDULE_CONTEXT_GROUP
+               for name in SCHEDULE_CONTEXT_SPECS})
 
 # §9 가 직접 방향을 지정한 지표.
 SPEC_DIRECTIONS = frozenset((
@@ -440,6 +473,11 @@ UNDIRECTED = frozenset((
     "goals_minus_xg", "goals_minus_npxg", "goals_minus_xgot",
     "goals_against_minus_npxga", "goals_against_minus_xgot_against",
     "points_minus_xpts")) | frozenset(VENUE_GAP_SPECS) | frozenset(SOS_SPECS)
+# 6-D-9B 일정 문맥. **의도적으로 방향이 없다** — 휴식이 길수록 유리하다거나
+# 최근 경기가 많을수록 불리하다는 문턱을 이 프로젝트가 관측한 적이 없다.
+# 여기 넣어야 "분류되지 않은 지표" 검사를 지난다: 방향이 비어 있는 것과
+# 분류를 빠뜨린 것은 다른 상태이고, 그 둘을 가르는 것이 이 집합이다.
+UNDIRECTED = UNDIRECTED | frozenset(SCHEDULE_CONTEXT_SPECS)
 
 ATTACK = tuple(k for k, v in SPECS.items()
                if v[3] == "attack" and k not in DERIVED_SPECS)
@@ -503,6 +541,8 @@ VENUE_LABELS = {HOME: "홈", AWAY: "원정"}
 def period_label(period: str) -> str:
     if period == SEASON:
         return "시즌"
+    if period == SCHEDULE_PERIOD:
+        return "일정"
     if period.startswith("recent"):
         return f"최근 {period[6:]}경기"
     if period.startswith("trend"):
@@ -3147,6 +3187,86 @@ def build_schedule_strength(profile: TeamProfile | None, team: str,
     return axis
 
 
+# ==========================================================================
+# Phase 6-D-9B — 일정 문맥 (schedule_context)
+# ==========================================================================
+# 6-D-8 이 만든 **대회를 가로지르는 시간축**(`models.team_timeline`)과 거기서
+# 잰 휴식·밀도(`models.rest_context`)를 분석 결과에 잇는다.
+#
+# **여기서 다시 계산하지 않는다.** `analyze.build_rest_days()` 가 이미
+# `rest_context()` 를 한 번 부르고 그 결과를 프로필에 실어 두었으므로, 이
+# 함수는 그것을 **읽어서 옮기기만** 한다 — 같은 값을 두 번 구하면 두 경로가
+# 조용히 갈라진다 (§1-8). `team_timeline`·`rest_context` 라는 낱말이 이
+# 함수에 없는 것을 테스트가 고정한다.
+#
+# **경기력 지표가 아니다.** 이 축은 `TeamAnalysis.AXES` 밖에 있고, 레이더·
+# 직접 비교·근거 생성 어디에도 자동으로 들어가지 않는다. 값의 방향도 정하지
+# 않는다 — 휴식이 길수록 유리하다는 문턱이 이 저장소에 관측된 적이 없다.
+SCHEDULE_CONTEXT_DISCLAIMERS = (
+    "휴식·경기 수는 **일정 문맥**이며 경기력 지표가 아닙니다. "
+    "기회의 질·수비의 질과 하나의 점수로 합치지 마십시오",
+    "유리·불리를 정하지 않았습니다 — 휴식이 길수록 좋다는 문턱을 이 "
+    "프로젝트가 관측한 적이 없습니다",
+)
+
+
+def build_schedule_context(profile: TeamProfile | None) -> AnalysisAxis | None:
+    """휴식·최근 경기 밀도·직전 공식 경기 (Phase 6-D-9B).
+
+    값이 하나도 없으면 **축을 만들지 않는다** — 빈 축을 넣어 계산이 끝난 것
+    처럼 보이게 하지 않는다 (§1-1-5). 시즌 첫 경기나 색인이 없는 실행이
+    그 경우이고, 그때 `rest_hours` 는 `None` 이지 `0` 이 아니다 (§1-5).
+    """
+    if profile is None:
+        return None
+
+    rest_hours = profile.rest_hours
+    rest_days = profile.rest_days
+    density = dict(getattr(profile, "match_density", None) or {})
+    if rest_hours is None and rest_days is None and not density:
+        return None
+
+    axis = AnalysisAxis(name="schedule_context")
+
+    def put(name: str, value) -> None:
+        # 표본 수를 지어내지 않는다. 휴식·밀도는 '경기 N건에서 평균낸 값' 이
+        # 아니라 기준시각 한 점에서 센 사실이라 `sample_count` 가 없다.
+        if value is None:
+            return
+        axis.metrics[metric_key(SCHEDULE_PERIOD, name)] = _metric(
+            name, SCHEDULE_PERIOD, float(value), None,
+            origin=(SEASON_MATCH_INDEX, MATCH_SCHEDULE))
+
+    put("rest_hours", rest_hours)
+    put("rest_days", rest_days)
+    # 창(7·10·14일)을 코드에 박지 않는다 — 프로필이 들고 온 창을 그대로
+    # 읽는다. 창 정의는 6-D-8 이 정한 그대로이고 이번 Phase 가 바꾸지 않는다.
+    for days, count in sorted(density.items()):
+        put(f"matches_last_{int(days)}d", count)
+
+    # 직전 경기가 **무엇이었나** — 숫자가 아니라 사실이라 notes 에 적는다.
+    # `Metric.value` 는 float 이라 대회 이름과 킥오프를 담을 수 없고, 담으려고
+    # 숫자로 바꾸면 그게 곧 해석이 된다.
+    prev_id = getattr(profile, "previous_match_id", "") or ""
+    prev_comp = getattr(profile, "previous_competition", "") or ""
+    prev_kick = getattr(profile, "previous_kickoff", None)
+    if prev_id or prev_comp or prev_kick is not None:
+        bits = []
+        if prev_comp:
+            bits.append(prev_comp)
+        if prev_kick is not None:
+            bits.append(in_kst(prev_kick).strftime("%Y-%m-%d %H:%M KST"))
+        if prev_id:
+            bits.append(f"경기 {prev_id}")
+        axis.notes.append("직전 공식 경기: " + " · ".join(bits))
+    elif rest_hours is None:
+        # 조용히 비지 않는다 (§1-6-1). 휴식을 못 잰 것과 0시간은 다르다.
+        axis.notes.append("직전 공식 경기를 찾지 못해 휴식을 재지 않았습니다")
+
+    axis.notes.extend(SCHEDULE_CONTEXT_DISCLAIMERS)
+    return axis
+
+
 # --------------------------------------------------------------------------
 # 7. TeamAnalysis / Match 연결
 # --------------------------------------------------------------------------
@@ -3207,6 +3327,10 @@ def build_team_analysis(profile: TeamProfile | None, team: str,
         profile, team, season_matches, as_of, windows=windows,
         venue=(None if is_home is None else (HOME if is_home else AWAY)),
         config=schedule_strength_config(settings), quality=quality)
+    # 6-D-9B. **여섯 축 밖**이다 — 경기력이 아니라 일정 문맥이고,
+    # `season_matches`·`as_of` 를 받지 않는다(다시 재지 않는다는 뜻이다).
+    # 프로필의 값은 `analyze.build_rest_days()` 가 이미 시점을 지켜 채웠다.
+    out.schedule_context = build_schedule_context(profile)
     return out
 
 

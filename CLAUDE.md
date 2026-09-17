@@ -3962,6 +3962,148 @@ for league_key in leagues:            # leagues = sorted(...)
 
 회귀 테스트: `python tests/test_population_integrity.py` (27개).
 
+### 1-35. 일정 문맥 (Phase 6-D-9B) — `analysis.build_schedule_context()`
+
+6-D-8 이 **대회를 가로지르는 시간축**과 거기서 잰 휴식을 만들어 두었는데,
+그 값이 프로필에만 앉아 있고 `휴식 N일` 한 줄 말고는 아무 데도 닿지
+않았다 — 실측으로 `rest_hours` 소비처 **0곳**, `match_density` **0곳**,
+분석 축 272종 중 일정 관련 **0종**이었다. 이 Phase 가 그것을 잇는다.
+
+#### 버려지던 셋을 먼저 되찾았다
+
+`rest_context()` 는 6-D-8 부터 여섯 칸을 돌려주고 있었는데
+`build_rest_days()` 가 **수치 셋만 옮기고 나머지를 버렸다.**
+
+```python
+profile.rest_days / rest_hours / match_density     ← 옮겼다
+ctx.previous_match_id / previous_competition / previous_kickoff   ← 버렸다
+```
+
+그래서 "목요일 UCL 을 뛰고 40시간 뒤 EPL" 이라는 사실에서 **대회가 무엇
+이었는지가 사라졌다** — 휴식이 대회를 가로질러 계산됐다는 것 자체를 뒤에서
+확인할 수 없었다. 그 셋을 프로필까지 싣는다. **다시 계산하지 않는다** —
+같은 호출의 같은 결과에서 꺼낸다.
+
+`RestContext` 를 통째로 또 담지 않는다(§8) — 수치 셋이 이미 프로필에 있어
+같은 수가 두 벌이 된다. `current_kickoff` 도 두지 않는다 —
+`MatchAnalysis.as_of` 가 그 값이다.
+
+#### 경기력 축이 **아니다** — `AXES` 밖에 둔다
+
+```python
+TeamAnalysis.schedule_context : AnalysisAxis | None   ← AXES 에 없다
+TeamAnalysis.AXES = (여섯 개 그대로)
+```
+
+`AXES` 는 '경기력 축' 레지스트리이고 **`panel.py:127`·`match_material:515`·
+`revive:1046` 이 그것을 돌며 축 지표로 다룬다.** 거기 넣으면 두 가지가
+동시에 일어난다 — 일정이 기회의 질·수비의 질과 같은 차원으로 읽히고,
+**`panel.py`(이번 Phase 수정 금지)의 동작이 파일을 고치지 않고도 바뀐다.**
+`data_quality` 가 이미 AXES 밖 필드의 선례다.
+
+같은 이유로 **레이더·직접 비교에 올리지 않는다** — 거기는 경기력 지표의
+자리다(테스트가 `_DIRECT_ROWS`·`radar_metrics` 에 없는 것을 고정한다).
+**근거 생성(2-G)에도 넣지 않았다** — 근거는 '발견'(해석)을 요구하는데,
+방향도 문턱도 없는 값에서 발견을 만들면 그게 곧 이 Phase 가 금지한 판정이
+된다. 분석가는 경기자료 MD(§1-14)와 리포트에서 **사실 그대로** 본다.
+
+#### 방향을 정하지 않는다
+
+다섯 지표 모두 `direction=""` 이고 `UNDIRECTED` 에 들어 있다. 휴식이
+길수록 유리하다거나 최근 경기가 많을수록 불리하다는 **문턱을 이 저장소가
+관측한 적이 없다** — 2-F 가 `thresholds` 를 `{}` 로 비워 둔 것과 같은
+상태다(§1-1-13). 방향을 적는 순간 화면과 근거가 그것을 우열로 읽는다.
+
+`continental_fatigue` 같은 판정값도 만들지 않는다. **UCL 직후 EPL 이라고
+해서 불리하다고 적지 않는다** — 사실만 남긴다(테스트가 낱말을 막는다).
+
+  · **방향이 비어 있는 것과 분류를 빠뜨린 것은 다르다.** 그래서
+    `UNDIRECTED` 에 명시적으로 넣는다 — "모든 지표가 분류돼 있다" 는 기존
+    검사(`test_undirected_metrics_stay_blank`)를 그대로 지난다.
+  · 단위를 **정직하게** 적는다 — `hours` · `days` · `count`. 43.5 는 개수가
+    아니라 시간이고, 기존 어휘(`per_match`·`%`)에 맞추려고 `count` 로
+    적으면 그 거짓이 화면과 자료에 그대로 실린다 (§1-5). 어휘를 늘리되
+    **열어 두지는 않는다** — 늘어난 값을 쓰는 것이 일정 문맥뿐임을 테스트가
+    확인한다.
+
+#### 새 `measurement_basis` 하나 — `match_schedule`
+
+2-C 가 `opponent_shot_events` 를, 2-F 가 `opponent_record` 를 따로 둔 것과
+같은 이유다. 일정은 **스코어도 슛도 상대 성적도 아니고 킥오프 시각의 간격과
+경기 수**다 — 나누지 않으면 문(`trend_allowed`·`comparison_allowed`)이
+"경기당 승점"에서 "휴식 시간"을 빼는 것을 막지 못한다.
+`COMPARABLE_SOURCES` 에 넣지 않았다. group 도 `schedule`(2-F)과 섞지 않고
+`schedule_context` 로 따로 뒀다 — 2-I 가 "일정이 빡빡했다" 와 "상대가
+강했다" 를 한 근거로 세면 안 된다.
+
+#### 없는 것을 0 으로 채우지 않는다
+
+  · 값이 하나도 없으면 **축을 만들지 않는다** (§1-1-5). 시즌 첫 경기·색인이
+    없는 실행이 그 경우이고, 그때 `rest_hours` 는 `None` 이지 `0` 이 아니다.
+  · **0경기는 관측값이다.** 시간축에 이 팀이 있는데 최근 7일에 경기가
+    없으면 `0` 이 답이다 — 6-D-8 이 정한 `{}` ↔ `0` 구분 그대로다.
+  · 직전 경기를 못 찾으면 사유를 notes 에 남긴다 (§1-6-1).
+  · 화면은 `데이터 없음` 으로 적는다 — 0 으로 채우지 않는다.
+  · **표본 수를 지어내지 않는다.** `sample_count=None` 이다 — 휴식·밀도는
+    '경기 N건에서 평균낸 값' 이 아니라 기준시각 한 점에서 센 사실이다.
+
+#### 창 정의를 바꾸지 않았다
+
+7·10·14일 창과 그 **양쪽 열린 경계**(`현재 − N일 < 킥오프 < 현재`)는 6-D-8
+그대로다. 축은 창 이름을 코드에 박지 않고 프로필이 들고 온 창을 그대로
+읽는다 — `build_schedule_context` 에 `matches_last_7d` 라는 글자가 없다.
+
+#### 화면 — 최근 폼 바로 뒤, 접힘 밖
+
+```
+리그 내 위치 → 최근 5경기 폼 → [일정 문맥] → 직접 비교 → 패널 → [접힘] …
+```
+
+둘 다 "최근에 어떤 일정이었나" 를 답하므로 붙여 둔다. 새 CSS 를 만들지
+않았다(`.block`·`.meta`·`.tablewrap`·`table.mini`·`.num`·`.nodata`·`.lbl`·
+`.mnotes` 만 쓴다 · 테스트가 화이트리스트로 검사). `rest_days` 는 별도
+줄로 두지 않고 시간 옆 괄호로 적는다 — 같은 사실을 단위만 바꿔 두 줄로
+놓으면 사실이 둘인 것처럼 보인다.
+
+경기자료 MD 에도 같은 사실이 나간다(§1-14 의 공식 인터페이스).
+
+#### 값이 바뀌지 않았다
+
+**여섯 축이 한 칸도 바뀌지 않는다** — 변경 전 코드와 지금 코드를 같은
+저장본에 **재계산해** 대조하니 sha 가 같았다 (`d0d06d86c969cd21`).
+
+| | 결과 |
+|---|---|
+| 저장본 260052 여섯 축 (14경기 × 두 팀) | **3,605,707 bytes 완전 동일** |
+| `--demo` · `--rerender-artifact` · 경기자료 MD | **바이트 동일** (662,013 · 940,119 · 1,206,254) |
+| 재계산 리포트 | 742,123 → **758,349** (+16,226 = 일정 문맥 블록 14개) |
+| 재계산 여섯 축 | 변경 전후 **sha 동일** |
+
+저장본 경로가 바이트까지 같은 이유는 옛 저장본에 새 칸이 없어 축이
+`None` 으로 되살아나고 블록이 통째로 빠지기 때문이다 — **옛 저장본이
+그대로 읽힌다**는 뜻이다(§1-16 의 판 검사와 같은 태도).
+
+`predict.py`·`pinnacle.py`·`moderator.py`·`panel.py`·`briefing/` **diff
+0줄**, data·cache 변화 없음, 캐시 판도 올리지 않았다 — 소스 응답의 저장
+형식이 바뀌지 않았다.
+
+**기존 테스트 둘을 고쳤다 — 기대값을 바꾼 것이 아니다.**
+
+  · `test_population_integrity.test_c2_no_rest_or_congestion_axis`
+    → `..._rest_is_context_not_a_performance_axis`. 6-D-9A 때 이 테스트는
+    "`analysis` 에 `rest_*` 라는 낱말이 없다" 는 **범위 선언**이었고,
+    6-D-9B 가 바로 그것을 잇는 Phase다. 범위를 옮기고 지키려던 것(일정이
+    경기력 축이 되지 않는 것)은 **다섯 갈래로 더 단단히** 고정했다.
+  · `test_time_context.test_metric_labels_exist_for_every_spec` — 닫힌
+    어휘 검사다. 어휘를 늘리되 **늘어난 값을 쓰는 것이 일정 문맥뿐임**을
+    함께 단언해 "모든 지표가 분류돼 있다" 는 불변조건을 지켰다.
+
+**음성 대조로 확인했다** — 새 테스트 32개를 변경 전 코드에 돌리면 **25개가
+깨진다.** 통과하는 7개는 "바뀌지 않아야 한다" 를 지키는 것들이라 양쪽에서
+통과하는 것이 맞다.
+
+회귀 테스트: `python tests/test_schedule_context.py` (32개).
+
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
 260052 실행이 남긴 것은 후스코어드 `팀명 매칭 실패` 5건과 `강점 0개` 3팀이다.
@@ -4615,7 +4757,8 @@ python tests/test_strict_resolution.py     # 대회 팀명 정확일치 전용 6
 python tests/test_index_isolation.py       # 색인 모집단 분리 6-D-5 §1-30 (48개)
 python tests/test_continental_collection.py # 대륙대회 수집·중복 제거 6-D-7 §1-31 (50개)
 python tests/test_match_timeline.py        # 팀 경기 시간축·휴식·밀도 6-D-8 §1-32 (55개)
-python tests/test_population_integrity.py  # 모집단 무결성·대표 팀 항목 6-D-9A §1-34 (27개)
+python tests/test_population_integrity.py  # 모집단 무결성·대표 팀 항목 6-D-9A §1-34 (28개)
+python tests/test_schedule_context.py      # 일정 문맥·휴식·경기 밀도 6-D-9B §1-35 (32개)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)

@@ -266,6 +266,14 @@ def build_rest_days(matches: list[Match],
             profile.rest_days = ctx.rest_days
             profile.rest_hours = ctx.rest_hours
             profile.match_density = dict(ctx.window_counts)
+            # 직전 경기가 **무엇이었나** 도 함께 싣는다 (Phase 6-D-9B).
+            # `rest_context()` 는 6-D-8 부터 이 셋을 돌려주고 있었는데 여기서
+            # 버렸다 — 그래서 휴식이 대회를 가로질러 계산됐다는 사실 자체를
+            # 뒤에서 확인할 수 없었다. **다시 계산하지 않는다**: 위와 같은
+            # 호출의 같은 결과에서 꺼낸다.
+            profile.previous_match_id = ctx.previous_match_id
+            profile.previous_competition = ctx.previous_competition
+            profile.previous_kickoff = ctx.previous_kickoff
 
 
 def run_all(matches: list[Match], settings: Settings,

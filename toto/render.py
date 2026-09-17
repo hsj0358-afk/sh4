@@ -334,6 +334,71 @@ def _form_block(match: Match) -> str:
             f'<div class="cols">{"".join(parts)}</div></div>')
 
 
+# 일정 문맥 표에 실을 줄 (Phase 6-D-9B). 라벨을 여기 다시 적지 않는다 —
+# `analysis.SPECS` 에서 끌어온다 (§1-1-15 와 같은 이유로 두 곳에 두면 어긋난다).
+# `rest_days` 는 빼둔다: `rest_hours` 와 같은 사실을 단위만 바꿔 적은 값이라
+# 같은 표에 두 줄로 놓으면 사실이 둘인 것처럼 보인다 — 시간 옆 괄호로 적는다.
+_SCHEDULE_ROWS = ("rest_hours", "matches_last_7d",
+                  "matches_last_10d", "matches_last_14d")
+
+
+def _schedule_cell(axis, name: str) -> str:
+    """일정 문맥 한 칸. 값이 없으면 `데이터 없음` — 0 으로 채우지 않는다."""
+    from . import analysis
+    metric = axis.get(f"{analysis.SCHEDULE_PERIOD}.{name}") if axis else None
+    if metric is None or metric.value is None:
+        return '<td class="nodata">데이터 없음</td>'
+    if name == "rest_hours":
+        days = axis.value(f"{analysis.SCHEDULE_PERIOD}.rest_days")
+        tail = f' ({int(days)}일)' if days is not None else ""
+        return f'<td class="num">{metric.value:.1f}시간{esc(tail)}</td>'
+    return f'<td class="num">{int(metric.value)}경기</td>'
+
+
+def _schedule_block(match: Match) -> str:
+    """휴식·최근 경기 밀도·직전 공식 경기 (Phase 6-D-9B).
+
+    **읽어서 놓기만 한다.** 값을 다시 계산하지 않고, 두 팀의 수를 견주어
+    누가 유리한지 적지 않는다 — 그 문턱을 이 프로젝트가 관측한 적이 없다.
+    직접 비교(덤벨)·레이더에는 넣지 않는다: 거기 넣으면 경기력 지표와 같은
+    차원으로 읽힌다 (§14).
+    """
+    from . import analysis
+    axes = [getattr(match.analysis, side, None) if match.analysis else None
+            for side in ("home", "away")]
+    axes = [getattr(a, "schedule_context", None) if a else None for a in axes]
+    if not any(axes):
+        return ""
+
+    rows = ""
+    for name in _SCHEDULE_ROWS:
+        label, _unit, _dir, _fam = analysis.SPECS[name]
+        cells = "".join(_schedule_cell(a, name) for a in axes)
+        rows += f'<tr><td class="lbl">{esc(label)}</td>{cells}</tr>'
+
+    # 직전 공식 경기는 숫자가 아니라 사실이라 축 notes 에 있다. 경기력 분석
+    # 블록과 **같은 헬퍼**로 보여 준다 (§1-1-15 · §1-1-12 교정과 같은 자리).
+    prev = ""
+    for side_label, axis in zip((match.home.display, match.away.display), axes):
+        line = next((n for n in (axis.notes if axis else [])
+                     if n.startswith("직전 공식 경기")), "")
+        if line:
+            prev += f'<li>{esc(side_label)} — {esc(line)}</li>'
+    # 기존 클래스만 쓴다 — 새 CSS 를 만들지 않는다 (§1-8 · §1-1-15).
+    prev = f'<ul class="mnotes">{prev}</ul>' if prev else ""
+
+    return (f'<div class="block"><h4>일정 문맥 (휴식 · 최근 경기 수)</h4>'
+            f'<p class="meta">직전 <b>공식 경기</b>와의 간격입니다 — '
+            f'대회를 가로질러 잽니다(리그·컵·대륙대회를 함께 봅니다) · '
+            f'<b>유리·불리를 정하지 않았습니다</b> · '
+            f'경기력 지표가 아니라 일정 문맥입니다</p>'
+            f'<div class="tablewrap"><table class="mini">'
+            f'<thead><tr><th>항목</th>'
+            f'<th>{esc(match.home.display)}</th>'
+            f'<th>{esc(match.away.display)}</th></tr></thead>'
+            f'<tbody>{rows}</tbody></table></div>{prev}</div>')
+
+
 def _h2h_block(match: Match) -> str:
     h2h = match.h2h
     bar = charts.h2h_bar(h2h.home_wins, h2h.draws, h2h.away_wins,
@@ -1521,6 +1586,10 @@ def _match_card(match: Match, settings: Settings, report=None) -> str:
             # 읽힌다. 폼은 '상세 근거' 가 아니라 분위기를 빠르게 읽는
             # 핵심 정보라 `<details>` 안에 넣지 않는다.
             f'{_form_block(match)}'
+            # 일정 문맥도 접힘 밖이고 폼 바로 뒤다 (Phase 6-D-9B) — 둘 다
+            # "최근에 어떤 일정이었나" 를 답한다. **직접 비교·레이더에는
+            # 넣지 않는다**: 거기 넣으면 경기력 지표와 같은 차원으로 읽힌다.
+            f'{_schedule_block(match)}'
             f'{_direct_compare_block(match)}'
             f'{_panel_block(match)}'
             # ---- 검증 계층 (§62 LEVEL 4) — 기본 접힘 (Phase 4-F UI §5) ----

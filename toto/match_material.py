@@ -47,7 +47,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from .models import (AWAY, DRAW, HOME, MatchAnalysis, Report, TeamAnalysis,
-                     as_of_from_match, find_season_match)
+                     as_of_from_match, find_season_match, in_kst)
 from .settings import ROOT
 
 log = logging.getLogger("toto")
@@ -473,8 +473,28 @@ def _tactical(match) -> str:
             if items:
                 rows.append([name, " · ".join(items)])
                 have = True
-        if profile.rest_days is not None:
+        # 일정 문맥 (Phase 6-D-9B). **사실값만 옮긴다** — 유리·불리를 적지
+        # 않고, 두 팀 수를 견주지 않는다. 휴식은 대회를 가로질러 잰 값이라
+        # 직전 경기가 어느 대회였는지를 함께 남긴다.
+        if profile.rest_hours is not None:
+            days = (f" ({profile.rest_days}일)"
+                    if profile.rest_days is not None else "")
+            rows.append(["직전 공식 경기 이후 휴식",
+                         f"{profile.rest_hours:.1f}시간{days}"])
+            have = True
+        elif profile.rest_days is not None:
             rows.append(["직전 경기 이후 휴식일", str(profile.rest_days)])
+            have = True
+        for days in sorted(profile.match_density or {}):
+            rows.append([f"최근 {days}일 공식 경기 수",
+                         f"{int(profile.match_density[days])}경기"])
+            have = True
+        if profile.previous_competition or profile.previous_kickoff:
+            bits = [b for b in (
+                profile.previous_competition,
+                (in_kst(profile.previous_kickoff).strftime("%Y-%m-%d %H:%M KST")
+                 if profile.previous_kickoff is not None else ""))if b]
+            rows.append(["직전 공식 경기", " · ".join(bits)])
             have = True
         if rows:
             out += f"**{label} — {profile.team.display}**\n\n" + _table(

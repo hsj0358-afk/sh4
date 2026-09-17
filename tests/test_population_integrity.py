@@ -387,11 +387,57 @@ def test_c1_predict_is_untouched():
         assert word not in src, word
 
 
-def test_c2_no_rest_or_congestion_axis():
-    """6-D-9B 는 이번 범위가 아니다."""
-    src = inspect.getsource(analysis)
-    for word in ("rest_days", "rest_hours", "match_density", "congestion"):
+def test_c2_rest_is_context_not_a_performance_axis():
+    """휴식·경기 밀도는 **경기력 축이 아니다.**
+
+    6-D-9A 때 이 테스트는 "`analysis` 에 `rest_*` 라는 낱말이 없다" 였다 —
+    그 Phase 가 일정 문맥을 다루지 않는다는 **범위 선언**이었고, 6-D-9B 가
+    바로 그것을 잇는 Phase다. 범위는 옮기고 **지키려던 것은 더 단단히**
+    고정한다: 일정 문맥이 기회의 질·수비의 질과 같은 차원이 되지 않는 것.
+    """
+    from toto.models import TeamAnalysis
+
+    # ① 경기력 축 레지스트리 밖이다. 이 목록을 `panel.py`·`match_material`·
+    #    `revive` 가 '축 지표' 로 돈다.
+    assert "schedule_context" not in TeamAnalysis.AXES
+    assert len(TeamAnalysis.AXES) == 6, TeamAnalysis.AXES
+
+    # ② 방향을 정하지 않았다 — 길수록 좋다/나쁘다를 코드가 말하지 않는다.
+    for name in analysis.SCHEDULE_CONTEXT_SPECS:
+        assert analysis.SPECS[name][2] == "", name
+        assert name in analysis.UNDIRECTED, name
+
+    # ③ 공격·수비·결과 어느 갈래에도 들어가지 않는다.
+    for group in (analysis.ATTACK, analysis.DEFENSE, analysis.RESULT):
+        for name in analysis.SCHEDULE_CONTEXT_SPECS:
+            assert name not in group, name
+
+    # ④ 직접 비교(덤벨)·레이더에 자동으로 올라가지 않는다 (§14).
+    from toto import render
+    from toto.settings import load_settings
+    flat = {n for _axis, n in render._DIRECT_ROWS}
+    radar = {str(m.get("key", "")) for m in load_settings().radar_metrics}
+    radar |= {str(m.get("home_key", "")) for m in load_settings().radar_metrics}
+    for name in analysis.SCHEDULE_CONTEXT_SPECS:
+        assert name not in flat, name
+        assert name not in radar, name
+
+    # ⑤ 여섯 축에 수학적으로 합산되지 않는다 — 빌더가 축 값을 만들지 않는다.
+    src = inspect.getsource(analysis.build_schedule_context)
+    for word in ("time_context", "chance_quality", "defensive_quality",
+                 "sustainability", "venue_context", "schedule_strength"):
         assert word not in src, word
+
+
+def test_c2b_schedule_context_does_not_recompute_the_timeline():
+    """시간축·휴식을 다시 계산하지 않는다 (§2) — 프로필 값을 읽을 뿐이다."""
+    src = inspect.getsource(analysis.build_schedule_context)
+    for word in ("team_timeline", "rest_context", "matches_before",
+                 "REST_WINDOW_DAYS"):
+        assert word not in src, word
+    # 창 이름을 코드에 박지 않는다 — 프로필이 들고 온 창을 그대로 읽는다.
+    for hard in ("7", "10", "14"):
+        assert f"matches_last_{hard}d" not in src, hard
 
 
 def test_c3_h2h_population_unchanged():

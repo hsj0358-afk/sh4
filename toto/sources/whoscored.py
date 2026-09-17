@@ -583,6 +583,49 @@ def _heading_label(node) -> str:
 # 이름이 빠지고 강도('Very Strong')만 남는다.
 _ITEM_CLASS = re.compile(r"character|characteristic", re.I)
 
+# 제목 앞에 붙는 소유격 팀 이름 (Phase 6-E-5). 실측 260054 에서 28팀 전부
+# 스타일 제목이 이렇게 왔다 — `"Brighton's Style of Play"`.
+#
+#   h3 < div.col12-lg-12.col12-m-12 < div.sws-content.character-card
+#     :: "Brighton's Style of Play"
+#
+# 강점·약점 제목은 팀 이름이 없어(`Strengths`) 그대로 지나갔고, 스타일만
+# 길이 상한과 정확일치 **둘 다**에 막혀 0/28 이었다. 관측한 모양만 벗긴다 —
+# 접미사 부분일치로 넓히지 않는다 (§1-1-1 이 부분일치를 걷어낸 이유와 같다).
+# 아포스트로피는 ASCII 와 U+2019 둘 다 받는다.
+_POSSESSIVE = re.compile(r"^.{1,44}['’]s\s+")
+
+
+def _heading_slot(label: str) -> str:
+    """제목 라벨 → 슬롯. **정확일치를 먼저 보고, 그 다음 소유격을 벗긴다.**
+
+    순서가 중요하다 — 바레 제목(`strengths`)의 동작이 한 글자도 달라지지
+    않아야 한다.
+    """
+    hit = (_CHARACTERISTIC_HEADINGS.get(label)
+           or _CHARACTERISTIC_HEADINGS.get(label.replace(" ", "")))
+    if hit:
+        return hit
+    bare = _POSSESSIVE.sub("", label, count=1)
+    if bare == label:
+        return ""
+    return (_CHARACTERISTIC_HEADINGS.get(bare)
+            or _CHARACTERISTIC_HEADINGS.get(bare.replace(" ", "")) or "")
+
+
+# 소스가 "없다" 를 **빈 목록이 아니라 문장 한 줄로** 내려보낸다 (Phase 6-E-5).
+# 실측 260054 에서 AT마드의 약점 칸이 이랬다.
+#
+#   약점 1건 → "(Team has no significant weaknesses)"
+#
+# 그대로 두면 `weaknesses` 가 길이 1이 되어 `characteristic_status` 가 `ok`
+# 로 떨어지고, 리포트에 **가짜 약점 한 건**이 나간다 (§1-5).
+#
+# **어휘를 코드에 두지 않는다** (§3-1 과 같은 규칙) — 'no significant' 같은
+# 영어 낱말을 찾지 않고 **모양으로만** 가른다. 실제 특성 24종은 괄호로
+# 감싸인 것이 하나도 없고, 이 문장은 통째로 괄호 안에 있다.
+_PLACEHOLDER_ITEM = re.compile(r"^\(.*\)$", re.S)
+
 
 def _extract_characteristics(soup) -> dict[str, list[str]]:
     """Strengths / Weaknesses / Style of Play 추출.
@@ -600,10 +643,14 @@ def _extract_characteristics(soup) -> dict[str, list[str]]:
         if node.name in ("span", "div") and len(node.find_all(True, recursive=False)) > 1:
             continue
         label = _heading_label(node)
-        if len(label) > 20:            # "Style of play" 보다 긴 제목은 없다
+        # 상한을 20 → 60 으로 올렸다 (6-E-5). 스타일 제목만 **팀 이름을 앞에
+        # 달고** 오기 때문이다 — 실측 최장이 37자다
+        # ("deportivo de a coruna's style of play"). 20 에서는 28팀 전부가
+        # 여기서 잘려 나갔다. 상한을 없애지는 않는다 — 긴 문단을 제목으로
+        # 삼지 않으려는 원래 목적은 그대로다.
+        if len(label) > 60:
             continue
-        slot = _CHARACTERISTIC_HEADINGS.get(label) or _CHARACTERISTIC_HEADINGS.get(
-            label.replace(" ", ""))
+        slot = _heading_slot(label)
         if not slot or found[slot]:
             continue
         # 제목 뒤에 오는 첫 목록을 읽는다
@@ -622,6 +669,15 @@ def _extract_characteristics(soup) -> dict[str, list[str]]:
             items = [x.get_text(" ", strip=True)
                      for x in holder.find_all(["span", "td", "p"])]
         items = [re.sub(r"\s+", " ", i) for i in items if 2 < len(i) < 120]
+        # "없다" 문장을 특성으로 담지 않는다 (§1-5). **조용히 버리지 않고**
+        # 무엇을 왜 버렸는지 남긴다 (§1-6-1) — 이 자리가 곧 관측된 0이므로,
+        # 걸러 낸 뒤 슬롯은 `[]` 가 되고 `characteristic_status` 가
+        # `observed_empty` 로 떨어진다. 그게 사실과 맞는 상태다.
+        dropped = [i for i in items if _PLACEHOLDER_ITEM.match(i)]
+        if dropped:
+            items = [i for i in items if not _PLACEHOLDER_ITEM.match(i)]
+            log.info("%s: '없음' 표시를 특성에서 제외했습니다 — %s",
+                     slot, "; ".join(dropped))
         # 중복 제거(순서 유지)
         seen, cleaned = set(), []
         for item in items:
@@ -739,7 +795,14 @@ def _extract_missing(soup) -> list[dict]:
 
 # 팀 페이지 캐시 판 번호. 특성 파싱을 고칠 때마다 올린다.
 #   1 = 제목 라벨 정규화(+/- 기호) · 항목 블록 단위 추출 (2026-09-03)
-_TEAM_CACHE_VERSION = 1
+#   2 = 소유격 스타일 제목 인식 · "없다" 문장 제외 (6-E-5, 2026-09-18)
+#
+# **저장되는 payload 의 내용이 실제로 달라진다** — `style` 이 처음으로 차고
+# (0/28 → 채워짐), `weaknesses` 에서 `(Team has no significant …)` 한 줄이
+# 빠진다. 캐시는 날짜별이라 판을 올리지 않으면 **같은 날 재실행이 옛 결과를
+# 그대로 되돌려 주어** 고친 것이 반영되지 않는다 (§1-4 — 실제로 이것 때문에
+# 두 번 헛돌았다).
+_TEAM_CACHE_VERSION = 2
 
 
 def read_team(browser: WhoScoredBrowser, settings: Settings, team_url: str,

@@ -419,11 +419,16 @@ def test_g5_normal_page_leaves_no_extra_debug_file():
 
 
 def test_g6_payload_shape_is_unchanged():
-    """저장 형식이 바뀌지 않았다 — 그래서 캐시 판을 올리지 않았다 (§1-4)."""
+    """저장 **형식**은 그대로다 — 키 집합이 한 칸도 바뀌지 않았다.
+
+    다만 **내용**은 6-E-5 에서 달라졌다 (`style` 이 처음으로 차고 "없다"
+    문장이 빠진다). 형식이 아니라 내용이 바뀐 것이므로 캐시 판을 2 로
+    올렸다 — 안 올리면 같은 날 재실행이 옛 결과를 되돌려 준다 (§1-4).
+    """
     payload, cache = _read(NO_STRENGTH)
     assert set(payload) == {"_v", "strengths", "weaknesses", "style",
                             "form", "missing"}, sorted(payload)
-    assert payload["_v"] == _TEAM_CACHE_VERSION == 1
+    assert payload["_v"] == _TEAM_CACHE_VERSION == 2
     assert cache.saved[("whoscored", "team_Getafe")] is payload
 
 

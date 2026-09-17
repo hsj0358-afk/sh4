@@ -4441,6 +4441,120 @@ COUNTER 에 방향 부여 · 대칭 note 에 공략 문구 · payload 칸 누락
 artifact 저장 · 역할별 payload 칸 · MD 구분자 원상복귀)을 주입해 **전부**
 잡히는 것을 확인했다.
 
+### 1-39. 실측 재수집 (Phase 6-E-5) — 로그가 답을 찍어 줬다
+
+이 세션에서는 **네 소스가 전부 게이트웨이 정책으로 차단**돼 있다(§2-1).
+프록시가 `connect_rejected — gateway answered 403 to CONNECT` 를 스스로
+기록하고, 대조군(github)은 터널이 열린다. 그래서 실수집은 **사용자 PC 의
+260054 실행 로그와 리포트**로 했다.
+
+**세 질문에 전부 실물로 답했다.**
+
+#### ① 스타일 제목은 팀 이름을 앞에 단다 — 데이터 부재가 아니었다
+
+§3-1 이 "추측으로 고치지 말고 자리를 찍어 두라" 며 심어 둔 DEBUG 로그가
+28팀 전부 같은 모양을 냈다.
+
+```
+h3 < div.col12-lg-12.col12-m-12 < div.sws-content.character-card
+  :: "Brighton's Style of Play"
+```
+
+**독립적인 두 관문이 모두 막고 있었다.**
+
+| | 막은 것 |
+|---|---|
+| `len(label) > 20` | 실측 최장 37자 (`deportivo de a coruna's style of play`) — 28팀 전부 초과 |
+| `_CHARACTERISTIC_HEADINGS` 정확일치 | `"brighton's style of play"` 는 표에 없다 |
+
+강점·약점 제목은 팀 이름이 없어(`Strengths` · `+ Strengths`) 그대로 지나갔다.
+그래서 **스타일만** 0/28 이었다.
+
+`_heading_slot()` 이 **정확일치를 먼저 보고, 실패할 때만 소유격을 벗긴다** —
+바레 제목의 동작이 한 글자도 달라지지 않는 순서다. 상한은 20 → 60 으로
+올리되 **없애지 않았다**(긴 문단을 제목으로 삼지 않으려는 원래 목적은 그대로).
+
+  · **접미사 부분일치로 넓히지 않았다.** `<무엇>'s ` 라는 **관측한 모양만**
+    벗긴다 — §1-1-1 이 부분일치를 걷어낸 이유와 같다. `Match Analysis Style
+    of play` 는 거부된다(테스트로 고정).
+  · 아포스트로피는 ASCII 와 U+2019 둘 다 받는다.
+
+#### ② 소스가 "없다" 를 문장 한 줄로 내려보낸다
+
+`analyze` 가 남긴 한 줄이 실마리였다 — `의미 단위 표에 없는 특성 1종 —
+(Team has no significant weaknesses)`. AT마드의 약점 칸이 그것 **하나**였다.
+
+```
+약점 1건 → "(Team has no significant weaknesses)"
+```
+
+그대로 담기면 `weaknesses` 가 길이 1이 되어 `characteristic_status` 가
+**`ok`** 로 떨어지고, 리포트에 **가짜 약점**이 나간다 (§1-5). 실제로 260054
+리포트에 그렇게 나갔다.
+
+**어휘를 코드에 두지 않는다** (§3-1 과 같은 규칙) — `no significant` 같은
+영어 낱말을 찾지 않고 **모양으로만** 가른다. 실측 24종 label 은 괄호로
+감싸인 것이 하나도 없고 이 문장은 통째로 괄호 안에 있다. 걸러 낸 뒤 슬롯은
+`[]` 가 되고 상태가 **`observed_empty`** 로 떨어진다 — 그게 사실과 맞다.
+**조용히 버리지 않는다** — 무엇을 버렸는지 로그에 적는다 (§1-6-1).
+
+#### ③ 어휘는 회차를 건너도 같다 — 상한은 여전히 미확정
+
+| | 260052 | 260054 | |
+|---|---|---|---|
+| 고유 label | 24 | **24** | **신규 0 · 사라짐 0** |
+| intensity | 4 | **4** | 동일 |
+| 구분자 정확히 1개 | 212/212 | **198/199** | 예외 1건 = 위 placeholder |
+
+**두 표본이 같은 닫힌 집합을 냈다** — 6-E-2/6-E-3 의 24종 전제가 이제 독립
+회차로 뒷받침된다.
+
+**8개 상한은 증명하지 못했다.** 260052 Barcelona·Liverpool 에 이어 260054
+AT마드가 **정확히 8**이다(8을 넘은 관측은 아직 없다). 그러나 `cleaned[:8]`
+이 파서 안에서 걸려 저장본·리포트가 전부 절단 후이고 **절단 사실을 어디에도
+기록하지 않는다.** 원문 없이는 알 수 없다 — DEFERRED.
+
+#### 곁가지 — 팀 하나가 통째로 빠졌다
+
+`팀명 매칭 실패: '라싱산탄'` 한 줄 때문에 지표가 27/28팀, 배당이 13/14경기가
+되고 회차 승산이 13경기로만 계산됐다. `data/teams.yaml` 의 주석이 이 상황을
+예고해 두었다 — *"한국어 표기와 FotMob 표기는 아직 관측하지 못해 넣지
+않았다."* **이번에 그 한국어 표기가 관측됐다.** 베트맨이 폭에 맞춰 자른
+표기다 (§1-6-1 의 `브렌트퍼` 계열).
+
+  · §1-22 대로 **충돌 시뮬레이션을 먼저** 돌렸다 — 표의 671개 표기를 추가
+    전후로 전부 해석해 **바뀐 것 0건**을 확인한 뒤 고쳤다. 그 대조를
+    테스트로 옮겨 두었다(`test_e3`).
+  · **FotMob 표기는 여전히 넣지 않았다** — 관측되지 않았다.
+  · 5-E2 등록은 실제로 먹었다. 후스코어드 실패 목록에서 `R. Santander` 가
+    사라졌고 시즌 색인이 예고대로 722 → **760경기**가 됐다.
+
+#### 캐시 판을 올렸다 — 형식이 아니라 **내용**이 바뀐다
+
+`_TEAM_CACHE_VERSION` **1 → 2**. payload 의 키 집합은 한 칸도 바뀌지 않았지만
+저장되는 **내용**이 달라진다 — `style` 이 처음으로 차고 `weaknesses` 에서
+placeholder 한 줄이 빠진다. 캐시는 날짜별이라 올리지 않으면 **같은 날
+재실행이 옛 결과를 그대로 되돌려 준다** (§1-4 — 이것 때문에 두 번 헛돌았다).
+`_LEAGUE_CACHE_VERSION` 3 · `ARTIFACT_VERSION` 1 은 그대로다.
+
+#### 값이 바뀌지 않았다
+
+파서 변경은 **수집 경로에만** 닿는다. `--demo` 668,447 · `--rerender-artifact
+260052` 942,802 · 경기자료 MD 1,209,043 이 **바이트까지 그대로**이고 260052
+저장본도 미변경(md5 `01553f82…`)이다. `relationships.py`·`analyze.py`·
+`models.py`·`panel.py`·`render.py`·`match_material.py`·`predict.py`·
+`briefing/` **diff 0줄** — 관계 엔진에 새 unit 도 pair 도 만들지 않았다.
+
+**기존 테스트 넷의 범위를 옮겼다.** `test_e5`(6-E-2)·`test_f1`(6-E-4)·
+`test_h5`(6-E-3)가 **남의 Phase 가 올릴 수 있는 숫자**(`_TEAM_CACHE_VERSION`)를
+못 박고 있었다 — §1-31 의 `test_43`·`test_21f` 와 같은 교정으로, 그 핀을 걷고
+각 Phase 가 실제로 지키려던 것(payload 키 집합 · artifact 에 저장 안 함)만
+남겼다. `test_g6`(파서 자신의 suite)은 제자리라 숫자를 2 로 옮겼다.
+
+회귀 테스트: `python tests/test_real_recollection.py` (26개).
+돌연변이 10건 중 9건을 이 파일이 잡고, 나머지 하나(`team_page_ok` 무조건
+False)는 **제자리인 6-E-2 suite** 가 잡는다(`test_c7`·`test_c8`).
+
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
 260052 실행이 남긴 것은 후스코어드 `팀명 매칭 실패` 5건과 `강점 0개` 3팀이다.
@@ -4689,11 +4803,10 @@ ok (28/28팀, 강점/약점 28팀)                     특성까지 정상
 경고를 흘려보게 했다. 파일 이름의 `FAILED_` 접두사는 그대로 둔다 — 진단
 도구와 문서가 그 이름으로 찾는다.
 
-**`Style of play` 는 여전히 0팀이다 (260050, 28팀 전부).** 진단기는 그 문구가
-DOM 에 1회 있다고 했는데 제목 노드로는 잡히지 않았다. 추측으로 파서를 고치지
-않고, 강점/약점은 왔는데 스타일만 빌 때 **그 문구가 나온 자리를 그대로 DEBUG
-로그에 찍도록** 해 두었다 (`_extract_characteristics`). 캐시가 날짜별이라
-다음 회차 수집에서 자동으로 나온다 — `-v` 로 실행해 그 줄을 보고 고친다.
+**~~`Style of play` 는 여전히 0팀이다.~~ 6-E-5 에서 원인이 확정됐다 — §1-39.**
+그때 심어 둔 DEBUG 로그(`_extract_characteristics`)가 260054 실행에서 28팀
+전부의 자리를 찍어 줬고, 제목이 **팀 이름을 앞에 단 소유격**이라는 것이
+드러났다. 추측으로 고치지 않고 로그를 먼저 심은 것이 그대로 답이 됐다.
 
 회귀 테스트: `python tests/test_whoscored_characteristics.py` (40개).
 
@@ -5099,6 +5212,7 @@ python tests/test_schedule_context.py      # 일정 문맥·휴식·경기 밀�
 python tests/test_qualitative_characteristics.py  # 정성 특성 구조화·상태 6-E-2 §1-36 (44개)
 python tests/test_relationship_engine.py   # 정성 관계 엔진·의미 단위 6-E-3 §1-37 (45개)
 python tests/test_relationship_delivery.py # 관계 전달 경로·qualitative 6-E-4 §1-38 (50개)
+python tests/test_real_recollection.py     # 실측 재수집·스타일 제목·placeholder 6-E-5 §1-39 (26개)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)

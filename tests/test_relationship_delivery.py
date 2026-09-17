@@ -536,8 +536,14 @@ def test_e7_style_of_play_is_carried_when_it_exists():
 # F. 저장하지 않는다 (§13) · 두 역할이 같은 자료를 본다 (§12)
 # ==========================================================================
 def test_f1_cache_and_artifact_versions_are_unchanged():
+    """관계는 runtime 파생이라 저장 형식을 바꾸지 않는다.
+
+    **6-E-5 에서 범위를 옮겼다** — 거기서 파서가 바뀌며
+    `_TEAM_CACHE_VERSION` 이 2 가 됐고, 그건 6-E-4 의 변경이 아니다.
+    6-E-4 가 지키려던 것은 `test_f2`(artifact 에 qualitative 가 없다)와
+    아래 두 판이다 (§1-31 과 같은 교정).
+    """
     from toto.sources import whoscored
-    assert whoscored._TEAM_CACHE_VERSION == 1
     assert whoscored._LEAGUE_CACHE_VERSION == 3
     assert artifact.ARTIFACT_VERSION == 1
 

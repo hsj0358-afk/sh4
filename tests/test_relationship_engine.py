@@ -659,8 +659,14 @@ def test_h4_engine_is_pure_and_stores_nothing():
 
 
 def test_h5_cache_and_artifact_versions_are_unchanged():
+    """엔진은 순수 파생이라 저장 필드를 만들지 않는다.
+
+    **6-E-5 에서 범위를 옮겼다** — 거기서 파서가 바뀌며
+    `_TEAM_CACHE_VERSION` 이 2 가 됐고, 그건 6-E-3 의 변경이 아니다
+    (§1-31 과 같은 교정). 엔진이 아무것도 저장하지 않는다는 것은
+    `test_h4` 가 그대로 고정한다.
+    """
     from toto.sources import whoscored
-    assert whoscored._TEAM_CACHE_VERSION == 1
     assert whoscored._LEAGUE_CACHE_VERSION == 3
     assert artifact.ARTIFACT_VERSION == 1
 

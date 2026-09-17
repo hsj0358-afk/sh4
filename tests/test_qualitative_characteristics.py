@@ -558,13 +558,17 @@ def test_e4_real_artifact_still_loads():
 
 
 def test_e5_versions_were_not_bumped():
-    """직렬화 출력이 바뀐 것이 없으므로 판을 올리지 않았다 (§19).
+    """6-E-2 는 직렬화 출력을 바꾸지 않았으므로 판을 올리지 않았다 (§19).
 
-    `read_team` 의 payload 도 리그 캐시도 한 칸도 바뀌지 않았다.
-    저장본은 선택 칸 하나가 늘었을 뿐이라 옛 파일이 그대로 읽힌다 —
-    6-D-9B 가 `previous_*` 셋을 더할 때와 같은 경우다.
+    **6-E-5 에서 범위를 옮겼다.** 거기서 파서가 실제로 바뀌어(소유격 스타일
+    제목 인식 · "없다" 문장 제외) `_TEAM_CACHE_VERSION` 이 2 가 됐다 —
+    그건 **6-E-5 의 변경이지 6-E-2 의 것이 아니다.** 남의 Phase 가 올릴 수
+    있는 숫자를 못 박으면 그 Phase 가 깨뜨리게 된다 (§1-31 의 `test_43`·
+    `test_21f` 와 같은 교정).
+
+    6-E-2 가 지키려던 것 — **구조화는 읽을 때 파생이고 저장 형식을 바꾸지
+    않는다** — 은 `test_e6`(payload 키 집합 불변)가 그대로 고정한다.
     """
-    assert whoscored._TEAM_CACHE_VERSION == 1, whoscored._TEAM_CACHE_VERSION
     assert whoscored._LEAGUE_CACHE_VERSION == 3, whoscored._LEAGUE_CACHE_VERSION
     assert artifact.ARTIFACT_VERSION == 1, artifact.ARTIFACT_VERSION
 

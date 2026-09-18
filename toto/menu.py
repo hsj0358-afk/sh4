@@ -63,6 +63,13 @@ ITEMS = [
     ("5", "폰에서 열기 (같은 와이파이)",
      "이미 만든 리포트를 폰으로 볼 수 있게 주소를 띄웁니다. 클라우드 계정 불필요.",
      ["--serve"]),
+    # Phase 6-F-3. **[3] 뒤, [4] 앞**에 쓰는 중간 단계다. 번호가 뒤에 있는
+    # 것은 기존 번호를 밀지 않으려는 것뿐이다 — `[4]` 는 문서 여러 곳이
+    # 가리키는 자리라 바꾸면 그 참조가 전부 낡는다.
+    ("6", "1·2단계 결과 보관 · 사회자 자료 만들기",
+     "[3] 으로 낸 자료로 클로드에서 1·2단계를 돌린 뒤, 그 응답을 넣어 두고 "
+     "3단계에 첨부할 자료를 만듭니다. 클로드를 부르지 않습니다(API 불필요).",
+     "panel-work"),
     ("9", "개발·진단 도구",
      "데모·캐시 비우기·수집 실패 진단·소스 점검. 평소에는 쓰지 않습니다.",
      "tools"),
@@ -201,8 +208,12 @@ def _pick_panel_file():
 PASTE_END = "END"
 
 
-def _read_paste() -> str | None:
+def _read_paste(what: str = "3단계 Moderator 결과(JSON 배열)") -> str | None:
     """여러 줄 붙여넣기를 읽는다. 끝은 `END` 한 줄 (Phase 4-F).
+
+    `what` 은 안내 문구만 바꾼다 — 6-F-3 이 1·2단계 응답도 같은 방식으로
+    받으면서 루프를 한 곳에 모았다. 기본값이 4-F 의 문구 그대로라 `[4]` 의
+    화면은 바뀌지 않는다.
 
     **한 줄 입력으로 받지 않는다** — 3단계 결과는 14경기가 들어간 긴 JSON
     배열이고, 윈도우 콘솔은 붙여넣기를 줄 단위로 흘려보낸다.
@@ -211,7 +222,7 @@ def _read_paste() -> str | None:
     않는다** — 메뉴 루프의 "중단했습니다 → 130" 정책에 그대로 올라가야
     한다 (§1-7-1).
     """
-    print(f"\n  3단계 Moderator 결과(JSON 배열)를 통째로 붙여넣으세요.")
+    print(f"\n  {what}를 통째로 붙여넣으세요.")
     print(f"  다 붙여넣은 뒤 마지막 줄에 {PASTE_END} 만 입력하고 Enter.")
     print("  (취소하려면 그냥 Enter 로 끝내세요)\n")
     lines: list[str] = []
@@ -261,6 +272,65 @@ PANEL_INPUTS = [
     ("2", "Panel Result JSON 파일 가져오기",
      "panel_results/ 에 넣어 둔 <회차>_panel_result.json 을 씁니다."),
 ]
+
+
+# `[6]` 안에서 고르는 세 가지. **클로드를 부르는 항목이 하나도 없다** —
+# 분석은 사람이 채팅에서 하고 여기서는 그 결과를 넣고 조립할 뿐이다.
+PANEL_WORK = [
+    ("1", "1단계(데이터 분석가) 결과 넣기",
+     "클로드 대화 #1 의 JSON 배열을 붙여넣습니다. 검증을 통과하면 "
+     "panel_work/ 에 보관합니다."),
+    ("2", "2단계(맞대결·전술 분석가) 결과 넣기",
+     "클로드 대화 #2 의 JSON 배열을 붙여넣습니다. 1단계와 **따로** "
+     "보관하고, 여기서 1단계 결과를 읽지 않습니다."),
+    ("3", "사회자 자료 만들기 (1·2단계 조립)",
+     "보관해 둔 두 결과를 경기 번호로 짝지어 03_사회자자료_완성.md 를 "
+     "만듭니다. `◀ … ▶` 붙여넣기가 필요 없어집니다."),
+]
+
+
+def _panel_work_args() -> list[str] | None:
+    """`[6]` 의 세 항목 중 하나를 골라 CLI 인자를 만든다.
+
+    **검증·조립을 여기서 다시 구현하지 않는다** — CLI 와 같은 경로를 태운다
+    (§1-20 의 `[4]` 와 같은 이유). 두 곳에서 다른 결과가 나오면 어느 쪽도
+    믿을 수 없다.
+    """
+    import tempfile
+    from pathlib import Path
+    from . import panel, panelwork
+
+    print("\n  무엇을 할까요?")
+    for key, title, why in PANEL_WORK:
+        print(f"  [{key}] {title}")
+        print(f"      {why}")
+    print("  [0] 뒤로")
+    answer = (_ask("번호를 고르고 Enter (0 이면 뒤로): ") or "0").strip()
+    if answer == "0":
+        return None
+    if answer not in {k for k, _t, _w in PANEL_WORK}:
+        print(f"'{answer}' 는 없는 번호입니다.")
+        return None
+
+    rnd = _ask("회차 번호를 입력하세요 (예: 260054): ")
+    if rnd is None or not rnd.strip():
+        print("회차를 알 수 없어 실행하지 않았습니다.")
+        return None
+    rnd = rnd.strip()
+
+    if answer == "3":
+        return ["--round", rnd, "--build-moderator-input"]
+
+    role = panel.DATA_ANALYST if answer == "1" else panel.MATCHUP_ANALYST
+    text = _read_paste(f"{panel.ROLE_KO[role]} 응답(JSON 배열)")
+    if text is None:
+        return None
+    tmp = (Path(tempfile.mkdtemp(prefix="toto_stage_"))
+           / f"{rnd}_{panelwork.ROLE_FILES[role]}")
+    tmp.write_text(text, encoding="utf-8")
+    print(f"\n  {len(text):,}자를 읽었습니다. 검증합니다…")
+    return ["--round", rnd, "--save-panel-opinion", str(tmp),
+            "--role", role]
 
 
 def _panel_apply_args() -> list[str] | None:
@@ -344,6 +414,14 @@ def run_menu() -> int | None:
     # (§43). 두 곳에서 다른 결과가 나오면 어느 쪽도 믿을 수 없다.
     if args == "panel-apply":
         built = _panel_apply_args()
+        if built is None:
+            return 1
+        args = built
+
+    # 1·2단계 결과 보관과 3단계 자료 조립 (Phase 6-F-3). **클로드를 부르지
+    # 않는다** — 검증·조립도 여기서 다시 구현하지 않고 CLI 를 그대로 태운다.
+    if args == "panel-work":
+        built = _panel_work_args()
         if built is None:
             return 1
         args = built

@@ -156,6 +156,15 @@ def _slug(text: str) -> str:
     return _UNSAFE.sub("_", (text or "").strip()).strip("_") or "team"
 
 
+def round_dir(round_id: str) -> Path:
+    """그 회차의 채팅용 자료 폴더. **자리를 한 곳에만 적는다** (§1-8).
+
+    6-F-3 이 이 폴더에 완성본을 하나 더 쓰면서 경로를 두 곳에서 조립하게
+    됐다. 같은 문자열을 두 번 적으면 한쪽만 고쳐질 수 있다.
+    """
+    return ROOT / "reports" / f"panel_{round_id}"
+
+
 def instructions_fingerprint(simulations: int = moderator.DEBATE_SIMULATIONS
                             ) -> str:
     """지침 본문의 지문 8자.
@@ -366,12 +375,37 @@ def data_sheet(round_id: str, payloads, part: int = 1, parts: int = 1) -> str:
 """
 
 
-def moderator_data_sheet(round_id: str, payloads) -> str:
-    """3단계 자료 파일. 축 지표는 빠져 있다 (§1-10)."""
+def moderator_data_sheet(round_id: str, payloads,
+                         opinions_by_no: dict | None = None) -> str:
+    """3단계 자료 파일. 축 지표는 빠져 있다 (§1-10).
+
+    `opinions_by_no` 는 **경기 번호 → `PanelOpinion` 목록**이다 (Phase 6-F-3).
+    주면 그 의견을 `moderator.build_input()` 에 그대로 넘겨 `opinions` 가
+    채워진 완성본이 나온다 — 회차 전체 파일에는 `◀ … ▶` 자리표시자가
+    없어서(실측) 지금까지는 **모델이 직접** `[A]`·`[B]` 배열에서 같은
+    `match_no` 객체 둘을 찾아 넣어야 했다. 그 매칭은 프로그램이 정확히 할
+    수 있는 일이고, 어긋나도 검증되지 않는 자리다.
+
+    **`None` 이면 기존 동작 그대로다** — 바이트까지 같아야 한다(§21). 그래서
+    새 문구는 의견이 실제로 들어갈 때만 붙는다.
+    """
+    def _ops(p):
+        if opinions_by_no is None:
+            return []
+        return list(opinions_by_no.get(p.match_no) or ())
+
     blocks = "\n\n".join(
         f'<moderator_input no="{p.match_no}">\n'
-        + moderator.serialize_input(moderator.build_input(p, []))
+        + moderator.serialize_input(moderator.build_input(p, _ops(p)))
         + "\n</moderator_input>" for p in payloads)
+    # 자리표시자처럼 보이는 기호(`◀`·`▶`)를 **완성본에 두지 않는다** —
+    # 채울 자리가 없다는 것이 이 파일의 요점인데, 그 기호가 보이면 읽는
+    # 쪽이 아직 채울 자리가 있는 줄 안다.
+    filled = "" if opinions_by_no is None else """
+> **1·2단계 의견이 이미 들어 있습니다.** 프로그램이 `match_no` 를 기준으로
+> 짝지어 각 경기의 `"opinions"` 에 채웠습니다. 응답 배열을 손으로 끼워 넣는
+> 단계는 필요하지 않습니다 — 그 자리가 이미 채워져 있습니다.
+"""
     return f"""\
 # {round_id} 회차 사회자 자료 ({len(payloads)}경기)
 
@@ -380,7 +414,7 @@ def moderator_data_sheet(round_id: str, payloads) -> str:
 
 `<moderator_input no="N">` 은 N번 경기의 자료입니다. 축 지표는 일부러
 빠져 있습니다 — 사회자는 새 통계를 만들지 않습니다.
-
+{filled}
 ---
 
 {blocks}
@@ -1132,8 +1166,7 @@ def export(report: Report, outdir: Path | None = None,
     round_id = report.round_id or "unknown"
     sims = (moderator.simulations_of(settings) if settings is not None
             else moderator.DEBATE_SIMULATIONS)
-    target = Path(outdir) if outdir else (
-        ROOT / "reports" / f"panel_{round_id}")
+    target = Path(outdir) if outdir else round_dir(round_id)
 
     sheets, skipped, barren = [], [], []
     for match in report.matches:

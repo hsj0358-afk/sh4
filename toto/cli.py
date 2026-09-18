@@ -98,6 +98,20 @@ def build_parser() -> argparse.ArgumentParser:
                    help="--panel-export 를 켜고, 근거 0건 경기도 축 지표만으로 "
                         "냅니다 (시즌 초). 시트에 경고가 붙고 --panel 실행과 "
                         "같은 결과가 아닙니다.")
+    # Phase 6-F-3. **클로드를 부르지 않는다** — 사람이 채팅에서 받아 온
+    # 1·2단계 응답을 검증해 보관하고, 그것으로 3단계 자료를 조립할 뿐이다.
+    p.add_argument("--save-panel-opinion", type=Path, default=None,
+                   metavar="FILE",
+                   help="클로드 1·2단계 분석가 응답(JSON 배열)을 읽어 검증한 "
+                        "뒤 panel_work/<회차>/ 에 보관한다. --role 과 함께 "
+                        "쓴다. API 를 부르지 않는다")
+    p.add_argument("--role", default=None, metavar="ROLE",
+                   help="--save-panel-opinion 의 역할 (a|b 또는 analyst_a|"
+                        "analyst_b). a=데이터 분석가, b=맞대결·전술 분석가")
+    p.add_argument("--build-moderator-input", action="store_true",
+                   help="보관해 둔 1·2단계 결과를 match_no 기준으로 조립해 "
+                        "reports/panel_<회차>/03_사회자자료_완성.md 를 "
+                        "만든다. 원본은 덮어쓰지 않고 API 도 부르지 않는다")
     p.add_argument("--rerender-artifact", type=Path, default=None,
                    metavar="FILE",
                    help="저장된 회차 분석 결과(data/artifacts/<회차>.json)를 "
@@ -287,6 +301,62 @@ def _write_report(report: Report, args, settings, verb: str) -> Path:
     return out
 
 
+def _panel_work(args, settings) -> int:
+    """1·2단계 결과 보관과 3단계 자료 조립 (Phase 6-F-3).
+
+    **클로드를 부르지 않고 수집도 하지 않는다.** `_rerender` 와 같은 자리
+    (수집 구간 앞)에서 갈라지므로 `toto.sources` 도 `toto.llm` 도 import
+    되지 않는다 — 분석 실행은 전부 사람이 채팅에서 한다.
+
+    회차 자료는 저장본(4-C)에서 읽는다. 다시 수집하면 순위표·배당이 그때와
+    달라져(§1-1-7) 채팅에 준 자료와 다른 것이 된다.
+    """
+    from . import artifact, panelwork
+
+    round_id = (args.round_id or "").strip()
+    if not round_id:
+        log.error("--round 가 필요합니다 — 어느 회차의 결과인지 "
+                  "지어낼 수 없습니다.")
+        return 1
+    report, why = artifact.load(round_id)
+    if report is None:
+        log.error("저장된 회차 분석 결과가 없습니다 — %s", why)
+        log.error("  먼저 그 회차를 수집하십시오 (메뉴 [3] 또는 "
+                  "python -m toto --round %s --panel-export-all)", round_id)
+        return 1
+    log.info("저장된 회차 분석 결과를 씁니다 (수집하지 않습니다) — %s",
+             artifact.path_for(round_id))
+
+    failed = False
+    if args.save_panel_opinion is not None:
+        role = panelwork.resolve_role(args.role or "")
+        if not role:
+            log.error("--role 이 필요합니다 — a|b (또는 %s) 중 하나.",
+                      "|".join(sorted(panelwork.ROLE_FILES)))
+            return 1
+        path = Path(args.save_panel_opinion)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            log.error("분석가 응답 파일을 읽지 못했습니다: %s", exc)
+            return 1
+        result = panelwork.save_stage(text, role, report)
+        for line in panelwork.report_lines(result):
+            (log.error if result.errors else log.info)("분석가 결과: %s", line)
+        failed = failed or not result.success
+
+    if args.build_moderator_input:
+        built = panelwork.build_completed_sheet(report, settings)
+        for line in panelwork.report_lines(built):
+            (log.error if built.errors else log.info)("사회자 자료: %s", line)
+        if built.success:
+            log.info("  이 파일을 3단계 대화에 첨부하십시오. "
+                     "`◀ … ▶` 에 배열을 붙여넣을 필요가 없습니다.")
+        failed = failed or not built.success
+
+    return 1 if failed else 0
+
+
 def _rerender(args, settings) -> int:
     """저장된 회차 분석 결과(4-C)를 **현재 renderer 로** 다시 그린다.
 
@@ -453,6 +523,12 @@ def main(argv: list[str] | None = None) -> int:
     # 여기서 돌려주면 `sources` 는 import 조차 되지 않는다.
     if args.rerender_artifact is not None:
         return _rerender(args, settings)
+
+    # ---- 0-a2. 1·2단계 결과 보관 · 3단계 자료 조립 (Phase 6-F-3) ---------
+    # 여기도 **수집 구간 앞**이다. 그리고 **클로드를 부르지 않는다** —
+    # 사람이 채팅에서 받아 온 응답을 검증해 보관하고 조립할 뿐이다.
+    if args.save_panel_opinion is not None or args.build_moderator_input:
+        return _panel_work(args, settings)
 
     # ---- 0-b. 시장 기준선 캘리브레이션 (Phase 6-B) -----------------------
     # 여기도 **수집 구간 앞**이다. 쌓인 기록을 읽어 재기만 하고 파일을

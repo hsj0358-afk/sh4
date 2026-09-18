@@ -4577,6 +4577,105 @@ placeholder 한 줄이 빠진다. 캐시는 날짜별이라 올리지 않으면 
 돌연변이 10건 중 9건을 이 파일이 잡고, 나머지 하나(`team_page_ok` 무조건
 False)는 **제자리인 6-E-2 suite** 가 잡는다(`test_c7`·`test_c8`).
 
+### 1-40. 1·2단계 보관과 3단계 조립 (Phase 6-F-3) — `toto/panelwork.py`
+
+6-F-1 이 채팅 워크플로를 따라가 보니 사람이 하는 일은 **분석이 아니라
+운반**이었고, 그 운반 중 한 곳이 프로그램이 정확히 할 수 있는 일을 모델의
+주의력에 맡기고 있었다.
+
+```
+회차 전체 03_사회자자료.md 의 opinions 는 []  ·  자리표시자조차 없다
+                                    (실측: ◀ 0회)
+```
+
+그래서 지금까지는 **모델이 직접** `[A]`·`[B]` 배열에서 같은 `match_no` 객체
+둘을 찾아 14경기의 `opinions` 자리에 끼워 넣었다. 한 칸 밀려도 프로그램은
+알 수 없다 — 사회자 입력의 `opinions` 는 검증 대상이 아니다. 이 Phase 가
+그 조립을 가져온다.
+
+**클로드를 부르지 않는다.** `--panel`(메뉴 `[2]`)에 A→B→C 를 API 로 도는
+경로가 이미 있지만(§1-9·§1-10) **이 Phase 는 그것을 쓰지 않는다.**
+분석 실행은 전부 사람이 채팅에서 하고, 프로그램은 넷만 한다 — 검증 · 보관 ·
+`match_no` 대조 · 조립. `panelwork` 는 `llm`·`anthropic` 을 import 하지
+않고 `run_match`·`run_panel_role`·`attach_panels`·`run_moderator` 를 부르지
+않는다(AST 테스트). 실물 260052 성공 경로에서 **`anthropic` 이 한 번도
+로드되지 않는 것**을 별도 프로세스의 `sys.modules` 로 확인했다.
+
+  · `toto.llm` 은 로드된다 — `panel.py` 가 모듈 최상단에서 import 하기
+    때문이고 **이 Phase 가 만든 경로가 아니다.** `anthropic` 은 `llm` 안에서
+    호출 시점에 지연 import 되므로(§1-9) 모듈이 올라온 것만으로는 API 에
+    닿지 않는다. 지키는 것은 '낱말이 없다' 가 아니라 **호출이 없다** 이다.
+
+**검증기를 새로 만들지 않았다.** 경기 하나의 내용은 `panel.parse_opinion()`
+이 본다 — API 경로가 쓰는 바로 그 함수다. 근거 ID 목록도 그 경기의
+`build_panel_payload(match).evidence_ids` 에서 온다(회차 전체가 아니다 —
+근거는 경기마다 다시 매겨진다, §1-15). `match_no` 의 '양의 정수' 규칙은
+`panelpaste._int_no()` 를 그대로 쓴다. 규칙을 두 벌 두면 채팅 경로와 API
+경로가 조용히 갈라진다 (§1-8).
+
+**A 와 B 는 조립 전까지 서로를 모른다.** `save_stage()`·`parse_stage()` 가
+다른 역할의 파일을 읽지 않고, `panel.ROLES` 를 도는 함수가
+`collect_opinions`·`opinion_count` 둘뿐이다(테스트로 고정). 읽는 경로가
+생기면 언젠가 B 의 입력에 A 가 섞인다.
+
+**`match_no` 로 짝짓는다 — 배열 순서에 기대지 않는다.** 한쪽이 정렬돼 오는
+순간 순서 기반 결합은 조용히 어긋난다. B 를 거꾸로 넣어도 같은 결과가
+나오는 것을 테스트가 확인한다.
+
+```
+panel_work/<회차>/analyst_a.json     클로드가 준 JSON 배열 **그대로**
+                 analyst_b.json     프로그램이 재구성한 판이 아니다 (§6)
+```
+
+  · **검증을 통과한 것만 저장한다.** 실패하면 앞서 저장한 결과가 그대로
+    남는다 — 옆에 다 쓴 뒤 `os.replace` 로 바꿔 끼운다 (`roundlog._write`
+    와 같은 이유).
+  · `.gitignore` 에 넣었다 — 채팅에서 다시 받으면 되는 중간 작업물이라
+    원자료인 `panel_results/`(§1-20)와 다르다.
+  · 단계별로 복구된다: B 가 깨져도 A 는 남고, C 를 다시 만들어도 A·B 를
+    다시 넣지 않는다.
+
+**빠진 경기를 채우거나 번호를 재정렬하지 않는다.** A 와 B 의 `match_no`
+집합이 다르면 `MATCH_NO_MISMATCH` 로 **만들지 않는다** — 한쪽에만 있는
+번호를 양쪽에 적어 알려 준다. 새 상태명을 늘리지 않으려고 '결과 없음' 은
+`panelimport` 의 `MISSING_ANALYST` 를 그대로 쓴다.
+
+**원본을 덮어쓰지 않는다.** `03_사회자자료.md`(의견 없는 판)와
+`03_사회자자료_완성.md`(조립된 판)가 나뉜다. 완성본에는 `◀`·`▶` 가 **한
+글자도 없다** — 채울 자리가 없다는 것이 그 파일의 요점인데 그 기호가 보이면
+읽는 쪽이 아직 채울 자리가 있는 줄 안다.
+
+**기존 출력이 바이트까지 같다.** `moderator_data_sheet(round_id, payloads)`
+에 `opinions_by_no=None` 을 더했고, 그 기본값이면 새 문구가 붙지 않는다 —
+데모 6,974 B · 실물 260052 112,117 B 가 sha256 까지 같다. `export()` 는
+의견을 넘기지 않으므로 `[3]` 의 산출물도 그대로다(테스트로 고정).
+
+  · `panelexport.round_dir()` 를 꺼냈다 — 완성본이 같은 폴더에 하나 더
+    들어가면서 `reports/panel_<회차>` 를 두 곳에서 조립하게 됐다 (§1-8).
+  · `menu._read_paste(what=…)` 에 인자를 하나 더했다. 기본값이 4-F 의 문구
+    그대로라 `[4]` 화면은 바뀌지 않는다.
+
+메뉴는 **`[6]`** 이고 `[3]` 뒤·`[4]` 앞에 쓴다. 번호가 뒤에 있는 것은 기존
+번호를 밀지 않으려는 것뿐이다 — `[4]` 는 §1-15-2·§1-20 이 가리키는 자리라
+바꾸면 그 참조가 전부 낡는다. 검증·조립을 메뉴에서 다시 구현하지 않고 CLI
+인자를 만들어 같은 경로를 태운다(§1-20 과 같은 이유).
+
+```
+python -m toto --round R --save-panel-opinion FILE --role a|b
+python -m toto --round R --build-moderator-input
+```
+
+둘 다 **수집 구간 앞**에서 갈라진다 — 저장본(4-C)을 읽으므로 `toto.sources`
+가 로드되지 않는다. 다시 수집하면 순위표·배당이 그때와 달라져(§1-1-7)
+채팅에 준 자료와 다른 것이 된다.
+
+**`[4]` 의 계약은 한 줄도 바뀌지 않았다.** `panelimport`·`panelpaste`·
+`panelaudit` 에 `panelwork` 라는 낱말이 없다(테스트). 프롬프트 판
+(PANEL 4 · MODERATOR 6)·지침 지문 `fe098456`·Panel Result schema 1.1 도
+그대로다.
+
+회귀 테스트: `python tests/test_panel_work.py` (60개).
+
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
 260052 실행이 남긴 것은 후스코어드 `팀명 매칭 실패` 5건과 `강점 0개` 3팀이다.
@@ -5182,6 +5281,9 @@ python -m toto --paste-panel-result F.json  # 3단계 Moderator 결과 원문 �
 python -m toto --rerender-artifact data/artifacts/260052.json   # 저장본만 다시 렌더 · 수집 0회 (5-E3a §1-25)
 python -m toto --market-eval               # 시장 기준선 캘리브레이션 · 읽기만 한다 (6-B §1-27)
 python -m toto --settle-round 260052       # 그 회차의 결과만 채운다 · 사전 스냅샷 불변 (6-C-2 §1-28)
+python -m toto --round R --save-panel-opinion F.json --role a  # 클로드 1·2단계 응답 보관 · API 안 부른다 (6-F-3 §1-40)
+python -m toto --round R --build-moderator-input   # 보관본을 match_no 로 조립 → 03_사회자자료_완성.md (6-F-3 §1-40)
+#  메뉴 [6] 이 위 둘을 한다 — [3] 뒤, [4] 앞에 쓴다
 #  메뉴 [9] → [6] 이 같은 일을 한다. 오늘 캐시를 무시하려면 --no-cache 를 함께 준다
 #  메뉴 [4] 가 위 셋을 한 번에 한다 — panel_results/ 에 JSON 을 넣고 고르면 된다 (§1-20)
 python tests/test_league_matching.py       # 리그·팀 매칭 회귀 · 팀 식별 §1-22·1-26 (29개)
@@ -5235,6 +5337,7 @@ python tests/test_qualitative_characteristics.py  # 정성 특성 구조화·상
 python tests/test_relationship_engine.py   # 정성 관계 엔진·의미 단위 6-E-3 §1-37 (45개)
 python tests/test_relationship_delivery.py # 관계 전달 경로·qualitative 6-E-4 §1-38 (50개)
 python tests/test_real_recollection.py     # 실측 재수집·스타일 제목·placeholder 6-E-5 §1-39 (26개)
+python tests/test_panel_work.py           # 1·2단계 보관·3단계 조립 6-F-3 §1-40 (60개)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)

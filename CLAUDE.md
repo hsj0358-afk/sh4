@@ -4676,6 +4676,111 @@ python -m toto --round R --build-moderator-input
 
 회귀 테스트: `python tests/test_panel_work.py` (60개).
 
+### 1-41. 3단계 결과 보관과 `[4]` 연결 (Phase 6-F-4) — 상태는 파일이 정한다
+
+6-F-3 이 1·2단계를 보관하고 3단계 입력을 조립했는데 **정작 3단계 결과만
+보관되지 않았다.** 붙여넣으면 곧바로 `[4]` 로 흘러가 `panel_results/` 에
+canonical 판이 남고, 클로드가 실제로 돌려준 배열은 사라졌다. 그래서 회차가
+어디까지 왔는지 파일로 읽을 방법이 없었고, 같은 결과를 다시 쓰려면 채팅으로
+돌아가야 했다.
+
+```
+panel_work/<회차>/analyst_a.json          1단계 (6-F-3)
+                  analyst_b.json          2단계 (6-F-3)
+                  moderator_result.json   3단계 ← 6-F-4
+```
+
+**새 결과 포맷을 만들지 않았다.** 3단계 응답은 이미 **JSON 배열**이고
+그것이 `panelpaste.convert()` 가 받는 바로 그 모양이다. 그래서 보관본을
+기존 `--paste-panel-result` 에 그대로 태우면 `[4]` 의 처리 계약을 한 줄도
+바꾸지 않고 지난다.
+
+```
+[6]-4  붙여넣기 → convert + validate → panel_work/…/moderator_result.json
+[6]-5  그 파일 → --paste-panel-result → panelpaste.apply()
+       → panel_results/<회차>_panel_result.json → panelimport.run()
+       → panelaudit.audit() → 리포트 갱신      ← 전부 기존 경로다
+```
+
+`panelpaste`·`panelimport`·`panelaudit` 어디에도 `panelwork` 라는 낱말이
+없다(테스트) — 연결은 **한 방향**이다. `[4]` 의 두 입력 경로(붙여넣기·파일)도
+그대로 있다.
+
+**검증기를 새로 쓰지 않는다.** `parse_moderator_result()` 가 하는 일은
+`panelpaste.apply()` 와 **하나만 다르다 — 파일을 쓰지 않는다.**
+`panel_results/` 는 `[4]` 의 자리이고 이 모듈은 거기에 쓰지 않는다(테스트).
+구조·경기 연결은 `panelpaste.convert()`, 내용은 `panelimport.validate()` 가
+보고 그것이 다시 `moderator.parse_result()` 를 부른다. 스코어 형식·분포
+합계·근거 ID·금지 칸을 여기서 다시 적지 않는다(AST 테스트).
+
+**보관하는 것은 클로드가 돌려준 배열 그대로다** (6-F-3 §6 과 같은 규칙).
+canonical 판으로 옮겨 적으면 "모델이 무엇을 말했나" 를 되짚을 수 없다.
+돌리지 않은 경기도 원문 그대로 남고 `panel_status` 를 여기서 적어 넣지
+않는다 — 그 변환은 `panelpaste._block()` 소관이다.
+
+**상태 DB 를 만들지 않았다.** 다섯 단계가 전부 **파일이 있느냐**로 정해진다.
+
+| 상태 | 근거 파일 |
+|---|---|
+| `A_NOT_STARTED` / `A_COMPLETE` | `panel_work/<회차>/analyst_a.json` |
+| `B_NOT_STARTED` / `B_COMPLETE` | `panel_work/<회차>/analyst_b.json` |
+| `MODERATOR_INPUT_NOT_BUILT` / `MODERATOR_INPUT_READY` | `reports/panel_<회차>/03_사회자자료_완성.md` |
+| `MODERATOR_RESULT_NOT_SAVED` / `MODERATOR_RESULT_SAVED` | `panel_work/<회차>/moderator_result.json` |
+| `PANEL_RESULT_NOT_APPLIED` / `PANEL_RESULT_COMPLETE` | `panel_results/<회차>_panel_result.json` |
+
+  · `workflow()` 는 **쓰지 않는다** — `write_text`·`mkdir`·`os.replace` 가
+    함수 안에 없다(AST 테스트). 사람이 파일을 지우면 상태도 같이 사라지고,
+    그 편이 실제와 어긋난 상태 기록이 남는 것보다 낫다.
+  · **회차 자료(artifact)도 네트워크도 필요하지 않다** — 수집 전에도 부른다.
+  · 경기 수는 보관본에서 읽는다. **못 읽으면 `0경기` 라고 적지 않는다**
+    (§1-5) — `내용을 읽지 못했습니다` 다.
+  · 상태 줄에 추천·신뢰도·확신도·`%` 가 없다(테스트). 사실만 적는다.
+
+**첨부할 파일 이름은 폴더를 읽어서 만든다** — 코드에 적어 두지 않는다.
+회차마다 `02_경기자료_3of7.md` 처럼 개수와 이름이 달라지므로, 박아 두면
+사용자에게 **없는 파일**을 첨부하라고 말하게 된다. 테스트가 `panelwork.py`
+의 **문자열 상수**(docstring 제외)에 그 이름들이 없는지 본다. 조립본이
+있으면 원본 대신 **그것만** 첨부하라고 적는다 — 둘 다 내면 헷갈린다.
+
+**덮어쓰기는 메뉴에서만 묻는다** — `기존 A 결과가 존재합니다. 새 결과로
+교체하시겠습니까? [y/N]`. **기본이 아니오**다. 묻는 자리가 메뉴인 이유는
+CLI 가 비대화형이기 때문이고, 그래서 **6-F-3 의 CLI 동작이 그대로다**
+(테스트가 `cli.py` 에 그 문구가 없는 것을 고정한다).
+
+**클로드를 부르지 않는다 — 이번에도 호출 0건이다.** 별도 프로세스에서 네
+경로를 돌리고 `sys.modules` 를 보면 `anthropic` 이 **False**, `toto.sources*`
+가 **빈 목록**이다. `toto.llm` 은 `panel.py` 가 최상단에서 import 하므로
+올라오지만(6-F-3 과 같다) `anthropic` 은 `llm._client()` 안에서 지연
+import 되고 그 함수에 닿지 않는다.
+
+메뉴 `[6]` 이 여섯 항목이 됐다. **기존 번호를 밀지 않았다** — `[4]` 는
+§1-15-2·§1-20 이 가리키는 자리다.
+
+```
+[6] 클로드 채팅 단계별 진행
+    [1] 1단계 결과 넣기        [4] 3단계(Moderator) 결과 넣기
+    [2] 2단계 결과 넣기        [5] 리포트에 반영 (기존 [4] 와 같은 경로)
+    [3] 사회자 자료 만들기      [6] 진행 상태 보기
+```
+
+CLI 인자는 둘만 늘었다 — `--save-moderator-result` · `--panel-workflow-status`.
+`[6]-5` 는 **새 인자를 만들지 않고** 기존 `--paste-panel-result` 를 쓴다.
+둘 다 **수집 구간 앞**에서 갈라진다.
+
+**값이 바뀌지 않았다.** `--demo` 668,447 · `--rerender-artifact 260052`
+942,802 · `moderator_data_sheet(260052, opinions 없이)` 112,117 bytes
+(sha `36e95d31…`) 가 전부 그대로다. 프롬프트 판(PANEL 4 · MODERATOR 6) ·
+지침 지문 `fe098456` · Panel Result schema `1.1` 도 그대로다.
+
+**기존 테스트 둘을 고쳤다 — 6-F-3 이 남긴 것이다.**
+`test_menu_flow.test_g24`·`test_g24b` 가 메뉴 번호 목록과 센티넬 허용값을
+못 박고 있었는데 6-F-3 이 `[6]` 을 더하면서 함께 옮기지 않았다(이 Phase
+시작 시점에 이미 깨져 있었다 — `git stash` 로 확인). §1-29·§1-31 과 같은
+교정으로 범위만 옮기고, 지키려던 것(**기존 번호가 밀리지 않는다** · 수집
+항목은 회차를 먼저 묻는다)은 번호마다 그대로 확인한다.
+
+회귀 테스트: `python tests/test_panel_workflow.py` (49개).
+
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
 260052 실행이 남긴 것은 후스코어드 `팀명 매칭 실패` 5건과 `강점 0개` 3팀이다.
@@ -5283,7 +5388,10 @@ python -m toto --market-eval               # 시장 기준선 캘리브레이션
 python -m toto --settle-round 260052       # 그 회차의 결과만 채운다 · 사전 스냅샷 불변 (6-C-2 §1-28)
 python -m toto --round R --save-panel-opinion F.json --role a  # 클로드 1·2단계 응답 보관 · API 안 부른다 (6-F-3 §1-40)
 python -m toto --round R --build-moderator-input   # 보관본을 match_no 로 조립 → 03_사회자자료_완성.md (6-F-3 §1-40)
-#  메뉴 [6] 이 위 둘을 한다 — [3] 뒤, [4] 앞에 쓴다
+python -m toto --round R --save-moderator-result F.json  # 3단계 결과 검증·보관 · API 안 부른다 (6-F-4 §1-41)
+python -m toto --round R --panel-workflow-status  # 어디까지 왔나 · 파일만 읽는다 (6-F-4 §1-41)
+#  보관한 3단계 결과는 기존 --paste-panel-result 에 그대로 태운다 (새 포맷 없음)
+#  메뉴 [6] 이 위 전부를 한다 — [3] 뒤, [4] 앞에 쓴다
 #  메뉴 [9] → [6] 이 같은 일을 한다. 오늘 캐시를 무시하려면 --no-cache 를 함께 준다
 #  메뉴 [4] 가 위 셋을 한 번에 한다 — panel_results/ 에 JSON 을 넣고 고르면 된다 (§1-20)
 python tests/test_league_matching.py       # 리그·팀 매칭 회귀 · 팀 식별 §1-22·1-26 (29개)
@@ -5338,6 +5446,7 @@ python tests/test_relationship_engine.py   # 정성 관계 엔진·의미 단위
 python tests/test_relationship_delivery.py # 관계 전달 경로·qualitative 6-E-4 §1-38 (50개)
 python tests/test_real_recollection.py     # 실측 재수집·스타일 제목·placeholder 6-E-5 §1-39 (26개)
 python tests/test_panel_work.py           # 1·2단계 보관·3단계 조립 6-F-3 §1-40 (60개)
+python tests/test_panel_workflow.py       # 3단계 결과 보관·[4] 연결·상태 6-F-4 §1-41 (49개)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)

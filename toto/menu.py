@@ -66,9 +66,10 @@ ITEMS = [
     # Phase 6-F-3. **[3] 뒤, [4] 앞**에 쓰는 중간 단계다. 번호가 뒤에 있는
     # 것은 기존 번호를 밀지 않으려는 것뿐이다 — `[4]` 는 문서 여러 곳이
     # 가리키는 자리라 바꾸면 그 참조가 전부 낡는다.
-    ("6", "1·2단계 결과 보관 · 사회자 자료 만들기",
-     "[3] 으로 낸 자료로 클로드에서 1·2단계를 돌린 뒤, 그 응답을 넣어 두고 "
-     "3단계에 첨부할 자료를 만듭니다. 클로드를 부르지 않습니다(API 불필요).",
+    ("6", "클로드 채팅 단계별 진행 (1·2·3단계)",
+     "[3] 으로 낸 자료로 클로드에서 단계별로 돌린 뒤 그 응답을 넣어 두고, "
+     "3단계 자료 조립과 리포트 반영까지 여기서 합니다. 진행 상태도 "
+     "보여 줍니다. 클로드를 부르지 않습니다(API 불필요).",
      "panel-work"),
     ("9", "개발·진단 도구",
      "데모·캐시 비우기·수집 실패 진단·소스 점검. 평소에는 쓰지 않습니다.",
@@ -286,7 +287,37 @@ PANEL_WORK = [
     ("3", "사회자 자료 만들기 (1·2단계 조립)",
      "보관해 둔 두 결과를 경기 번호로 짝지어 03_사회자자료_완성.md 를 "
      "만듭니다. `◀ … ▶` 붙여넣기가 필요 없어집니다."),
+    # Phase 6-F-4. 3단계 결과도 같은 자리에 보관하고, 그 보관본을 **기존
+    # [4] 경로**에 그대로 태운다 — 새 결과 포맷을 만들지 않는다.
+    ("4", "3단계(Moderator) 결과 넣기",
+     "클로드 대화 #3 의 JSON 배열을 붙여넣습니다. 검증을 통과하면 "
+     "panel_work/ 에 보관합니다. 아직 리포트에 반영하지는 않습니다."),
+    ("5", "리포트에 반영 (보관해 둔 3단계 결과)",
+     "[4] 로 넣어 둔 결과를 검증·가져오기·감사·리포트 갱신까지 합니다 — "
+     "메뉴 [4] 와 같은 경로입니다."),
+    ("6", "진행 상태 보기",
+     "이 회차가 어디까지 왔는지, 다음에 무엇을 할지, 어느 파일을 첨부할지 "
+     "보여 줍니다. 아무것도 고치지 않습니다."),
 ]
+
+
+def _confirm_overwrite(path, what: str) -> bool:
+    """이미 있는 보관본을 갈아 끼울지 묻는다 (Phase 6-F-4 §13).
+
+    **기본은 아니오**다. 실수로 Enter 를 눌러 앞서 받아 둔 결과를 잃는 것이
+    다시 한 번 붙여넣는 것보다 나쁘다.
+
+    묻는 자리가 메뉴인 이유는 CLI 가 비대화형이기 때문이다 — CLI 의 동작은
+    6-F-3 그대로 두고(회귀), 사람이 실제로 앉아 있는 자리에서만 묻는다.
+    """
+    if not path.is_file():
+        return True
+    print(f"\n  기존 {what} 결과가 존재합니다. ({path})")
+    answer = _ask("  새 결과로 교체하시겠습니까? [y/N]: ")
+    if (answer or "").strip().lower() in {"y", "yes"}:
+        return True
+    print("  그대로 두었습니다. 실행하지 않았습니다.")
+    return False
 
 
 def _panel_work_args() -> list[str] | None:
@@ -320,8 +351,37 @@ def _panel_work_args() -> list[str] | None:
 
     if answer == "3":
         return ["--round", rnd, "--build-moderator-input"]
+    if answer == "6":
+        return ["--round", rnd, "--panel-workflow-status"]
+
+    if answer == "5":
+        # **새 반영 경로를 만들지 않는다** — 보관해 둔 배열을 기존
+        # `--paste-panel-result` 에 그대로 태운다 (메뉴 `[4]` 와 같은 경로).
+        saved = panelwork.moderator_result_path(rnd)
+        if not saved.is_file():
+            print(f"\n  보관된 3단계 결과가 없습니다. ({saved})")
+            print("  먼저 [4] 로 3단계 결과를 넣으십시오.")
+            return None
+        print(f"\n  보관본을 씁니다: {saved}")
+        return ["--round", rnd, "--paste-panel-result", str(saved)]
+
+    if answer == "4":
+        if not _confirm_overwrite(panelwork.moderator_result_path(rnd),
+                                  "3단계 Moderator"):
+            return None
+        text = _read_paste()
+        if text is None:
+            return None
+        tmp = (Path(tempfile.mkdtemp(prefix="toto_stage_"))
+               / f"{rnd}_{panelwork.MODERATOR_RESULT_FILE}")
+        tmp.write_text(text, encoding="utf-8")
+        print(f"\n  {len(text):,}자를 읽었습니다. 검증합니다…")
+        return ["--round", rnd, "--save-moderator-result", str(tmp)]
 
     role = panel.DATA_ANALYST if answer == "1" else panel.MATCHUP_ANALYST
+    if not _confirm_overwrite(panelwork.path_for(rnd, role),
+                              panel.ROLE_KO[role]):
+        return None
     text = _read_paste(f"{panel.ROLE_KO[role]} 응답(JSON 배열)")
     if text is None:
         return None

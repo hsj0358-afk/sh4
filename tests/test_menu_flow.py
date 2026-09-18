@@ -339,9 +339,15 @@ def inspect_source(fn) -> str:
 # G. 기존 메뉴 회귀
 # --------------------------------------------------------------------------
 def test_g24_operational_menu_maps_to_the_right_flags():
-    """운영 메뉴는 넷 + 도구. 번호와 인자가 어긋나면 엉뚱한 실행이 된다."""
+    """운영 메뉴의 번호와 인자. 어긋나면 엉뚱한 실행이 된다.
+
+    **범위를 옮겼다** (§1-29·§1-31 의 선례). 이 목록은 원래 다섯 + 도구
+    였는데 6-F-3 이 `[6]`(단계별 진행)을 더했다 — 지키려는 것은 개수가
+    아니라 **기존 번호가 밀리지 않는 것**이고(문서 여러 곳이 `[4]` 를
+    가리킨다), 그것은 아래에서 번호마다 그대로 확인한다.
+    """
     by_key = {k: a for k, _t, _d, a in menu.ITEMS}
-    assert list(by_key) == ["1", "2", "3", "4", "5", "9"], list(by_key)
+    assert list(by_key) == ["1", "2", "3", "4", "5", "6", "9"], list(by_key)
     assert by_key["1"] == (menu.ROUND, [])
     # [2]·[3] 은 [1] 에 **더하는** 것이다. 후스코어드를 끄면 리포트에서
     # 강점/약점·상성이 빠지고, 그 값(shots_pg)이 축을 거쳐 패널 자료에도
@@ -355,17 +361,33 @@ def test_g24_operational_menu_maps_to_the_right_flags():
     # 폰에서 열기는 [5] 로 내려갔다 (기능은 그대로).
     assert by_key["4"] == "panel-apply"
     assert by_key["5"] == ["--serve"]
+    # [6] 은 클로드 채팅을 단계별로 진행하는 자리다 (6-F-3 · 6-F-4).
+    # **클로드를 부르지 않는다** — `--panel` 이 여기로 새면 안 된다.
+    assert by_key["6"] == "panel-work"
     assert by_key["9"] == "tools"
 
 
 def test_g24b_every_collecting_item_asks_for_the_round():
-    """수집하는 항목은 전부 회차를 먼저 묻는다."""
+    """수집하는 항목은 전부 회차를 먼저 묻는다.
+
+    센티넬(문자열)은 자기 하위 메뉴에서 회차를 묻는다 — 목록에 더할 때는
+    그 하위 메뉴가 실제로 묻는지 함께 확인한다.
+    """
+    sentinels = ("tools", "panel-apply", "panel-work")
     for key, _t, _d, args in menu.ITEMS:
         collects = isinstance(args, tuple) or args in (
-            "tools", "panel-apply", ["--serve"])
+            *sentinels, ["--serve"])
         assert collects, (key, args)
         if isinstance(args, list):
             assert "--round" not in args, key
+    # 센티넬 둘은 회차를 **자기 안에서, 또는 자기가 부르는 곳에서** 묻는다.
+    # `_panel_apply_args` 는 `_paste_panel`·`_pick_panel_file` 에 넘긴다.
+    for fname in ("_panel_apply_args", "_panel_work_args"):
+        src = inspect.getsource(getattr(menu, fname))
+        for helper in ("_paste_panel", "_pick_panel_file"):
+            if f"{helper}(" in src:
+                src += inspect.getsource(getattr(menu, helper))
+        assert "회차 번호를 입력하세요" in src, fname
 
 
 # --------------------------------------------------------------------------

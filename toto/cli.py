@@ -112,6 +112,17 @@ def build_parser() -> argparse.ArgumentParser:
                    help="보관해 둔 1·2단계 결과를 match_no 기준으로 조립해 "
                         "reports/panel_<회차>/03_사회자자료_완성.md 를 "
                         "만든다. 원본은 덮어쓰지 않고 API 도 부르지 않는다")
+    # Phase 6-F-4. 3단계 결과도 같은 자리에 보관한다. **새 결과 포맷을
+    # 만들지 않는다** — 보관본을 `--paste-panel-result` 에 그대로 태우면
+    # 기존 `[4]` 경로를 한 줄도 바꾸지 않고 지난다.
+    p.add_argument("--save-moderator-result", type=Path, default=None,
+                   metavar="FILE",
+                   help="클로드 3단계 Moderator 응답(JSON 배열)을 읽어 "
+                        "검증한 뒤 panel_work/<회차>/ 에 보관한다. "
+                        "panel_results/ 에는 쓰지 않고 API 도 부르지 않는다")
+    p.add_argument("--panel-workflow-status", action="store_true",
+                   help="그 회차가 어느 단계까지 왔는지 파일을 읽어 보여 "
+                        "준다. 아무것도 고치지 않고 수집도 하지 않는다")
     p.add_argument("--rerender-artifact", type=Path, default=None,
                    metavar="FILE",
                    help="저장된 회차 분석 결과(data/artifacts/<회차>.json)를 "
@@ -318,6 +329,17 @@ def _panel_work(args, settings) -> int:
         log.error("--round 가 필요합니다 — 어느 회차의 결과인지 "
                   "지어낼 수 없습니다.")
         return 1
+
+    # 상태 보기는 **회차 자료가 없어도** 된다 (Phase 6-F-4). 파일이 있느냐만
+    # 보므로 수집 전에도 부를 수 있고, 저장본을 읽지 못하는 것이 상태를 볼
+    # 수 없는 이유가 되면 안 된다.
+    if args.panel_workflow_status:
+        for line in panelwork.workflow_lines(panelwork.workflow(round_id)):
+            print(line)
+        if not (args.save_panel_opinion or args.build_moderator_input
+                or args.save_moderator_result):
+            return 0
+
     report, why = artifact.load(round_id)
     if report is None:
         log.error("저장된 회차 분석 결과가 없습니다 — %s", why)
@@ -354,7 +376,42 @@ def _panel_work(args, settings) -> int:
                      "`◀ … ▶` 에 배열을 붙여넣을 필요가 없습니다.")
         failed = failed or not built.success
 
+    # Phase 6-F-4. 3단계 결과 보관. **`panel_results/` 에 쓰지 않는다** —
+    # 그 자리는 `[4]` 가 만들고, 여기서는 클로드가 돌려준 배열만 남긴다.
+    if args.save_moderator_result is not None:
+        from . import panelpaste
+        path = Path(args.save_moderator_result)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            log.error("3단계 결과 파일을 읽지 못했습니다: %s", exc)
+            return 1
+        saved, outcome = panelwork.save_moderator_result(text, report,
+                                                         settings)
+        for line in panelpaste.report_lines(outcome):
+            (log.error if outcome.errors else log.info)("3단계 결과: %s", line)
+        if saved is not None:
+            log.info("3단계 결과 보관 → %s", saved)
+            log.info("  이제 --paste-panel-result %s 로 리포트에 "
+                     "반영하십시오 (메뉴 [6] → [5]).", saved)
+        failed = failed or saved is None
+
+    if not failed:
+        _guide_next(round_id)
     return 1 if failed else 0
+
+
+def _guide_next(round_id: str) -> None:
+    """지금 상태에서 **다음에 할 일** 한 줄 (Phase 6-F-4 §9).
+
+    판정하지 않는다 — 파일이 있느냐로 정해진 다음 칸을 그대로 읽어 준다.
+    """
+    from . import panelwork
+    nxt = panelwork.workflow(round_id).next_stage()
+    if nxt is None:
+        log.info("다음 할 일: 없습니다 — 리포트까지 끝났습니다.")
+    else:
+        log.info("다음 할 일: %s", nxt.todo)
 
 
 def _rerender(args, settings) -> int:
@@ -524,10 +581,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.rerender_artifact is not None:
         return _rerender(args, settings)
 
-    # ---- 0-a2. 1·2단계 결과 보관 · 3단계 자료 조립 (Phase 6-F-3) ---------
+    # ---- 0-a2. 1·2·3단계 결과 보관 · 자료 조립 (Phase 6-F-3 · 6-F-4) -----
     # 여기도 **수집 구간 앞**이다. 그리고 **클로드를 부르지 않는다** —
     # 사람이 채팅에서 받아 온 응답을 검증해 보관하고 조립할 뿐이다.
-    if args.save_panel_opinion is not None or args.build_moderator_input:
+    if (args.save_panel_opinion is not None or args.build_moderator_input
+            or args.save_moderator_result is not None
+            or args.panel_workflow_status):
         return _panel_work(args, settings)
 
     # ---- 0-b. 시장 기준선 캘리브레이션 (Phase 6-B) -----------------------

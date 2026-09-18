@@ -651,14 +651,19 @@ def test_g3_matchup_prompt_explains_the_three_relations():
 
 
 def test_g4_prompt_version_was_raised():
-    assert panel.PANEL_PROMPT_VERSION == "3"
+    """6-E-4 가 3 으로 올렸고 6-E-6 이 같은 프롬프트를 또 고쳐 4 가 됐다.
+
+    지키려는 것은 특정 숫자가 아니라 **프롬프트를 고쳤으면 캐시가 무효화
+    된다**는 것이다 (§1-29 와 같은 범위 이동).
+    """
+    assert int(panel.PANEL_PROMPT_VERSION) >= 3
 
 
 def test_g5_instructions_fingerprint_changed():
     from toto import panelexport
     fp = panelexport.instructions_fingerprint()
     assert fp != "e99bf42f", "지문이 그대로면 지침이 낡은 줄 모른다"
-    assert fp == "b389d4f0", fp
+    assert fp == "fe098456", fp        # 6-E-4 `b389d4f0` → 6-E-6
 
 
 def test_g6_prompt_forbids_scoring_the_intensities():

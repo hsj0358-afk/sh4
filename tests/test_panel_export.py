@@ -718,8 +718,12 @@ def test_t10_guide_does_not_change_the_instructions_fingerprint():
     "전술 자료가 들어 있지 않습니다" 가 `qualitative` 때문에 거짓이 되어
     고쳤고, `ROLE_PROMPTS` 는 지침 본문에 그대로 실린다. **프로젝트 지침을
     다시 붙여넣어야 한다.**
+
+    Phase 6-E-6 에서 또 바뀌었다 (`b389d4f0` → `fe098456`). 맞대결 분석가에
+    `style_of_play` 조건과 정량/정성 분리·일치 여부가, 사회자에 '정성 원문을
+    받지 않았다' 는 규칙이 들어갔다. **다시 붙여넣어야 한다.**
     """
-    assert panelexport.instructions_fingerprint() == "b389d4f0"
+    assert panelexport.instructions_fingerprint() == "fe098456"
 
 
 def test_s3_conclusion_is_the_first_field_in_the_schema():

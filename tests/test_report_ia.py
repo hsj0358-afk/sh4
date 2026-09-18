@@ -116,16 +116,21 @@ def test_a2_instructions_document_the_field_without_new_prompt_version():
 
     **6-E-4 에서 범위를 옮겼다.** 거기서 맞대결 분석가 프롬프트가 실제로
     바뀌어(`qualitative` 때문에 "전술 자료가 없습니다" 가 거짓이 됐다)
-    `PANEL_PROMPT_VERSION` 이 3 이 됐다. 4-G 가 지키려던 것 — **`initial_scores`
-    는 지침에만 들어가고 3단계 출력 형식을 바꾸지 않는다** — 은 사회자
-    프롬프트 버전으로 계속 고정한다 (§1-29 와 같은 교정).
+    `PANEL_PROMPT_VERSION` 이 3 이 됐고, 4-G 가 지키려던 것은 사회자 프롬프트
+    버전으로 옮겨 고정했다.
+
+    **6-E-6 에서 그 숫자 핀을 걷었다.** 사회자 프롬프트도 고쳐져(정성 관계를
+    분석가가 적은 만큼만 다룬다) 버전이 6 이 됐는데, **출력 형식은 그대로다.**
+    남의 Phase 가 올릴 수 있는 숫자를 못 박는 대신 4-G 가 실제로 지키려던 것을
+    직접 단언한다 — `initial_scores` 는 **지침에만** 있고 3단계 JSON 출력
+    스키마에는 없다 (§1-31 의 `test_43`·`test_21f` 와 같은 교정).
     """
     from toto import moderator
 
     body = panelexport.project_instructions()
     assert INI in body
     assert "거꾸로 만들지" in body
-    assert moderator.MODERATOR_PROMPT_VERSION == "5"
+    assert INI not in moderator.SYSTEM, "3단계 출력 형식이 바뀌었다"
 
 
 def test_a3_json_step_carries_the_field_into_the_result_file():

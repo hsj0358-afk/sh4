@@ -1080,6 +1080,152 @@ def test_h15_preflight_reports_what_it_checked():
     assert pre.auth is not None and pre.auth.ok
 
 
+# ==========================================================================
+# I. CLI 를 못 찾았을 때 (실물 윈도우 실행 후속)
+#
+# 6-F-7 의 hardening 이 실물 윈도우에서 **정확히 이 자리에서 멈췄다.**
+# 메시지는 맞았지만 `못 찾았습니다` 한 줄만으로는 **설치가 안 된 것**인지
+# **다른 자리에 있는 것**인지 가릴 수 없었다 — 둘은 할 일이 정반대다.
+# ==========================================================================
+def as_windows(fn):
+    """윈도우 분기를 리눅스에서 그대로 태운다.
+
+    `Path.home()` 이 리눅스에서 `WindowsPath` 를 못 만들어서 시험용
+    Path 를 끼운다. 바꾸는 것은 **시험 환경**이고 코드가 아니다.
+    """
+    import pathlib
+
+    class FakePath(pathlib.PurePosixPath):
+        @classmethod
+        def home(cls):
+            return cls("C:/Users/tester")
+
+        def is_file(self):
+            return False
+
+    real_os, real_path = os.name, panelauto.Path
+    saved = {k: os.environ.get(k) for k in ("PATHEXT", "APPDATA",
+                                            "LOCALAPPDATA")}
+    os.name = "nt"
+    panelauto.Path = FakePath
+    os.environ["PATHEXT"] = ".COM;.EXE;.BAT;.CMD"
+    os.environ["APPDATA"] = "C:/Users/tester/AppData/Roaming"
+    os.environ["LOCALAPPDATA"] = "C:/Users/tester/AppData/Local"
+    try:
+        return fn()
+    finally:
+        os.name, panelauto.Path = real_os, real_path
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def test_i1_windows_candidates_cover_the_real_installers():
+    """npm 의 `.cmd` 와 네이티브의 `.exe` 를 둘 다 본다.
+
+    설치 방법마다 만드는 파일이 달라서 이름을 하나만 박으면 다른 설치가
+    조용히 안 보인다. 폴더 × PATHEXT 로 훑는다.
+    """
+    cands = as_windows(panelauto.cli_candidates)
+    lower = [c.lower() for c in cands]
+    assert any(c.endswith("/npm/claude.cmd") for c in lower), "npm 심을 안 본다"
+    assert any("programs/claude/claude.exe" in c for c in lower), \
+        "네이티브 설치를 안 본다"
+    assert any(".local/bin/claude.exe" in c for c in lower), lower[:5]
+    assert any(".claude/local/claude.cmd" in c for c in lower), lower[:5]
+
+
+def test_i2_pathext_is_split_on_semicolons():
+    """`PATHEXT` 는 `;` 구분이다 — `os.pathsep` 이 아니다.
+
+    `os.pathsep` 으로 나누면 이 분기를 다른 OS 에서 시험할 때 통째로
+    안 갈린다 (실제로 그래서 못 갈렸다).
+    """
+    suffixes = as_windows(panelauto._exe_suffixes)
+    assert ".CMD" in suffixes and ".EXE" in suffixes, suffixes
+    assert ".PS1" in suffixes, "ps1 설치를 못 본다"
+    assert not any(";" in s for s in suffixes), suffixes
+    body = code_of(fn_node(panelauto, "_exe_suffixes"))
+    assert "os.pathsep" not in body, "PATHEXT 를 os.pathsep 으로 나눈다"
+    # POSIX 에서는 확장자가 없다.
+    assert panelauto._exe_suffixes() == [""] or os.name == "nt"
+
+
+def test_i3_search_folders_are_not_listed_twice():
+    """같은 폴더를 두 번 적지 않는다 — 진단에 그대로 찍힌다."""
+    dirs = [str(d) for d in as_windows(panelauto.cli_search_dirs)]
+    assert len(dirs) == len(set(dirs)), dirs
+    dirs = [str(d) for d in panelauto.cli_search_dirs()]
+    assert len(dirs) == len(set(dirs)), dirs
+
+
+def test_i4_diagnosis_reports_what_was_checked():
+    """**무엇을 찾아봤는지** 그대로 낸다 (§1-6-1)."""
+    diag = panelauto.cli_diagnosis()
+    for key in ("os", "env_var", "which", "checked", "found", "path_entries"):
+        assert key in diag, key
+    assert diag["env_var"] == panelauto.CLI_ENV
+    assert diag["checked"], "찾아본 자리를 안 적는다"
+    for row in diag["checked"]:
+        assert "path" in row and "exists" in row, row
+    # **고쳐 주지 않는다** — 진단은 읽기만 한다.
+    body = code_of(fn_node(panelauto, "cli_diagnosis"))
+    for bad in ("mkdir", "write_text", "os.environ[", "subprocess"):
+        assert bad not in body, f"진단이 {bad} 를 한다"
+
+
+def test_i5_not_found_tells_the_user_what_to_do():
+    """설치 여부와 경로 지정 둘 다 안내한다."""
+    lines = " ".join(panelauto.cli_help_lines())
+    assert panelauto.CLI_ENV in lines, "경로 지정 방법을 안 적는다"
+    assert "claude --version" in lines or "which claude" in lines
+    win = " ".join(as_windows(panelauto.cli_help_lines))
+    assert "setx" in win and "Get-Command" in win, win
+    assert "WSL" in win, "WSL 설치를 안 짚는다"
+    assert "@anthropic-ai/claude-code" in win, "설치 방법을 안 적는다"
+    # 추천·확신도 같은 말을 여기 적지 않는다.
+    for bad in ("%", "추천", "확신"):
+        assert bad not in win, bad
+
+
+def test_i6_preflight_failure_surfaces_the_diagnosis():
+    """막혔을 때 **찾아본 자리**가 화면에 나온다.
+
+    실물 윈도우 실행에서 사유 한 줄만 나와 설치가 안 된 것인지 다른
+    자리인지 가릴 수 없었다. 그 상태를 재현해 고정한다.
+    """
+    tmp = scratch()
+    saved_path = os.environ.get("PATH")
+    saved_env = os.environ.get(panelauto.CLI_ENV)
+    os.environ["PATH"] = str(tmp)          # claude 가 없는 PATH
+    os.environ.pop(panelauto.CLI_ENV, None)
+    try:
+        pre = panelauto.preflight(FakeReport(), "TEST", scratch())
+    finally:
+        if saved_path is not None:
+            os.environ["PATH"] = saved_path
+        if saved_env is not None:
+            os.environ[panelauto.CLI_ENV] = saved_env
+    assert not pre.ok
+    problems = " ".join(pre.problems)
+    assert "찾지 못했습니다" in problems
+    notes = " ".join(pre.notes)
+    assert "찾아본 자리" in notes, notes
+    assert panelauto.CLI_ENV in notes, notes
+    # 실행 경로를 지어내지 않는다 — 없으면 '없음' 이라고 적는다 (§1-5).
+    assert "없음" in notes or "미설정" in notes, notes
+
+
+def test_i7_failure_path_echoes_the_notes():
+    """`run()` 이 막혔을 때 notes 를 삼키지 않는다."""
+    body = workflow_code()
+    idx = body.index("pre.problems")
+    tail = body[idx:idx + 400]
+    assert "pre.notes" in tail, "실패 경로에서 진단을 감춘다"
+
+
 def main() -> int:
     print("Phase 6-F-6 — 패널 자동 실행 (claude -p)")
     for name, fn in sorted(globals().items()):

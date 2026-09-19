@@ -235,6 +235,57 @@ class Preflight:
 # ==========================================================================
 # 환경 — 비용 안전장치가 여기에 있다
 # ==========================================================================
+def cli_search_dirs() -> list:
+    """`claude` 가 설치되는 **폴더**들. 파일 이름은 여기서 정하지 않는다.
+
+    설치 방법마다 만들어 주는 파일이 다르다 — npm 은 `claude.cmd`,
+    네이티브 설치는 `claude.exe`, 경우에 따라 `.ps1` 도 있다. 이름을 하나씩
+    박으면 그중 하나만 다른 설치에서 조용히 못 찾는다. 그래서 **폴더만
+    적고 확장자는 `PATHEXT` 에서 읽는다** — §1-4 의 "경로를 박지 말고
+    모양으로 찾는다" 와 같은 태도다.
+    """
+    home = Path.home()
+    if os.name == "nt":
+        appdata = Path(os.environ.get("APPDATA")
+                       or home / "AppData" / "Roaming")
+        local = Path(os.environ.get("LOCALAPPDATA")
+                     or home / "AppData" / "Local")
+        dirs = [appdata / "npm",                     # npm -g
+                local / "Programs" / "claude",       # 네이티브 설치
+                home / ".local" / "bin",             # 네이티브 설치(사용자)
+                home / ".claude" / "local"]          # migrate-installer
+    else:
+        dirs = [home / ".local" / "bin", home / ".claude" / "local",
+                Path("/usr/local/bin"), Path("/opt/homebrew/bin")]
+
+    # 같은 폴더를 두 번 적지 않는다 — 진단에 그대로 찍히므로 중복이 있으면
+    # 두 자리를 본 것처럼 보인다 (`%LOCALAPPDATA%` 가 기본값과 같을 때 실제로
+    # 그랬다).
+    out, seen = [], set()
+    for d in dirs:
+        key = str(d)
+        if key not in seen:
+            seen.add(key)
+            out.append(d)
+    return out
+
+
+def _exe_suffixes() -> list:
+    """실행 파일로 인정되는 확장자. 윈도우는 `PATHEXT` 가 정한다.
+
+    **`;` 로 나눈다 — `os.pathsep` 이 아니다.** `PATHEXT` 는 윈도우 전용
+    변수라 언제나 `;` 구분이고, `os.pathsep` 으로 나누면 이 분기를 다른
+    OS 에서 시험할 때 통째로 안 갈린다(실제로 그래서 못 갈렸다).
+    """
+    if os.name != "nt":
+        return [""]
+    raw = os.environ.get("PATHEXT") or ".COM;.EXE;.BAT;.CMD"
+    out = [s.strip() for s in raw.split(";") if s.strip()]
+    if ".PS1" not in [s.upper() for s in out]:
+        out.append(".PS1")              # PATHEXT 에 없는 설치가 있다
+    return out
+
+
 def cli_candidates() -> list:
     """찾아볼 순서. **앞이 우선이다.**
 
@@ -242,11 +293,12 @@ def cli_candidates() -> list:
 
       · 윈도우 npm 설치는 `%APPDATA%\\npm\\claude.cmd` 를 만드는데, 그
         폴더가 PATH 에 없는 계정이 있다.
-      · 네이티브 설치는 `%LOCALAPPDATA%\\Programs` 아래로 들어간다.
+      · 네이티브 설치는 `%LOCALAPPDATA%\\Programs` 나 `~/.local/bin` 아래다.
       · PowerShell 프로필의 alias 는 `which` 가 보지 못한다.
 
-    그래서 PATH 를 먼저 보고, 못 찾으면 **관측된 설치 위치**를 본다.
-    경로를 지어내지 않고 환경변수(`TOTO_CLAUDE_CLI`)라는 탈출구를 둔다.
+    그래서 PATH 를 먼저 보고, 못 찾으면 **알려진 설치 폴더 × PATHEXT** 를
+    훑는다. 경로를 지어내지 않고 환경변수(`TOTO_CLAUDE_CLI`)라는 탈출구를
+    둔다.
     """
     out, seen = [], set()
 
@@ -258,19 +310,61 @@ def cli_candidates() -> list:
 
     add(os.environ.get(CLI_ENV))
     add(shutil.which("claude"))
-
-    home = Path.home()
-    if os.name == "nt":
-        appdata = os.environ.get("APPDATA") or str(home / "AppData" / "Roaming")
-        local = os.environ.get("LOCALAPPDATA") or str(home / "AppData" / "Local")
-        add(Path(appdata) / "npm" / "claude.cmd")
-        add(Path(local) / "Programs" / "claude" / "claude.exe")
-        add(home / ".claude" / "local" / "claude.cmd")
-        add(home / ".local" / "bin" / "claude.exe")
-    else:
-        add(home / ".local" / "bin" / "claude")
-        add(home / ".claude" / "local" / "claude")
+    for folder in cli_search_dirs():
+        for suffix in _exe_suffixes():
+            add(folder / f"claude{suffix.lower()}")
     return out
+
+
+def cli_diagnosis() -> dict:
+    """**무엇을 찾아봤는지** 그대로 돌려준다 (Phase 6-F-7 후속).
+
+    실물 윈도우 실행에서 `찾지 못했습니다` 한 줄만 나왔는데, 그것만으로는
+    **설치가 안 된 것**인지 **다른 자리에 설치된 것**인지 가릴 수 없다.
+    둘은 할 일이 정반대다 — 하나는 설치, 하나는 `TOTO_CLAUDE_CLI` 다.
+    사유를 남기라는 §1-6-1 이 여기에도 그대로 적용된다.
+
+    **고쳐 주지 않는다.** 찾아본 자리와 그 결과만 적는다.
+    """
+    checked = [{"path": c, "exists": Path(c).is_file()}
+               for c in cli_candidates()]
+    return {
+        "os": os.name,
+        "env_var": CLI_ENV,
+        "env_value": os.environ.get(CLI_ENV, ""),
+        "which": shutil.which("claude") or "",
+        "pathext": os.environ.get("PATHEXT", "") if os.name == "nt" else "",
+        "path_entries": len([p for p in (os.environ.get("PATH") or "")
+                             .split(os.pathsep) if p.strip()]),
+        "checked": checked,
+        "found": next((c["path"] for c in checked if c["exists"]), ""),
+    }
+
+
+def cli_help_lines() -> list:
+    """못 찾았을 때 사람이 할 수 있는 일. **한 줄씩.**"""
+    lines = ["claude 실행 파일을 찾지 못했습니다."]
+    if os.name == "nt":
+        lines += [
+            "  ① Claude Code 가 이 PC 에 설치돼 있습니까?",
+            "     PowerShell 에서 `claude --version` 이 도는지 보십시오.",
+            "     안 되면 설치가 필요합니다 — npm 이 있으면",
+            "     `npm install -g @anthropic-ai/claude-code`,",
+            "     다른 방법은 https://code.claude.com/docs 를 보십시오.",
+            "  ② 설치는 돼 있는데 여기서만 안 보이는 경우",
+            "     PowerShell 에서 `(Get-Command claude).Source` 로 경로를",
+            "     확인해 그 값을 환경변수에 넣으십시오:",
+            f"     setx {CLI_ENV} \"C:\\전체\\경로\\claude.cmd\"",
+            "     (새 창을 열어야 적용됩니다)",
+            "  ③ WSL 안에만 설치돼 있으면 윈도우 파이썬에서는 보이지",
+            "     않습니다 — 윈도우 쪽에 따로 설치하십시오.",
+        ]
+    else:
+        lines += [
+            f"  설치 뒤에도 못 찾으면 `which claude` 의 경로를 {CLI_ENV} 에 "
+            f"넣으십시오.",
+        ]
+    return lines
 
 
 def find_claude_cli() -> str:
@@ -447,10 +541,23 @@ def preflight(report: Report | None, round_id: str,
     # ② Claude CLI — **찾는 것과 도는 것을 따로 본다** (§2-1).
     cli = find_claude_cli()
     if not cli:
-        out.problems.append(
-            f"claude 실행 파일을 찾지 못했습니다 — Claude Code 를 설치하고 "
-            f"로그인한 뒤 다시 실행하십시오 (설치 위치가 PATH 에 없으면 "
-            f"{CLI_ENV} 환경변수에 전체 경로를 적으십시오)")
+        # **무엇을 찾아봤는지 적는다.** '못 찾았다' 한 줄만으로는 설치가
+        # 안 된 것인지 다른 자리에 있는 것인지 가릴 수 없고, 둘은 할 일이
+        # 정반대다 (§1-6-1).
+        diag = cli_diagnosis()
+        out.problems.extend(cli_help_lines())
+        folders = []
+        for row in diag["checked"]:
+            folder = str(Path(row["path"]).parent)
+            if folder not in folders:
+                folders.append(folder)
+        out.notes.append(
+            f"찾아본 자리 {len(diag['checked'])}곳 (전부 없음) — "
+            + " · ".join(folders[:6]))
+        out.notes.append(
+            f"PATH 항목 {diag['path_entries']}개 · which claude = "
+            f"{diag['which'] or '없음'} · {CLI_ENV} = "
+            f"{diag['env_value'] or '미설정'}")
     else:
         out.cli = cli
         ok, version, why = cli_probe(cli)
@@ -1026,8 +1133,12 @@ def run(round_id: str, report: Report | None = None, settings=None, *,
         echo("[1/5] 자료 확인          ✗")
         for p in pre.problems:
             echo(f"      └ {p}")
+        # **막혔을 때야말로 진단이 필요하다.** 정상 경로에서는 notes 를
+        # 조용히 두지만, 여기서 감추면 사용자가 무엇을 고쳐야 할지 모른다.
+        for note in pre.notes:
+            echo(f"      · {note}")
         out.status = AGENT_FAILED
-        out.stopped_reason = "; ".join(pre.problems)
+        out.stopped_reason = pre.problems[0]
         return out
     echo(f"[1/5] 자료 확인          ✓  {pre.matches}경기 · {pre.version}")
     echo(f"      └ 모델 {model or 'Claude Code 기본'}")
@@ -1153,7 +1264,8 @@ __all__ = [
     "AUTH_OK", "AUTH_MISSING", "AUTH_API_KEY", "AUTH_UNKNOWN",
     "AgentRun", "MatchResult", "StageResult", "AutoResult", "Preflight",
     "AuthStatus",
-    "cli_candidates", "cli_probe", "auth_status", "resolve_model",
+    "cli_candidates", "cli_search_dirs", "cli_diagnosis", "cli_help_lines",
+    "cli_probe", "auth_status", "resolve_model",
     "find_claude_cli", "build_agent_env", "preflight",
     "auto_dir", "match_workspace", "moderator_workspace",
     "agent_argv", "run_agent", "payload_text", "run_match_role", "verify_match", "collect_stage",

@@ -5102,22 +5102,85 @@ Chromium 실측 1200×760 / 768×1024 / 400×900: 가로 오버플로 **0** · �
 nav 28개(14×2) · prev 26 · next 26 · up 28 — 1번과 14번이 하나씩 빠진 수다.
 목록 → 4번 → 다음 → 목록 → 옛 링크 `#m7` 이동이 전부 top=16 에 선다.
 
-#### H. 실물 윈도우 검증은 하지 못했다
+#### H. 실물 윈도우 실행 — preflight 까지 확인됐고, 거기서 멈췄다
 
-이 세션은 리눅스이고 §2-1 대로 원격 세션에서는 대상 사이트도 막혀 있다.
-**윈도우에서 실제로 돌려 본 것이 아니다.** 한 것은 둘이다.
+이 저장소의 세션은 리눅스이고 §2-1 대로 대상 사이트도 막혀 있다. 그래서
+6-F-7 을 만들 때는 윈도우에서 돌려 보지 못했고, 보고서에 그렇게 적었다.
 
-  · OS 로 갈라지는 자리를 **코드로 고정**했다 (`taskkill /T` ↔ `killpg`,
-    `CREATE_NEW_PROCESS_GROUP` ↔ `start_new_session`).
-  · OS 와 무관한 부분은 **실제로 돌려** 확인했다 — 인증 네 갈래 · 깨진 CLI
-    감지 · 손자 종료(POSIX 실행) · Ctrl+C 전파 · BOM/cp949 파일 · 한글·공백
-    경로 · 콘솔 인코딩 · 기본 모델.
+**사용자 PC 에서 실제로 돌렸다 (2026-09-19 · 260054).** `[1] 회차 분석` 은
+15분에 정상 완료했고(리포트 1008.6 KB · 배당 14/14 · 강점/약점 28팀 ·
+스타일 28팀), `[2] 패널 자동 분석` 은 **preflight 에서 멈췄다.**
 
-실물 `claude` 2.1.277 로 preflight 를 돌려 `oauth_token · firstParty` 까지
-확인했다 — **모델 호출 0회**다.
+```
+[1/5] 자료 확인          ✗
+      └ claude 실행 파일을 찾지 못했습니다 — …
+```
+
+**이것은 이 Phase 가 만든 게이트가 제대로 동작한 것이다.** 없는 CLI 로
+14경기를 시작하지 않았다. 다만 **거기서 더 갈 수 없었다** — 이 PC 에는
+Claude Code CLI 가 (적어도 윈도우 파이썬이 보는 자리에는) 없다.
+
+| | 실물 윈도우에서 확인됨 |
+|---|---|
+| CLI 탐색 · 없을 때 중단 | **확인** (정확히 이 자리에서 멈췄다) |
+| 인증 점검 · 프로세스 트리 종료 · 콘솔 인코딩 · 기본 모델 | **미확인** — 게이트를 못 지났다 |
+
+그래서 나머지는 여전히 **코드로 고정**한 것까지다 (`taskkill /T` ↔
+`killpg`, `CREATE_NEW_PROCESS_GROUP` ↔ `start_new_session`). OS 와 무관한
+부분은 실제로 돌려 확인했다 — 인증 네 갈래 · 깨진 CLI 감지 · 손자 종료
+(POSIX 실행) · Ctrl+C 전파 · BOM/cp949 파일 · 한글·공백 경로 · 콘솔
+인코딩 · 기본 모델. 이 저장소 세션의 실물 `claude` 2.1.277 로 preflight 를
+돌려 `oauth_token · firstParty` 까지 확인했다 — **모델 호출 0회**다.
+
+#### I. 못 찾았을 때 무엇을 찾아봤는지 적는다 (실물 실행 후속)
+
+실물이 남긴 것은 `찾지 못했습니다` **한 줄**뿐이었다. 그것만으로는
+
+```
+설치가 안 된 것인가    →  설치해야 한다
+다른 자리에 있는 것인가 →  TOTO_CLAUDE_CLI 를 적어야 한다
+```
+
+를 가를 수 없다. **할 일이 정반대인데 화면이 같다** — 사유를 남기라는
+§1-6-1 이 그대로 적용되는 자리다.
+
+**① 파일 이름을 박지 않고 폴더 × `PATHEXT` 로 훑는다.** 설치 방법마다
+만드는 파일이 다르다 — npm 은 `claude.cmd`, 네이티브는 `claude.exe`,
+경우에 따라 `.ps1` 이다. 이름을 하나씩 적으면 그중 하나만 다른 설치에서
+조용히 안 보인다. `cli_search_dirs()` 가 **폴더만** 적고 확장자는
+`PATHEXT` 에서 읽는다 (§1-4 의 "경로를 박지 말고 모양으로 찾는다").
+
+  · `PATHEXT` 는 **`;` 로 나눈다 — `os.pathsep` 이 아니다.** 윈도우 전용
+    변수라 언제나 `;` 이고, `os.pathsep` 으로 나누면 이 분기를 다른 OS 에서
+    시험할 때 통째로 안 갈린다 (실제로 그래서 못 갈렸다).
+  · 같은 폴더를 두 번 적지 않는다 — `%LOCALAPPDATA%` 가 기본값과 같을 때
+    실제로 중복이 나와 진단이 두 자리를 본 것처럼 보였다.
+
+**② 막혔을 때 진단을 보여 준다.** `cli_diagnosis()` 가 찾아본 자리와 그
+결과를 그대로 돌려주고, `run()` 이 실패 경로에서 `pre.notes` 를 **echo
+한다** — 예전에는 `out.lines` 에만 담아 화면에 닿지 않았다.
+
+```
+      · 찾아본 자리 20곳 (전부 없음) — …\npm · …\Programs\claude · …
+      · PATH 항목 37개 · which claude = 없음 · TOTO_CLAUDE_CLI = 미설정
+```
+
+**③ 할 수 있는 일을 적는다** (`cli_help_lines()`) — 설치 확인
+(`claude --version`) · 설치 명령 · `(Get-Command claude).Source` 로 경로를
+찾아 `setx TOTO_CLAUDE_CLI` · **WSL 안에만 설치하면 윈도우 파이썬에서는
+보이지 않는다.** 진단은 **읽기만 한다** — `mkdir`·`write_text`·
+`os.environ[` 대입·subprocess 가 없다(테스트로 고정).
+
+**곁가지 — 260054 로그의 팀명 경고는 §1-26 그대로다.** `C. Palace`·
+`R. Madrid`·`R. Vallecano`·`A. Club`·`C. Vigo` 다섯 건인데, 같은 실행에서
+`[epl] 팀 통계 20팀`·`[laliga] 팀 통계 20팀` 으로 **40팀이 전부 붙었다** —
+축약 표기가 안 붙어도 전체 이름이 다른 자리에서 붙는 진단용 경고이지
+자료 손실이 아니다. 별칭을 늘리지 않는다.
+
+회귀 테스트: `tests/test_panel_auto.py` 의 I절 (7개).
 
 회귀 테스트: `python tests/test_report_nav.py` (22개) ·
-`tests/test_panel_auto.py` 의 H절 (15개).
+`tests/test_panel_auto.py` 의 H절 (15개) · I절 (7개).
 변경 전 트리에 돌리면 각각 **14개 / 12개가 깨진다**(음성 대조).
 
 **기존 테스트 열둘의 범위를 옮겼다 — 기대값을 바꾼 것이 아니다.**
@@ -5801,7 +5864,7 @@ python tests/test_relationship_delivery.py # 관계 전달 경로·qualitative 6
 python tests/test_real_recollection.py     # 실측 재수집·스타일 제목·placeholder 6-E-5 §1-39 (26개)
 python tests/test_panel_work.py           # 1·2단계 보관·3단계 조립 6-F-3 §1-40 (60개)
 python tests/test_panel_workflow.py       # 3단계 결과 보관·[4] 연결·상태 6-F-4 §1-41 (49개)
-python tests/test_panel_auto.py           # 패널 자동 실행·비용 안전장치·A/B 격리 6-F-6 §1-42 · 윈도우 안전성 6-F-7 §1-43 (61개)
+python tests/test_panel_auto.py           # 패널 자동 실행·비용 안전장치·A/B 격리 6-F-6 §1-42 · 윈도우 안전성 6-F-7 §1-43 (68개)
 python tests/test_report_nav.py           # 리포트 내비게이션·앵커 6-F-7 §1-43 (22개)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개

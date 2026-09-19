@@ -131,7 +131,8 @@ def build_parser() -> argparse.ArgumentParser:
                         "쓰고 Anthropic API 를 직접 부르지 않는다")
     p.add_argument("--auto-model", default=None, metavar="MODEL",
                    help="--panel-auto 가 claude 에 넘길 모델. 주지 않으면 "
-                        "Claude Code 의 기본 모델을 쓴다")
+                        "실측으로 검증된 기본 모델(sonnet)을 쓴다 — "
+                        "일부러 Claude Code 의 기본 모델을 쓰려면 'cli'")
     p.add_argument("--rerender-artifact", type=Path, default=None,
                    metavar="FILE",
                    help="저장된 회차 분석 결과(data/artifacts/<회차>.json)를 "
@@ -590,7 +591,52 @@ def _panel_only(report: Report, args, settings, panel_file) -> int:
     return 0
 
 
+def safe_console() -> list:
+    """콘솔이 우리 글자를 담지 못하면 **UTF-8 로 바꾼다** (Phase 6-F-7 §2-3).
+
+    한국어 윈도우에서 `python -m toto … > log.txt` 처럼 **출력을 돌리면**
+    파이썬이 콘솔 API(UTF-16) 대신 로캘 인코딩(cp949)으로 쓴다. 그런데
+    이 프로그램의 메시지에는 cp949 에 없는 글자가 섞여 있다 — em dash(`—`)
+    는 물론이고 메뉴의 `═`·`⚽`, 진행 표시의 `✓`·`✗` 가 그렇다(실측).
+    그대로 두면 40분짜리 자동 실행이 `UnicodeEncodeError` 로 죽는다.
+
+    **글자를 지우는 것으로 고치지 않는다.** `—` 는 저장소 전체 메시지에
+    쓰이고, 그것을 걷어내면 모든 문구가 바뀐다. 출력 계층에서 한 번 고친다.
+
+    건강한 스트림은 **한 글자도 건드리지 않는다** — 대화형 윈도우 콘솔은
+    파이썬 3.6+ 가 UTF-8 래퍼를 쓰므로 아래 시험을 그냥 통과하고, 리눅스·
+    macOS 도 마찬가지다. 바뀌는 것은 실제로 담지 못하는 스트림뿐이다.
+
+    돌려주는 값은 **실제로 바꾼 스트림 이름** 목록이다 (테스트·진단용).
+    """
+    import sys
+    probe = "— ✓ ✗ ═ ⚽"
+    changed = []
+    for name in ("stdout", "stderr"):
+        stream = getattr(sys, name, None)
+        enc = getattr(stream, "encoding", None)
+        if stream is None or not enc:
+            continue
+        try:
+            probe.encode(enc)
+            continue                    # 담을 수 있다 — 건드리지 않는다
+        except (UnicodeEncodeError, LookupError):
+            pass
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+            changed.append(name)
+        except (AttributeError, OSError, ValueError):
+            # 되돌릴 수 없는 스트림이면 적어도 죽지는 않게 한다.
+            try:
+                stream.reconfigure(errors="replace")
+                changed.append(name)
+            except (AttributeError, OSError, ValueError):
+                pass
+    return changed
+
+
 def main(argv: list[str] | None = None) -> int:
+    safe_console()
     args = build_parser().parse_args(argv)
 
     # 메뉴로 가기 전에 로그를 켠다 — 메뉴 루프가 예외를 잡아 traceback 을

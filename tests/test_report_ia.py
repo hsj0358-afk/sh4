@@ -78,12 +78,17 @@ def _card(html: str, no: int) -> str:
 
 
 def _sumcard(html: str, no: int) -> str:
-    """요약 그리드의 카드 하나."""
-    parts = html.split('<a class="sumcard" href="#m')
-    for chunk in parts[1:]:
-        if chunk.startswith(f"{no}\""):
-            return chunk.split("</a>")[0]
-    raise AssertionError(f"{no}번 요약 카드가 없다")
+    """요약 그리드의 카드 하나.
+
+    앵커 형식은 **render 에서 끌어온다** — 6-F-7 이 `m4` 를 `match-04` 로
+    바꿨는데, 여기에 형식을 적어 두면 같은 규칙이 두 곳이 된다 (§1-8).
+    이 헬퍼가 지키려는 것은 앵커 문자열이 아니라 '요약 카드를 찾을 수
+    있다' 이고, 형식 자체는 `tests/test_report_nav.py` 가 본다.
+    """
+    mark = f'<a class="sumcard" href="#{render.match_anchor(no)}">'
+    if mark not in html:
+        raise AssertionError(f"{no}번 요약 카드가 없다")
+    return html.split(mark)[1].split("</a>")[0]
 
 
 def _demo_report(with_panel: bool = True) -> Report:
@@ -330,13 +335,21 @@ def test_b19_no_wdl_label_is_ever_derived():
 
 
 def test_b20_fourteen_cards_and_working_anchors():
-    """§29-20·21 — 카드 수와 이동 링크가 그대로다."""
+    """§29-20·21 — 카드 수와 이동 링크가 그대로다.
+
+    **앵커 형식을 여기에 박지 않는다 (6-F-7 범위 이동).** 4-G 는 `m4` 를
+    적어 두었는데 그것은 그때의 형식이고, 이 테스트가 지키려는 것은
+    '요약 카드 14개가 각자 **실제로 있는** 상세로 간다' 이다. 형식이
+    바뀌어도 그 사실은 그대로여야 하므로 대상의 존재를 직접 본다.
+    4-G 링크(`#m4`)가 계속 도는지는 `test_report_nav.py` 가 따로 본다.
+    """
     report, _res = _imported(FIXTURE_A)
     html = _html(report)
     assert html.count('class="sumcard"') == 14
     for no in range(1, 15):
-        assert f'href="#m{no}"' in html, no
-        assert f'id="m{no}"' in html, no
+        target = render.match_anchor(no)
+        assert f'href="#{target}"' in html, no
+        assert f'id="{target}"' in html, no
 
 
 def test_b21_report_without_any_panel_does_not_promise_a_score():

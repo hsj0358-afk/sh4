@@ -59,6 +59,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import signal
 import subprocess
 import uuid
 from dataclasses import dataclass, field
@@ -100,6 +101,32 @@ SCRUB_SESSION = ("CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_REMOTE_SESSION_ID",
 # 에이전트에게 주는 권한. **Bash 를 주지 않는다** — 분석가는 읽고 쓰기만
 # 하면 되고, [4] 실행은 Python 이 한다 (§13).
 AGENT_TOOLS = "Read,Write"
+
+# **기본 모델 (Phase 6-F-7 §5).** 6-F-6 실측이 이 값을 정했다 —
+# sonnet 은 A·B·C 세 단계가 전부 정상 동작했고(A $1.08 · B $1.67 ·
+# C $1.97 · client-side 추정), **haiku 는 파일을 쓰지 않아 실패했다.**
+# 그래서 운영 경로가 `--auto-model` 을 **주지 않아도** 검증된 모델로 돈다 —
+# 인자를 빼먹으면 Claude Code 의 그때그때 기본 모델을 타게 되고, 그것이
+# haiku 로 바뀌는 날 자동 실행이 통째로 멈춘다. 바꾸는 것은 사용자 몫이고,
+# 일부러 CLI 기본값을 쓰려면 `--auto-model cli` 다.
+DEFAULT_AUTO_MODEL = "sonnet"
+
+# `--auto-model` 에 이 낱말을 주면 `--model` 을 **넘기지 않는다** (Claude
+# Code 자신의 기본 모델). 빈 문자열이 아니라 낱말로 둔 이유는, 빈 값을
+# "지정 안 함" 으로 읽어 기본 모델을 건너뛰는 일이 없게 하려는 것이다.
+CLI_DEFAULT_MODEL = ("cli", "default", "기본")
+
+# `claude` 실행 파일을 직접 가리키고 싶을 때 쓰는 환경변수. PATH 에 없는
+# 자리에 설치된 경우(윈도우 네이티브 설치·포터블)를 위한 탈출구다.
+CLI_ENV = "TOTO_CLAUDE_CLI"
+
+# 인증 상태. §1-6 의 어휘를 그대로 쓴다 — **'확인 못 함' 은 '실패' 가
+# 아니다.** 옛 CLI 에는 `auth status` 가 없을 수 있고, 그때 멈추면 돌아갈
+# 실행까지 막는다.
+AUTH_OK = "ok"
+AUTH_MISSING = "missing"            # 로그인이 없다 — 시작하지 않는다
+AUTH_API_KEY = "api_key"            # 구독이 아니라 API 과금이다 — 멈춘다
+AUTH_UNKNOWN = "unknown"            # 물어보지 못했다 — 기록만 남긴다
 
 # 실행 결과 분류. `실패` 를 한 낱말로 뭉뚱그리지 않는다 (§1-6).
 AGENT_OK = "ok"
@@ -179,6 +206,7 @@ class AutoResult:
     round_id: str = ""
     status: str = AGENT_FAILED
     stopped_reason: str = ""
+    model: str = ""                 # 실제로 넘긴 모델 (빈 값 = CLI 기본)
     stages: dict = field(default_factory=dict)
     agent_calls: int = 0
     reused_calls: int = 0
@@ -201,18 +229,177 @@ class Preflight:
     matches: int = 0
     problems: list = field(default_factory=list)
     notes: list = field(default_factory=list)
+    auth: "AuthStatus | None" = None
 
 
 # ==========================================================================
 # 환경 — 비용 안전장치가 여기에 있다
 # ==========================================================================
+def cli_candidates() -> list:
+    """찾아볼 순서. **앞이 우선이다.**
+
+    `shutil.which` 하나로는 모자란 경우가 실제로 있다 (Phase 6-F-7 §2-1).
+
+      · 윈도우 npm 설치는 `%APPDATA%\\npm\\claude.cmd` 를 만드는데, 그
+        폴더가 PATH 에 없는 계정이 있다.
+      · 네이티브 설치는 `%LOCALAPPDATA%\\Programs` 아래로 들어간다.
+      · PowerShell 프로필의 alias 는 `which` 가 보지 못한다.
+
+    그래서 PATH 를 먼저 보고, 못 찾으면 **관측된 설치 위치**를 본다.
+    경로를 지어내지 않고 환경변수(`TOTO_CLAUDE_CLI`)라는 탈출구를 둔다.
+    """
+    out, seen = [], set()
+
+    def add(value):
+        text = str(value or "").strip().strip('"')
+        if text and text not in seen:
+            seen.add(text)
+            out.append(text)
+
+    add(os.environ.get(CLI_ENV))
+    add(shutil.which("claude"))
+
+    home = Path.home()
+    if os.name == "nt":
+        appdata = os.environ.get("APPDATA") or str(home / "AppData" / "Roaming")
+        local = os.environ.get("LOCALAPPDATA") or str(home / "AppData" / "Local")
+        add(Path(appdata) / "npm" / "claude.cmd")
+        add(Path(local) / "Programs" / "claude" / "claude.exe")
+        add(home / ".claude" / "local" / "claude.cmd")
+        add(home / ".local" / "bin" / "claude.exe")
+    else:
+        add(home / ".local" / "bin" / "claude")
+        add(home / ".claude" / "local" / "claude")
+    return out
+
+
 def find_claude_cli() -> str:
     """`claude` 실행 파일 경로. 없으면 빈 문자열.
 
-    이름을 코드에 박지 않고 `shutil.which` 로 찾는다 — 윈도우에서는
-    `claude.cmd` 처럼 확장자가 붙어 있어도 이것이 찾아 준다.
+    이름을 코드에 박지 않고 `shutil.which` 로 먼저 찾는다 — 윈도우에서는
+    `claude.cmd` 처럼 확장자가 붙어 있어도 `PATHEXT` 덕에 이것이 찾아 준다.
+    PATH 에 없으면 `cli_candidates()` 의 관측된 설치 위치를 본다.
+
+    **여기서는 실행해 보지 않는다** — 찾는 것과 도는 것은 다른 질문이라
+    `cli_probe()` 가 따로 답한다 (§2-1).
     """
-    return shutil.which("claude") or ""
+    for cand in cli_candidates():
+        if Path(cand).is_file() or shutil.which(cand):
+            return cand
+    return ""
+
+
+def _probe(argv: list, timeout: int):
+    """짧은 CLI 호출 하나. (returncode, stdout, stderr) 또는 사유 문자열.
+
+    **모델을 부르지 않는다** — `--version`·`auth status` 는 로컬 점검이다.
+    """
+    try:
+        proc = subprocess.run(argv, capture_output=True, text=True,
+                              encoding="utf-8", errors="replace",
+                              timeout=timeout, shell=False,
+                              stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        return None, f"{timeout}초 안에 답하지 않았습니다"
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, f"{type(exc).__name__}: {exc}"
+    return proc, ""
+
+
+def cli_probe(exe: str, timeout: int = 60):
+    """**실제로 띄워 본다.** (ok, 버전, 사유).
+
+    `shutil.which` 가 찾았다는 것과 그것이 돈다는 것은 다르다 — 윈도우의
+    `claude.cmd` 는 npm 셸 심이라 Node 가 없거나 설치가 깨져 있으면
+    **찾아지지만 돌지 않는다.** 그 차이를 14경기를 시작한 뒤가 아니라
+    시작 전에 안다.
+    """
+    if not exe:
+        return False, "", "실행 파일을 찾지 못했습니다"
+    proc, why = _probe([exe, "--version"], timeout)
+    if proc is None:
+        return False, "", why
+    text = (proc.stdout or "").strip() or (proc.stderr or "").strip()
+    line = text.splitlines()[0][:60] if text else ""
+    if proc.returncode != 0:
+        return False, line, f"종료코드 {proc.returncode}: {line or '출력 없음'}"
+    if not line:
+        return False, "", "버전을 답하지 않았습니다"
+    return True, line, ""
+
+
+@dataclass
+class AuthStatus:
+    """`claude auth status` 결과. **모델을 부르지 않는 로컬 점검이다.**"""
+    state: str = AUTH_UNKNOWN
+    method: str = ""
+    provider: str = ""
+    message: str = ""
+
+    @property
+    def ok(self) -> bool:
+        return self.state == AUTH_OK
+
+
+def auth_status(exe: str, timeout: int = 60) -> AuthStatus:
+    """로그인이 되어 있는가. **시작 전에 묻는다** (§2-2).
+
+    묻지 않으면 14경기를 돌리기 시작한 뒤 첫 호출에서야 알게 되고, 그 사이
+    작업 폴더와 자료 파일이 만들어진다.
+
+    **인증 방식도 본다.** `authMethod` 가 API 키를 가리키면 구독이 아니라
+    과금 경로라는 뜻이라 그 자리에서 멈춘다 — 환경변수를 지우는 것만으로는
+    (호스트가 관리하는 설정처럼) 다 막히지 않는다.
+
+    답을 얻지 못하면 `unknown` 이고 **멈추지 않는다** — 옛 CLI 에는 이
+    하위 명령이 없을 수 있고, 없는 것을 실패로 치면 돌아갈 실행까지
+    막는다 (§1-6: '확인 못 함' 은 '실패' 가 아니다).
+    """
+    out = AuthStatus()
+    if not exe:
+        out.message = "실행 파일을 찾지 못했습니다"
+        return out
+    proc, why = _probe([exe, "auth", "status", "--json"], timeout)
+    if proc is None:
+        out.message = why
+        return out
+    raw = (proc.stdout or "").strip()
+    try:
+        data = json.loads(raw) if raw else {}
+    except ValueError:
+        data = {}
+    if not isinstance(data, dict) or "loggedIn" not in data:
+        out.message = (f"인증 상태를 읽지 못했습니다 "
+                       f"(종료코드 {proc.returncode})")
+        return out
+
+    out.method = str(data.get("authMethod") or "")
+    out.provider = str(data.get("apiProvider") or "")
+    low = out.method.lower()
+    if not data.get("loggedIn"):
+        out.state = AUTH_MISSING
+        out.message = "로그인되어 있지 않습니다"
+    elif "api_key" in low or "apikey" in low:
+        out.state = AUTH_API_KEY
+        out.message = f"인증 방식이 API 키입니다 ({out.method})"
+    else:
+        out.state = AUTH_OK
+        out.message = f"{out.method or '로그인됨'} · {out.provider}".strip(" ·")
+    return out
+
+
+def resolve_model(choice: str | None) -> str:
+    """`--auto-model` 해석. **주지 않으면 검증된 기본 모델이다** (§5).
+
+    돌려주는 빈 문자열은 "`--model` 을 넘기지 않는다" 는 뜻이고, 그것은
+    `--auto-model cli` 로 **일부러** 고를 때만 나온다.
+    """
+    value = (choice or "").strip()
+    if not value:
+        return DEFAULT_AUTO_MODEL
+    if value.lower() in CLI_DEFAULT_MODEL or value in CLI_DEFAULT_MODEL:
+        return ""
+    return value
 
 
 def build_agent_env(env: dict | None = None) -> dict:
@@ -257,22 +444,43 @@ def preflight(report: Report | None, round_id: str,
             f"Claude 구독 인증으로만 실행합니다. API 키를 쓴 자동 실행은 "
             f"시작하지 않습니다 (지우고 다시 실행하십시오)")
 
-    # ② Claude CLI
+    # ② Claude CLI — **찾는 것과 도는 것을 따로 본다** (§2-1).
     cli = find_claude_cli()
     if not cli:
         out.problems.append(
-            "claude 실행 파일을 찾지 못했습니다 — Claude Code 를 설치하고 "
-            "로그인한 뒤 다시 실행하십시오")
+            f"claude 실행 파일을 찾지 못했습니다 — Claude Code 를 설치하고 "
+            f"로그인한 뒤 다시 실행하십시오 (설치 위치가 PATH 에 없으면 "
+            f"{CLI_ENV} 환경변수에 전체 경로를 적으십시오)")
     else:
         out.cli = cli
-        try:
-            p = subprocess.run([cli, "--version"], capture_output=True,
-                               text=True, encoding="utf-8", errors="replace",
-                               timeout=60)
-            out.version = (p.stdout or "").strip().splitlines()[0][:60] \
-                if p.stdout else ""
-        except (OSError, subprocess.SubprocessError) as exc:
-            out.problems.append(f"claude --version 실패: {exc}")
+        ok, version, why = cli_probe(cli)
+        out.version = version
+        if not ok:
+            # 찾아졌는데 돌지 않는 상태다 — 경로를 함께 적는다. 윈도우에서
+            # `claude.cmd` 는 npm 셸 심이라 Node 가 없으면 이렇게 된다.
+            out.problems.append(f"claude 를 실행하지 못했습니다 ({cli}): {why}")
+        else:
+            out.notes.append(f"claude 실행 파일 {cli}")
+
+            # ②-b 인증 — 여기서 막히면 14경기를 시작하지 않는다.
+            auth = auth_status(cli)
+            out.auth = auth
+            if auth.state == AUTH_MISSING:
+                out.problems.append(
+                    "Claude Code 에 로그인되어 있지 않습니다 — "
+                    "`claude auth login` 으로 로그인한 뒤 다시 실행하십시오")
+            elif auth.state == AUTH_API_KEY:
+                out.problems.append(
+                    f"{auth.message} — 패널 자동 분석은 Claude 구독 인증으로만 "
+                    f"실행합니다. API 과금으로 도는 자동 실행은 시작하지 "
+                    f"않습니다")
+            elif auth.state == AUTH_UNKNOWN:
+                # '확인 못 함' 은 '실패' 가 아니다 (§1-6). 기록만 남기고
+                # 진행한다 — 실제로 로그인이 없으면 첫 호출이 `auth` 로
+                # 멈추고, 그때도 과금으로 넘어가지 않는다.
+                out.notes.append(f"인증 상태 확인 못 함 — {auth.message}")
+            else:
+                out.notes.append(f"인증 {auth.message}")
 
     # ③ 회차 자료
     if not out.round_id:
@@ -348,6 +556,60 @@ def agent_argv(exe: str, prompt: str, system: str, workspace: Path,
     return argv
 
 
+def _spawn_kwargs() -> dict:
+    """자식을 **자기 프로세스 그룹**으로 띄운다 (Phase 6-F-7 §2-4).
+
+    그래야 시간이 넘쳤을 때 손자까지 한 번에 끝낼 수 있고, Ctrl+C 가
+    우리와 자식에게 동시에 날아들어 **누가 정리하는지 모르는 상태**가 되지
+    않는다 — 정리는 우리가 한다.
+    """
+    if os.name == "nt":
+        return {"creationflags": getattr(subprocess,
+                                         "CREATE_NEW_PROCESS_GROUP", 0)}
+    return {"start_new_session": True}
+
+
+def _kill_tree(proc) -> None:
+    """자식의 **자식까지** 끝낸다.
+
+    윈도우에서 `claude.cmd` 는 npm 셸 심이라 실제 계층이
+    `cmd.exe → node.exe` 다. 직접 자식(`cmd.exe`)만 죽이면 **node 가
+    살아남아** 사용량이 계속 나가고 작업 폴더에 파일을 계속 쓴다 — 그러면
+    재개할 때 '끝난 경기' 를 잘못 판정할 수 있다. `taskkill /T` 가 트리를
+    통째로 끝낸다. POSIX 에서는 프로세스 그룹에 신호를 보낸다.
+
+    실패해도 예외를 올리지 않는다 — 정리는 최선을 다하는 일이고, 그것
+    때문에 회차가 죽으면 안 된다.
+    """
+    if proc is None or proc.poll() is not None:
+        return
+    if os.name == "nt":
+        try:
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                           capture_output=True, timeout=30, shell=False)
+        except (OSError, subprocess.SubprocessError):
+            pass
+    else:
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            try:
+                os.killpg(os.getpgid(proc.pid), sig)
+            except (OSError, ProcessLookupError):
+                break
+            try:
+                proc.wait(timeout=10)
+                return
+            except subprocess.TimeoutExpired:
+                continue
+    try:
+        proc.kill()
+    except OSError:
+        pass
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        pass
+
+
 def run_agent(prompt: str, system: str, workspace: Path, *,
               timeout: int, model: str = "", cli: str = "",
               env: dict | None = None) -> AgentRun:
@@ -356,6 +618,10 @@ def run_agent(prompt: str, system: str, workspace: Path, *,
     `--bare` 를 쓰지 않는다 — 그 모드는 구독 로그인을 읽지 않는다.
     `--permission-prompts none` 이라 사람에게 물어야 하는 것은 승인되지
     않고 거부되며, 그래서 무인 실행이 조용히 멈추지 않는다.
+
+    **시간이 넘치거나 Ctrl+C 가 오면 손자까지 끝낸다** (`_kill_tree`).
+    `subprocess.run(timeout=)` 은 직접 자식만 죽이는데, 윈도우에서는 그
+    자식이 `cmd.exe` 셸 심이라 정작 모델을 부르는 node 가 살아남는다.
     """
     exe = cli or find_claude_cli()
     out = AgentRun()
@@ -368,26 +634,36 @@ def run_agent(prompt: str, system: str, workspace: Path, *,
     argv = agent_argv(exe, prompt, system, workspace, wanted, model)
 
     try:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             argv, cwd=str(workspace), env=build_agent_env(env),
-            capture_output=True, text=True, encoding="utf-8",
-            errors="replace", timeout=timeout, shell=False,
-            stdin=subprocess.DEVNULL)
-    except subprocess.TimeoutExpired:
-        out.status = AGENT_TIMEOUT
-        out.message = f"{timeout}초 안에 끝나지 않았습니다"
-        return out
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            stdin=subprocess.DEVNULL, text=True, encoding="utf-8",
+            errors="replace", shell=False, **_spawn_kwargs())
     except OSError as exc:
         out.message = f"실행하지 못했습니다: {exc}"
         return out
 
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_tree(proc)
+        out.status = AGENT_TIMEOUT
+        out.message = f"{timeout}초 안에 끝나지 않았습니다"
+        return out
+    except BaseException:
+        # Ctrl+C 도 여기로 온다. **자식을 남기지 않고** 그대로 올려보낸다 —
+        # 삼키면 사용자가 멈췄는데도 모델이 계속 돈다.
+        _kill_tree(proc)
+        raise
+
     out.returncode = proc.returncode
-    raw = (proc.stdout or "").strip()
+    raw = (stdout or "").strip()
+    proc_stderr = stderr or ""
     # 실행 봉투를 남긴다 — 실패했을 때 "모델이 무엇을 답했나" 를 되짚을
     # 유일한 자료다 (§29). 조용히 버리면 사유를 알 수 없다 (§1-6-1).
     try:
         (workspace / AGENT_ENVELOPE).write_text(
-            raw or (proc.stderr or ""), encoding="utf-8")
+            raw or proc_stderr, encoding="utf-8")
     except OSError:
         pass
     try:
@@ -408,9 +684,9 @@ def run_agent(prompt: str, system: str, workspace: Path, *,
         out.message = text[:200]
         return out
 
-    blob = f"{text}\n{proc.stderr or ''}"
+    blob = f"{text}\n{proc_stderr}"
     out.status = _classify(blob)
-    out.message = (text or (proc.stderr or "")).strip()[:300] \
+    out.message = (text or proc_stderr).strip()[:300] \
         or f"종료코드 {proc.returncode}"
     return out
 
@@ -457,14 +733,23 @@ OPINION_KEYS = ("predicted_home(0 이상 정수 또는 null)",
 
 
 def _read_output(workspace: Path):
-    """에이전트가 쓴 결과를 읽는다. (obj, 사유)."""
+    """에이전트가 쓴 결과를 읽는다. (obj, 사유).
+
+    **BOM 을 견디고, 디코딩 실패를 그 경기의 사유로 만든다.** 윈도우에서
+    도구가 UTF-8 BOM 을 붙이거나 cp949 로 쓰는 일이 있는데, 예전에는
+    `UnicodeDecodeError` 가 그대로 올라가 **회차 전체가 죽었다** — 한
+    경기의 결과가 깨진 것은 그 경기의 실패이지 회차의 실패가 아니다
+    (§1-6).
+    """
     path = workspace / AGENT_OUTPUT
     if not path.is_file():
         return None, f"{AGENT_OUTPUT} 를 만들지 않았습니다"
     try:
-        raw = path.read_text(encoding="utf-8")
+        raw = path.read_text(encoding="utf-8-sig")
     except OSError as exc:
         return None, f"읽지 못했습니다: {exc}"
+    except UnicodeDecodeError as exc:
+        return None, f"UTF-8 이 아닙니다: {exc}"
     from .llm import strip_fence      # 코드펜스만 걷는다 (기존 함수 재사용)
     try:
         data = json.loads(strip_fence(raw.strip()))
@@ -646,7 +931,9 @@ def run_stage_c(report: Report, settings=None, *, model: str = "",
 
     ws = moderator_workspace(round_id, base)
     ws.mkdir(parents=True, exist_ok=True)
-    (ws / AGENT_INPUT).write_text(sheet.read_text(encoding="utf-8"),
+    # 조립본은 우리가 UTF-8 로 쓴 것이지만 `-sig` 로 읽는다 — 사용자가
+    # 윈도우 편집기로 열었다 저장하면 BOM 이 붙는다 (§1-7 과 같은 계열).
+    (ws / AGENT_INPUT).write_text(sheet.read_text(encoding="utf-8-sig"),
                                   encoding="utf-8")
     (ws / AGENT_FAIL).unlink(missing_ok=True)
 
@@ -715,6 +1002,10 @@ def run(round_id: str, report: Report | None = None, settings=None, *,
     **즉시 멈춘다.**
     """
     out = AutoResult(round_id=str(round_id or ""))
+    # **모델은 여기 한 곳에서 정한다** (§5). 아래 단계 함수들은 받은 값을
+    # 그대로 넘기기만 하고, `agent_argv` 의 "빈 문자열이면 `--model` 을
+    # 넘기지 않는다" 규칙도 그대로다 — 바뀐 것은 정책의 자리뿐이다.
+    model = resolve_model(model)
     echo(_BAR)
     echo(f"Panel Auto Workflow — {out.round_id}")
     echo(_BAR)
@@ -739,10 +1030,28 @@ def run(round_id: str, report: Report | None = None, settings=None, *,
         out.stopped_reason = "; ".join(pre.problems)
         return out
     echo(f"[1/5] 자료 확인          ✓  {pre.matches}경기 · {pre.version}")
+    echo(f"      └ 모델 {model or 'Claude Code 기본'}")
+    out.model = model
 
     state = panelwork.workflow(out.round_id, base=base)
     done = {s.key: s.done for s in state.stages}
 
+    # Ctrl+C 로 멈춰도 **자식을 남기지 않고**(`run_agent`) 끝난 경기는
+    # 보존된다 — 재개는 `_completed()` 가 파일을 다시 검증해서 정한다.
+    # 예외를 삼키지 않는다: 종료코드 정책은 `main()` 것이다 (§1-7-1).
+    try:
+        return _run_stages(report, settings, out, pre, done, model=model,
+                           base=base, progress=progress, echo=echo)
+    except KeyboardInterrupt:
+        echo("")
+        echo("  중단했습니다 — 끝난 경기 결과는 보존되었습니다. "
+             "다시 실행하면 멈춘 지점부터 재개합니다.")
+        raise
+
+
+def _run_stages(report, settings, out: AutoResult, pre: Preflight, done: dict,
+                *, model: str, base, progress, echo) -> AutoResult:
+    """A → B → 조립 → C → [4]. `run()` 이 준비한 것 위에서 돈다."""
     def _stop(stage_name: str, res: StageResult) -> AutoResult:
         echo(f"      └ {res.status}: {res.message}")
         out.status = res.status
@@ -840,7 +1149,11 @@ __all__ = [
     "AGENT_OK", "AGENT_INVALID", "AGENT_TIMEOUT", "AGENT_USAGE_LIMIT",
     "AGENT_AUTH", "AGENT_NO_OUTPUT", "AGENT_FAILED",
     "WORKFLOW_STOPPED_USAGE_LIMIT",
+    "DEFAULT_AUTO_MODEL", "CLI_DEFAULT_MODEL", "CLI_ENV",
+    "AUTH_OK", "AUTH_MISSING", "AUTH_API_KEY", "AUTH_UNKNOWN",
     "AgentRun", "MatchResult", "StageResult", "AutoResult", "Preflight",
+    "AuthStatus",
+    "cli_candidates", "cli_probe", "auth_status", "resolve_model",
     "find_claude_cli", "build_agent_env", "preflight",
     "auto_dir", "match_workspace", "moderator_workspace",
     "agent_argv", "run_agent", "payload_text", "run_match_role", "verify_match", "collect_stage",

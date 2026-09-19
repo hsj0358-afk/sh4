@@ -222,12 +222,76 @@ footer.bot{margin-top:44px;padding-top:18px;border-top:1px solid var(--grid);
   font-size:12px;color:var(--text-muted)}
 a.top-link{color:var(--text-muted);font-size:12px;text-decoration:none}
 a.top-link:hover{color:var(--text-secondary)}
+
+/* 경기 사이 이동 (Phase 6-F-7). 순수 anchor 다 — JS 가 없다.
+   `space-between` 이 아니라 빈 자리(.mnav-gap)를 둬서, 1번·14번에서도
+   가운데 '목록' 링크가 같은 자리에 있게 한다. */
+#match-overview{scroll-margin-top:16px}
+.mnav{display:flex;align-items:center;gap:8px;font-size:12.5px;
+  margin:0 0 14px;flex-wrap:nowrap}
+.match > .mnav:last-child{margin:18px 0 0}
+.mnav a{flex:0 0 auto;text-decoration:none;color:var(--text-secondary);
+  border:1px solid var(--border);border-radius:999px;padding:4px 11px;
+  background:var(--page);white-space:nowrap}
+.mnav a:hover{border-color:var(--axis);color:var(--text-primary)}
+.mnav .mnav-gap{flex:0 0 auto;min-width:56px}
+/* 가운데는 '돌아가기' 라 테두리를 주지 않는다 — 앞뒤 이동이 이 줄의
+   행동이고, 셋이 다 같은 알약이면 무엇을 누를지가 흐려진다. */
+.mnav .mnav-up{flex:1 1 auto;text-align:center;color:var(--text-muted);
+  border-color:transparent;background:none;padding:4px 6px}
+.mnav .mnav-up:hover{border-color:var(--border)}
+/* 옛 앵커는 카드 **안쪽**에 있어(패딩 20 + 테두리 1) 그만큼 더 띄워야
+   새 앵커와 같은 자리에 선다 — 실측으로 맞췄다. */
+.match .aka{display:block;height:0;scroll-margin-top:37px}
 """
 
 
 # --------------------------------------------------------------------------
 # 조각 렌더러
 # --------------------------------------------------------------------------
+# --------------------------------------------------------------------------
+# 앵커 — **한 곳에서만 만든다** (Phase 6-F-7 §16·§17)
+# --------------------------------------------------------------------------
+# 14경기를 훑다가 한 경기를 열고, 보고 나서 다음 경기로 가거나 목록으로
+# 돌아가는 것이 이 리포트의 기본 동작인데 그 길이 반쪽이었다 — 목록 →
+# 상세 링크는 있었지만 상세에서 나가는 길은 페이지 맨 위(`#top`)뿐이고
+# 옆 경기로 가는 길은 아예 없었다.
+#
+# **표시용 메타데이터일 뿐이다** (§17). 경기 번호에서 만들어지고 분석값·
+# 식별자와 무관하다 — `match_id`(§1-15-1)도 `match_number` 계약도 이것과
+# 아무 관계가 없다.
+OVERVIEW_ANCHOR = "match-overview"
+
+
+def match_anchor(no) -> str:
+    """경기 상세의 URL fragment. `match-01` … `match-14`.
+
+    **팀 이름을 id 로 쓰지 않는다** (§10). 한글·공백·`&` 가 fragment 에
+    들어가면 인코딩이 브라우저·메신저마다 달라져 링크가 깨지고, 팀 이름은
+    회차마다 바뀌어 같은 자리를 가리키지도 못한다. 번호는 회차 안에서
+    유일하고 안 바뀐다.
+
+    두 자리로 채우는 이유는 정렬이다 — `match-2` 와 `match-10` 이 문자열로
+    섞이지 않는다. 번호를 읽을 수 없으면 원문을 그대로 쓴다(빈 앵커를
+    만들어 링크를 조용히 끊지 않는다).
+    """
+    try:
+        return f"match-{int(no):02d}"
+    except (TypeError, ValueError):
+        return f"match-{no}"
+
+
+def legacy_match_anchor(no) -> str:
+    """4-G 까지 쓰던 앵커(`m4`). **지우지 않고 같이 둔다.**
+
+    리포트 파일은 같은 경로에 다시 쓰이므로(`reports/toto_<회차>.html`),
+    앵커만 바꾸면 이미 공유·북마크한 `…#m4` 링크가 **조용히** 맨 위로
+    떨어진다. 값이 없는 것과 틀린 곳으로 가는 것은 다르다 — 빈 span
+    하나로 옛 링크를 살려 둔다.
+    """
+    return f"m{no}"
+
+
 def _swatch(color: str) -> str:
     return f'<span class="sw" style="background:{color}"></span>'
 
@@ -1566,7 +1630,37 @@ def _radar_table(match: Match) -> str:
 # CSS 도 없었다(`table.mini`·`.meta`·`.nodata` 는 다른 블록이 함께 쓴다).
 
 
-def _match_card(match: Match, settings: Settings, report=None) -> str:
+def _match_nav(match: Match, prev: Match | None, nxt: Match | None) -> str:
+    """경기 사이를 오가는 줄. **markup 은 이 함수 하나가 만든다** (§16).
+
+    카드 위아래에 같은 줄을 놓는데, 문자열을 복사해 두 번 적지 않는다 —
+    한쪽만 고쳐지면 같은 리포트 안에서 위아래 링크가 갈린다.
+
+    **없는 방향은 링크를 만들지 않는다** (§12). 1번에 '이전', 14번에
+    '다음' 을 만들면 자기 자신이나 빈 곳을 가리키게 되고, 그건 '재 봤는데
+    없다' 가 아니라 **틀린 링크**다. 자리는 비워 두어 가운데 링크가
+    움직이지 않게 한다.
+
+    **JavaScript 를 쓰지 않는다** (§15). 순수 anchor 라 오프라인·폰·
+    `file://` 어디서나 돈다 — 리포트가 자체 완결 HTML 이어야 한다는
+    조건(§1-8)과 같은 이유다.
+    """
+    def side(other: Match | None, arrow: str, cls: str) -> str:
+        if other is None:
+            return '<span class="mnav-gap"></span>'
+        label = f"{arrow} {other.no}번" if cls == "prev" else f"{other.no}번 {arrow}"
+        return (f'<a class="mnav-{cls}" href="#{match_anchor(other.no)}">'
+                f'{esc(label)}</a>')
+
+    return (f'<nav class="mnav" aria-label="{esc(str(match.no))}번 경기 이동">'
+            f'{side(prev, "←", "prev")}'
+            f'<a class="mnav-up" href="#{OVERVIEW_ANCHOR}">14경기 목록</a>'
+            f'{side(nxt, "→", "next")}'
+            f'</nav>')
+
+
+def _match_card(match: Match, settings: Settings, report=None,
+                prev: Match | None = None, nxt: Match | None = None) -> str:
     meta = " · ".join(x for x in (match.league_ko or match.league,
                                   match.kickoff_kst) if x)
     notes = ""
@@ -1594,7 +1688,12 @@ def _match_card(match: Match, settings: Settings, report=None) -> str:
         "발견을 지지한 지표·출처와 맞대결 기록",
         f'{_evidence_block(match)}{_h2h_block(match)}')
 
-    return (f'<article class="match" id="m{match.no}">'
+    nav = _match_nav(match, prev, nxt)
+    return (f'<article class="match" id="{match_anchor(match.no)}">'
+            # 4-G 까지 쓰던 앵커를 살려 둔다 — 이미 공유한 링크가 조용히
+            # 맨 위로 떨어지지 않게 한다.
+            f'<span class="aka" id="{legacy_match_anchor(match.no)}"></span>'
+            f'{nav}'
             f'<h3><span class="no">{match.no}</span>'
             f'{esc(match.home.display)} <span style="color:var(--text-muted)">vs</span> '
             f'{esc(match.away.display)}</h3>'
@@ -1641,7 +1740,9 @@ def _match_card(match: Match, settings: Settings, report=None) -> str:
             # 시즌 표, 슈팅·xG 프로필 뒤에 최근 표.
             f'{detail_metrics}'
             f'{detail_evidence}'
-            f'<p style="margin:18px 0 0"><a class="top-link" href="#top">↑ 목록으로</a></p>'
+            # 카드가 길어서 다 읽고 나면 위쪽 줄이 화면 밖이다 — 같은 줄을
+            # 아래에도 둔다 (같은 함수가 만든다).
+            f'{nav}'
             f'</article>')
 
 
@@ -1856,7 +1957,7 @@ def _summary_grid(matches: list[Match]) -> str:
     cards = []
     for m in matches:
         cards.append(
-            f'<a class="sumcard" href="#m{m.no}">'
+            f'<a class="sumcard" href="#{match_anchor(m.no)}">'
             f'<div class="hd"><span>{m.no}. {esc(m.league_ko or m.league)}</span>'
             f'<span>{esc(m.kickoff_kst)}</span></div>'
             f'<div class="tm">{esc(m.home.display)} vs {esc(m.away.display)}</div>'
@@ -1882,8 +1983,15 @@ def render_report(report: Report, settings: Settings) -> str:
         warnings = (f'<div class="warnbox"><b>확인이 필요한 항목</b>'
                     f'<ul>{items}</ul></div>')
 
-    cards = "".join(_match_card(m, settings, report)
-                     for m in report.matches)
+    # 앞뒤 경기를 함께 넘긴다 — 카드가 자기 이웃을 알아야 '이전·다음' 을
+    # 만들 수 있고, 그 판단을 카드 밖에서 한 번에 하면 1번·14번의 끝 처리가
+    # 한 자리에 모인다.
+    seq = list(report.matches)
+    cards = "".join(
+        _match_card(m, settings, report,
+                    prev=seq[i - 1] if i > 0 else None,
+                    nxt=seq[i + 1] if i + 1 < len(seq) else None)
+        for i, m in enumerate(seq))
 
     return f"""<!doctype html>
 <html lang="ko"><head>
@@ -1898,10 +2006,12 @@ def render_report(report: Report, settings: Settings) -> str:
   <div class="badges">{badges}</div>
 </header>
 {warnings}
+<section id="{OVERVIEW_ANCHOR}">
 <h2 class="sec">14경기 한눈에 보기</h2>
 <p class="sub" style="color:var(--text-muted);font-size:12.5px;margin:0 0 12px">
   {_summary_intro(report.matches)}.</p>
 {_summary_grid(report.matches)}
+</section>
 
 <h2 class="sec">경기별 상세 분석</h2>
 {cards}

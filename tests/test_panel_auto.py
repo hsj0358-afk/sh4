@@ -681,10 +681,21 @@ def test_f6_menu_does_not_reimplement_the_workflow():
 # ==========================================================================
 # G. 전체 워크플로 (가짜 에이전트로 — 돈이 들지 않는다)
 # ==========================================================================
+def workflow_code() -> str:
+    """워크플로 본체. **함수 하나에 묶어 두지 않는다 (6-F-7 범위 이동).**
+
+    6-F-6 은 A→B→C→[4] 가 `run()` 한 함수 안에 있다는 것을 전제로 낱말을
+    셌는데, 6-F-7 이 Ctrl+C 정리를 붙이면서 단계 부분을 `_run_stages()` 로
+    갈랐다. 지키려는 것은 **코드가 어느 함수에 있느냐가 아니라 순서·경로**
+    이므로 둘을 이어 붙여 본다 (§1-29·§1-31 과 같은 교정).
+    """
+    return (code_of(fn_node(panelauto, "run")) + "\n"
+            + code_of(fn_node(panelauto, "_run_stages")))
+
+
 def test_g1_stage_order_a_then_b():
     """A 가 끝나야 B 를 시작한다 (§18)."""
-    node = fn_node(panelauto, "run")
-    body = code_of(node)
+    body = workflow_code()
     assert body.index("DATA_ANALYST") < body.index("MATCHUP_ANALYST")
 
 
@@ -699,14 +710,14 @@ def test_g2_c_reads_only_the_assembled_sheet():
 
 def test_g3_apply_uses_the_existing_paste_path():
     """[4] 반영은 기존 경로다 (§22)."""
-    body = code_of(fn_node(panelauto, "run"))
+    body = workflow_code()
     assert "--paste-panel-result" in body
     assert "moderator_result_path" in body
 
 
 def test_g4_completed_stages_are_skipped():
     """상태를 먼저 읽고 끝난 단계는 건너뛴다 (§23)."""
-    body = code_of(fn_node(panelauto, "run"))
+    body = workflow_code()
     assert "panelwork.workflow" in body
     for key in ("STAGE_A", "STAGE_B", "STAGE_INPUT", "STAGE_RESULT"):
         assert key in body, f"{key} 를 보지 않는다"
@@ -722,13 +733,351 @@ def test_g5_sequential_not_parallel():
 
 def test_g6_no_new_third_party_dependency():
     """표준 라이브러리만 쓴다 (§43)."""
-    std = {"json", "os", "shutil", "subprocess", "uuid", "dataclasses",
+    std = {"json", "os", "shutil", "signal", "subprocess", "uuid", "dataclasses",
            "pathlib", "__future__", "toto", "models", "moderator", "panel",
            "panelexport", "panelwork", "artifact", "settings", "cli", "llm",
            "annotations", "dataclass", "field", "Path", "Report",
            "strip_fence", "main", "load_settings"}
     unknown = imported_names(panelauto) - std
     assert not unknown, f"새 의존성: {unknown}"
+
+
+# ==========================================================================
+# H. 윈도우 안전성 (Phase 6-F-7 §2)
+#
+# **이 세션은 리눅스다.** 실제 윈도우 PC 에서 돌려 본 것이 아니라, 윈도우
+# 에서 갈라지는 자리를 **코드로 고정**한 것이다 — 어느 분기가 어느 OS 의
+# 것인지, 그리고 OS 와 무관한 부분(인증·모델·인코딩·파일 읽기)이 실제로
+# 도는지를 본다. 실물 검증 여부는 보고서 §22 에 그대로 적었다.
+# ==========================================================================
+def fake_cli(dir_: Path, body: str, name: str = "claude") -> Path:
+    """가짜 `claude` 실행 파일. **모델을 부르지 않는다.**"""
+    path = dir_ / name
+    path.write_text("#!/bin/sh\n" + body, encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
+def test_h1_cli_discovery_has_fallbacks_and_an_escape_hatch():
+    """`shutil.which` 하나에 매달리지 않는다 (§2-1)."""
+    had = os.environ.get(panelauto.CLI_ENV)
+    os.environ[panelauto.CLI_ENV] = "/nowhere/claude.cmd"
+    try:
+        cands = panelauto.cli_candidates()
+        assert cands[0] == "/nowhere/claude.cmd", "환경변수가 최우선이 아니다"
+    finally:
+        os.environ.pop(panelauto.CLI_ENV, None)
+        if had is not None:
+            os.environ[panelauto.CLI_ENV] = had
+    cands = panelauto.cli_candidates()
+    assert cands, "후보가 하나도 없다"
+    # 이름을 코드에 박지 않는다 — PATH 조회가 후보에 들어 있어야 한다.
+    assert "shutil.which" in module_code(panelauto)
+
+
+def test_h2_finding_is_not_running():
+    """`find_claude_cli()` 는 **실행하지 않는다** (§2-1).
+
+    찾는 것과 도는 것은 다른 질문이라 preflight 가 따로 묻는다. 여기서
+    subprocess 를 띄우면 메뉴를 그릴 때마다 CLI 가 돈다.
+    """
+    body = code_of(fn_node(panelauto, "find_claude_cli"))
+    for bad in ("subprocess", "Popen", "run("):
+        assert bad not in body, f"find_claude_cli 가 {bad} 를 쓴다"
+
+
+def test_h3_broken_cli_is_caught_before_the_round_starts():
+    """찾아졌는데 돌지 않는 상태를 시작 전에 잡는다 (§2-1).
+
+    윈도우의 `claude.cmd` 는 npm 셸 심이라 Node 가 없으면 **찾아지지만
+    돌지 않는다.** 14경기를 시작한 뒤에 알면 안 된다.
+    """
+    tmp = scratch()
+    broken = fake_cli(tmp, "echo 'not installed' >&2\nexit 1\n")
+    ok, version, why = panelauto.cli_probe(str(broken))
+    assert not ok and why, (ok, why)
+    good = fake_cli(tmp, "echo '2.1.277 (Claude Code)'\n", name="claude2")
+    ok, version, why = panelauto.cli_probe(str(good))
+    assert ok and version.startswith("2.1.277"), (ok, version, why)
+    # 없는 파일도 조용히 통과하지 않는다.
+    assert not panelauto.cli_probe("")[0]
+
+
+def test_h4_auth_status_reads_the_local_check():
+    """`claude auth status --json` 을 읽는다. **모델을 부르지 않는다** (§2-2)."""
+    tmp = scratch()
+    cases = {
+        '{"loggedIn":true,"authMethod":"oauth_token","apiProvider":"firstParty"}':
+            panelauto.AUTH_OK,
+        '{"loggedIn":false}': panelauto.AUTH_MISSING,
+        '{"loggedIn":true,"authMethod":"api_key"}': panelauto.AUTH_API_KEY,
+        'not json at all': panelauto.AUTH_UNKNOWN,
+    }
+    for i, (payload, want) in enumerate(cases.items()):
+        cli = fake_cli(tmp, f"cat <<'EOF'\n{payload}\nEOF\n", name=f"c{i}")
+        got = panelauto.auth_status(str(cli))
+        assert got.state == want, (payload, got.state, want)
+        assert got.message, "사유를 적지 않았다"
+    # **로컬 점검만 한다** — 어떤 인자를 넘기는지 직접 잡아 본다.
+    seen = {}
+    real = panelauto._probe
+
+    def spy(argv, timeout):
+        seen["argv"] = list(argv)
+        return real(argv, timeout)
+
+    panelauto._probe = spy
+    try:
+        panelauto.auth_status(str(fake_cli(tmp, "echo '{}'\n", name="spy")))
+    finally:
+        panelauto._probe = real
+    assert seen["argv"][1:] == ["auth", "status", "--json"], seen["argv"]
+    assert "-p" not in seen["argv"], "모델을 부르는 인자가 섞였다"
+
+
+def test_h5_missing_login_stops_but_unknown_does_not():
+    """로그인 없음은 중단, **확인 못 함은 중단이 아니다** (§1-6)."""
+    tmp = scratch()
+    rep = FakeReport()
+
+    def run_with(payload):
+        cli = fake_cli(tmp, f"case \"$1\" in --version) echo 9.9.9 ;; *) "
+                            f"cat <<'EOF'\n{payload}\nEOF\n;; esac\n",
+                       name=f"claude_{abs(hash(payload)) % 10000}")
+        had = os.environ.get(panelauto.CLI_ENV)
+        os.environ[panelauto.CLI_ENV] = str(cli)
+        try:
+            return panelauto.preflight(rep, "TEST", scratch())
+        finally:
+            os.environ.pop(panelauto.CLI_ENV, None)
+            if had is not None:
+                os.environ[panelauto.CLI_ENV] = had
+
+    out = run_with('{"loggedIn":false}')
+    assert not out.ok, "로그인이 없는데 시작한다"
+    assert any("로그인" in p for p in out.problems), out.problems
+
+    out = run_with('{"loggedIn":true,"authMethod":"api_key"}')
+    assert not out.ok, "API 키 인증인데 시작한다"
+    assert any("구독" in p for p in out.problems), out.problems
+
+    out = run_with("아무 말")
+    assert out.ok, f"확인 못 했다고 막았다: {out.problems}"
+    assert any("확인 못 함" in n for n in out.notes), out.notes
+
+    out = run_with('{"loggedIn":true,"authMethod":"oauth_token"}')
+    assert out.ok, out.problems
+
+
+def test_h6_default_model_is_the_measured_one():
+    """`--auto-model` 없이도 검증된 모델로 돈다 (§5).
+
+    6-F-6 실측에서 haiku 는 파일을 쓰지 않아 실패했고 sonnet 은 A·B·C 가
+    전부 돌았다. 인자를 빼먹으면 그때그때의 CLI 기본 모델을 타게 된다.
+    """
+    assert panelauto.DEFAULT_AUTO_MODEL == "sonnet"
+    assert panelauto.resolve_model(None) == "sonnet"
+    assert panelauto.resolve_model("") == "sonnet"
+    assert panelauto.resolve_model("  ") == "sonnet"
+    assert panelauto.resolve_model("opus") == "opus"
+    # 일부러 CLI 기본을 쓰려면 낱말로 고른다 — 그때만 `--model` 이 빠진다.
+    for word in ("cli", "CLI", "default", "기본"):
+        assert panelauto.resolve_model(word) == "", word
+    argv = panelauto.agent_argv("claude", "p", "s", Path("/w"), "sid", "")
+    assert "--model" not in argv
+    argv = panelauto.agent_argv("claude", "p", "s", Path("/w"), "sid", "sonnet")
+    assert argv[argv.index("--model") + 1] == "sonnet"
+
+
+def test_h7_the_workflow_resolves_the_model_once():
+    """모델 정책은 **한 곳**에 있다 (§1-8)."""
+    assert "resolve_model" in code_of(fn_node(panelauto, "run"))
+    # 하위 함수는 받은 값을 넘기기만 한다 — 각자 기본값을 정하지 않는다.
+    for fn in ("run_stage_ab", "run_stage_c", "run_match_role", "agent_argv"):
+        body = code_of(fn_node(panelauto, fn))
+        assert "DEFAULT_AUTO_MODEL" not in body, f"{fn} 이 기본을 다시 정한다"
+
+
+def test_h8_child_runs_in_its_own_process_group():
+    """자식을 자기 그룹으로 띄운다 (§2-4)."""
+    kwargs = panelauto._spawn_kwargs()
+    if os.name == "nt":
+        assert "creationflags" in kwargs
+    else:
+        assert kwargs.get("start_new_session") is True
+    # 두 OS 의 분기가 코드에 다 있다.
+    body = code_of(fn_node(panelauto, "_spawn_kwargs"))
+    assert "CREATE_NEW_PROCESS_GROUP" in body and "start_new_session" in body
+
+
+def test_h9_kill_covers_grandchildren_on_both_systems():
+    """손자까지 끝낸다 (§2-4).
+
+    윈도우에서 `claude.cmd` 의 실제 계층은 `cmd.exe → node.exe` 라, 직접
+    자식만 죽이면 node 가 살아남아 사용량이 계속 나간다.
+    """
+    body = code_of(fn_node(panelauto, "_kill_tree"))
+    assert "taskkill" in body and "/T" in body, "윈도우 트리 종료가 없다"
+    assert "killpg" in body, "POSIX 그룹 종료가 없다"
+    # `subprocess.run(timeout=)` 으로 돌아가지 않는다 — 그건 직접 자식만
+    # 죽인다. `communicate` 를 쓰고 우리가 정리한다.
+    run_body = code_of(fn_node(panelauto, "run_agent"))
+    assert "communicate" in run_body and "_kill_tree" in run_body
+    assert "subprocess.run(" not in run_body
+
+
+def test_h10_timeout_really_kills_the_whole_tree():
+    """**실제로** 손자가 사라진다 (POSIX 에서 실행해 확인한다)."""
+    if os.name == "nt":                     # 윈도우에서는 taskkill 경로다
+        return
+    tmp = scratch()
+    pidfile = tmp / "grandchild.pid"
+    cli = fake_cli(tmp, f"sleep 300 & echo $! > '{pidfile}'\nsleep 300\n")
+    run = panelauto.run_agent("p", "s", tmp, timeout=2, cli=str(cli))
+    assert run.status == panelauto.AGENT_TIMEOUT, run.status
+    assert pidfile.is_file(), "손자를 만들지 못했다 — 시험이 성립하지 않는다"
+    pid = int(pidfile.read_text().strip())
+    import time
+    for _ in range(50):
+        try:
+            os.kill(pid, 0)
+        except (ProcessLookupError, PermissionError):
+            return                          # 사라졌다
+        time.sleep(0.1)
+    try:
+        os.kill(pid, 9)
+    finally:
+        raise AssertionError(f"손자 {pid} 가 살아남았다")
+
+
+def test_h11_interrupt_kills_the_child_and_propagates():
+    """Ctrl+C 를 삼키지 않고, 자식을 남기지 않는다 (§2-4).
+
+    삼키면 사용자가 멈췄는데도 모델이 계속 돈다. 종료코드 정책은
+    `main()` 것이므로(§1-7-1) 예외는 그대로 올라가야 한다.
+    """
+    if os.name == "nt":
+        return
+    import subprocess as sp
+    tmp = scratch()
+    cli = fake_cli(tmp, "sleep 300\n")
+    seen = {}
+    real = sp.Popen
+
+    class Interrupting(real):
+        def communicate(self, *a, **k):
+            seen["pid"] = self.pid
+            raise KeyboardInterrupt
+
+    sp.Popen = Interrupting
+    try:
+        raised = False
+        try:
+            panelauto.run_agent("p", "s", tmp, timeout=30, cli=str(cli))
+        except KeyboardInterrupt:
+            raised = True
+        assert raised, "KeyboardInterrupt 를 삼켰다"
+    finally:
+        sp.Popen = real
+    import time
+    for _ in range(50):
+        try:
+            os.kill(seen["pid"], 0)
+        except (ProcessLookupError, PermissionError):
+            return
+        time.sleep(0.1)
+    raise AssertionError(f"자식 {seen['pid']} 이 살아남았다")
+
+
+def test_h12_output_reading_survives_bom_and_bad_encoding():
+    """BOM 을 견디고, 깨진 인코딩은 **그 경기의 사유**가 된다 (§2-3).
+
+    예전에는 `UnicodeDecodeError` 가 그대로 올라가 회차 전체가 죽었다 —
+    한 경기의 결과가 깨진 것은 그 경기의 실패이지 회차의 실패가 아니다.
+    """
+    tmp = scratch()
+    (tmp / panelauto.AGENT_OUTPUT).write_text(
+        json.dumps(opinion_obj(), ensure_ascii=False), encoding="utf-8-sig")
+    data, why = panelauto._read_output(tmp)
+    assert data is not None, f"BOM 붙은 결과를 읽지 못했다: {why}"
+    assert data["summary"] == "1번 요약"
+
+    bad = scratch()
+    (bad / panelauto.AGENT_OUTPUT).write_bytes(
+        '{"summary":"한글"}'.encode("cp949"))
+    data, why = panelauto._read_output(bad)     # 예외가 아니라 사유여야 한다
+    assert data is None and why, why
+
+
+def test_h13_korean_and_spaced_paths_work():
+    """`C:\\…\\축구토토 분석\\…` 같은 경로에서도 돈다 (§2-3).
+
+    인자는 리스트로 넘기고 `shell=False` 라 공백이 쪼개지지 않는다.
+    """
+    root = scratch() / "축구토토 분석" / "panel work"
+    ws = panelauto.match_workspace("260052", panel.DATA_ANALYST, 4,
+                                   base=root)
+    ws.mkdir(parents=True, exist_ok=True)
+    assert "축구토토 분석" in str(ws) and ws.is_dir()
+    argv = panelauto.agent_argv("claude", "프롬프트", "시스템", ws, "sid")
+    assert str(ws) in argv, "작업 폴더가 인자에 통째로 들어가지 않았다"
+    cli = fake_cli(scratch(), "printf '{\"result\":\"DONE\"}'\n")
+    run = panelauto.run_agent("프롬프트", "시스템", ws, timeout=60, cli=str(cli))
+    assert run.ok, (run.status, run.message)
+    assert (ws / panelauto.AGENT_ENVELOPE).is_file(), "봉투를 남기지 않았다"
+
+
+def test_h14_console_encoding_is_fixed_where_it_is_broken():
+    """cp949 로 출력을 돌려도 죽지 않는다 (§2-3).
+
+    한국어 윈도우에서 `> log.txt` 로 돌리면 파이썬이 로캘 인코딩으로 쓰는데,
+    이 프로그램의 메시지에는 cp949 에 없는 글자가 있다(`—`·`✓`·`═`·`⚽`).
+    **글자를 지워서 고치지 않는다** — 출력 계층에서 한 번 고친다.
+    """
+    import io
+    from toto.cli import safe_console
+    real_out, real_err = sys.stdout, sys.stderr
+    try:
+        sys.stdout = io.TextIOWrapper(io.BytesIO(), encoding="utf-8")
+        sys.stderr = io.TextIOWrapper(io.BytesIO(), encoding="utf-8")
+        assert safe_console() == [], "멀쩡한 스트림을 건드렸다"
+
+        buf = io.BytesIO()
+        sys.stdout = io.TextIOWrapper(buf, encoding="cp949")
+        sys.stderr = io.TextIOWrapper(io.BytesIO(), encoding="cp949")
+        assert "stdout" in safe_console(), "cp949 스트림을 고치지 않았다"
+        print(panelauto._BAR)
+        print("01/14 ✓ — 보존됨")
+        sys.stdout.flush()
+        text = buf.getvalue().decode("utf-8")
+        assert "✓" in text and "—" in text, text[:40]
+    finally:
+        sys.stdout, sys.stderr = real_out, real_err
+    # 없앤 것이 아니라 고친 것이다 — 진행 표시는 그대로다.
+    assert "✓" in code_of(fn_node(panelauto, "_default_progress"))
+
+
+def test_h15_preflight_reports_what_it_checked():
+    """무엇을 보고 통과시켰는지 남긴다 (§1-6-1)."""
+    tmp = scratch()
+    cli = fake_cli(tmp, "case \"$1\" in --version) echo 9.9.9 ;; *) "
+                        "printf '{\"loggedIn\":true,\"authMethod\":"
+                        "\"oauth_token\",\"apiProvider\":\"firstParty\"}' "
+                        ";; esac\n")
+    had = os.environ.get(panelauto.CLI_ENV)
+    os.environ[panelauto.CLI_ENV] = str(cli)
+    try:
+        pre = panelauto.preflight(FakeReport(), "TEST", scratch())
+    finally:
+        os.environ.pop(panelauto.CLI_ENV, None)
+        if had is not None:
+            os.environ[panelauto.CLI_ENV] = had
+    assert pre.ok, pre.problems
+    assert pre.version.startswith("9.9.9"), pre.version
+    joined = " ".join(pre.notes)
+    assert str(cli) in joined, "어느 실행 파일을 쓰는지 안 적었다"
+    assert "인증" in joined, joined
+    assert pre.auth is not None and pre.auth.ok
 
 
 def main() -> int:

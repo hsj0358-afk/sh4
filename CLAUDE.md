@@ -4927,7 +4927,211 @@ Python ─ 검증·조립·[4] 실행을 전부 맡는다
 지우지 않았다 ② 수집 항목은 회차를 먼저 묻는다 ③ 근거 질문이 실행 앞에 온다
 ④ 수동 기능에 닿을 수 있다 이고, 전부 새 자리에서 그대로 확인한다.
 
-회귀 테스트: `python tests/test_panel_auto.py` (46개).
+회귀 테스트: `python tests/test_panel_auto.py` (61개 — 6-F-7 로 +15).
+
+### 1-43. 윈도우 안전성과 리포트 내비게이션 (Phase 6-F-7)
+
+6-F-6 이 자동 실행을 만들었는데 **그것이 도는 곳은 리눅스가 아니라 사용자의
+한국어 윈도우 PC** 다. 이 Phase 는 그 사이에서 갈라지는 자리를 막고, 같은
+김에 리포트에서 14경기와 상세 사이를 오가는 길을 낸다.
+
+**분석에는 한 줄도 닿지 않았다.** `panel.py`·`panelpaste`·`panelimport`·
+`panelaudit`·`panelwork`·`moderator`·`analyze`·`models`·`evidence`·
+`predict`·`charts`·`config_toto.yaml`·`data/teams.yaml`·`briefing/` **diff
+0줄**이고, PANEL 4 · MODERATOR 6 · 지침 지문 `fe098456` · schema 1.1 이
+전부 그대로다 — **프로젝트 지침을 다시 붙여넣을 필요가 없다.**
+
+#### A. 찾는 것과 도는 것은 다른 질문이다
+
+`shutil.which("claude")` 하나에 매달려 있었다. 윈도우에서 그것이 찾아내는
+`claude.cmd` 는 **npm 셸 심**이라, Node 가 없거나 설치가 깨져 있으면
+**찾아지지만 돌지 않는다.** 그 사실을 14경기를 시작한 뒤에 알게 된다.
+
+```
+cli_candidates()   PATH → 관측된 설치 위치 → TOTO_CLAUDE_CLI 탈출구
+find_claude_cli()  존재만 본다. **실행하지 않는다**(테스트로 고정)
+cli_probe(exe)     실제로 `--version` 을 띄워 본다 — 0 이 아니면 시작 안 함
+```
+
+후보 경로는 **관측된 설치 위치만** 적는다(`%APPDATA%\npm\claude.cmd` ·
+`%LOCALAPPDATA%\Programs\claude\claude.exe` · `~/.claude/local/`). 지어낸
+경로를 늘리는 대신 `TOTO_CLAUDE_CLI` 를 둔다 — §1-1-1 이 부분일치를
+걷어내고 설정값을 둔 것과 같은 태도다.
+
+#### B. 인증도 시작 전에 묻는다 — 그리고 그것이 비용 장치다
+
+`claude auth status --json` 이 **모델을 부르지 않는 로컬 점검**이고,
+실물 응답이 셋을 말해 준다.
+
+```json
+{"loggedIn": true, "authMethod": "oauth_token", "apiProvider": "firstParty"}
+```
+
+| `state` | 무엇 | 어떻게 |
+|---|---|---|
+| `missing` | 로그인 없음 | **시작하지 않는다** |
+| `api_key` | 인증 방식이 API 키 | **시작하지 않는다** — 구독이 아니라 과금 경로다 |
+| `unknown` | 물어보지 못했다 | **막지 않는다.** notes 에 적는다 |
+| `ok` | 구독 로그인 | 진행 |
+
+`api_key` 를 막는 것이 §1-42 의 환경변수 제거와 **다른 층**이다 — 호스트가
+관리하는 설정처럼 환경변수 밖에서 오는 것은 `build_agent_env` 가 못 막는다.
+
+**`unknown` 을 `실패` 로 치지 않는다** (§1-6). 옛 CLI 에는 이 하위 명령이
+없을 수 있고, 없는 것을 실패로 치면 돌아갈 실행까지 막는다. 실제로 로그인이
+없으면 첫 호출이 `auth` 로 멈추고, 그때도 과금으로 넘어가지 않는다.
+
+#### C. 시간이 넘치면 **손자까지** 끝낸다
+
+`subprocess.run(timeout=)` 은 **직접 자식만** 죽인다. 윈도우의 실제 계층은
+이렇다.
+
+```
+python → claude.cmd → cmd.exe → node.exe   ← 모델을 부르는 것은 이것이다
+```
+
+`cmd.exe` 만 죽이면 **node 가 살아남아** 사용량이 계속 나가고 작업 폴더에
+파일을 계속 쓴다 — 그러면 재개할 때 '끝난 경기' 를 잘못 판정할 수 있다.
+
+그래서 `Popen` + `communicate(timeout=)` 으로 바꾸고 정리를 우리가 한다.
+
+  · 자식을 **자기 프로세스 그룹**으로 띄운다 (`CREATE_NEW_PROCESS_GROUP` /
+    `start_new_session`). Ctrl+C 가 우리와 자식에게 동시에 날아들어 **누가
+    정리하는지 모르는 상태**가 되지 않는다.
+  · `_kill_tree()` 가 `taskkill /T /F`(윈도우) · `killpg`(POSIX)로 트리를
+    끝낸다. POSIX 에서 **실제로 손자가 사라지는 것을 실행해 확인한다**
+    (`test_h10`).
+  · **Ctrl+C 를 삼키지 않는다.** 자식을 끝내고 그대로 올려보낸다 —
+    종료코드 정책은 `main()` 것이다 (§1-7-1). 삼키면 사용자가 멈췄는데도
+    모델이 계속 돈다.
+  · 재개는 그대로 안전하다 — `_completed()` 가 파일을 **다시 검증**하므로
+    쓰다 만 `out.json` 은 완료로 세지 않는다 (§1-42).
+
+#### D. 출력을 파일로 돌리면 죽던 자리
+
+한국어 윈도우에서 `python -m toto … > log.txt` 하면 파이썬이 콘솔
+API(UTF-16) 대신 로캘 인코딩(cp949)으로 쓴다. 그런데 이 저장소의 메시지에는
+cp949 에 **없는** 글자가 있다 — 실측으로 `—`(em dash, cp949 에는 `―` 뿐)와
+`✓`·`✗`(panelauto) · `═`·`╔`·`⚽`(menu) · `⚠`(cli)다. 40분짜리 자동 실행이
+`UnicodeEncodeError` 로 죽는다.
+
+**글자를 지워서 고치지 않는다.** `—` 는 저장소 전체 메시지에 쓰이고 그것을
+걷어내면 모든 문구가 바뀐다. `cli.safe_console()` 이 **출력 계층에서 한 번**
+고친다 — 담지 못하는 스트림만 UTF-8 로 바꾸고, **담을 수 있는 스트림은 한
+글자도 건드리지 않는다**(대화형 윈도우 콘솔·리눅스·macOS 가 전부 여기다).
+
+같은 계열로 읽는 쪽도 고쳤다. `out.json` 을 `utf-8-sig` 로 읽어 BOM 을
+견디고, **디코딩 실패를 그 경기의 사유로 만든다** — 예전에는
+`UnicodeDecodeError` 가 그대로 올라가 **회차 전체가 죽었다.** 한 경기의
+결과가 깨진 것은 그 경기의 실패이지 회차의 실패가 아니다 (§1-6).
+
+#### E. 기본 모델을 실측으로 정했다 — `sonnet`
+
+6-F-6 실측이 이 값을 정했다: sonnet 은 A·B·C 가 전부 돌았고(A $1.08 ·
+B $1.67 · C $1.97 · client-side 추정) **haiku 는 파일을 쓰지 않아
+실패했다.** 그런데 `--auto-model` 을 주지 않으면 Claude Code 의 **그때그때**
+기본 모델을 타게 되고, 그것이 바뀌는 날 자동 실행이 통째로 멈춘다.
+
+```
+--auto-model 없음   → sonnet          (운영 경로. 메뉴 [2] 가 이것이다)
+--auto-model opus   → opus
+--auto-model cli    → --model 을 넘기지 않는다 (일부러 CLI 기본을 쓸 때)
+```
+
+**정책은 `run()` 한 곳에서 정한다.** `agent_argv` 의 "빈 문자열이면
+`--model` 을 넘기지 않는다" 는 계약은 그대로이고, 하위 함수는 받은 값을
+넘기기만 한다 — 각자 기본값을 정하지 않는다(테스트로 고정).
+
+#### F. 리포트 내비게이션 — 길이 반쪽이었다
+
+목록 → 상세 링크는 있었지만 **상세에서 나가는 길은 페이지 맨 위(`#top`)
+뿐이고 옆 경기로 가는 길은 아예 없었다.** 14경기를 훑는 것이 이 리포트의
+기본 동작인데 그때마다 목록으로 되돌아가야 했다.
+
+```
+render.match_anchor(no)  →  "match-01" … "match-14"
+render.OVERVIEW_ANCHOR   →  "match-overview"
+```
+
+  · **숫자 기반이다** (§10). 팀 이름을 fragment 에 넣으면 한글·공백·`&` 의
+    인코딩이 브라우저·메신저마다 달라져 링크가 깨지고, 이름은 회차마다
+    바뀌어 같은 자리를 가리키지도 못한다. 두 자리로 채워 `match-2` 와
+    `match-10` 이 문자열로 섞이지 않게 한다.
+  · **markup 은 `_match_nav()` 한 함수가 만든다** (§16). 카드 위아래에 같은
+    줄을 놓는데 문자열을 두 번 적지 않는다 — 한쪽만 고쳐지면 같은 리포트
+    안에서 위아래 링크가 갈린다. 실제로 `<nav>` 두 개가 **글자까지 같다**
+    (테스트).
+  · **없는 방향은 만들지 않는다** (§12). 1번에 '이전', 14번에 '다음' 을
+    만들면 자기 자신이나 빈 곳을 가리키게 되고, 그건 '없다' 가 아니라
+    **틀린 링크**다. 자리(`.mnav-gap`)만 비워 두어 가운데 링크가 움직이지
+    않게 한다.
+  · **JavaScript 를 쓰지 않는다** (§15). 순수 anchor 라 `file://`·폰·
+    오프라인에서 그대로 돈다 — 자체 완결 HTML 조건(§1-8)과 같은 이유다.
+  · **4-G 의 옛 앵커(`#m4`)를 살려 둔다.** 리포트는 같은 경로에 다시 쓰이
+    므로(`reports/toto_<회차>.html`) 앵커만 바꾸면 이미 공유·북마크한
+    링크가 **조용히** 맨 위로 떨어진다. 빈 span(`.aka`)이 그 자리를 잡고,
+    카드 안쪽이라 `scroll-margin-top` 을 패딩만큼 더 줘서 **새 앵커와 정확히
+    같은 자리(top=16)** 에 선다 (Chromium 실측).
+
+**새 CSS 는 내비게이션 것뿐이다** — `.mnav`·`.mnav-prev`·`.mnav-next`·
+`.mnav-up`·`.mnav-gap`·`.aka`·`#match-overview`. 지표·값·패널 쪽 클래스를
+만들지 않았다(테스트가 화이트리스트로 검사).
+
+#### G. 값이 바뀌지 않았다
+
+**바이트는 달라진다 — 그게 이번 변경이다** (§18). 달라지면 **안 되는** 것을
+변경 전 트리(`git archive HEAD`)와 대조했다 (`PYTHONHASHSEED=0`).
+
+| | 전 | 후 |
+|---|---|---|
+| `--demo` | 668,447 | **675,280** (+6,833) |
+| `--rerender-artifact 260052` | 942,802 | **949,635** (+6,833) |
+| 경기자료 MD | 1,209,043 | **1,209,043** (sha 동일) |
+
+**두 리포트의 증가분이 같다** — 14개 nav 줄 × 2 + 14개 alias span + CSS 이고
+경기 내용과 무관하다는 뜻이다. 내용 대조는 전부 **동일**이다.
+
+```
+데모        <td> 1,188 · <th> 236 · <li> 543 · SVG 좌표 2,799 · <title> 1,225
+실물 260052 <td> 3,360 · <th> 504 · <li> 927 · SVG 좌표 3,973 · <title> 1,384
+            → 열 갈래 전부 sha 동일 · <svg>·<table>·<details>·<figure> 개수 동일
+```
+
+Chromium 실측 1200×760 / 768×1024 / 400×900: 가로 오버플로 **0** · 카드 밖으로
+넘친 요소 **0** · 끊긴 fragment **0** · 중복 id **0** · 외부 참조 **0**.
+nav 28개(14×2) · prev 26 · next 26 · up 28 — 1번과 14번이 하나씩 빠진 수다.
+목록 → 4번 → 다음 → 목록 → 옛 링크 `#m7` 이동이 전부 top=16 에 선다.
+
+#### H. 실물 윈도우 검증은 하지 못했다
+
+이 세션은 리눅스이고 §2-1 대로 원격 세션에서는 대상 사이트도 막혀 있다.
+**윈도우에서 실제로 돌려 본 것이 아니다.** 한 것은 둘이다.
+
+  · OS 로 갈라지는 자리를 **코드로 고정**했다 (`taskkill /T` ↔ `killpg`,
+    `CREATE_NEW_PROCESS_GROUP` ↔ `start_new_session`).
+  · OS 와 무관한 부분은 **실제로 돌려** 확인했다 — 인증 네 갈래 · 깨진 CLI
+    감지 · 손자 종료(POSIX 실행) · Ctrl+C 전파 · BOM/cp949 파일 · 한글·공백
+    경로 · 콘솔 인코딩 · 기본 모델.
+
+실물 `claude` 2.1.277 로 preflight 를 돌려 `oauth_token · firstParty` 까지
+확인했다 — **모델 호출 0회**다.
+
+회귀 테스트: `python tests/test_report_nav.py` (22개) ·
+`tests/test_panel_auto.py` 의 H절 (15개).
+변경 전 트리에 돌리면 각각 **14개 / 12개가 깨진다**(음성 대조).
+
+**기존 테스트 열둘의 범위를 옮겼다 — 기대값을 바꾼 것이 아니다.**
+
+  · `test_panel_auto` 의 `test_g1`·`test_g3`·`test_g4` — 6-F-6 은 A→B→C→[4]
+    가 `run()` **한 함수 안**에 있다는 전제로 낱말을 셌는데, 이 Phase 가
+    Ctrl+C 정리를 붙이면서 단계 부분을 `_run_stages()` 로 갈랐다. 지키려는
+    것은 코드가 어느 함수에 있느냐가 아니라 **순서·경로**이므로
+    `workflow_code()` 가 둘을 이어 붙여 본다 (§1-29·§1-31 과 같은 교정).
+    `test_g6` 은 stdlib 목록에 `signal` 을 더했다.
+  · `test_report_ia` 의 `_sumcard`·`test_b20` — 4-G 가 앵커 형식(`m4`)을
+    적어 두었는데 6-F-7 이 바로 그것을 바꾸는 Phase 다. 형식을 `render` 에서
+    끌어오고, 지키려던 것(**요약 카드 14개가 각자 실제로 있는 상세로
+    간다**)은 대상의 존재를 직접 봐서 더 단단히 고정했다.
 
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
@@ -5539,7 +5743,7 @@ python -m toto --round R --build-moderator-input   # 보관본을 match_no 로 �
 python -m toto --round R --save-moderator-result F.json  # 3단계 결과 검증·보관 · API 안 부른다 (6-F-4 §1-41)
 python -m toto --round R --panel-workflow-status  # 어디까지 왔나 · 파일만 읽는다 (6-F-4 §1-41)
 python -m toto --round R --panel-auto      # 패널 자동 분석 A·B·C → [4] → HTML · claude -p · 구독 (6-F-6 §1-42)
-python -m toto --round R --panel-auto --auto-model sonnet   # 모델 지정 (기본은 Claude Code 기본 모델)
+python -m toto --round R --panel-auto --auto-model cli      # 모델 지정 없이 Claude Code 기본 모델로 (기본값은 sonnet · §1-43)
 #  보관한 3단계 결과는 기존 --paste-panel-result 에 그대로 태운다 (새 포맷 없음)
 #  메뉴 [6] 이 위 전부를 한다 — [3] 뒤, [4] 앞에 쓴다
 #  메뉴 [9] → [6] 이 같은 일을 한다. 오늘 캐시를 무시하려면 --no-cache 를 함께 준다
@@ -5597,7 +5801,8 @@ python tests/test_relationship_delivery.py # 관계 전달 경로·qualitative 6
 python tests/test_real_recollection.py     # 실측 재수집·스타일 제목·placeholder 6-E-5 §1-39 (26개)
 python tests/test_panel_work.py           # 1·2단계 보관·3단계 조립 6-F-3 §1-40 (60개)
 python tests/test_panel_workflow.py       # 3단계 결과 보관·[4] 연결·상태 6-F-4 §1-41 (49개)
-python tests/test_panel_auto.py           # 패널 자동 실행·비용 안전장치·A/B 격리 6-F-6 §1-42 (46개)
+python tests/test_panel_auto.py           # 패널 자동 실행·비용 안전장치·A/B 격리 6-F-6 §1-42 · 윈도우 안전성 6-F-7 §1-43 (61개)
+python tests/test_report_nav.py           # 리포트 내비게이션·앵커 6-F-7 §1-43 (22개)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)

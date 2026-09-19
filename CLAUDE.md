@@ -5177,7 +5177,28 @@ Claude Code CLI 가 (적어도 윈도우 파이썬이 보는 자리에는) 없�
 축약 표기가 안 붙어도 전체 이름이 다른 자리에서 붙는 진단용 경고이지
 자료 손실이 아니다. 별칭을 늘리지 않는다.
 
-회귀 테스트: `tests/test_panel_auto.py` 의 I절 (7개).
+#### J. 준비됐는지 **$0 로** 물을 수 있어야 한다 (실물 실행 후속)
+
+회차 전체는 **29회 호출**이다(A14+B14+C1 · 6-F-6 실측 $40 안팎). 그런데
+"내 PC 가 준비됐나" 를 묻는 방법이 **그 29회를 시작해 보는 것**뿐이었다 —
+윈도우에서 무언가 어긋나면 돈과 시간을 쓴 뒤에 알게 된다.
+
+```bash
+python -m toto --round 260054 --panel-auto-check     # 메뉴 [9] → [8]
+```
+
+`preflight()` 만 돌리고 멈춘다. **모델을 부르지 않는다** — `run_agent`·
+`agent_argv`·`Popen` 이 `check()` 에 없다(AST 테스트). 그러면서도 CLI 탐색·
+실행·인증·저장본·모델 결정을 **실제로** 확인한다.
+
+**판정을 두 벌 만들지 않는다** (§1-8) — `check()` 와 `run()` 이 **같은
+`preflight()`** 를 부른다. 점검이 통과했는데 실행이 막히면(또는 그 반대면)
+둘 중 어느 쪽도 믿을 수 없다.
+
+메뉴는 `[9] → [8]` 이고 **레거시 API 패널의 `[7]` 을 밀지 않았다**
+(§1-42 의 규칙 그대로).
+
+회귀 테스트: `tests/test_panel_auto.py` 의 I절 (7개) · J절 (6개).
 
 회귀 테스트: `python tests/test_report_nav.py` (22개) ·
 `tests/test_panel_auto.py` 의 H절 (15개) · I절 (7개).
@@ -5805,6 +5826,7 @@ python -m toto --round R --save-panel-opinion F.json --role a  # 클로드 1·2�
 python -m toto --round R --build-moderator-input   # 보관본을 match_no 로 조립 → 03_사회자자료_완성.md (6-F-3 §1-40)
 python -m toto --round R --save-moderator-result F.json  # 3단계 결과 검증·보관 · API 안 부른다 (6-F-4 §1-41)
 python -m toto --round R --panel-workflow-status  # 어디까지 왔나 · 파일만 읽는다 (6-F-4 §1-41)
+python -m toto --round R --panel-auto-check # 준비됐는지만 본다 · 모델 호출 0회 (§1-43 J)
 python -m toto --round R --panel-auto      # 패널 자동 분석 A·B·C → [4] → HTML · claude -p · 구독 (6-F-6 §1-42)
 python -m toto --round R --panel-auto --auto-model cli      # 모델 지정 없이 Claude Code 기본 모델로 (기본값은 sonnet · §1-43)
 #  보관한 3단계 결과는 기존 --paste-panel-result 에 그대로 태운다 (새 포맷 없음)
@@ -5864,7 +5886,7 @@ python tests/test_relationship_delivery.py # 관계 전달 경로·qualitative 6
 python tests/test_real_recollection.py     # 실측 재수집·스타일 제목·placeholder 6-E-5 §1-39 (26개)
 python tests/test_panel_work.py           # 1·2단계 보관·3단계 조립 6-F-3 §1-40 (60개)
 python tests/test_panel_workflow.py       # 3단계 결과 보관·[4] 연결·상태 6-F-4 §1-41 (49개)
-python tests/test_panel_auto.py           # 패널 자동 실행·비용 안전장치·A/B 격리 6-F-6 §1-42 · 윈도우 안전성 6-F-7 §1-43 (68개)
+python tests/test_panel_auto.py           # 패널 자동 실행·비용 안전장치·A/B 격리 6-F-6 §1-42 · 윈도우 안전성 6-F-7 §1-43 (74개)
 python tests/test_report_nav.py           # 리포트 내비게이션·앵커 6-F-7 §1-43 (22개)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개

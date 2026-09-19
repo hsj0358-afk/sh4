@@ -1099,6 +1099,48 @@ def _default_progress(role, i, total, res):
         print(f"      └ {res.status}: {res.message[:150]}")
 
 
+def check(round_id: str, report: Report | None = None, *,
+          model: str = "", base: Path | None = None, echo=print) -> bool:
+    """**시작해도 되는지만 본다. 모델을 부르지 않는다.**
+
+    회차 전체는 29회 호출이라 결코 싸지 않다(6-F-6 실측). 그런데 지금까지는
+    "내 PC 가 준비됐나" 를 묻는 방법이 **그 29회를 시작해 보는 것**뿐이었다 —
+    윈도우에서 무언가 어긋나면 돈과 시간을 쓴 뒤에 알게 된다.
+
+    이 경로는 `preflight()` 만 돌리고 멈춘다. 비용 0 이고, 그러면서도
+    CLI 탐색 · 실행 · 인증 · 저장본 · 모델 결정을 **실제로** 확인한다.
+
+    `run()` 을 복제하지 않는다 — 같은 `preflight()` 를 부른다 (§1-8).
+    """
+    if report is None:
+        from . import artifact
+        report, why = artifact.load(str(round_id or ""))
+        if report is None:
+            echo(f"✗ 저장된 회차 분석 결과가 없습니다 — {why}")
+            return False
+
+    pre = preflight(report, round_id, base)
+    echo(_BAR)
+    echo(f"패널 자동 분석 준비 점검 — {pre.round_id}  (모델 호출 0회)")
+    echo(_BAR)
+    for note in pre.notes:
+        echo(f"  · {note}")
+    echo(f"  · 모델 {resolve_model(model) or 'Claude Code 기본'}")
+    if pre.problems:
+        echo("")
+        for problem in pre.problems:
+            echo(f"  ✗ {problem}")
+        echo("")
+        echo("  고친 뒤 다시 점검하십시오. 지금 [2] 를 돌리면 같은 자리에서 "
+             "멈춥니다.")
+        return False
+    echo("")
+    echo(f"  ✓ 준비됐습니다 — {pre.matches}경기")
+    echo("    이제 [2] 패널 자동 분석 을 돌리면 됩니다. 회차 하나에 "
+         "A·B·C 합쳐 29회를 부릅니다.")
+    return True
+
+
 def run(round_id: str, report: Report | None = None, settings=None, *,
         model: str = "", base: Path | None = None,
         progress=_default_progress, echo=print) -> AutoResult:
@@ -1269,5 +1311,5 @@ __all__ = [
     "find_claude_cli", "build_agent_env", "preflight",
     "auto_dir", "match_workspace", "moderator_workspace",
     "agent_argv", "run_agent", "payload_text", "run_match_role", "verify_match", "collect_stage",
-    "run_existing_cli", "run_stage_ab", "run_stage_c", "run",
+    "run_existing_cli", "run_stage_ab", "run_stage_c", "run", "check",
 ]

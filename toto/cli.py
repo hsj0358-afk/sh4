@@ -129,6 +129,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="패널 자동 분석 — Claude Code(claude -p)로 A·B·C 를 "
                         "돌리고 기존 [4] 반영까지 한 번에 한다. 구독 인증만 "
                         "쓰고 Anthropic API 를 직접 부르지 않는다")
+    # 비용 0 짜리 준비 점검. 회차 전체는 29회 호출이라, "내 PC 가 준비
+    # 됐나" 를 그 29회를 시작해서 알아내면 안 된다.
+    p.add_argument("--panel-auto-check", action="store_true",
+                   help="--panel-auto 를 돌릴 수 있는 상태인지만 본다 — "
+                        "CLI·인증·저장본·모델을 확인하고 멈춘다. "
+                        "모델을 부르지 않는다(비용 0)")
     p.add_argument("--auto-model", default=None, metavar="MODEL",
                    help="--panel-auto 가 claude 에 넘길 모델. 주지 않으면 "
                         "실측으로 검증된 기본 모델(sonnet)을 쓴다 — "
@@ -445,6 +451,12 @@ def _panel_auto(args, settings) -> int:
                   "(python -m toto --round %s)", round_id)
         return 1
 
+    if args.panel_auto_check:
+        # **점검만 하고 멈춘다.** 같은 `preflight()` 를 쓰므로 여기서
+        # 통과하면 `--panel-auto` 도 같은 판정을 받는다.
+        return 0 if panelauto.check(round_id, report,
+                                    model=(args.auto_model or "")) else 1
+
     result = panelauto.run(round_id, report, settings,
                            model=(args.auto_model or ""))
     if result.ok and args.open and result.report_path:
@@ -676,7 +688,7 @@ def main(argv: list[str] | None = None) -> int:
     # 여기도 **수집 구간 앞**이다. 모델은 `claude -p` subprocess 로만 부르고
     # Anthropic API 를 직접 호출하지 않는다. 안에서 기존 CLI 를 다시 부르는데
     # (조립·검증·[4]) 그 호출들은 위 분기로 내려가 재귀가 끝난다.
-    if args.panel_auto:
+    if args.panel_auto or args.panel_auto_check:
         return _panel_auto(args, settings)
 
     # ---- 0-b. 시장 기준선 캘리브레이션 (Phase 6-B) -----------------------

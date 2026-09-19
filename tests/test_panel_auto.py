@@ -1226,6 +1226,106 @@ def test_i7_failure_path_echoes_the_notes():
     assert "pre.notes" in tail, "실패 경로에서 진단을 감춘다"
 
 
+# ==========================================================================
+# J. 준비 점검 — 비용 0 (실물 윈도우 실행 후속)
+#
+# 회차 전체는 29회 호출이다. "내 PC 가 준비됐나" 를 **그 29회를 시작해서**
+# 알아내면 안 된다.
+# ==========================================================================
+def test_j1_check_never_calls_the_model():
+    """`check()` 는 에이전트를 부르지 않는다 (비용 0)."""
+    node = fn_node(panelauto, "check")
+    names = calls_in(node)
+    for bad in ("run_agent", "run_stage_ab", "run_stage_c",
+                "run_match_role", "run", "_run_stages"):
+        assert bad not in names, f"check 가 {bad} 를 부른다"
+    body = code_of(node)
+    for bad in ("Popen", "agent_argv", "subprocess"):
+        assert bad not in body, f"check 가 {bad} 를 쓴다"
+
+
+def test_j2_check_reuses_the_same_preflight():
+    """판정을 두 벌 만들지 않는다 (§1-8).
+
+    점검이 통과했는데 실행이 막히면(또는 그 반대면) 둘 중 어느 쪽도
+    믿을 수 없다.
+    """
+    assert "preflight" in calls_in(fn_node(panelauto, "check"))
+    assert "preflight" in calls_in(fn_node(panelauto, "run"))
+
+
+def test_j3_check_passes_when_the_cli_is_ready():
+    """CLI 가 돌고 로그인돼 있으면 통과한다."""
+    tmp = scratch()
+    cli = fake_cli(tmp, "case \"$1\" in --version) echo 9.9.9 ;; *) "
+                        "printf '{\"loggedIn\":true,\"authMethod\":"
+                        "\"oauth_token\"}' ;; esac\n")
+    lines = []
+    had = os.environ.get(panelauto.CLI_ENV)
+    os.environ[panelauto.CLI_ENV] = str(cli)
+    try:
+        ok = panelauto.check("TEST", FakeReport(), base=scratch(),
+                             echo=lines.append)
+    finally:
+        os.environ.pop(panelauto.CLI_ENV, None)
+        if had is not None:
+            os.environ[panelauto.CLI_ENV] = had
+    assert ok, lines
+    text = " ".join(lines)
+    assert "준비됐습니다" in text, text
+    # 무엇으로 돌지 밝힌다 — 모델과 인증을 적는다.
+    assert panelauto.DEFAULT_AUTO_MODEL in text, text
+    assert "인증" in text, text
+    assert "모델 호출 0회" in text, text
+
+
+def test_j4_check_fails_and_says_why():
+    """막히면 사유를 적고 `False` 다 — 조용히 통과시키지 않는다."""
+    tmp = scratch()
+    cli = fake_cli(tmp, "case \"$1\" in --version) echo 9.9.9 ;; *) "
+                        "printf '{\"loggedIn\":false}' ;; esac\n")
+    lines = []
+    had = os.environ.get(panelauto.CLI_ENV)
+    os.environ[panelauto.CLI_ENV] = str(cli)
+    try:
+        ok = panelauto.check("TEST", FakeReport(), base=scratch(),
+                             echo=lines.append)
+    finally:
+        os.environ.pop(panelauto.CLI_ENV, None)
+        if had is not None:
+            os.environ[panelauto.CLI_ENV] = had
+    assert ok is False
+    text = " ".join(lines)
+    assert "로그인" in text, text
+    assert "준비됐습니다" not in text, "막혔는데 통과처럼 적는다"
+
+
+def test_j5_check_has_its_own_cli_flag_and_stops_there():
+    """`--panel-auto-check` 가 점검만 하고 멈춘다."""
+    import toto.cli as cli_mod
+    src = source_of(cli_mod)
+    assert "--panel-auto-check" in src
+    body = code_of(fn_node(cli_mod, "_panel_auto"))
+    # 점검 분기가 `run()` **앞에** 있고 거기서 돌려준다.
+    assert body.index("panel_auto_check") < body.index("panelauto.run"), \
+        "점검이 실행 뒤에 있다"
+    assert "panelauto.check" in body
+
+
+def test_j6_check_is_reachable_from_the_menu():
+    """도구 메뉴에서 부를 수 있고 **기존 번호를 밀지 않았다**."""
+    from toto.menu import TOOLS
+    numbers = [t[0] for t in TOOLS]
+    assert len(numbers) == len(set(numbers)), f"번호 중복 {numbers}"
+    entry = [t for t in TOOLS if "--panel-auto-check" in str(t[-1])]
+    assert entry, "메뉴에 준비 점검이 없다"
+    assert "비용 0" in entry[0][1], entry[0][1]
+    # 레거시 API 패널은 [7] 그대로다 (6-F-6 §33).
+    legacy = [t for t in TOOLS if "--panel" in str(t[-1])
+              and "--panel-auto-check" not in str(t[-1])]
+    assert legacy and legacy[0][0] == "7", legacy
+
+
 def main() -> int:
     print("Phase 6-F-6 — 패널 자동 실행 (claude -p)")
     for name, fn in sorted(globals().items()):

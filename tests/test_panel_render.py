@@ -563,8 +563,13 @@ def test_k34_render_makes_no_network_call():
 # L. 메뉴
 # --------------------------------------------------------------------------
 def test_l35_menu_has_the_panel_entry():
-    """패널은 `[2]` 다 (§1-7-2 로 메뉴를 다시 짜면서 자리가 바뀌었다)."""
-    entry = next(e for e in menu.ITEMS if e[0] == "2")
+    """레거시 API 패널은 `[9] → [7]` 이다.
+
+    **범위를 옮겼다** — 6-F-6 이 메뉴를 일하는 순서로 다시 짜면서 이 항목을
+    개발 도구 아래로 격리했다(§33). 지키려는 것은 자리가 아니라 **지우지
+    않았다는 것**과 **회차를 먼저 묻는다는 것**이고, 둘 다 그대로다.
+    """
+    entry = next(e for e in menu.TOOLS if e[0] == "7")
     assert "패널" in entry[1]
     # 수집 항목이라 `(ROUND, [플래그])` 모양이다 — 회차를 먼저 묻는다.
     assert entry[3] == (menu.ROUND, ["--panel"])
@@ -577,25 +582,23 @@ def test_l36_panel_entry_collects_like_the_plain_run():
     축 지표를 거쳐 패널 자료에 실리므로, 끄면 패널에게 줄 자료가 줄었다.
     """
     by_key = {k: a for k, _t, _d, a in menu.ITEMS}
+    tools = {k: a for k, _t, _d, a in menu.TOOLS}
     assert by_key["1"] == (menu.ROUND, [])
-    assert by_key["2"] == (menu.ROUND, ["--panel"])
-    assert by_key["3"] == (menu.ROUND, ["--panel-export"])
-    assert by_key["4"] == "panel-apply"       # 패널 결과 반영 (4-B 운영)
-    assert by_key["5"] == ["--serve"]
-    assert dict((k, a) for k, _t, _d, a in menu.TOOLS)["1"] == ["--demo"]
+    assert tools["7"] == (menu.ROUND, ["--panel"])
+    assert tools["1"] == ["--demo"]
 
 
 def test_l37_menu_entry_runs_the_panel_flag():
     from test_menu_flow import drive
     # 회차를 먼저 묻는다. 비우면 자동 탐지라 `--round` 가 붙지 않는다.
-    code, calls, _out = drive(["2", "", "", "0"])
+    code, calls, _out = drive(["9", "7", "", "", "0"])
     assert calls == [["--panel", "--open"]]
     assert code == 0
 
 
 def test_l38_panel_failure_does_not_kill_the_menu():
     from test_menu_flow import drive
-    code, calls, out = drive(["2", "", "", "9", "1", "", "0"],
+    code, calls, out = drive(["9", "7", "", "", "9", "1", "", "0"],
                              result=RuntimeError("패널 오류"))
     assert len(calls) == 2, "패널 오류로 메뉴가 끝났다"
     assert "다른 메뉴는 계속 사용할 수 있습니다" in out
@@ -603,7 +606,7 @@ def test_l38_panel_failure_does_not_kill_the_menu():
 
 def test_l39_panel_menu_needs_match_details():
     """`--skip-match-details` 를 붙이면 근거가 없어 패널이 통째로 생략된다."""
-    entry = next(e for e in menu.ITEMS if e[0] == "2")
+    entry = next(e for e in menu.TOOLS if e[0] == "7")
     assert "--skip-match-details" not in entry[3][1]
 
 

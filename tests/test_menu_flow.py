@@ -347,24 +347,21 @@ def test_g24_operational_menu_maps_to_the_right_flags():
     가리킨다), 그것은 아래에서 번호마다 그대로 확인한다.
     """
     by_key = {k: a for k, _t, _d, a in menu.ITEMS}
-    assert list(by_key) == ["1", "2", "3", "4", "5", "6", "9"], list(by_key)
+    assert list(by_key) == ["1", "2", "3", "4", "5", "9"], list(by_key)
     assert by_key["1"] == (menu.ROUND, [])
-    # [2]·[3] 은 [1] 에 **더하는** 것이다. 후스코어드를 끄면 리포트에서
-    # 강점/약점·상성이 빠지고, 그 값(shots_pg)이 축을 거쳐 패널 자료에도
-    # 실리므로 패널에게 줄 자료가 오히려 줄었다.
-    assert by_key["2"] == (menu.ROUND, ["--panel"])
-    assert by_key["3"] == (menu.ROUND, ["--panel-export"])
-    for key in ("2", "3"):
-        assert "--skip-whoscored" not in by_key[key][1], key
-        assert "--skip-match-details" not in by_key[key][1], key
-    # [4] 는 클로드 채팅에서 받은 Panel Result 를 되붙이는 자리다.
-    # 폰에서 열기는 [5] 로 내려갔다 (기능은 그대로).
-    assert by_key["4"] == "panel-apply"
+    # 6-F-6 이 메뉴를 **일하는 순서**로 다시 짰다 — [2] 가 패널 자동 분석
+    # (claude -p · 구독)이고, 레거시 API 패널은 [9] 아래로 격리됐다.
+    assert by_key["2"] == "panel-auto"
+    assert by_key["3"] == "rerender"
+    assert by_key["4"] == "panel-manual"
     assert by_key["5"] == ["--serve"]
-    # [6] 은 클로드 채팅을 단계별로 진행하는 자리다 (6-F-3 · 6-F-4).
-    # **클로드를 부르지 않는다** — `--panel` 이 여기로 새면 안 된다.
-    assert by_key["6"] == "panel-work"
     assert by_key["9"] == "tools"
+    # 수집 항목에서 후스코어드를 깎지 않는다 — `shots_pg` 가 축을 거쳐
+    # 패널 자료에 실리므로 끄면 줄 자료가 오히려 줄었다.
+    assert by_key["1"][1] == []
+    # 정상 메뉴에는 레거시 `--panel` 이 없다 (6-F-6 §33).
+    flat = [a for a in by_key.values() if isinstance(a, tuple)]
+    assert all("--panel" not in list(a[1]) for a in flat), flat
 
 
 def test_g24b_every_collecting_item_asks_for_the_round():
@@ -373,7 +370,8 @@ def test_g24b_every_collecting_item_asks_for_the_round():
     센티넬(문자열)은 자기 하위 메뉴에서 회차를 묻는다 — 목록에 더할 때는
     그 하위 메뉴가 실제로 묻는지 함께 확인한다.
     """
-    sentinels = ("tools", "panel-apply", "panel-work")
+    sentinels = ("tools", "panel-apply", "panel-work",
+                 "panel-auto", "panel-manual", "rerender")
     for key, _t, _d, args in menu.ITEMS:
         collects = isinstance(args, tuple) or args in (
             *sentinels, ["--serve"])
@@ -382,9 +380,11 @@ def test_g24b_every_collecting_item_asks_for_the_round():
             assert "--round" not in args, key
     # 센티넬 둘은 회차를 **자기 안에서, 또는 자기가 부르는 곳에서** 묻는다.
     # `_panel_apply_args` 는 `_paste_panel`·`_pick_panel_file` 에 넘긴다.
-    for fname in ("_panel_apply_args", "_panel_work_args"):
+    for fname in ("_panel_apply_args", "_panel_work_args",
+                  "_panel_auto_args", "_panel_manual_args", "_rerender_args"):
         src = inspect.getsource(getattr(menu, fname))
-        for helper in ("_paste_panel", "_pick_panel_file"):
+        for helper in ("_paste_panel", "_pick_panel_file",
+                       "_panel_work_for", "_panel_work_args"):
             if f"{helper}(" in src:
                 src += inspect.getsource(getattr(menu, helper))
         assert "회차 번호를 입력하세요" in src, fname
@@ -425,7 +425,7 @@ def test_h28_no_json_tells_the_user_where_to_put_it():
     tmp = Path(tempfile.mkdtemp())
     saved = _with_inbox(tmp)
     try:
-        code, calls, out = drive(["4", "2", "", "0"])
+        code, calls, out = drive(["4", "7", "", "0"])
     finally:
         _restore(saved)
     assert calls == [], "파일이 없는데 실행했다"
@@ -439,7 +439,7 @@ def test_h29_single_json_runs_without_asking_for_a_path():
     _inbox(tmp, [("260052_panel_result.json", "260052")])
     saved = _with_inbox(tmp)
     try:
-        code, calls, _out = drive(["4", "2", "", "0"])
+        code, calls, _out = drive(["4", "7", "", "0"])
     finally:
         _restore(saved)
     assert len(calls) == 1, calls
@@ -456,7 +456,7 @@ def test_h30_several_json_files_are_not_picked_silently():
                  ("260052_panel_result.json", "260052")])
     saved = _with_inbox(tmp)
     try:
-        code, calls, out = drive(["4", "2", "2", "", "0"])
+        code, calls, out = drive(["4", "7", "2", "", "0"])
     finally:
         _restore(saved)
     assert "[1] 260050_panel_result.json" in out
@@ -470,7 +470,7 @@ def test_h31_bad_choice_does_not_run_anything():
                  ("b_panel_result.json", "260052")])
     saved = _with_inbox(tmp)
     try:
-        _code, calls, out = drive(["4", "2", "9", "", "0"])
+        _code, calls, out = drive(["4", "7", "9", "", "0"])
     finally:
         _restore(saved)
     assert calls == [], "없는 번호인데 실행했다"
@@ -484,7 +484,7 @@ def test_h32_unreadable_round_is_asked_not_guessed():
     folder.joinpath("broken.json").write_text("{oops", encoding="utf-8")
     saved = _with_inbox(tmp)
     try:
-        _code, calls, _out = drive(["4", "2", "260052", "", "0"])
+        _code, calls, _out = drive(["4", "7", "260052", "", "0"])
     finally:
         _restore(saved)
     assert calls[0][:2] == ["--round", "260052"], calls
@@ -510,7 +510,7 @@ def test_h34_panel_menu_never_collects():
     _inbox(tmp, [("260052_panel_result.json", "260052")])
     saved = _with_inbox(tmp)
     try:
-        _code, calls, _out = drive(["4", "2", "", "0"])
+        _code, calls, _out = drive(["4", "7", "", "0"])
     finally:
         _restore(saved)
     argv = calls[0]
@@ -523,7 +523,7 @@ def test_h35_exception_in_panel_menu_does_not_kill_the_loop():
     _inbox(tmp, [("260052_panel_result.json", "260052")])
     saved = _with_inbox(tmp)
     try:
-        code, calls, out = drive(["4", "2", "", "4", "2", "", "0"],
+        code, calls, out = drive(["4", "7", "", "4", "7", "", "0"],
                                  result=RuntimeError("가져오기 실패"))
     finally:
         _restore(saved)
@@ -538,7 +538,7 @@ def test_h36_eof_while_choosing_a_file_stops_cleanly():
                  ("b_panel_result.json", "260052")])
     saved = _with_inbox(tmp)
     try:
-        code, calls, out = drive(["4", "2"])   # 파일 선택에서 EOF
+        code, calls, out = drive(["4", "7"])   # 파일 선택에서 EOF
     finally:
         _restore(saved)
     assert calls == [], "EOF 인데 실행했다"
@@ -588,12 +588,19 @@ def test_g27_serve_and_diagnose_still_tagged():
 # --------------------------------------------------------------------------
 def test_h28_round_is_prepended_before_the_item_flags():
     """`--round` 가 먼저 오고 항목 인자가 뒤에 붙는다."""
-    _code, calls, _out = drive(["3", "260050", "", "0"])
+    _code, calls, _out = drive(["4", "1", "260050", "", "", "0"])
     assert calls == [["--round", "260050", "--panel-export", "--open"]], calls
 
 
 def test_h29_panel_item_also_asks_for_the_round():
+    """패널 항목도 회차를 먼저 묻는다.
+
+    6-F-6 에서 `[2]` 가 **패널 자동 분석**(claude -p)이 됐다. 레거시 API
+    패널은 `[9] → [7]` 로 내려갔고 거기서도 회차를 묻는다.
+    """
     _code, calls, _out = drive(["2", "260051", "", "0"])
+    assert calls == [["--round", "260051", "--panel-auto", "--open"]], calls
+    _code, calls, _out = drive(["9", "7", "260051", "", "0"])
     assert calls == [["--round", "260051", "--panel", "--open"]], calls
 
 

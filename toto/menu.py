@@ -27,50 +27,35 @@ BANNER = """
 # 회차를 비워서 고를 수 있다).
 ROUND = "round"
 
+# 메뉴 번호는 **사용자가 일하는 순서**다 (Phase 6-F-6 §42). 기능이 추가된
+# 순서가 아니다. 실제 흐름은 셋뿐이다.
+#
+#     ① 회차 분석  →  ② 패널 자동 분석  →  ③ 최종 리포트
+#
+# 그래서 그 셋을 앞에 두고, 단계별 수동 진행·복구는 `[4]` 하위로, 개발용은
+# `[9]` 하위로 내렸다. **CLI 인자는 하나도 바뀌지 않는다** (§32) — 메뉴는
+# 예전과 똑같이 기존 인자를 만들어 같은 경로를 태울 뿐이다.
 ITEMS = [
-    ("1", "회차 지정해서 수집",
-     "배당률 + 순위·폼 + 경기 상세까지. 리포트를 만듭니다.",
+    ("1", "회차 분석",
+     "회차 데이터 수집 · 정량·정성 분석 · 기본 리포트 생성.",
      (ROUND, [])),
-    # [2]·[3] 은 **[1] 에 더하는 것**이다. 먼저 [1] 을 돌릴 필요가 없고,
-    # 리포트도 [1] 과 같은 것이 나온다.
-    #
-    # 예전에는 여기에 `--skip-whoscored` 를 붙였다. 근거가 둘이었는데 둘 다
-    # 사라졌다 — (1) "정성 데이터가 한 번도 수집된 적이 없다"(§3-1)는 이제
-    # 28/28팀 수집되고, (2) "10~20분을 더 쓴다"는 맞대결을 끄면서(§3-1)
-    # 대부분 없어졌다. 게다가 후스코어드의 `shots_pg` 는 축 지표
-    # (`season.shots`·`on_target_rate`·`xg_per_shot`)를 거쳐 **패널 자료에
-    # 그대로 실린다** — 끄면 패널에게 줄 자료가 오히려 줄었다.
-    #
-    # 경기 상세(슛맵)가 있어야 근거가 생기고 근거가 없으면 패널을 부르지
-    # 않으므로, `--skip-match-details` 는 여전히 붙일 수 없다.
-    ("2", "패널 분석까지 (Claude API 필요 · 유료)",
-     "[1] 과 같은 수집·리포트에 더해, 두 전문가의 해석과 사회자 종합을 "
-     "붙입니다. ANTHROPIC_API_KEY 가 필요하고 경기마다 API 를 부릅니다.",
-     (ROUND, ["--panel"])),
-    # API 를 부르지 않는다. 같은 자료를 파일로 내서 클로드 채팅에 붙여넣는다.
-    ("3", "패널 자료 내보내기 (클로드 채팅용 · API 불필요)",
-     "[1] 과 같은 수집·리포트에 더해, 채팅에 넣을 지침과 단계별 시트를 "
-     "reports/panel_<회차>/ 에 만듭니다. [1] 을 먼저 돌릴 필요 없습니다.",
-     (ROUND, ["--panel-export"])),
-    # [3] 으로 낸 자료를 클로드 채팅에서 돌리고 받아 온 JSON 을 되붙이는
-    # 자리. 검증·가져오기·감사·리포트 갱신을 **한 번에** 한다 — 예전에는
-    # 그 넷을 사용자가 CLI 로 따로 실행해야 했다.
-    ("4", "패널 결과 반영 및 리포트 생성",
-     "클로드 채팅 3단계 결과를 **붙여넣거나** panel_results/ 의 "
-     "<회차>_panel_result.json 을 골라, 검증·가져오기·감사·리포트 갱신을 "
-     "한 번에 합니다. 저장된 회차 분석이 있으면 다시 수집하지 않습니다.",
-     "panel-apply"),
+    # Phase 6-F-6 의 핵심 진입점. **Claude Code(claude -p)로 돌고 Anthropic
+    # API 를 직접 부르지 않는다** — 레거시 `--panel` 과 다른 경로다.
+    ("2", "패널 자동 분석",
+     "A 데이터 분석가 · B 맞대결·전술 분석가 · C 사회자를 자동으로 돌리고 "
+     "리포트 반영까지 한 번에 합니다. Claude 구독으로 실행하며 복사·"
+     "붙여넣기가 필요 없습니다.",
+     "panel-auto"),
+    ("3", "최종 리포트 다시 만들기",
+     "저장된 회차 분석으로 HTML 만 다시 그립니다. 수집하지 않습니다.",
+     "rerender"),
+    ("4", "패널 수동 진행·복구",
+     "클로드 채팅으로 직접 돌리거나, 자동 분석이 멈춘 지점을 손으로 "
+     "이어서 처리합니다.",
+     "panel-manual"),
     ("5", "폰에서 열기 (같은 와이파이)",
      "이미 만든 리포트를 폰으로 볼 수 있게 주소를 띄웁니다. 클라우드 계정 불필요.",
      ["--serve"]),
-    # Phase 6-F-3. **[3] 뒤, [4] 앞**에 쓰는 중간 단계다. 번호가 뒤에 있는
-    # 것은 기존 번호를 밀지 않으려는 것뿐이다 — `[4]` 는 문서 여러 곳이
-    # 가리키는 자리라 바꾸면 그 참조가 전부 낡는다.
-    ("6", "클로드 채팅 단계별 진행 (1·2·3단계)",
-     "[3] 으로 낸 자료로 클로드에서 단계별로 돌린 뒤 그 응답을 넣어 두고, "
-     "3단계 자료 조립과 리포트 반영까지 여기서 합니다. 진행 상태도 "
-     "보여 줍니다. 클로드를 부르지 않습니다(API 불필요).",
-     "panel-work"),
     ("9", "개발·진단 도구",
      "데모·캐시 비우기·수집 실패 진단·소스 점검. 평소에는 쓰지 않습니다.",
      "tools"),
@@ -98,6 +83,14 @@ TOOLS = [
     ("6", "회차 결과 정산 (경기 종료 후)",
      "이미 기록된 회차에 실제 경기 결과만 채웁니다. 배당·확률·기록 시각은 "
      "그대로 두고 리포트도 다시 만들지 않습니다.", "settle"),
+    # 레거시 API 패널 (Phase 3-B). **지우지 않고 격리한다** (6-F-6 §33) —
+    # 동작도 `--panel` 인자도 그대로이고, 정상 workflow 에서 실수로 고르지
+    # 않도록 개발 도구 아래로 내렸을 뿐이다. 평소에는 `[2] 패널 자동 분석`
+    # 을 쓴다 (구독 인증 · API 과금 없음).
+    ("7", "레거시 API 패널 실행 (Anthropic API 키 필요 · 유료)",
+     "예전 방식입니다. ANTHROPIC_API_KEY 로 경기마다 API 를 부르고 별도 "
+     "과금이 발생합니다. 보통은 [2] 패널 자동 분석을 쓰십시오.",
+     (ROUND, ["--panel"])),
 ]
 
 
@@ -321,16 +314,12 @@ def _confirm_overwrite(path, what: str) -> bool:
 
 
 def _panel_work_args() -> list[str] | None:
-    """`[6]` 의 세 항목 중 하나를 골라 CLI 인자를 만든다.
+    """단계별 항목 하나를 골라 CLI 인자를 만든다.
 
     **검증·조립을 여기서 다시 구현하지 않는다** — CLI 와 같은 경로를 태운다
     (§1-20 의 `[4]` 와 같은 이유). 두 곳에서 다른 결과가 나오면 어느 쪽도
     믿을 수 없다.
     """
-    import tempfile
-    from pathlib import Path
-    from . import panel, panelwork
-
     print("\n  무엇을 할까요?")
     for key, title, why in PANEL_WORK:
         print(f"  [{key}] {title}")
@@ -342,6 +331,19 @@ def _panel_work_args() -> list[str] | None:
     if answer not in {k for k, _t, _w in PANEL_WORK}:
         print(f"'{answer}' 는 없는 번호입니다.")
         return None
+    return _panel_work_for(answer)
+
+
+def _panel_work_for(answer: str) -> list[str] | None:
+    """고른 번호 → CLI 인자. 메뉴를 다시 그리지 않는다.
+
+    6-F-6 이 이것을 떼어냈다 — 새 `[4] 패널 수동 진행·복구` 가 자기 번호로
+    같은 기능을 부르는데, 안에서 하위 메뉴를 또 그리면 두 번 묻게 된다.
+    **동작은 그대로다.**
+    """
+    import tempfile
+    from pathlib import Path
+    from . import panel, panelwork
 
     rnd = _ask("회차 번호를 입력하세요 (예: 260054): ")
     if rnd is None or not rnd.strip():
@@ -391,6 +393,95 @@ def _panel_work_args() -> list[str] | None:
     print(f"\n  {len(text):,}자를 읽었습니다. 검증합니다…")
     return ["--round", rnd, "--save-panel-opinion", str(tmp),
             "--role", role]
+
+
+# `[4] 패널 수동 진행·복구` 의 하위 항목. 예전 `[3]`(자료 내보내기)·
+# `[4]`(결과 반영)·`[6]`(단계별 진행)을 **한자리에 모은 것**이고, 부르는
+# 것은 전부 기존 함수다 — 새 경로를 만들지 않았다 (6-F-6 §35).
+PANEL_MANUAL = [
+    ("1", "채팅용 자료 내보내기",
+     "클로드 채팅에 넣을 지침과 단계별 시트를 reports/panel_<회차>/ 에 "
+     "만듭니다."),
+    ("2", "1단계(데이터 분석가) 결과 넣기", "채팅 응답 배열을 보관합니다."),
+    ("3", "2단계(맞대결·전술 분석가) 결과 넣기",
+     "1단계와 **따로** 보관합니다."),
+    ("4", "사회자 자료 만들기 (1·2단계 조립)",
+     "보관본을 경기 번호로 짝지어 03_사회자자료_완성.md 를 만듭니다."),
+    ("5", "3단계(Moderator) 결과 넣기", "채팅 3단계 응답을 보관합니다."),
+    ("6", "리포트에 반영 (보관해 둔 3단계 결과)",
+     "검증·가져오기·감사·리포트 갱신까지 합니다."),
+    ("7", "Panel Result JSON 파일 가져오기",
+     "panel_results/ 에 넣어 둔 <회차>_panel_result.json 을 씁니다."),
+    ("8", "진행 상태 보기",
+     "이 회차가 어디까지 왔는지와 다음에 할 일을 보여 줍니다."),
+]
+
+# 수동 메뉴 번호 → 기존 `_panel_work_for()` 의 번호. 기능을 옮긴 것이지
+# 새로 만든 것이 아니라는 사실이 이 표에 그대로 드러난다.
+_MANUAL_TO_WORK = {"2": "1", "3": "2", "4": "3", "5": "4", "6": "5", "8": "6"}
+
+
+def _panel_manual_args() -> list[str] | None:
+    """`[4]` 하위에서 하나를 골라 CLI 인자를 만든다."""
+    print("\n  — 패널 수동 진행·복구 —")
+    for key, title, why in PANEL_MANUAL:
+        print(f"  [{key}] {title}")
+        print(f"      {why}")
+    print("  [0] 뒤로")
+    answer = (_ask("번호를 고르고 Enter (0 이면 뒤로): ") or "0").strip()
+    if answer == "0":
+        return None
+
+    if answer == "1":                       # 예전 [3]
+        rnd = _ask("회차 번호 (예: 260050 · 비우면 자동 탐지): ")
+        if rnd is None:
+            print("입력이 끝나 실행하지 않았습니다.")
+            return None
+        return (["--round", rnd] if rnd else []) + ["--panel-export"]
+
+    if answer == "7":                       # 예전 [4] → [2] 파일 경로
+        picked = _pick_panel_file()
+        if picked is None:
+            return None
+        path, rnd = picked
+        return ["--round", rnd,
+                "--import-panel-result", str(path),
+                "--audit-panel-result", str(path)]
+
+    work = _MANUAL_TO_WORK.get(answer)
+    if work is None:
+        print(f"'{answer}' 는 없는 번호입니다.")
+        return None
+    return _panel_work_for(work)
+
+
+def _panel_auto_args() -> list[str] | None:
+    """`[2] 패널 자동 분석`. **회차를 비워 둘 수 없다.**
+
+    저장된 회차 분석을 읽어 돌리므로 자동 탐지가 없다 — 어느 회차를
+    분석할지 지어낼 수 없다 (§1-5).
+    """
+    rnd = _ask("회차 번호를 입력하세요 (예: 260054): ")
+    if rnd is None or not rnd.strip():
+        print("회차를 알 수 없어 실행하지 않았습니다.")
+        return None
+    return ["--round", rnd.strip(), "--panel-auto"]
+
+
+def _rerender_args() -> list[str] | None:
+    """`[3] 최종 리포트 다시 만들기`. 저장본 경로를 만들어 넘긴다."""
+    from . import artifact
+
+    rnd = _ask("회차 번호를 입력하세요 (예: 260054): ")
+    if rnd is None or not rnd.strip():
+        print("회차를 알 수 없어 실행하지 않았습니다.")
+        return None
+    path = artifact.path_for(rnd.strip())
+    if not path.is_file():
+        print(f"\n  저장된 회차 분석이 없습니다. ({path})")
+        print("  먼저 [1] 회차 분석을 돌리십시오.")
+        return None
+    return ["--rerender-artifact", str(path)]
 
 
 def _panel_apply_args() -> list[str] | None:
@@ -482,6 +573,27 @@ def run_menu() -> int | None:
     # 않는다** — 검증·조립도 여기서 다시 구현하지 않고 CLI 를 그대로 태운다.
     if args == "panel-work":
         built = _panel_work_args()
+        if built is None:
+            return 1
+        args = built
+
+    # 패널 자동 분석 (Phase 6-F-6). **여기서 오케스트레이션을 다시 쓰지
+    # 않는다** — CLI 인자를 만들어 같은 경로를 태운다 (§1-20 과 같은 이유).
+    if args == "panel-auto":
+        built = _panel_auto_args()
+        if built is None:
+            return 1
+        args = built
+
+    # 예전 [3]·[4]·[6] 을 모은 자리. 부르는 것은 전부 기존 함수다.
+    if args == "panel-manual":
+        built = _panel_manual_args()
+        if built is None:
+            return 1
+        args = built
+
+    if args == "rerender":
+        built = _rerender_args()
         if built is None:
             return 1
         args = built

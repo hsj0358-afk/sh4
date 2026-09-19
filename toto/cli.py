@@ -123,6 +123,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--panel-workflow-status", action="store_true",
                    help="그 회차가 어느 단계까지 왔는지 파일을 읽어 보여 "
                         "준다. 아무것도 고치지 않고 수집도 하지 않는다")
+    # Phase 6-F-6. **Anthropic API 를 부르지 않는다** — `claude -p` 를
+    # subprocess 로 띄워 A·B·C 를 돌리고 기존 [4] 까지 잇는다.
+    p.add_argument("--panel-auto", action="store_true",
+                   help="패널 자동 분석 — Claude Code(claude -p)로 A·B·C 를 "
+                        "돌리고 기존 [4] 반영까지 한 번에 한다. 구독 인증만 "
+                        "쓰고 Anthropic API 를 직접 부르지 않는다")
+    p.add_argument("--auto-model", default=None, metavar="MODEL",
+                   help="--panel-auto 가 claude 에 넘길 모델. 주지 않으면 "
+                        "Claude Code 의 기본 모델을 쓴다")
     p.add_argument("--rerender-artifact", type=Path, default=None,
                    metavar="FILE",
                    help="저장된 회차 분석 결과(data/artifacts/<회차>.json)를 "
@@ -414,6 +423,34 @@ def _guide_next(round_id: str) -> None:
         log.info("다음 할 일: %s", nxt.todo)
 
 
+def _panel_auto(args, settings) -> int:
+    """패널 자동 분석 (Phase 6-F-6). **수집 구간 앞에서 갈라진다.**
+
+    저장본(4-C)을 읽어 A·B·C 를 `claude -p` 로 돌리고 기존 [4] 까지 잇는다.
+    다시 수집하면 순위표·배당이 그때와 달라져(§1-1-7) 채팅에 준 자료와 다른
+    것이 되므로, 여기서도 저장본을 쓴다.
+    """
+    from . import artifact, panelauto
+
+    round_id = (args.round_id or "").strip()
+    if not round_id:
+        log.error("--round 가 필요합니다 — 어느 회차를 분석할지 "
+                  "지어낼 수 없습니다.")
+        return 1
+    report, why = artifact.load(round_id)
+    if report is None:
+        log.error("저장된 회차 분석 결과가 없습니다 — %s", why)
+        log.error("  먼저 그 회차를 수집하십시오 "
+                  "(python -m toto --round %s)", round_id)
+        return 1
+
+    result = panelauto.run(round_id, report, settings,
+                           model=(args.auto_model or ""))
+    if result.ok and args.open and result.report_path:
+        webbrowser.open(result.report_path.resolve().as_uri())
+    return 0 if result.ok else 1
+
+
 def _rerender(args, settings) -> int:
     """저장된 회차 분석 결과(4-C)를 **현재 renderer 로** 다시 그린다.
 
@@ -588,6 +625,13 @@ def main(argv: list[str] | None = None) -> int:
             or args.save_moderator_result is not None
             or args.panel_workflow_status):
         return _panel_work(args, settings)
+
+    # ---- 0-a3. 패널 자동 분석 (Phase 6-F-6) ------------------------------
+    # 여기도 **수집 구간 앞**이다. 모델은 `claude -p` subprocess 로만 부르고
+    # Anthropic API 를 직접 호출하지 않는다. 안에서 기존 CLI 를 다시 부르는데
+    # (조립·검증·[4]) 그 호출들은 위 분기로 내려가 재귀가 끝난다.
+    if args.panel_auto:
+        return _panel_auto(args, settings)
 
     # ---- 0-b. 시장 기준선 캘리브레이션 (Phase 6-B) -----------------------
     # 여기도 **수집 구간 앞**이다. 쌓인 기록을 읽어 재기만 하고 파일을

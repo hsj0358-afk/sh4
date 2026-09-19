@@ -1,0 +1,744 @@
+"""패널 자동 실행 회귀 (Phase 6-F-6 · CLAUDE.md §1-42).
+
+지키려는 것 넷이다.
+
+  1. **비용을 프로그램이 결정하지 않는다** — API 키 차단 · `--bare` 없음 ·
+     사용량 한도에서 과금 전환 없음
+  2. **A/B 독립성** — 새 프로세스 · 새 세션 ID · 부모 세션 제거 · 폴더 분리
+  3. **실패를 성공으로 취급하지 않는다** — 검증은 기존 검증기가 한다
+  4. **끝난 단계는 건너뛴다** — 실패 지점부터 재개
+
+에이전트를 실제로 부르는 시험은 돈이 드므로, 여기서는 `run_agent` 를
+가짜로 바꿔 **오케스트레이션**만 본다. 실제 `claude -p` 연동은 6-F-6 구현
+중 실물로 확인했고 보고서에 수치를 적었다.
+"""
+from __future__ import annotations
+
+import ast
+import json
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from toto import (moderator, panel, panelauto, panelimport,  # noqa: E402
+                  panelwork)
+
+_PASSED = _FAILED = 0
+
+
+def check(name, fn):
+    global _PASSED, _FAILED
+    try:
+        fn()
+    except AssertionError as exc:
+        _FAILED += 1
+        print(f"  FAIL {name}: {exc}")
+    except Exception as exc:                                # noqa: BLE001
+        _FAILED += 1
+        print(f"  FAIL {name}: {type(exc).__name__}: {exc}")
+    else:
+        _PASSED += 1
+        print(f"  ok   {name}")
+
+
+# ==========================================================================
+# 도구
+# ==========================================================================
+def source_of(obj) -> str:
+    return Path(obj.__file__).read_text(encoding="utf-8")
+
+
+def fn_node(module, name):
+    tree = ast.parse(source_of(module))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == name:
+            return node
+    raise AssertionError(f"{name} 을 찾지 못했다")
+
+
+def code_of(node) -> str:
+    """docstring 을 뺀 본문.
+
+    이 저장소의 함수들은 "무엇을 하지 않는다" 를 docstring 에 적으므로,
+    낱말로 재면 그 설명이 스스로 걸린다 (6-F-3·6-F-4 가 같은 이유로 AST 로
+    옮겼다). 지키려는 것은 문서가 아니라 코드다.
+    """
+    body = [n for n in node.body
+            if not (isinstance(n, ast.Expr)
+                    and isinstance(n.value, ast.Constant)
+                    and isinstance(n.value.value, str))]
+    return "\n".join(ast.unparse(n) for n in body)
+
+
+def module_code(module) -> str:
+    """모듈 전체에서 docstring 만 뺀 코드."""
+    tree = ast.parse(source_of(module))
+    out = []
+    for node in tree.body:
+        if (isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)):
+            continue
+        if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+            out.append(node.name + "\n" + code_of(node))
+        else:
+            out.append(ast.unparse(node))
+    return "\n".join(out)
+
+
+def calls_in(node) -> set:
+    return {ast.unparse(c.func) for c in ast.walk(node)
+            if isinstance(c, ast.Call)}
+
+
+def imported_names(module) -> set:
+    tree = ast.parse(source_of(module))
+    out = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            out |= {a.name.split(".")[0] for a in node.names}
+        elif isinstance(node, ast.ImportFrom):
+            out |= {a.name for a in node.names}
+            if node.module:
+                out.add(node.module.split(".")[0])
+    return out
+
+
+def scratch() -> Path:
+    """**저장소 밖** 임시 디렉터리. 실제 panel_work/ 를 건드리지 않는다."""
+    return Path(tempfile.mkdtemp(prefix="toto_auto_test_"))
+
+
+_DEMO = None
+
+
+def demo_matches(n):
+    """**진짜 `Match` 객체**를 쓴다.
+
+    `build_panel_payload()` 가 경기 객체의 여러 칸을 읽으므로 얇은 가짜로는
+    검증기를 실제로 지나는지 확인할 수 없다 — 검증을 통과하는지가 이 절의
+    요점이다.
+    """
+    global _DEMO
+    if _DEMO is None:
+        from toto import fixtures
+        _DEMO = fixtures.build_demo_matches()
+    picked = _DEMO[:n]
+    for i, m in enumerate(picked, start=1):
+        m.no = i
+    return picked
+
+
+class FakeReport:
+    def __init__(self, n=3, round_id="TEST"):
+        self.round_id = round_id
+        self.matches = demo_matches(n)
+
+
+def opinion_obj(no=1, ids=()):
+    return {"predicted_home": 2, "predicted_away": 1,
+            "summary": f"{no}번 요약", "rationale": [f"{no}번 근거"],
+            "evidence_ids": list(ids)}
+
+
+# ==========================================================================
+# A. 비용 안전장치 — 이 Phase 의 최우선 제약
+# ==========================================================================
+def test_a1_api_key_blocks_preflight():
+    """`ANTHROPIC_API_KEY` 가 있으면 **시작하지 않는다** (§25)."""
+    rep = FakeReport()
+    had = os.environ.get("ANTHROPIC_API_KEY")
+    os.environ["ANTHROPIC_API_KEY"] = "sk-ant-test"
+    try:
+        pre = panelauto.preflight(rep, "TEST", scratch())
+        assert not pre.ok, "API 키가 있는데 통과했다"
+        joined = " ".join(pre.problems)
+        assert "ANTHROPIC_API_KEY" in joined
+        assert "구독" in joined, joined
+    finally:
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+        if had is not None:
+            os.environ["ANTHROPIC_API_KEY"] = had
+
+
+def test_a2_child_env_drops_api_credentials():
+    """자식 환경에서 API 인증을 지운다 (§4-A)."""
+    base = {"ANTHROPIC_API_KEY": "k", "ANTHROPIC_AUTH_TOKEN": "t",
+            "PATH": "/usr/bin"}
+    env = panelauto.build_agent_env(base)
+    assert "ANTHROPIC_API_KEY" not in env
+    assert "ANTHROPIC_AUTH_TOKEN" not in env
+    assert env["PATH"] == "/usr/bin", "무관한 환경까지 지웠다"
+
+
+def test_a3_child_env_keeps_subscription_login():
+    """구독 로그인 정보까지 지우면 안 된다 (§4-A).
+
+    지우는 것은 `SCRUB_API` + `SCRUB_SESSION` 에 적힌 것뿐이고, 그 밖의
+    `CLAUDE_*` 는 남아야 한다 — 인증이 통째로 사라지면 자동화가 돌지 않는다.
+    """
+    base = {"CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST": "1",
+            "CLAUDE_CONFIG_DIR": "/home/u/.claude",
+            "CLAUDE_CODE_SESSION_ID": "부모", "HOME": "/home/u"}
+    env = panelauto.build_agent_env(base)
+    assert env.get("CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST") == "1"
+    assert env.get("CLAUDE_CONFIG_DIR") == "/home/u/.claude"
+    assert env.get("HOME") == "/home/u"
+    assert "CLAUDE_CODE_SESSION_ID" not in env
+
+
+def test_a4_bare_is_never_passed():
+    """`--bare` 를 쓰지 않는다 (§4-B).
+
+    그 모드는 구독 로그인을 읽지 않고 `ANTHROPIC_API_KEY` 를 요구한다 —
+    쓰는 순간 이 워크플로의 비용 전제가 깨진다.
+    """
+    argv = panelauto.agent_argv("claude", "p", "s", Path("/w"), "sid", "haiku")
+    assert "--bare" not in argv, argv
+    # 코드 어디에서도 만들지 않는다 (docstring 의 설명은 제외).
+    assert "--bare" not in module_code(panelauto)
+
+
+def test_a5_no_billing_switch_is_performed():
+    """과금 전환·결제·크레딧 승인을 코드가 하지 않는다 (§26)."""
+    code = module_code(panelauto)
+    for bad in ("usage_credits", "enable_credits", "auto_reload",
+                "billing", "purchase", "--dangerously-skip-permissions"):
+        assert bad not in code, f"{bad} 가 코드에 있다"
+
+
+def test_a6_usage_limit_stops_the_workflow():
+    """한도에 닿으면 `WORKFLOW_STOPPED_USAGE_LIMIT` 로 멈춘다 (§26)."""
+    assert panelauto._classify("Claude usage limit reached") \
+        == panelauto.AGENT_USAGE_LIMIT
+    assert panelauto._classify("rate_limit") == panelauto.AGENT_USAGE_LIMIT
+    assert panelauto.WORKFLOW_STOPPED_USAGE_LIMIT \
+        == "WORKFLOW_STOPPED_USAGE_LIMIT"
+    # 모르는 오류를 한도로 오해하지 않는다 — 그 반대도 마찬가지다.
+    assert panelauto._classify("무슨 소린지 모를 오류") \
+        == panelauto.AGENT_FAILED
+
+
+def test_a7_auth_failure_is_its_own_state():
+    """로그인이 없는 것과 한도를 넘은 것은 다른 상태다 (§1-6)."""
+    assert panelauto._classify("authentication_failed") \
+        == panelauto.AGENT_AUTH
+    assert panelauto.AGENT_AUTH != panelauto.AGENT_USAGE_LIMIT
+
+
+def test_a8_never_calls_the_anthropic_api_directly():
+    """`anthropic`·`llm` 을 import 하지 않는다 (§1).
+
+    **import 문을 본다** — 이 모듈의 docstring 은 "부르지 않는다" 를 적으려고
+    그 이름들을 언급하므로 낱말로 재면 설명이 스스로 걸린다.
+    """
+    names = imported_names(panelauto)
+    assert "anthropic" not in names, names
+    # `llm.strip_fence` 는 순수 정규식이라 함수 안에서만 쓴다 — 모델을
+    # 부르는 함수(`complete`·`ask`)는 쓰지 않는다.
+    code = module_code(panelauto)
+    for bad in ("llm.complete", "llm.ask", "Anthropic("):
+        assert bad not in code, bad
+
+
+def test_a9_never_uses_the_legacy_api_executor():
+    """`[2] --panel` 의 실행 경로를 부르지 않는다 (§1)."""
+    node = ast.parse(module_code(panelauto))
+    called = {ast.unparse(c.func) for c in ast.walk(node)
+              if isinstance(c, ast.Call)}
+    for bad in ("panel.run_match", "panel.run_panel_role",
+                "panel.attach_panels", "moderator.run_moderator",
+                "run_match", "run_panel_role", "attach_panels",
+                "run_moderator"):
+        assert bad not in called, f"{bad} 를 부른다"
+    # 레거시 인자를 만들지도 않는다.
+    assert '"--panel"' not in module_code(panelauto)
+
+
+def test_a10_no_browser_or_gui_automation():
+    for bad in ("playwright", "selenium", "webdriver", "pyautogui",
+                "pyperclip", "claude://"):
+        assert bad not in module_code(panelauto).lower(), bad
+
+
+# ==========================================================================
+# B. A/B 독립성
+# ==========================================================================
+def test_b1_every_call_gets_a_fresh_session_id():
+    """호출마다 새 세션 ID (§8)."""
+    seen = set()
+    for _ in range(20):
+        node = fn_node(panelauto, "run_agent")
+        assert "uuid.uuid4" in code_of(node), "세션 ID 를 새로 만들지 않는다"
+        break
+    # 실제로 인자에 실리는지 본다.
+    argv = panelauto.agent_argv("claude", "p", "s", Path("/w"), "SID")
+    assert "--session-id" in argv and argv[argv.index("--session-id") + 1] \
+        == "SID"
+
+
+def test_b2_parent_session_is_scrubbed():
+    """부모 세션 ID 를 물려주지 않는다 (§8).
+
+    6-F-5 POC 에서 물려주면 자식이 **부모와 같은 세션 ID** 를 썼다.
+    """
+    assert "CLAUDE_CODE_SESSION_ID" in panelauto.SCRUB_SESSION
+    env = panelauto.build_agent_env({"CLAUDE_CODE_SESSION_ID": "부모",
+                                     "CLAUDECODE": "1"})
+    assert "CLAUDE_CODE_SESSION_ID" not in env
+    assert "CLAUDECODE" not in env
+
+
+def test_b3_roles_use_different_workspaces():
+    """A 와 B 의 작업 폴더가 다르다 (§9·§10)."""
+    base = scratch()
+    a = panelauto.match_workspace("R", panel.DATA_ANALYST, 1, base)
+    b = panelauto.match_workspace("R", panel.MATCHUP_ANALYST, 1, base)
+    assert a != b
+    assert not str(b).startswith(str(a))
+    assert not str(a).startswith(str(b))
+
+
+def test_b4_a_workspace_never_receives_b_output():
+    """A 의 workspace 에 B 산출물을 넣지 않는다 (§9)."""
+    base, rep = scratch(), FakeReport(2)
+    calls = []
+
+    def fake(prompt, system, workspace, **kw):
+        # 그 역할의 폴더에만 쓴다.
+        (Path(workspace) / panelauto.AGENT_OUTPUT).write_text(
+            json.dumps(opinion_obj()), encoding="utf-8")
+        calls.append(Path(workspace))
+        return panelauto.AgentRun(status=panelauto.AGENT_OK, session_id="s")
+
+    orig = panelauto.run_agent
+    panelauto.run_agent = fake
+    try:
+        for m in rep.matches:
+            panelauto.run_match_role(m, panel.DATA_ANALYST, "R", base=base)
+    finally:
+        panelauto.run_agent = orig
+    a_root = panelauto.auto_dir("R", base) / panelauto.ROLE_DIRS[
+        panel.DATA_ANALYST]
+    b_root = panelauto.auto_dir("R", base) / panelauto.ROLE_DIRS[
+        panel.MATCHUP_ANALYST]
+    assert a_root.is_dir()
+    assert not b_root.exists(), "A 를 돌렸는데 B 폴더가 생겼다"
+    assert all(str(c).startswith(str(a_root)) for c in calls)
+
+
+def test_b5_isolation_is_structural_not_a_prompt():
+    """격리를 프롬프트 문구에 기대지 않는다 (§8).
+
+    세 장치가 코드에 있어야 한다 — 새 프로세스(subprocess) · 새 세션 ID ·
+    부모 세션 제거.
+    """
+    code = module_code(panelauto)
+    assert "subprocess.run" in code
+    assert "uuid.uuid4" in code
+    assert "SCRUB_SESSION" in code
+
+
+# ==========================================================================
+# C. 검증 — 실패를 성공으로 취급하지 않는다
+# ==========================================================================
+def test_c1_verification_reuses_the_existing_validator():
+    """경기 하나의 내용은 `panel.parse_opinion()` 이 본다 (§40)."""
+    node = fn_node(panelauto, "verify_match")
+    assert "panel.parse_opinion" in calls_in(node), calls_in(node)
+    # 스키마를 다시 적지 않는다.
+    body = code_of(node)
+    for bad in ("isinstance", "predicted_home", "int)"):
+        assert bad not in body, f"verify_match 가 {bad} 를 직접 본다"
+
+
+def test_c2_bad_scores_are_rejected():
+    rep = FakeReport(1)
+    ids = []
+    for bad in ({"predicted_home": "2"}, {"predicted_home": 1.5},
+                {"predicted_home": -1}, {"predicted_home": True}):
+        obj = opinion_obj(1, ids)
+        obj.update(bad)
+        got, why = panelauto.verify_match(obj, rep.matches[0],
+                                          panel.DATA_ANALYST)
+        assert got is None, f"{bad} 가 통과했다"
+        assert why
+
+
+def test_c3_unknown_evidence_id_is_rejected():
+    rep = FakeReport(1)
+    obj = opinion_obj(1, ["E999"])
+    got, why = panelauto.verify_match(obj, rep.matches[0], panel.DATA_ANALYST)
+    assert got is None and why
+
+
+def test_c4_code_fence_is_stripped_but_prose_is_not_repaired():
+    """```json 울타리만 걷는다 — 설명문이 섞이면 실패다 (§17)."""
+    ws = scratch()
+    (ws / panelauto.AGENT_OUTPUT).write_text(
+        "```json\n" + json.dumps(opinion_obj()) + "\n```", encoding="utf-8")
+    data, why = panelauto._read_output(ws)
+    assert data is not None, why
+
+    (ws / panelauto.AGENT_OUTPUT).write_text(
+        "분석했습니다.\n" + json.dumps(opinion_obj()), encoding="utf-8")
+    data, why = panelauto._read_output(ws)
+    assert data is None and "JSON" in why
+
+
+def test_c5_missing_output_is_its_own_state():
+    ws = scratch()
+    data, why = panelauto._read_output(ws)
+    assert data is None
+    assert panelauto.AGENT_OUTPUT in why
+
+
+def test_c6_array_instead_of_object_is_rejected():
+    ws = scratch()
+    (ws / panelauto.AGENT_OUTPUT).write_text("[]", encoding="utf-8")
+    data, why = panelauto._read_output(ws)
+    assert data is None and "객체" in why
+
+
+def test_c7_failure_never_counts_as_success():
+    """검증에 실패하면 그 경기는 실패다 — 다음 단계로 가지 않는다 (§17)."""
+    base, rep = scratch(), FakeReport(2)
+
+    def fake(prompt, system, workspace, **kw):
+        (Path(workspace) / panelauto.AGENT_OUTPUT).write_text(
+            json.dumps({"predicted_home": "둘"}), encoding="utf-8")
+        return panelauto.AgentRun(status=panelauto.AGENT_OK)
+
+    orig = panelauto.run_agent
+    panelauto.run_agent = fake
+    try:
+        res = panelauto.run_stage_ab(rep, panel.DATA_ANALYST, base=base)
+    finally:
+        panelauto.run_agent = orig
+    assert not res.ok
+    assert res.status == panelauto.AGENT_INVALID
+    # **첫 실패에서 멈춘다** — 2번 경기를 시도하지 않는다.
+    assert len(res.matches) == 1, [m.no for m in res.matches]
+
+
+def test_c8_opinion_keys_match_the_real_validator():
+    """안내하는 칸이 `parse_opinion` 이 요구하는 것과 어긋나지 않는다.
+
+    이름이 갈라지면 에이전트가 문서대로 만들고 검증기에서 거부당한다.
+    """
+    joined = " ".join(panelauto.OPINION_KEYS)
+    src = source_of(panel)
+    for key in ("predicted_home", "predicted_away", "summary", "rationale",
+                "evidence_ids"):
+        assert key in joined, f"{key} 를 안내하지 않는다"
+        assert key in src, f"{key} 가 panel.py 에 없다"
+
+
+# ==========================================================================
+# D. 재개 — 끝난 것은 다시 돌리지 않는다
+# ==========================================================================
+def test_d1_completed_match_is_skipped():
+    """이미 검증을 통과한 경기는 건너뛴다 (§16)."""
+    base, rep = scratch(), FakeReport(1)
+    ws = panelauto.match_workspace("R", panel.DATA_ANALYST, 1, base)
+    ws.mkdir(parents=True, exist_ok=True)
+    (ws / panelauto.AGENT_OUTPUT).write_text(
+        json.dumps(opinion_obj()), encoding="utf-8")
+
+    called = []
+    orig = panelauto.run_agent
+    panelauto.run_agent = lambda *a, **k: called.append(1)
+    try:
+        res = panelauto.run_match_role(rep.matches[0], panel.DATA_ANALYST,
+                                       "R", base=base)
+    finally:
+        panelauto.run_agent = orig
+    assert res.ok and res.reused
+    assert not called, "이미 끝난 경기를 다시 불렀다"
+
+
+def test_d2_invalid_saved_output_is_not_treated_as_done():
+    """깨진 결과가 남아 있으면 **끝난 것으로 보지 않는다** (§16·§17)."""
+    base, rep = scratch(), FakeReport(1)
+    ws = panelauto.match_workspace("R", panel.DATA_ANALYST, 1, base)
+    ws.mkdir(parents=True, exist_ok=True)
+    (ws / panelauto.AGENT_OUTPUT).write_text("{깨짐", encoding="utf-8")
+
+    called = []
+
+    def fake(prompt, system, workspace, **kw):
+        called.append(1)
+        (Path(workspace) / panelauto.AGENT_OUTPUT).write_text(
+            json.dumps(opinion_obj()), encoding="utf-8")
+        return panelauto.AgentRun(status=panelauto.AGENT_OK)
+
+    orig = panelauto.run_agent
+    panelauto.run_agent = fake
+    try:
+        res = panelauto.run_match_role(rep.matches[0], panel.DATA_ANALYST,
+                                       "R", base=base)
+    finally:
+        panelauto.run_agent = orig
+    assert res.ok and not res.reused
+    assert called, "깨진 결과를 완료로 보고 건너뛰었다"
+
+
+def test_d3_resume_only_reruns_the_failed_match():
+    """앞의 성공은 보존하고 실패한 경기부터 재개한다 (§16)."""
+    base, rep = scratch(), FakeReport(4)
+    attempts = []
+
+    def make(fail_on):
+        def fake(prompt, system, workspace, **kw):
+            no = int(Path(workspace).name)
+            attempts.append(no)
+            if no == fail_on:
+                return panelauto.AgentRun(status=panelauto.AGENT_FAILED,
+                                          message="일부러 실패")
+            (Path(workspace) / panelauto.AGENT_OUTPUT).write_text(
+                json.dumps(opinion_obj(no)), encoding="utf-8")
+            return panelauto.AgentRun(status=panelauto.AGENT_OK)
+        return fake
+
+    orig = panelauto.run_agent
+    try:
+        panelauto.run_agent = make(3)
+        res = panelauto.run_stage_ab(rep, panel.DATA_ANALYST, base=base)
+        assert not res.ok
+        assert attempts == [1, 2, 3], attempts
+
+        attempts.clear()
+        panelauto.run_agent = make(0)       # 이번에는 아무것도 실패하지 않는다
+        res = panelauto.run_stage_ab(rep, panel.DATA_ANALYST, base=base)
+    finally:
+        panelauto.run_agent = orig
+    # 1·2 는 보존돼 다시 부르지 않고, 3·4 만 새로 부른다.
+    assert attempts == [3, 4], attempts
+    assert [m.reused for m in res.matches] == [True, True, False, False]
+
+
+def test_d4_collect_reports_missing_matches():
+    base, rep = scratch(), FakeReport(3)
+    ws = panelauto.match_workspace("TEST", panel.DATA_ANALYST, 1, base)
+    ws.mkdir(parents=True, exist_ok=True)
+    (ws / panelauto.AGENT_OUTPUT).write_text(json.dumps(opinion_obj(1)),
+                                             encoding="utf-8")
+    rows, missing = panelauto.collect_stage(rep, panel.DATA_ANALYST, base)
+    assert len(rows) == 1 and missing == [2, 3]
+    # 번호는 **프로그램이** 붙인다 — 모델이 적은 값을 믿지 않는다.
+    assert rows[0][panelwork.STAGE_NO] == 1
+
+
+# ==========================================================================
+# E. 기존 계약을 바꾸지 않는다
+# ==========================================================================
+def test_e1_prompts_are_not_copied():
+    """프롬프트 문장을 이 모듈에 복사하지 않는다 (§11)."""
+    src = source_of(panelauto)
+    for text in (panel.SYSTEM_COMMON, panel.ROLE_PROMPTS[panel.DATA_ANALYST],
+                 panel.ROLE_PROMPTS[panel.MATCHUP_ANALYST]):
+        for line in [x.strip() for x in text.splitlines() if len(x.strip()) > 25]:
+            assert line not in src, f"프롬프트를 베꼈다: {line[:50]}"
+    # 대신 상수를 그대로 쓴다.
+    code = module_code(panelauto)
+    assert "panel.SYSTEM_COMMON" in code
+    assert "panel.ROLE_PROMPTS" in code
+    assert "moderator.system_prompt" in code
+
+
+def test_e2_existing_cli_paths_are_reused():
+    """조립·검증·[4] 를 다시 구현하지 않는다 (§14·§19·§21·§22)."""
+    code = module_code(panelauto)
+    for flag in ("--save-panel-opinion", "--build-moderator-input",
+                 "--save-moderator-result", "--paste-panel-result"):
+        assert flag in code, f"{flag} 를 쓰지 않는다"
+    # 회차 결과 파일을 직접 만들지 않는다 — `[4]` 의 자리다.
+    assert "panel_results" not in code
+    assert "panelimport.validate" not in code
+    assert "panelpaste" not in code
+
+
+def test_e3_agent_gets_no_bash():
+    """에이전트에게 Bash 를 주지 않는다 (§13)."""
+    assert "Bash" not in panelauto.AGENT_TOOLS
+    assert panelauto.AGENT_TOOLS == "Read,Write"
+    argv = panelauto.agent_argv("claude", "p", "s", Path("/w"), "sid")
+    tools = argv[argv.index("--allowedTools") + 1]
+    assert "Bash" not in tools
+
+
+def test_e4_workspace_is_confined():
+    """작업 폴더 밖을 보지 않게 한다 (§19 보안)."""
+    argv = panelauto.agent_argv("claude", "p", "s", Path("/w/x"), "sid")
+    assert "--add-dir" in argv
+    assert argv[argv.index("--add-dir") + 1] == str(Path("/w/x"))
+
+
+def test_e5_downstream_modules_do_not_know_panelauto():
+    """연결은 **한 방향**이다 — 기존 모듈이 자동화를 참조하지 않는다."""
+    from toto import panelaudit, panelpaste
+    for mod in (panelimport, panelpaste, panelaudit, panel, moderator,
+                panelwork):
+        assert "panelauto" not in source_of(mod), mod.__name__
+
+
+def test_e6_canonical_serialization_is_untouched():
+    """자료는 canonical 직렬화 그대로다 — 줄바꿈만 넣는다.
+
+    `serialize_payload()` 는 캐시 키의 근거라 한 글자도 바뀌면 안 된다.
+    파일에 쓰는 것은 같은 자료를 다시 들여쓴 것이고, A·B 가 **같은
+    문자열**을 받는다는 불변조건도 그대로다.
+    """
+    node = fn_node(panelauto, "payload_text")
+    assert "panel.serialize_payload" in calls_in(node)
+    src = source_of(panel)
+    assert 'separators=(",", ":")' in src, "canonical 직렬화가 바뀌었다"
+
+
+def test_e7_prompt_versions_are_unchanged():
+    assert panel.PANEL_PROMPT_VERSION == "4"
+    assert moderator.MODERATOR_PROMPT_VERSION == "6"
+    assert panelimport.SCHEMA_VERSION == "1.1"
+
+
+# ==========================================================================
+# F. 메뉴 재구성
+# ==========================================================================
+def test_f1_menu_follows_the_work_order():
+    """메뉴가 **일하는 순서**로 보인다 (§31·§42)."""
+    from toto import menu
+    keys = [k for k, *_ in menu.ITEMS]
+    assert keys == ["1", "2", "3", "4", "5", "9"], keys
+    titles = {k: t for k, t, *_ in menu.ITEMS}
+    assert "회차 분석" in titles["1"]
+    assert "패널 자동 분석" == titles["2"]
+    assert "리포트" in titles["3"]
+
+
+def test_f2_auto_panel_is_the_normal_entry_point():
+    """`[2]` 가 자동 워크플로로 간다 (§34)."""
+    from toto import menu
+    by_key = {k: a for k, _t, _d, a in menu.ITEMS}
+    assert by_key["2"] == "panel-auto"
+    src = source_of(menu)
+    assert "--panel-auto" in src
+
+
+def test_f3_legacy_api_panel_is_isolated():
+    """레거시 `--panel` 은 정상 workflow 에 없다 (§33)."""
+    from toto import menu
+    top = [a for _k, _t, _d, a in menu.ITEMS]
+    for args in top:
+        assert not (isinstance(args, tuple) and "--panel" in list(args[1])), \
+            f"정상 메뉴에 --panel 이 있다: {args}"
+    # 지우지는 않았다 — 개발 도구 아래 그대로 있다.
+    tools = [a for _k, _t, _d, a in menu.TOOLS]
+    assert any(isinstance(a, tuple) and "--panel" in list(a[1])
+               for a in tools), "레거시 경로를 지웠다"
+
+
+def test_f4_manual_recovery_is_still_reachable():
+    """6-F-3/6-F-4 의 수동 기능에 전부 닿을 수 있다 (§35)."""
+    from toto import menu
+    by_key = {k: a for k, _t, _d, a in menu.ITEMS}
+    assert by_key["4"] == "panel-manual"
+    keys = [k for k, *_ in menu.PANEL_MANUAL]
+    assert keys == ["1", "2", "3", "4", "5", "6", "7", "8"], keys
+    # 옮긴 것이지 새로 만든 것이 아니다 — 기존 함수를 부른다.
+    src = source_of(menu)
+    assert "_panel_work_for" in src and "_pick_panel_file" in src
+
+
+def test_f5_cli_contract_is_unchanged():
+    """메뉴를 바꿔도 CLI 인자는 그대로다 (§32)."""
+    from toto import cli
+    parser = cli.build_parser()
+    src = source_of(cli)
+    for flag in ("--panel", "--panel-export", "--save-panel-opinion",
+                 "--build-moderator-input", "--save-moderator-result",
+                 "--paste-panel-result", "--import-panel-result",
+                 "--panel-workflow-status", "--rerender-artifact",
+                 "--settle-round", "--market-eval"):
+        assert flag in src, f"{flag} 가 사라졌다"
+    args = parser.parse_args(["--round", "R", "--panel-auto"])
+    assert args.panel_auto and args.round_id == "R"
+    # 기본값은 꺼져 있다 — 아무것도 주지 않으면 예전과 같다.
+    assert parser.parse_args(["--demo"]).panel_auto is False
+    assert parser.parse_args(["--demo"]).auto_model is None
+
+
+def test_f6_menu_does_not_reimplement_the_workflow():
+    """메뉴가 오케스트레이션을 다시 쓰지 않는다 (§1-20 과 같은 이유)."""
+    from toto import menu
+    src = source_of(menu)
+    for bad in ("run_stage_ab", "run_stage_c", "panelauto.run",
+                "run_match_role", "subprocess"):
+        assert bad not in src, f"menu.py 가 {bad} 를 직접 쓴다"
+
+
+# ==========================================================================
+# G. 전체 워크플로 (가짜 에이전트로 — 돈이 들지 않는다)
+# ==========================================================================
+def test_g1_stage_order_a_then_b():
+    """A 가 끝나야 B 를 시작한다 (§18)."""
+    node = fn_node(panelauto, "run")
+    body = code_of(node)
+    assert body.index("DATA_ANALYST") < body.index("MATCHUP_ANALYST")
+
+
+def test_g2_c_reads_only_the_assembled_sheet():
+    """C 는 A·B 원본을 읽지 않는다 (§20)."""
+    node = fn_node(panelauto, "run_stage_c")
+    body = code_of(node)
+    assert "COMPLETED_SHEET" in body
+    for bad in ("analyst_a", "analyst_b", "ROLE_DIRS", "match_workspace"):
+        assert bad not in body, f"C 가 {bad} 를 본다"
+
+
+def test_g3_apply_uses_the_existing_paste_path():
+    """[4] 반영은 기존 경로다 (§22)."""
+    body = code_of(fn_node(panelauto, "run"))
+    assert "--paste-panel-result" in body
+    assert "moderator_result_path" in body
+
+
+def test_g4_completed_stages_are_skipped():
+    """상태를 먼저 읽고 끝난 단계는 건너뛴다 (§23)."""
+    body = code_of(fn_node(panelauto, "run"))
+    assert "panelwork.workflow" in body
+    for key in ("STAGE_A", "STAGE_B", "STAGE_INPUT", "STAGE_RESULT"):
+        assert key in body, f"{key} 를 보지 않는다"
+
+
+def test_g5_sequential_not_parallel():
+    """순차 실행이다 (§15)."""
+    code = module_code(panelauto)
+    for bad in ("ThreadPool", "ProcessPool", "asyncio", "concurrent.futures",
+                "threading"):
+        assert bad not in code, f"{bad} 로 병렬 실행한다"
+
+
+def test_g6_no_new_third_party_dependency():
+    """표준 라이브러리만 쓴다 (§43)."""
+    std = {"json", "os", "shutil", "subprocess", "uuid", "dataclasses",
+           "pathlib", "__future__", "toto", "models", "moderator", "panel",
+           "panelexport", "panelwork", "artifact", "settings", "cli", "llm",
+           "annotations", "dataclass", "field", "Path", "Report",
+           "strip_fence", "main", "load_settings"}
+    unknown = imported_names(panelauto) - std
+    assert not unknown, f"새 의존성: {unknown}"
+
+
+def main() -> int:
+    print("Phase 6-F-6 — 패널 자동 실행 (claude -p)")
+    for name, fn in sorted(globals().items()):
+        if name.startswith("test_") and callable(fn):
+            check(name, fn)
+    print(f"\n{_PASSED}/{_PASSED + _FAILED} 통과")
+    return 1 if _FAILED else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

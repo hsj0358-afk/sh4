@@ -813,14 +813,20 @@ def test_e6_overwrite_default_is_no():
         menu._ask = orig
 
 
-def test_e7_menu_numbers_1_to_5_are_unmoved():
-    """기존 메뉴 번호를 밀지 않았다 — 문서 여러 곳이 `[4]` 를 가리킨다."""
+def test_e7_manual_workflow_is_still_reachable():
+    """6-F-4 의 수동 기능에 여전히 닿을 수 있다.
+
+    **범위를 옮겼다** — 6-F-6 이 메뉴를 일하는 순서로 다시 짜면서 단계별
+    항목을 `[4] 패널 수동 진행·복구` 아래로 모았다(§35). 지키려는 것은
+    번호가 아니라 **기능에 닿을 수 있다는 것**이다.
+    """
     from toto import menu
-    keys = [k for k, *_ in menu.ITEMS]
-    assert keys == ["1", "2", "3", "4", "5", "6", "9"], keys
-    by_key = {k: t for k, t, *_ in menu.ITEMS}
-    assert "패널 결과 반영" in by_key["4"]
-    assert "폰에서 열기" in by_key["5"]
+    by_key = {k: a for k, _t, _d, a in menu.ITEMS}
+    assert by_key["4"] == "panel-manual"
+    src = Path(menu.__file__).read_text(encoding="utf-8")
+    for flag in ("--save-moderator-result", "--paste-panel-result",
+                 "--panel-workflow-status", "--import-panel-result"):
+        assert flag in src, f"{flag} 에 닿을 수 없다"
 
 
 # ==========================================================================

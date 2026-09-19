@@ -4781,6 +4781,154 @@ CLI 인자는 둘만 늘었다 — `--save-moderator-result` · `--panel-workflo
 
 회귀 테스트: `python tests/test_panel_workflow.py` (49개).
 
+### 1-42. 패널 자동 실행 (Phase 6-F-6) — `toto/panelauto.py`
+
+6-F-5 조사가 **Cowork 가 아니라 Claude Code headless(`claude -p`)** 가 맞는
+엔진이라고 판정했고, 이 Phase 가 그것을 production 경로로 만든다. 메뉴
+`[2] 패널 자동 분석` 한 번으로 A·B·C 를 돌리고 기존 `[4]` 까지 간다.
+
+```
+[1] 회차 분석 → [2] 패널 자동 분석 → A 14경기 → B 14경기 → 조립
+                                   → C 1회 → 기존 [4] → 최종 HTML
+```
+
+**Anthropic API 를 직접 부르지 않는다.** `anthropic` 을 import 하지 않고
+`[2] --panel` 의 API executor(`run_match`·`run_panel_role`·`attach_panels`·
+`run_moderator`)를 호출하지 않는다(AST 테스트). 모델을 부르는 유일한 길은
+`claude` 실행 파일을 subprocess 로 띄우는 것이고 인증은 구독 로그인이다.
+실측: 오케스트레이터 프로세스에서 `anthropic` **미로드** · `toto.sources`
+**빈 목록** · `llm` 클라이언트 **미생성**.
+
+#### 비용은 프로그램이 결정하지 않는다
+
+| 장치 | 무엇 |
+|---|---|
+| `ANTHROPIC_API_KEY` 감지 | **preflight 에서 시작 자체를 막는다.** 키가 있으면 구독이 아니라 API 로 과금된다(공식 문서 경고) |
+| `build_agent_env()` | 자식 env 에서 `ANTHROPIC_API_KEY`·`ANTHROPIC_AUTH_TOKEN` 제거 (이중 방어) |
+| `--bare` 금지 | 그 모드는 **구독 로그인을 읽지 않고** API 키를 요구한다 |
+| 사용량 한도 | `WORKFLOW_STOPPED_USAGE_LIMIT` 로 **멈춘다.** 크레딧 전환·결제·Console 자격증명 추가를 하지 않는다 |
+
+**구독 로그인 정보까지 지우지는 않는다** — `SCRUB_API`·`SCRUB_SESSION` 에
+적은 것만 지우고 나머지 `CLAUDE_*` 는 남긴다. 다 지우면 인증이 사라진다.
+
+#### A/B 독립성은 구조로 건다
+
+프롬프트로 "보지 마십시오" 라고 적는 것으로는 부족하다. 셋을 모두 건다.
+
+```
+새 OS 프로세스  +  호출마다 새 세션 ID(--session-id)  +  부모 세션 ID 제거
+```
+
+**부모 세션을 물려주면 자식이 같은 세션 ID 를 쓴다** — 6-F-5 POC 에서 실제로
+그랬다. 그래서 `CLAUDE_CODE_SESSION_ID` 를 `SCRUB_SESSION` 으로 걷어낸다.
+작업 폴더도 나눈다 — `auto/a/NN/` 와 `auto/b/NN/` 이고 **A 를 돌리면 B 폴더가
+아예 생기지 않는다**(테스트). 실측 A 세션 `b634c64d…` · B 세션 `2f4ac5a0…`.
+
+#### 검증기를 새로 만들지 않는다
+
+경기 하나의 내용은 `panel.parse_opinion()` 이 본다 — 수동 경로·API 경로가
+쓰는 그 함수다. 회차 단위는 **기존 CLI 인자를 그대로 태운다.**
+
+```
+경기별 out.json ×14 → 배열 조립 → --save-panel-opinion  (기존 검증)
+                               → --build-moderator-input
+C out.json         → --save-moderator-result            (기존 검증)
+                   → --paste-panel-result → panelimport → panelaudit → HTML
+```
+
+`panelauto` 는 `panel_results/` 에 쓰지 않고 `panelimport.validate` 도 직접
+부르지 않는다(테스트). **연결은 한 방향**이고 기존 모듈은 `panelauto` 라는
+낱말을 모른다.
+
+#### 책임을 나눈다
+
+```
+Claude ─ 분석만 한다 (Read·Write 뿐, **Bash 없음**)
+Python ─ 검증·조립·[4] 실행을 전부 맡는다
+```
+
+`--add-dir` 로 작업 폴더 밖을 보지 못하게 하고 `--permission-prompts none`
+으로 사람에게 물어야 하는 것은 거부한다 — 무인 실행이 조용히 멈추지 않는다.
+
+#### 자료는 canonical 그대로, 줄바꿈만 넣는다
+
+`panel.serialize_payload()` 는 캐시 키의 근거라 **minified 한 줄**로 나온다
+(실측 122,772자 · 줄바꿈 0). 그대로 파일에 쓰면 Read 도구가 긴 줄을 잘라
+읽어 모델이 **부분 읽기를 15회** 반복했다 — 한 경기에 **$1.55**. 같은 자료를
+`json.loads`→`json.dumps(indent=1)` 로 다시 들여쓰니 **$1.08** 이 됐다.
+
+  · **`serialize_payload()` 는 한 글자도 바뀌지 않았다** — 캐시 키도 수동
+    경로도 그대로다(테스트가 `separators=(",", ":")` 를 고정한다).
+  · A·B 가 받는 문자열은 여전히 **서로 같다** (3-B 불변조건 2).
+
+#### 순차 실행이고, 끝난 것은 건너뛴다
+
+14경기를 동시에 띄우지 않는다 — 실패 위치가 분명해야 하고 사용량이 한꺼번에
+빠지면 안 된다. `ThreadPool`·`asyncio` 가 모듈에 없다(테스트).
+
+재개는 **파일이 정한다** (6-F-4 의 상태 구조를 그대로 쓴다). 경기별
+`out.json` 이 **검증까지 통과할 때만** 완료로 보므로, 깨진 결과가 남아 있으면
+다시 돈다. 실측: 3번에서 실패시키면 시도가 `[1,2,3]` 이고, 다시 돌리면
+`[3,4]` 만 부르며 1·2 는 보존된다.
+
+**한 경기라도 실패하면 거기서 멈춘다** — 잘못된 결과로 다음 단계에 가지
+않는다. A 가 끝나야 B 를 시작한다.
+
+#### 실측 비용 — 이 Phase 에서 가장 중요한 수
+
+| | turns | 시간 | 비용(client-side 추정) |
+|---|---|---|---|
+| A 경기 1개 (sonnet) | 15 | 92초 | **$1.08** |
+| B 경기 1개 (sonnet) | — | 141초 | **$1.67** |
+| C 회차 1회 (sonnet) | 8 | 546초 | **$1.97** |
+
+회차 전체(A14+B14+C1 = **29 호출**)를 **$40 안팎**으로 어림한다 — 위 실측에
+경기 수를 곱한 값이고 공식 수치가 아니다. **haiku 로는 실패했다**(파일을
+쓰지 않음). 모델은 `--auto-model` 로 고르고, 주지 않으면 Claude Code 의 기본
+모델을 쓴다.
+
+#### 메뉴를 일하는 순서로 다시 짰다
+
+```
+현재                              →  변경 후
+[1] 회차 지정해서 수집               [1] 회차 분석                (그대로)
+[2] 패널 분석까지 (API·유료)         [9] → [7] 레거시 API 패널     (격리)
+[3] 패널 자료 내보내기               [4] → [1]
+[4] 패널 결과 반영                   [4] → [7]
+[5] 폰에서 열기                      [5] 폰에서 열기              (그대로)
+[6] 클로드 채팅 단계별 진행          [4] 패널 수동 진행·복구 하위로
+ —                                  [2] 패널 자동 분석           ← 신규
+ —                                  [3] 최종 리포트 다시 만들기   ← 신규
+[9] 개발·진단 도구                   [9] (그대로) + 레거시 [7]
+```
+
+  · **CLI 인자는 하나도 바뀌지 않았다** (§32). 메뉴는 예전처럼 기존 인자를
+    만들어 같은 경로를 태울 뿐이다 — 새로 는 것은 `--panel-auto` ·
+    `--auto-model` 둘뿐이다.
+  · **레거시 `--panel` 을 지우지 않았다.** 동작도 인자도 그대로이고 개발
+    도구 아래로 내렸을 뿐이다 — 정상 메뉴에 `--panel` 이 없는 것을 테스트가
+    고정한다.
+  · 6-F-3/6-F-4 의 수동 기능에 전부 닿을 수 있다 (`[4]` 하위 8개). 옮긴
+    것이지 새로 만든 것이 아니라 `_panel_work_for()`·`_pick_panel_file()` 을
+    그대로 부른다.
+
+#### 값이 바뀌지 않았다
+
+`--demo` 668,447 · `--rerender-artifact 260052` 942,802 · 경기자료 MD
+1,209,043 · `moderator_data_sheet` 112,117(sha `36e95d31`) · artifact md5
+`01553f82…` · PANEL 4 · MODERATOR 6 · 지침 지문 `fe098456` · schema 1.1 이
+**전부 그대로**다. `panel.py`·`panelpaste.py`·`panelimport.py`·
+`panelaudit.py`·`panelwork.py`·`panelexport.py`·`moderator.py`·`analyze.py`·
+`models.py`·`predict.py`·`render.py` **diff 0줄**.
+
+**기존 테스트 18개의 범위를 옮겼다 — 기대값을 바꾼 것이 아니다.**
+전부 **메뉴 번호 핀**이고, §30~34 가 요구한 재배치 때문에 깨졌다
+(§1-29·§1-31 과 같은 교정). 지키려던 것은 자리가 아니라 ① 레거시 경로를
+지우지 않았다 ② 수집 항목은 회차를 먼저 묻는다 ③ 근거 질문이 실행 앞에 온다
+④ 수동 기능에 닿을 수 있다 이고, 전부 새 자리에서 그대로 확인한다.
+
+회귀 테스트: `python tests/test_panel_auto.py` (46개).
+
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
 260052 실행이 남긴 것은 후스코어드 `팀명 매칭 실패` 5건과 `강점 0개` 3팀이다.
@@ -5390,6 +5538,8 @@ python -m toto --round R --save-panel-opinion F.json --role a  # 클로드 1·2�
 python -m toto --round R --build-moderator-input   # 보관본을 match_no 로 조립 → 03_사회자자료_완성.md (6-F-3 §1-40)
 python -m toto --round R --save-moderator-result F.json  # 3단계 결과 검증·보관 · API 안 부른다 (6-F-4 §1-41)
 python -m toto --round R --panel-workflow-status  # 어디까지 왔나 · 파일만 읽는다 (6-F-4 §1-41)
+python -m toto --round R --panel-auto      # 패널 자동 분석 A·B·C → [4] → HTML · claude -p · 구독 (6-F-6 §1-42)
+python -m toto --round R --panel-auto --auto-model sonnet   # 모델 지정 (기본은 Claude Code 기본 모델)
 #  보관한 3단계 결과는 기존 --paste-panel-result 에 그대로 태운다 (새 포맷 없음)
 #  메뉴 [6] 이 위 전부를 한다 — [3] 뒤, [4] 앞에 쓴다
 #  메뉴 [9] → [6] 이 같은 일을 한다. 오늘 캐시를 무시하려면 --no-cache 를 함께 준다
@@ -5447,6 +5597,7 @@ python tests/test_relationship_delivery.py # 관계 전달 경로·qualitative 6
 python tests/test_real_recollection.py     # 실측 재수집·스타일 제목·placeholder 6-E-5 §1-39 (26개)
 python tests/test_panel_work.py           # 1·2단계 보관·3단계 조립 6-F-3 §1-40 (60개)
 python tests/test_panel_workflow.py       # 3단계 결과 보관·[4] 연결·상태 6-F-4 §1-41 (49개)
+python tests/test_panel_auto.py           # 패널 자동 실행·비용 안전장치·A/B 격리 6-F-6 §1-42 (46개)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)
@@ -5456,4 +5607,7 @@ python tests/test_league_stat_table.py     # 리그 팀 통계 표·탭 주소 5
 python tools/diagnose_whoscored.py         # 실패 원본 진단 · 리그 3절(팀 통계) 판정 §3-9
 ```
 
-메뉴(바탕화면 바로가기 / `toto_menu.bat`) 구성은 §1-7-2 참고.
+메뉴 구성은 **§1-42 의 표**가 최신이다 (6-F-6 에서 일하는 순서로 재배치).
+`[1] 회차 분석 → [2] 패널 자동 분석 → [3] 최종 리포트` 가 정상 경로이고,
+단계별 수동·복구는 `[4]`, 개발·레거시는 `[9]` 아래다. §1-7-2 는 그 이전
+기록이다.

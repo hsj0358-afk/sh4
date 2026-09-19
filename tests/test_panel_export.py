@@ -312,15 +312,20 @@ def test_c12_cli_flag_implies_the_export():
 
 
 def test_c13_menu_offers_it_before_the_run():
-    """다 돌린 뒤에 알게 하지 않는다. `[3]` 이 시작할 때 묻는다."""
+    """다 돌린 뒤에 알게 하지 않는다. **시작할 때** 묻는다.
+
+    **범위를 옮겼다** — 6-F-6 이 메뉴를 일하는 순서로 다시 짜면서 자료
+    내보내기가 `[4] → [1]` 로 갔다(§35). 지키려는 것은 자리가 아니라
+    **질문이 실행 앞에 온다는 것**이다.
+    """
     src = (Path(__file__).resolve().parent.parent / "toto" / "menu.py"
            ).read_text(encoding="utf-8")
     assert "--panel-export-all" in src, src[-400:]
     from test_menu_flow import drive
-    # [3] → 회차 비움 → 'y' → 종료
-    _code, calls, _out = drive(["3", "", "y", "", "0"])
+    # [4] → [1] → 회차 비움 → 'y' → 종료
+    _code, calls, _out = drive(["4", "1", "", "y", "", "0"])
     assert calls == [["--panel-export-all", "--open"]], calls
-    _code, calls, _out = drive(["3", "", "", "", "0"])
+    _code, calls, _out = drive(["4", "1", "", "", "", "0"])
     assert calls == [["--panel-export", "--open"]], calls
 
 
@@ -552,14 +557,22 @@ def test_e1_cli_flag_exists_and_does_not_need_a_key():
 
 
 def test_e2_menu_item_does_not_call_the_api():
-    from toto.menu import ITEMS, ROUND
-    entry = [i for i in ITEMS
-             if isinstance(i[3], tuple) and "--panel-export" in i[3][1]]
-    assert entry, [i[0] for i in ITEMS]
-    kind, flags = entry[0][3]
-    assert kind == ROUND, "회차를 묻지 않는다"
-    assert "--panel" not in flags, flags
-    assert "--skip-match-details" not in flags, "슛맵이 없으면 근거가 없다"
+    """자료 내보내기는 API 를 부르지 않고 회차를 먼저 묻는다.
+
+    6-F-6 부터 `[4] → [1]` 이 인자를 **만들어** 주므로, 표에서 찾는 대신
+    실제로 만들어진 인자를 본다.
+    """
+    from toto import menu
+    it = iter(["1", "260050"])
+    real, menu._ask = menu._ask, lambda p="": next(it, None)
+    try:
+        built = menu._panel_manual_args()
+    finally:
+        menu._ask = real
+    assert built[:2] == ["--round", "260050"], "회차를 묻지 않는다"
+    assert "--panel-export" in built, built
+    assert "--panel" not in built, built
+    assert "--skip-match-details" not in built, "슛맵이 없으면 근거가 없다"
 
 
 # ------------------------------------------------ 3단계는 스코어까지 간다

@@ -81,6 +81,7 @@ MODERATOR_DIR = "c"
 
 AGENT_INPUT = "payload.md"          # 에이전트가 읽을 자료
 AGENT_OUTPUT = "out.json"           # 에이전트가 쓸 결과
+AGENT_SYSTEM = "system.md"          # 시스템 프롬프트 (명령줄에 싣지 않는다)
 AGENT_ENVELOPE = "run.json"         # claude -p 가 돌려준 실행 봉투
 AGENT_FAIL = "fail.txt"             # 실패 사유 (있으면 그 경기는 실패다)
 
@@ -648,17 +649,38 @@ def moderator_workspace(round_id: str, base: Path | None = None) -> Path:
 # ==========================================================================
 # 에이전트 실행
 # ==========================================================================
-def agent_argv(exe: str, prompt: str, system: str, workspace: Path,
+def one_line(text: str) -> str:
+    """명령줄에 실을 수 있게 **줄바꿈을 없앤다.** 낱말은 버리지 않는다.
+
+    윈도우에서 `claude` 는 npm 셸 심(`claude.CMD`)이라 실제 계층이
+    `python → claude.CMD → cmd.exe → node.exe` 다. `cmd.exe` 는 명령줄을
+    **한 줄로** 읽으므로 인자 안의 줄바꿈이 거기서 명령을 끊는다 — 따옴표
+    안이어도 마찬가지다. 리눅스에서는 무해해서 6-F-6 실측에서는 드러나지
+    않았다.
+    """
+    raw = (text or "").replace("\r\n", "\n").replace("\r", "\n")
+    return " ".join(p.strip() for p in raw.split("\n") if p.strip())
+
+
+def agent_argv(exe: str, prompt: str, system_file, workspace: Path,
                session_id: str, model: str = "") -> list:
     """`claude -p` 명령줄. **실행하지 않고 만들기만 한다** (테스트 가능).
 
     `--bare` 를 넣지 않는다 — 그 모드는 구독 로그인을 읽지 않고
     `ANTHROPIC_API_KEY` 를 요구해서, 이 워크플로의 비용 전제를 깬다.
+
+    **어떤 인자에도 줄바꿈이 없다** (Phase 6-F-7 후속). 시스템 프롬프트는
+    파일로 넘기고(`--append-system-prompt-file`) 지시문은 한 줄로 만든다 —
+    실측으로 이 명령줄에 원래 줄바꿈이 54~93개 실려 있었다. 규칙을 여기
+    한 곳에 두어 부르는 쪽이 저마다 다듬지 않게 한다 (§1-8).
+
+    **모델에게 가는 시스템 프롬프트 글자는 바뀌지 않는다** — 같은 문자열을
+    인자 대신 파일로 옮겼을 뿐이다 (`PANEL_PROMPT_VERSION` 무관).
     """
-    argv = [exe, "-p", prompt,
+    argv = [exe, "-p", one_line(prompt),
             "--output-format", "json",
             "--session-id", session_id,      # 호출마다 새 세션 (§8)
-            "--append-system-prompt", system,
+            "--append-system-prompt-file", str(system_file),
             "--add-dir", str(workspace),     # 작업 폴더 바깥은 보지 않는다
             "--permission-mode", "acceptEdits",
             "--permission-prompts", "none",  # 물어야 하는 것은 거부된다
@@ -743,7 +765,14 @@ def run_agent(prompt: str, system: str, workspace: Path, *,
 
     wanted = str(uuid.uuid4())          # 호출마다 **새 세션** (§8)
     out.requested_session_id = wanted
-    argv = agent_argv(exe, prompt, system, workspace, wanted, model)
+    # 시스템 프롬프트는 **명령줄이 아니라 파일**로 간다 (`one_line` 주석).
+    sys_file = workspace / AGENT_SYSTEM
+    try:
+        sys_file.write_text(system, encoding="utf-8")
+    except OSError as exc:
+        out.message = f"{AGENT_SYSTEM} 를 쓰지 못했습니다: {exc}"
+        return out
+    argv = agent_argv(exe, prompt, sys_file, workspace, wanted, model)
 
     try:
         proc = subprocess.Popen(
@@ -796,10 +825,14 @@ def run_agent(prompt: str, system: str, workspace: Path, *,
         out.message = text[:200]
         return out
 
-    blob = f"{text}\n{proc_stderr}"
-    out.status = _classify(blob)
-    out.message = (text or proc_stderr).strip()[:300] \
-        or f"종료코드 {proc.returncode}"
+    # 분류·사유 모두 **raw 까지 본다.** 예전에는 JSON 이 아닌 stdout 을
+    # 통째로 버려서, 모델이 아니라 CLI 가 낸 오류(`unknown option …`)가
+    # 화면에서 `종료코드 1` 한 줄로 뭉개졌다 (§1-6-1).
+    out.status = _classify(f"{text}\n{raw}\n{proc_stderr}")
+    detail = (text or raw or proc_stderr).strip()
+    out.message = detail[:300] or (
+        f"종료코드 {proc.returncode} · stdout·stderr 가 둘 다 비었습니다 "
+        f"(실행 봉투: {workspace / AGENT_ENVELOPE})")
     return out
 
 
@@ -1301,7 +1334,8 @@ def _run_stages(report, settings, out: AutoResult, pre: Preflight, done: dict,
 
 __all__ = [
     "AUTO_DIRNAME", "ROLE_DIRS", "MODERATOR_DIR",
-    "AGENT_INPUT", "AGENT_OUTPUT", "AGENT_ENVELOPE", "AGENT_FAIL",
+    "AGENT_INPUT", "AGENT_OUTPUT", "AGENT_SYSTEM", "AGENT_ENVELOPE",
+    "AGENT_FAIL",
     "PANEL_AGENT_TIMEOUT", "MODERATOR_AGENT_TIMEOUT",
     "SCRUB_API", "SCRUB_SESSION", "AGENT_TOOLS", "OPINION_KEYS",
     "AGENT_OK", "AGENT_INVALID", "AGENT_TIMEOUT", "AGENT_USAGE_LIMIT",
@@ -1315,6 +1349,6 @@ __all__ = [
     "cli_probe", "auth_status", "resolve_model",
     "find_claude_cli", "build_agent_env", "preflight",
     "auto_dir", "match_workspace", "moderator_workspace",
-    "agent_argv", "run_agent", "payload_text", "run_match_role", "verify_match", "collect_stage",
+    "one_line", "agent_argv", "run_agent", "payload_text", "run_match_role", "verify_match", "collect_stage",
     "run_existing_cli", "run_stage_ab", "run_stage_c", "run", "check",
 ]

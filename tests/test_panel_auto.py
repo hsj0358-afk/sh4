@@ -1329,6 +1329,111 @@ def test_j6_check_is_reachable_from_the_menu():
     assert legacy and legacy[0][0] == "7", legacy
 
 
+# ==========================================================================
+# K. 명령줄에 줄바꿈을 싣지 않는다 (6-F-7 후속 · 실물 윈도우 실패)
+#
+#    실물에서 `[2/5] 데이터 분석 A → 01/14 ✗ 종료코드 1` 로 멈췄다.
+#    윈도우의 실제 계층은 `python → claude.CMD → cmd.exe → node.exe` 이고,
+#    `cmd.exe` 는 명령줄을 **한 줄로** 읽는다. 그런데 이 명령줄에는 시스템
+#    프롬프트 때문에 줄바꿈이 **54~93개** 실려 있었다 (실측).
+# ==========================================================================
+def _real_argv(role: str, ws: Path) -> list:
+    """실물 프롬프트로 만든 명령줄. 합성 문자열로 재지 않는다."""
+    prompt = panelauto._io_contract(" · ".join(panelauto.OPINION_KEYS))
+    return panelauto.agent_argv("claude.CMD", prompt,
+                                ws / panelauto.AGENT_SYSTEM, ws, "sid",
+                                "sonnet")
+
+
+def test_k1_no_argument_carries_a_newline():
+    """어떤 인자에도 줄바꿈이 없다 — `cmd.exe` 가 거기서 명령을 끊는다."""
+    ws = Path("C:/Users/x/sh4/panel_work/260054/auto/a/01")
+    for role in panel.ROLES:
+        for arg in _real_argv(role, ws):
+            assert "\n" not in arg and "\r" not in arg, \
+                f"{role}: 줄바꿈이 실린 인자 {arg[:60]!r}"
+
+
+def test_k2_the_system_prompt_goes_as_a_file():
+    """시스템 프롬프트를 인자로 싣지 않는다 — 파일 경로로 넘긴다."""
+    ws = Path("/w/a/01")
+    argv = _real_argv(panel.DATA_ANALYST, ws)
+    assert "--append-system-prompt" not in argv, "인라인으로 싣고 있다"
+    assert "--append-system-prompt-file" in argv
+    path = argv[argv.index("--append-system-prompt-file") + 1]
+    assert path == str(ws / panelauto.AGENT_SYSTEM), path
+    # 그 파일은 작업 폴더 안이라 `--add-dir` 범위를 넓히지 않는다 (§19).
+    assert str(ws) in path
+
+
+def test_k3_the_prompt_argument_is_cmd_safe():
+    """`-p` 인자에 `cmd.exe` 가 해석하는 글자를 싣지 않는다.
+
+    따옴표 안이어도 `%VAR%` 는 확장되고 줄바꿈은 명령을 끊는다.
+    """
+    argv = _real_argv(panel.DATA_ANALYST, Path("/w"))
+    prompt = argv[argv.index("-p") + 1]
+    for bad in ("\n", "\r", "%"):
+        assert bad not in prompt, f"{bad!r} 가 실렸다"
+
+
+def test_k4_one_line_keeps_every_word():
+    """한 줄로 만들되 **낱말은 하나도 버리지 않는다.**"""
+    src = "첫 줄\r\n\r\n  가운데 줄  \n끝 줄\n"
+    got = panelauto.one_line(src)
+    assert got == "첫 줄 가운데 줄 끝 줄", repr(got)
+    for text in (panelauto._io_contract("k"),
+                 panel.SYSTEM_COMMON):
+        assert panelauto.one_line(text).split() == text.split()
+
+
+def test_k5_the_system_text_itself_is_unchanged():
+    """모델에게 가는 시스템 프롬프트 **글자는 그대로다.**
+
+    자리를 인자에서 파일로 옮겼을 뿐이다 — 프롬프트 판이 바뀌지 않는다.
+    """
+    ws = scratch() / "a" / "01"
+    ws.mkdir(parents=True)
+    system = panel.SYSTEM_COMMON + "\n\n" \
+        + panel.ROLE_PROMPTS[panel.MATCHUP_ANALYST]
+    cli = fake_cli(scratch(), "printf '{\"result\":\"DONE\"}'\n")
+    run = panelauto.run_agent("지시", system, ws, timeout=60, cli=str(cli))
+    assert run.ok, (run.status, run.message)
+    got = (ws / panelauto.AGENT_SYSTEM).read_text(encoding="utf-8")
+    assert got == system, "시스템 프롬프트가 달라졌다"
+    assert panel.PANEL_PROMPT_VERSION == "4"
+    assert moderator.MODERATOR_PROMPT_VERSION == "6"
+
+
+def test_k6_non_json_stdout_is_not_swallowed():
+    """JSON 이 아닌 stdout 을 버리지 않는다 (§1-6-1).
+
+    예전에는 `result` 칸만 읽고 나머지를 버려서, CLI 가 낸 오류가 화면에서
+    `종료코드 1` 한 줄로 뭉개졌다 — 실물 윈도우에서 정확히 그랬다.
+    """
+    ws = scratch() / "a" / "01"
+    ws.mkdir(parents=True)
+    cli = fake_cli(scratch(),
+                   "printf \"error: unknown option '--zzz'\\n\"; exit 1\n")
+    run = panelauto.run_agent("지시", "시스템", ws, timeout=60, cli=str(cli))
+    assert not run.ok
+    assert "unknown option" in run.message, run.message
+    assert (ws / panelauto.AGENT_ENVELOPE).read_text(
+        encoding="utf-8").strip().startswith("error:")
+
+
+def test_k7_empty_output_says_so_and_points_at_the_envelope():
+    """정말 아무 출력도 없으면 **그렇다고 적고** 봉투 자리를 알려 준다."""
+    ws = scratch() / "a" / "01"
+    ws.mkdir(parents=True)
+    cli = fake_cli(scratch(), "exit 1\n")
+    run = panelauto.run_agent("지시", "시스템", ws, timeout=60, cli=str(cli))
+    assert not run.ok
+    assert "종료코드 1" in run.message
+    assert "비었습니다" in run.message, run.message
+    assert panelauto.AGENT_ENVELOPE in run.message, run.message
+
+
 def main() -> int:
     print("Phase 6-F-6 — 패널 자동 실행 (claude -p)")
     for name, fn in sorted(globals().items()):

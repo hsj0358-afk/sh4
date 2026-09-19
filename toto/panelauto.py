@@ -843,21 +843,55 @@ def run_agent(prompt: str, system: str, workspace: Path, *,
 # ==========================================================================
 # A · B — 경기 단위
 # ==========================================================================
+# 한 줄에 담을 글자 수. **Read 도구가 한 번에 가져가게** 만드는 값이다 —
+# 줄이 너무 길면 잘려 읽히고(6-F-6 실측), 너무 짧으면 줄 수가 불어나 여러
+# 번 읽게 된다. 실물 260052 열네 경기에서 최악이 885줄 · 814자다.
+PAYLOAD_LINE_BUDGET = 800
+
+
+def _wrap_json(obj, level: int = 0) -> str:
+    """JSON 을 **줄당 `PAYLOAD_LINE_BUDGET` 자 안쪽**으로 접어 쓴다.
+
+    한 노드의 compact 표현이 예산 안에 들면 그대로 한 줄로 두고, 넘칠 때만
+    자식으로 내려간다. 그래서 줄 수가 최소가 되면서도 어떤 줄도 길어지지
+    않는다 — 고정 들여쓰기(`indent=1`)가 스칼라마다 줄을 바꾸던 것과 반대다.
+    """
+    flat = json.dumps(obj, ensure_ascii=False, sort_keys=True,
+                      separators=(",", ":"))
+    if len(flat) + level <= PAYLOAD_LINE_BUDGET \
+            or not isinstance(obj, (dict, list)) or not obj:
+        return flat
+    pad, inner = " " * level, " " * (level + 1)
+    if isinstance(obj, dict):
+        rows = [f"{inner}{json.dumps(k, ensure_ascii=False)}: "
+                f"{_wrap_json(v, level + 1)}" for k, v in sorted(obj.items())]
+        return "{\n" + ",\n".join(rows) + "\n" + pad + "}"
+    rows = [inner + _wrap_json(v, level + 1) for v in obj]
+    return "[\n" + ",\n".join(rows) + "\n" + pad + "]"
+
+
 def payload_text(payload) -> str:
     """에이전트가 읽을 자료. **자료는 canonical 직렬화 그대로다.**
 
     `panel.serialize_payload()` 는 캐시 키의 근거라 minified 한 줄로 나온다
     (실측 134,536자 · 줄바꿈 0개). 그것을 그대로 파일에 쓰면 Read 도구가
     긴 줄을 잘라 읽어서 모델이 **부분 읽기를 15회** 반복했다 — 실측으로 한
-    경기에 $1.55 가 들었다.
+    경기에 $1.55 가 들었다. 그래서 6-F-6 이 `indent=1` 로 줄을 넣었다.
 
-    그래서 **같은 자료를 줄바꿈만 넣어** 쓴다. `json.loads` → `json.dumps`
-    라 키 순서(`sort_keys`)와 값이 보존되고, A·B 가 받는 문자열은 여전히
-    서로 **똑같다** (3-B 불변조건 2). `serialize_payload()` 자체는 한 글자도
-    바뀌지 않으므로 수동 경로·캐시 키도 그대로다.
+    **그 줄바꿈이 이번에는 반대로 비쌌다 (6-F-8).** 스칼라마다 줄을 바꾸니
+    한 경기가 **6,857줄**이 됐는데 Read 는 한 번에 2,000줄까지만 가져간다 —
+    자료를 다 보기까지 Read 가 네 번 넘게 들어가고, **턴마다 앞서 읽은
+    내용이 다시 실려 간다.** 실물에서 A 8회 + B 3회로 세션 한도에 닿았다.
+
+    이제 같은 자료를 **줄당 800자 안쪽으로 접어** 쓴다 — 실물 한 경기가
+    6,857줄 → 858줄, 166,541자 → 139,307자(들여쓰기 공백이 빠진다).
+
+    **자료는 한 칸도 바뀌지 않는다.** `json.loads` 한 결과가 서로 같고
+    (테스트로 고정), A·B 가 받는 문자열은 여전히 **똑같다** (3-B 불변조건
+    2). `serialize_payload()` 자체는 한 글자도 바뀌지 않으므로 수동 경로·
+    캐시 키도 그대로다.
     """
-    return json.dumps(json.loads(panel.serialize_payload(payload)),
-                      ensure_ascii=False, indent=1, sort_keys=True)
+    return _wrap_json(json.loads(panel.serialize_payload(payload)))
 
 
 def _io_contract(keys: str) -> str:
@@ -1357,6 +1391,7 @@ __all__ = [
     "cli_probe", "auth_status", "resolve_model",
     "find_claude_cli", "build_agent_env", "preflight",
     "auto_dir", "match_workspace", "moderator_workspace",
-    "one_line", "agent_argv", "run_agent", "payload_text", "run_match_role", "verify_match", "collect_stage",
+    "one_line", "agent_argv", "run_agent", "payload_text",
+    "PAYLOAD_LINE_BUDGET", "run_match_role", "verify_match", "collect_stage",
     "run_existing_cli", "run_stage_ab", "run_stage_c", "run", "check",
 ]

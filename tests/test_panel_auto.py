@@ -1444,6 +1444,103 @@ def test_k7_empty_output_says_so_and_points_at_the_envelope():
     assert panelauto.AGENT_ENVELOPE in run.message, run.message
 
 
+# ==========================================================================
+# L. 자료를 한 번에 읽히게 접는다 (6-F-8 · 실물 세션 한도)
+#
+#    실물에서 A 8회 + B 3회로 세션 한도에 닿았다. 원인은 호출 횟수가 아니라
+#    **한 경기 자료가 6,857줄**이라는 것이었다 — Read 는 한 번에 2,000줄까지
+#    가져가므로 자료를 다 보기까지 네 번 넘게 읽고, 턴마다 앞서 읽은 내용이
+#    다시 실려 간다.
+# ==========================================================================
+def _one_payload_text():
+    match = demo_matches(1)[0]
+    payload = panel.build_panel_payload(match)
+    return panel.serialize_payload(payload), panelauto.payload_text(payload)
+
+
+def test_l1_the_data_itself_is_unchanged():
+    """접는 것은 **표시**다 — 자료는 한 칸도 바뀌지 않는다."""
+    canonical, text = _one_payload_text()
+    assert json.loads(text) == json.loads(canonical), "자료가 달라졌다"
+    # canonical 직렬화는 캐시 키의 근거라 그대로여야 한다 (test_e6 과 같은 뜻).
+    assert "\n" not in canonical, "canonical 이 minified 가 아니다"
+
+
+def test_l2_lines_fit_one_read():
+    """줄 수와 줄 길이가 Read 한 번 안에 들어온다."""
+    _canonical, text = _one_payload_text()
+    lines = text.splitlines()
+    assert len(lines) <= 2000, f"{len(lines)}줄 — Read 한 번을 넘는다"
+    widest = max(len(ln) for ln in lines)
+    assert widest <= 2000, f"가장 긴 줄 {widest}자 — 잘려 읽힌다"
+    # 예산은 그 한계보다 넉넉히 아래여야 한다.
+    assert panelauto.PAYLOAD_LINE_BUDGET <= 1500
+
+
+def test_l3_the_budget_is_respected_on_big_data():
+    """예산을 지킨다 — 실물보다 큰 합성 자료로도 본다."""
+    big = {f"team{t}": {f"axis{a}": {f"metric{m}": [m, a, t, "값" * 20]
+                                     for m in range(40)}
+                        for a in range(8)} for t in range(2)}
+    text = panelauto._wrap_json(big)
+    assert json.loads(text) == big, "자료가 달라졌다"
+    over = [ln for ln in text.splitlines()
+            if len(ln) > panelauto.PAYLOAD_LINE_BUDGET * 2]
+    assert not over, f"예산을 크게 넘는 줄 {len(over)}개"
+    # 스칼라 하나가 예산보다 길면 접을 수 없다 — 그건 줄이 길어도 맞다.
+    lone = panelauto._wrap_json({"k": "x" * 5000})
+    assert json.loads(lone) == {"k": "x" * 5000}
+
+
+def test_l4_it_is_neither_one_line_nor_one_line_per_scalar():
+    """두 극단으로 돌아가지 않는다.
+
+    한 줄(minified)은 Read 가 잘라 읽었고(6-F-6 · $1.55), 스칼라마다 줄을
+    바꾸면 줄 수가 불어나 여러 번 읽었다(6-F-8). 가운데가 이 함수다.
+    """
+    _canonical, text = _one_payload_text()
+    lines = text.splitlines()
+    assert len(lines) > 1, "다시 한 줄이 됐다"
+    dense = json.dumps(json.loads(text), ensure_ascii=False, indent=1,
+                       sort_keys=True)
+    assert len(lines) < len(dense.splitlines()), "indent=1 보다 줄이 많다"
+    # 같은 자료라 줄 수만 줄고 내용은 같다.
+    assert json.loads(dense) == json.loads(text)
+
+
+def test_l5_both_analysts_get_the_same_string():
+    """A·B 가 받는 자료는 **글자까지 같다** (3-B 불변조건 2)."""
+    match = demo_matches(1)[0]
+    a = panelauto.payload_text(panel.build_panel_payload(match))
+    b = panelauto.payload_text(panel.build_panel_payload(match))
+    assert a == b
+    # 역할을 보고 자료를 바꾸지 않는다.
+    body = code_of(fn_node(panelauto, "payload_text"))
+    for bad in ("role", "DATA_ANALYST", "MATCHUP_ANALYST"):
+        assert bad not in body, f"payload_text 가 {bad} 를 본다"
+
+
+def test_l6_wrapping_is_deterministic():
+    """같은 자료면 같은 글자가 나온다 — 집합·사전 순서에 기대지 않는다."""
+    obj = {"b": [3, 1, 2], "a": {"z": 1, "y": 2}, "c": "긴 값" * 300}
+    assert panelauto._wrap_json(obj) == panelauto._wrap_json(dict(
+        reversed(list(obj.items()))))
+
+
+def test_l7_the_per_match_session_shape_is_unchanged():
+    """**세션 구조는 건드리지 않았다** — 이번 변경은 자료 표시뿐이다.
+
+    6-F-8 조사에서 'A/B 를 각각 1세션' 은 성립하지 않는 것으로 측정됐다
+    (14경기 약 644k 토큰 > 컨텍스트 200k). 그래서 호출 단위는 그대로 두고
+    읽는 횟수만 줄였다.
+    """
+    body = code_of(fn_node(panelauto, "run_stage_ab"))
+    assert "for" in body and "run_match_role" in body, "경기별 루프가 사라졌다"
+    # 자료를 만드는 곳은 여전히 경기 하나다.
+    role_body = code_of(fn_node(panelauto, "run_match_role"))
+    assert "build_panel_payload(match)" in role_body
+
+
 def main() -> int:
     print("Phase 6-F-6 — 패널 자동 실행 (claude -p)")
     for name, fn in sorted(globals().items()):

@@ -1,0 +1,945 @@
+"""축구토토 승무패 분석 리포트 CLI.
+
+    python -m toto                      # 이번 회차 자동 탐지 → 풀 수집 → 리포트
+    python -m toto --round 260032       # 회차 지정
+    python -m toto --matches-file examples/matches.yaml
+    python -m toto --demo               # 네트워크 없이 샘플 리포트
+    python -m toto --skip-whoscored     # 배당률 위주 빠른 실행
+
+소스 하나가 실패해도 나머지는 계속 진행하고, 빠진 항목은 리포트에
+'데이터 없음' 으로 표시된다.
+"""
+from __future__ import annotations
+
+import argparse
+import logging
+import sys
+import webbrowser
+from datetime import datetime
+from pathlib import Path
+
+from . import __version__
+from .analyze import evaluate_round, run_all
+from .cache import Cache
+from .models import Report, TeamProfile
+from .normalize import TeamResolver
+from .render import render_report
+from .settings import load_settings
+
+log = logging.getLogger("toto")
+
+
+def _setup_logging(verbose: bool) -> None:
+    """로그 설정. **여러 번 불려도 레벨이 반영돼야 한다.**
+
+    메뉴가 같은 프로세스 안에서 기능을 반복 실행하므로 이 함수도 반복해서
+    불린다. `basicConfig` 는 루트에 핸들러가 이미 있으면 **아무것도 하지
+    않아서**, 2회차부터 `verbose` 가 무시된다(실측: 2회차 verbose=True 인데
+    레벨이 INFO 그대로). 핸들러 구성은 그대로 두고 레벨만 다시 맞춘다 —
+    `force=True` 는 쓰지 않는다. 그러면 남의 핸들러까지 걷어내기 때문이다.
+    """
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(          # 첫 호출에만 핸들러를 붙인다 (중복 없음)
+        level=level,
+        format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+    logging.getLogger().setLevel(level)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="toto",
+        description="축구토토 승무패 14경기 상세 분석 리포트를 생성합니다.")
+    p.add_argument("--round", dest="round_id", default=None,
+                   help="회차 코드 (미지정 시 판매중 회차 자동 탐지)")
+    p.add_argument("--matches-file", type=Path, default=None,
+                   help="경기 목록 YAML (베트맨 크롤링 대신 사용)")
+    p.add_argument("-o", "--output", type=Path, default=None,
+                   help="출력 HTML 경로 (기본: reports/toto_<회차>.html)")
+    p.add_argument("--demo", action="store_true",
+                   help="네트워크 없이 샘플 데이터로 리포트 생성")
+    p.add_argument("--skip-whoscored", action="store_true",
+                   help="후스코어드 수집 생략 (배당률·순위 위주, 빠름)")
+    p.add_argument("--skip-fotmob", action="store_true",
+                   help="FotMob 수집 생략 (순위·홈원정 승점·폼·맞대결)")
+    p.add_argument("--skip-match-details", action="store_true",
+                   help="경기 상세 생략 (npxG·xGOT·총슈팅·피슈팅). 몇 분 빨라진다")
+    p.add_argument("--skip-odds", action="store_true",
+                   help="피나클 배당률 수집 생략")
+    p.add_argument("--panel", action="store_true",
+                   help="두 전문가 패널의 해석을 붙입니다 (Anthropic API 필요·"
+                        "유료). 지정하지 않으면 호출하지 않습니다.")
+    p.add_argument("--panel-export", action="store_true",
+                   help="패널·사회자를 클로드 채팅에서 손으로 돌릴 자료를 "
+                        "파일로 냅니다 (API 를 부르지 않습니다).")
+    p.add_argument("--export-match-material", action="store_true",
+                   help="회차 분석 결과를 클로드 채팅용 경기자료 MD 한 장으로 "
+                        "냅니다 (reports/<회차>_경기자료.md). API 를 부르지 "
+                        "않습니다.")
+    p.add_argument("--import-panel-result", type=Path, default=None,
+                   metavar="FILE",
+                   help="클로드 채팅에서 만든 Panel Result JSON 을 가져와 "
+                        "검증합니다. 오류가 있으면 붙이지 않습니다.")
+    p.add_argument("--validate-panel-result", type=Path, default=None,
+                   metavar="FILE",
+                   help="--import-panel-result 와 같은 검증을 하되 "
+                        "리포트에 붙이지 않습니다 (검사만).")
+    p.add_argument("--audit-panel-result", type=Path, default=None,
+                   metavar="FILE",
+                   help="가져온 Panel Result 의 회차 전체 구조를 감사합니다 "
+                        "(커버리지·채택·분포·근거). 판정하지 않습니다.")
+    p.add_argument("--paste-panel-result", type=Path, default=None,
+                   metavar="FILE",
+                   help="클로드 3단계 Moderator 결과(JSON 배열) 원문을 읽어 "
+                        "Panel Result 로 옮긴 뒤 가져오기·감사까지 합니다. "
+                        "검증을 통과할 때만 panel_results/ 에 저장합니다.")
+    p.add_argument("--panel-export-all", action="store_true",
+                   help="--panel-export 를 켜고, 근거 0건 경기도 축 지표만으로 "
+                        "냅니다 (시즌 초). 시트에 경고가 붙고 --panel 실행과 "
+                        "같은 결과가 아닙니다.")
+    # Phase 6-F-3. **클로드를 부르지 않는다** — 사람이 채팅에서 받아 온
+    # 1·2단계 응답을 검증해 보관하고, 그것으로 3단계 자료를 조립할 뿐이다.
+    p.add_argument("--save-panel-opinion", type=Path, default=None,
+                   metavar="FILE",
+                   help="클로드 1·2단계 분석가 응답(JSON 배열)을 읽어 검증한 "
+                        "뒤 panel_work/<회차>/ 에 보관한다. --role 과 함께 "
+                        "쓴다. API 를 부르지 않는다")
+    p.add_argument("--role", default=None, metavar="ROLE",
+                   help="--save-panel-opinion 의 역할 (a|b 또는 analyst_a|"
+                        "analyst_b). a=데이터 분석가, b=맞대결·전술 분석가")
+    p.add_argument("--build-moderator-input", action="store_true",
+                   help="보관해 둔 1·2단계 결과를 match_no 기준으로 조립해 "
+                        "reports/panel_<회차>/03_사회자자료_완성.md 를 "
+                        "만든다. 원본은 덮어쓰지 않고 API 도 부르지 않는다")
+    # Phase 6-F-4. 3단계 결과도 같은 자리에 보관한다. **새 결과 포맷을
+    # 만들지 않는다** — 보관본을 `--paste-panel-result` 에 그대로 태우면
+    # 기존 `[4]` 경로를 한 줄도 바꾸지 않고 지난다.
+    p.add_argument("--save-moderator-result", type=Path, default=None,
+                   metavar="FILE",
+                   help="클로드 3단계 Moderator 응답(JSON 배열)을 읽어 "
+                        "검증한 뒤 panel_work/<회차>/ 에 보관한다. "
+                        "panel_results/ 에는 쓰지 않고 API 도 부르지 않는다")
+    p.add_argument("--panel-workflow-status", action="store_true",
+                   help="그 회차가 어느 단계까지 왔는지 파일을 읽어 보여 "
+                        "준다. 아무것도 고치지 않고 수집도 하지 않는다")
+    # Phase 6-F-6. **Anthropic API 를 부르지 않는다** — `claude -p` 를
+    # subprocess 로 띄워 A·B·C 를 돌리고 기존 [4] 까지 잇는다.
+    p.add_argument("--panel-auto", action="store_true",
+                   help="패널 자동 분석 — Claude Code(claude -p)로 A·B·C 를 "
+                        "돌리고 기존 [4] 반영까지 한 번에 한다. 구독 인증만 "
+                        "쓰고 Anthropic API 를 직접 부르지 않는다")
+    # 비용 0 짜리 준비 점검. 회차 전체는 29회 호출이라, "내 PC 가 준비
+    # 됐나" 를 그 29회를 시작해서 알아내면 안 된다.
+    p.add_argument("--panel-auto-check", action="store_true",
+                   help="--panel-auto 를 돌릴 수 있는 상태인지만 본다 — "
+                        "CLI·인증·저장본·모델을 확인하고 멈춘다. "
+                        "모델을 부르지 않는다(비용 0)")
+    p.add_argument("--auto-model", default=None, metavar="MODEL",
+                   help="--panel-auto 가 claude 에 넘길 모델. 주지 않으면 "
+                        "실측으로 검증된 기본 모델(sonnet)을 쓴다 — "
+                        "일부러 Claude Code 의 기본 모델을 쓰려면 'cli'")
+    p.add_argument("--rerender-artifact", type=Path, default=None,
+                   metavar="FILE",
+                   help="저장된 회차 분석 결과(data/artifacts/<회차>.json)를 "
+                        "지금 코드로 다시 렌더한다. 수집하지 않는다")
+    p.add_argument("--market-eval", action="store_true",
+                   help="쌓인 회차 기록으로 시장 기준선 캘리브레이션을 잰다 "
+                        "(data/round_matches.csv 를 읽기만 한다. 수집하지 "
+                        "않고 아무것도 고치지 않는다)")
+    p.add_argument("--settle-round", dest="settle_round", default=None,
+                   metavar="ROUND",
+                   help="그 회차의 실제 경기 결과만 채운다. 경기 전 "
+                        "스냅샷(배당·확률·recorded_at)은 건드리지 않고 "
+                        "리포트도 다시 만들지 않는다")
+    p.add_argument("--no-cache", action="store_true",
+                   help="캐시를 무시하고 새로 수집")
+    p.add_argument("--open", action="store_true",
+                   help="생성 후 기본 브라우저로 열기")
+    p.add_argument("--serve", action="store_true",
+                   help="리포트를 같은 와이파이에 공개해 폰에서 열기 (Ctrl+C 종료)")
+    p.add_argument("--serve-port", type=int, default=8899,
+                   help="--serve 가 쓸 포트 (기본 8899)")
+    p.add_argument("-v", "--verbose", action="store_true", help="디버그 로그")
+    p.add_argument("--menu", action="store_true",
+                   help="대화형 메뉴 (바탕화면 바로가기용)")
+    p.add_argument("--version", action="version", version=f"toto {__version__}")
+    return p
+
+
+def _resolve_teams(matches, resolver: TeamResolver, report: Report,
+                   settings) -> None:
+    """베트맨 한글 팀명을 영문 정규명으로 해석하고, 리그를 채운다."""
+    for match in matches:
+        for side in ("home", "away"):
+            ref = getattr(match, side)
+            canon = resolver.resolve(ref.name_ko)
+            if canon:
+                ref.canonical = canon
+                ref.matched = True
+                if not ref.display:
+                    ref.display = ref.name_ko or canon
+            else:
+                ref.matched = False
+                ref.display = ref.name_ko or "(팀명 없음)"
+                report.warnings.append(
+                    f"{match.no}번 경기: '{ref.name_ko}' 팀명을 매칭하지 못했습니다. "
+                    f"data/teams.yaml 에 별칭을 추가하면 다음 실행부터 해결됩니다.")
+
+        # 베트맨 경기표에는 리그명 컬럼이 없다. 리그를 모르면 배당률 조회가
+        # 통째로 불가능하므로 팀 소속 리그로 역추론한다(홈팀 우선).
+        if not match.league:
+            for ref in (match.home, match.away):
+                league = resolver.league_of(ref.canonical) if ref.canonical else None
+                if league:
+                    match.league = league
+                    match.league_ko = settings.league_ko(league)
+                    break
+            else:
+                report.warnings.append(
+                    f"{match.no}번 경기({match.title}): 리그를 알 수 없어 "
+                    f"배당률을 조회하지 못합니다.")
+
+        # 컵대회 등으로 두 팀의 리그가 다르면 표시에 남긴다
+        lh = resolver.league_of(match.home.canonical) if match.home.canonical else None
+        la = resolver.league_of(match.away.canonical) if match.away.canonical else None
+        if lh and la and lh != la:
+            match.notes.append(
+                f"두 팀의 소속 리그가 다릅니다 ({settings.league_ko(lh)} vs "
+                f"{settings.league_ko(la)}) — 컵대회 경기로 보이며, "
+                f"배당률·순위 데이터가 없을 수 있습니다.")
+
+
+# 없으면 아무것도 제대로 할 수 없는 의존성. 선택 의존성(playwright·bs4)은
+# 소스별로 확인해 '실패 (사유)' 로 남기지만(§1-6), 아래 둘은 다르다 —
+# PyYAML 이 없으면 config_toto.yaml 과 data/teams.yaml 이 통째로 안 읽혀
+# **모든 팀명이 매칭에 실패하고**, 그런데도 10초를 돌려 빈 리포트를 만들어
+# 낸다(실측: 260050, 52.3KB, 확인 필요 43건). 그건 결과가 아니라 소음이다.
+#
+# **PyYAML 하나뿐이다.** requests 가 없으면 피나클만 실패하고 나머지는
+# 그대로 간다 — 그건 §1-6 의 '한 소스 실패, 나머지 진행' 이지 중단 사유가
+# 아니다. 여기 목록을 늘려 정상 실행을 막지 않는다.
+_REQUIRED_MODULES = (("yaml", "PyYAML"),)
+
+
+def _missing_required_deps() -> bool:
+    """필수 의존성이 빠졌으면 그 자리에서 알리고 True 를 돌려준다."""
+    import importlib.util
+
+    missing = [name for mod, name in _REQUIRED_MODULES
+               if importlib.util.find_spec(mod) is None]
+    if not missing:
+        return False
+    log.error("필수 패키지가 없습니다: %s", ", ".join(missing))
+    log.error("  가상환경을 켜지 않았을 수 있습니다:")
+    log.error("    PowerShell   .\\.venv\\Scripts\\Activate.ps1")
+    log.error("    cmd          .venv\\Scripts\\activate.bat")
+    log.error("    bash         source .venv/bin/activate")
+    log.error("  그래도 없으면:  pip install -r requirements-toto.txt")
+    log.error("  (%s 로 실행 중)", sys.executable)
+    return True
+
+
+def _paste_to_canonical(report: Report, args, settings, paste_file):
+    """3단계 결과 원문 → Panel Result 파일 (Phase 4-F). 실패하면 `None`.
+
+    **검증을 통과한 경우에만 파일을 만든다.** 깨진 붙여넣기가
+    `panel_results/` 에 남으면 다음 실행이 그것을 집어 든다.
+    """
+    from . import panelpaste
+    try:
+        text = Path(paste_file).read_text(encoding="utf-8")
+    except OSError as exc:
+        log.error("붙여넣기 파일을 읽지 못했습니다: %s", exc)
+        report.source_status["패널 가져오기"] = f"실패 ({exc})"
+        return None
+
+    path, outcome = panelpaste.apply(text, report, settings)
+    if path is None:
+        report.source_status["패널 가져오기"] = outcome.status_line()
+        for line in panelpaste.report_lines(outcome):
+            log.error("붙여넣기: %s", line)
+        return None
+
+    log.info("붙여넣기 → %s (%d경기)", path, outcome.imported_matches)
+    # 아래 경로가 가져오기·감사를 하도록 같은 파일을 가리켜 준다.
+    args.import_panel_result = path
+    args.audit_panel_result = path
+    return path
+
+
+def _handle_panel_file(report: Report, args, settings, panel_file) -> None:
+    """Panel Result 를 검증·부착하고(4-B) 회차 구조를 감사한다(4-C).
+
+    수집 경로와 저장본 경로가 **이 함수 하나**를 쓴다 — 두 곳에 두면
+    한쪽만 고쳐져 결과가 달라진다.
+    """
+    if args.paste_panel_result is not None:
+        # 3단계 결과 붙여넣기 (Phase 4-F). **여기서 파이프라인을 새로 만들지
+        # 않는다** — Panel Result 로 옮겨 저장한 뒤 아래 같은 경로를 탄다.
+        panel_file = _paste_to_canonical(report, args, settings, panel_file)
+        if panel_file is None:
+            return
+
+    from . import panelimport
+    outcome = panelimport.run(
+        panel_file, report, settings,
+        attach_result=args.import_panel_result is not None)
+    report.source_status["패널 가져오기"] = outcome.status_line()
+    for line in panelimport.report_lines(outcome):
+        (log.warning if outcome.errors else log.info)("패널 가져오기: %s", line)
+
+    if args.audit_panel_result is None:
+        return
+    from . import panelaudit
+    result = panelaudit.audit(outcome, report)
+    # 배지에 **무엇이 실제로 반영됐는지**를 함께 적는다 (Phase 4-F UI §4).
+    # `부분 (14/14경기 가져옴)` 만 보면 사용자는 무엇을 얻었는지 모른다.
+    # 가져오기 상태(§1-6 어휘)는 그대로 두고 구성만 덧붙인다.
+    composition = panelaudit.composition_line(result)
+    if composition:
+        report.source_status["패널 가져오기"] = (
+            f"{outcome.status_line()} · {composition}")
+    report.source_status["패널 감사"] = (
+        f"{result.status} (커버리지 {result.coverage_status})")
+    for line in panelaudit.report_lines(result):
+        log.info("감사 | %s", line)
+
+
+def _write_report(report: Report, args, settings, verb: str) -> Path:
+    """렌더해서 파일로 쓰고 경로를 돌려준다.
+
+    수집 경로·패널 전용 경로·저장본 재렌더 경로가 **같은 renderer 와 같은
+    출력 규칙**을 쓰게 하려고 한 곳에 뒀다 (§1-8). 예전에는 이 열 줄이 두
+    곳에 복사돼 있었고, 세 번째 사본을 만들면 어느 하나만 고쳐져 세 경로가
+    조용히 갈라진다. **동작은 그대로다** — 경로 규칙도 로그도 전과 같고
+    `verb` 만 호출부가 정한다.
+    """
+    html = render_report(report, settings)
+    out = args.output
+    if out is None:
+        name = settings.output.get("filename", "toto_{round}.html").format(
+            round=report.round_id or "latest")
+        out = settings.output_dir / name
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(html, encoding="utf-8")
+    log.info("리포트 %s → %s (%.1f KB)", verb, out,
+             len(html.encode("utf-8")) / 1024)
+    return out
+
+
+def _panel_work(args, settings) -> int:
+    """1·2단계 결과 보관과 3단계 자료 조립 (Phase 6-F-3).
+
+    **클로드를 부르지 않고 수집도 하지 않는다.** `_rerender` 와 같은 자리
+    (수집 구간 앞)에서 갈라지므로 `toto.sources` 도 `toto.llm` 도 import
+    되지 않는다 — 분석 실행은 전부 사람이 채팅에서 한다.
+
+    회차 자료는 저장본(4-C)에서 읽는다. 다시 수집하면 순위표·배당이 그때와
+    달라져(§1-1-7) 채팅에 준 자료와 다른 것이 된다.
+    """
+    from . import artifact, panelwork
+
+    round_id = (args.round_id or "").strip()
+    if not round_id:
+        log.error("--round 가 필요합니다 — 어느 회차의 결과인지 "
+                  "지어낼 수 없습니다.")
+        return 1
+
+    # 상태 보기는 **회차 자료가 없어도** 된다 (Phase 6-F-4). 파일이 있느냐만
+    # 보므로 수집 전에도 부를 수 있고, 저장본을 읽지 못하는 것이 상태를 볼
+    # 수 없는 이유가 되면 안 된다.
+    if args.panel_workflow_status:
+        for line in panelwork.workflow_lines(panelwork.workflow(round_id)):
+            print(line)
+        if not (args.save_panel_opinion or args.build_moderator_input
+                or args.save_moderator_result):
+            return 0
+
+    report, why = artifact.load(round_id)
+    if report is None:
+        log.error("저장된 회차 분석 결과가 없습니다 — %s", why)
+        log.error("  먼저 그 회차를 수집하십시오 (메뉴 [3] 또는 "
+                  "python -m toto --round %s --panel-export-all)", round_id)
+        return 1
+    log.info("저장된 회차 분석 결과를 씁니다 (수집하지 않습니다) — %s",
+             artifact.path_for(round_id))
+
+    failed = False
+    if args.save_panel_opinion is not None:
+        role = panelwork.resolve_role(args.role or "")
+        if not role:
+            log.error("--role 이 필요합니다 — a|b (또는 %s) 중 하나.",
+                      "|".join(sorted(panelwork.ROLE_FILES)))
+            return 1
+        path = Path(args.save_panel_opinion)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            log.error("분석가 응답 파일을 읽지 못했습니다: %s", exc)
+            return 1
+        result = panelwork.save_stage(text, role, report)
+        for line in panelwork.report_lines(result):
+            (log.error if result.errors else log.info)("분석가 결과: %s", line)
+        failed = failed or not result.success
+
+    if args.build_moderator_input:
+        built = panelwork.build_completed_sheet(report, settings)
+        for line in panelwork.report_lines(built):
+            (log.error if built.errors else log.info)("사회자 자료: %s", line)
+        if built.success:
+            log.info("  이 파일을 3단계 대화에 첨부하십시오. "
+                     "`◀ … ▶` 에 배열을 붙여넣을 필요가 없습니다.")
+        failed = failed or not built.success
+
+    # Phase 6-F-4. 3단계 결과 보관. **`panel_results/` 에 쓰지 않는다** —
+    # 그 자리는 `[4]` 가 만들고, 여기서는 클로드가 돌려준 배열만 남긴다.
+    if args.save_moderator_result is not None:
+        from . import panelpaste
+        path = Path(args.save_moderator_result)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            log.error("3단계 결과 파일을 읽지 못했습니다: %s", exc)
+            return 1
+        saved, outcome = panelwork.save_moderator_result(text, report,
+                                                         settings)
+        for line in panelpaste.report_lines(outcome):
+            (log.error if outcome.errors else log.info)("3단계 결과: %s", line)
+        if saved is not None:
+            log.info("3단계 결과 보관 → %s", saved)
+            log.info("  이제 --paste-panel-result %s 로 리포트에 "
+                     "반영하십시오 (메뉴 [6] → [5]).", saved)
+        failed = failed or saved is None
+
+    if not failed:
+        _guide_next(round_id)
+    return 1 if failed else 0
+
+
+def _guide_next(round_id: str) -> None:
+    """지금 상태에서 **다음에 할 일** 한 줄 (Phase 6-F-4 §9).
+
+    판정하지 않는다 — 파일이 있느냐로 정해진 다음 칸을 그대로 읽어 준다.
+    """
+    from . import panelwork
+    nxt = panelwork.workflow(round_id).next_stage()
+    if nxt is None:
+        log.info("다음 할 일: 없습니다 — 리포트까지 끝났습니다.")
+    else:
+        log.info("다음 할 일: %s", nxt.todo)
+
+
+def _panel_auto(args, settings) -> int:
+    """패널 자동 분석 (Phase 6-F-6). **수집 구간 앞에서 갈라진다.**
+
+    저장본(4-C)을 읽어 A·B·C 를 `claude -p` 로 돌리고 기존 [4] 까지 잇는다.
+    다시 수집하면 순위표·배당이 그때와 달라져(§1-1-7) 채팅에 준 자료와 다른
+    것이 되므로, 여기서도 저장본을 쓴다.
+    """
+    from . import artifact, panelauto
+
+    round_id = (args.round_id or "").strip()
+    if not round_id:
+        log.error("--round 가 필요합니다 — 어느 회차를 분석할지 "
+                  "지어낼 수 없습니다.")
+        return 1
+    report, why = artifact.load(round_id)
+    if report is None:
+        log.error("저장된 회차 분석 결과가 없습니다 — %s", why)
+        log.error("  먼저 그 회차를 수집하십시오 "
+                  "(python -m toto --round %s)", round_id)
+        return 1
+
+    if args.panel_auto_check:
+        # **점검만 하고 멈춘다.** 같은 `preflight()` 를 쓰므로 여기서
+        # 통과하면 `--panel-auto` 도 같은 판정을 받는다.
+        return 0 if panelauto.check(round_id, report,
+                                    model=(args.auto_model or "")) else 1
+
+    result = panelauto.run(round_id, report, settings,
+                           model=(args.auto_model or ""))
+    if result.ok and args.open and result.report_path:
+        webbrowser.open(result.report_path.resolve().as_uri())
+    return 0 if result.ok else 1
+
+
+def _rerender(args, settings) -> int:
+    """저장된 회차 분석 결과(4-C)를 **현재 renderer 로** 다시 그린다.
+
+    이 경로는 **수집하지 않는다.** `toto.sources` 를 import 하지도 않으므로
+    베트맨·FotMob·피나클·후스코어드 어느 것도 호출될 수 없다 — 네 모듈은
+    전부 수집 구간 안에서 지연 import 되고 여기는 그 구간에 닿지 않는다.
+
+    **왜 따로 필요한가.** 저장본을 읽는 입구가 `_panel_only` 하나뿐이었고
+    그건 패널 파일 인자에 묶여 있었다. 그래서 "자료는 그대로 두고 화면만
+    지금 코드로 다시 그린다" 를 할 방법이 없었다 — 리포트 표현이 바뀔 때마다
+    (4-G·5-D) 그것을 실물 회차에 확인하려면 재수집밖에 없었는데, 재수집은
+    순위표·배당이 움직여(§1-1-7) **다른 자료가 된다.**
+
+    분석값을 다시 만들지 않는다. `revive_report()` 가 되감은 그대로 렌더에
+    넘긴다.
+    """
+    from . import artifact
+
+    path = Path(args.rerender_artifact)
+    report, why = artifact.load_path(path)
+    if report is None:
+        log.error("저장본을 읽지 못했습니다 — %s", why)
+        return 1
+
+    log.info("저장본으로 다시 렌더합니다 (수집하지 않습니다) — %s", path)
+    log.info("  회차 %s · %d경기 · 생성 %s",
+             report.round_id or "미상", len(report.matches),
+             report.generated_at or "미상")
+    out = _write_report(report, args, settings, "갱신")
+    for key, value in report.source_status.items():
+        log.info("  · %s: %s", key, value)
+    if args.open:
+        webbrowser.open(out.resolve().as_uri())
+    return 0
+
+
+def _league_keys(rows: list[dict], settings, round_id: str) -> list[str]:
+    """이 회차가 어느 리그 색인을 필요로 하나.
+
+    **회차 목록을 다시 받지 않는다.** 이미 기록된 행의 `league`(한국어 표기)
+    를 `settings.league_of()` 로 되읽는다 — 그 함수가 `ko`·별칭을 이미 알고
+    있어서 새 표를 만들 이유가 없다 (§1-8).
+
+    행의 리그가 비어 있던 회차를 위해 저장본(4-C)도 본다. **읽기만 한다.**
+    """
+    keys: list[str] = []
+    for row in rows:
+        key = settings.league_of(row.get("league", ""))
+        if key and key not in keys:
+            keys.append(key)
+    if keys:
+        return keys
+    from . import artifact
+    saved, _why = artifact.load(round_id)
+    for match in getattr(saved, "matches", None) or []:
+        if match.league and match.league not in keys:
+            keys.append(match.league)
+    if keys:
+        log.info("경기 기록에 리그가 없어 저장본에서 읽었습니다: %s",
+                 ", ".join(keys))
+    return keys
+
+
+def _settle_round(args, settings) -> int:
+    """지정 회차의 **결과만** 채운다 (Phase 6-C-2).
+
+    리포트를 다시 만들지 않고, 저장본(4-C)도 건드리지 않는다 — 저장본은
+    킥오프 전 스냅샷이고 이 명령은 경기가 끝난 뒤에 도는 것이라, 다시 쓰면
+    그 회차가 시장 캘리브레이션 표본에서 사라진다 (§1-27).
+    """
+    from . import roundlog
+
+    round_id = str(args.settle_round).strip()
+    rows = roundlog.rows_for(round_id)
+    print(f"\n▶ 회차 결과 정산\n  회차: {round_id}\n")
+    if not rows:
+        log.error("%s회차의 경기 전 기록이 없습니다 (%s). 먼저 회차를 "
+                  "수집하십시오 — 메뉴 [1] 또는 python -m toto --round %s",
+                  round_id, roundlog.MATCH_FILE, round_id)
+        return 1
+
+    keys = _league_keys(rows, settings, round_id)
+    if not keys:
+        log.error("이 회차의 리그를 알 수 없어 색인을 받을 수 없습니다 "
+                  "(경기 기록의 league 열과 저장본 둘 다 비어 있습니다).")
+        return 1
+
+    from .sources import fotmob
+    resolver = TeamResolver()
+    cache = Cache(enabled=not args.no_cache)
+    season, status = fotmob.season_index(settings, resolver, keys, cache=cache)
+    log.info("시즌 색인: %s", status)
+
+    res, why = roundlog.settle(round_id, season)
+    if res is None:
+        log.error("정산하지 못했습니다 — %s", why)
+        return 1
+
+    print(f"  기존 pre-match 기록: {res.rows}경기")
+    print(f"  FotMob 종료 경기: {res.matched}경기  (이미 정산된 행 포함)")
+    print(f"  이번 정산: {res.settled_now}경기")
+    print(f"  이미 정산됨: {res.already}경기")
+    print(f"  미정산: {res.unsettled}경기")
+    for reason, n in sorted(res.reasons.items(), key=lambda x: -x[1]):
+        print(f"    · {n}경기  {reason}")
+    if res.by_id:
+        print(f"  match_id 로 이은 경기: {res.by_id}")
+    if res.linked_ids:
+        print(f"  match_id 를 처음 채운 옛 행: {res.linked_ids}")
+    for line in res.conflicts:
+        print(f"  ⚠ 결과 불일치 (기록을 그대로 둡니다): {line}")
+    print("\n  pre-match snapshot 보존: OK "
+          "(배당·확률·recorded_at·픽은 건드리지 않습니다)")
+    print(f"  기록 파일: {roundlog.MATCH_FILE}\n")
+    return 0
+
+
+def _panel_only(report: Report, args, settings, panel_file) -> int:
+    """저장된 회차 분석 결과에 패널 파일만 얹는다. **수집하지 않는다.**"""
+    try:
+        _handle_panel_file(report, args, settings, panel_file)
+    except Exception as exc:                            # noqa: BLE001
+        log.error("패널 처리 실패: %s", exc)
+        log.debug("패널 처리 traceback", exc_info=True)
+        return 1
+
+    if args.import_panel_result is None:
+        # 붙여넣기는 통과하면 위에서 `import_panel_result` 를 채운다. 아직
+        # 비어 있다면 변환·검증에서 막힌 것이다 (§12 — 파일도 만들지 않았다).
+        if args.paste_panel_result is not None:
+            return 1
+        return 0                        # 검사·감사만 — 리포트를 다시 쓰지 않는다
+
+    out = _write_report(report, args, settings, "갱신")
+    if args.open:
+        webbrowser.open(out.resolve().as_uri())
+    return 0
+
+
+def safe_console() -> list:
+    """콘솔이 우리 글자를 담지 못하면 **UTF-8 로 바꾼다** (Phase 6-F-7 §2-3).
+
+    한국어 윈도우에서 `python -m toto … > log.txt` 처럼 **출력을 돌리면**
+    파이썬이 콘솔 API(UTF-16) 대신 로캘 인코딩(cp949)으로 쓴다. 그런데
+    이 프로그램의 메시지에는 cp949 에 없는 글자가 섞여 있다 — em dash(`—`)
+    는 물론이고 메뉴의 `═`·`⚽`, 진행 표시의 `✓`·`✗` 가 그렇다(실측).
+    그대로 두면 40분짜리 자동 실행이 `UnicodeEncodeError` 로 죽는다.
+
+    **글자를 지우는 것으로 고치지 않는다.** `—` 는 저장소 전체 메시지에
+    쓰이고, 그것을 걷어내면 모든 문구가 바뀐다. 출력 계층에서 한 번 고친다.
+
+    건강한 스트림은 **한 글자도 건드리지 않는다** — 대화형 윈도우 콘솔은
+    파이썬 3.6+ 가 UTF-8 래퍼를 쓰므로 아래 시험을 그냥 통과하고, 리눅스·
+    macOS 도 마찬가지다. 바뀌는 것은 실제로 담지 못하는 스트림뿐이다.
+
+    돌려주는 값은 **실제로 바꾼 스트림 이름** 목록이다 (테스트·진단용).
+    """
+    import sys
+    probe = "— ✓ ✗ ═ ⚽"
+    changed = []
+    for name in ("stdout", "stderr"):
+        stream = getattr(sys, name, None)
+        enc = getattr(stream, "encoding", None)
+        if stream is None or not enc:
+            continue
+        try:
+            probe.encode(enc)
+            continue                    # 담을 수 있다 — 건드리지 않는다
+        except (UnicodeEncodeError, LookupError):
+            pass
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+            changed.append(name)
+        except (AttributeError, OSError, ValueError):
+            # 되돌릴 수 없는 스트림이면 적어도 죽지는 않게 한다.
+            try:
+                stream.reconfigure(errors="replace")
+                changed.append(name)
+            except (AttributeError, OSError, ValueError):
+                pass
+    return changed
+
+
+def main(argv: list[str] | None = None) -> int:
+    safe_console()
+    args = build_parser().parse_args(argv)
+
+    # 메뉴로 가기 전에 로그를 켠다 — 메뉴 루프가 예외를 잡아 traceback 을
+    # 로그로 남기는데, 그때 핸들러가 없으면 아무 데도 남지 않는다.
+    _setup_logging(args.verbose)
+
+    if args.menu:
+        from .menu import main as menu_main
+        return menu_main()
+
+    if _missing_required_deps():
+        return 2
+
+    settings = load_settings()
+
+    # --serve 만 주면 이미 만들어 둔 리포트를 그대로 공유한다.
+    # 폰에서 보려고 매번 다시 수집할 이유가 없다.
+    if args.serve and not any((args.demo, args.round_id, args.matches_file)):
+        from .publish import serve
+        return serve(settings, port=args.serve_port)
+
+    # ---- 0-a. 저장본만 다시 렌더 (Phase 5-E3a) ---------------------------
+    # **수집 경로에 닿기 전에** 갈라진다. 아래 한 줄 밑부터가 수집이고,
+    # 여기서 돌려주면 `sources` 는 import 조차 되지 않는다.
+    if args.rerender_artifact is not None:
+        return _rerender(args, settings)
+
+    # ---- 0-a2. 1·2·3단계 결과 보관 · 자료 조립 (Phase 6-F-3 · 6-F-4) -----
+    # 여기도 **수집 구간 앞**이다. 그리고 **클로드를 부르지 않는다** —
+    # 사람이 채팅에서 받아 온 응답을 검증해 보관하고 조립할 뿐이다.
+    if (args.save_panel_opinion is not None or args.build_moderator_input
+            or args.save_moderator_result is not None
+            or args.panel_workflow_status):
+        return _panel_work(args, settings)
+
+    # ---- 0-a3. 패널 자동 분석 (Phase 6-F-6) ------------------------------
+    # 여기도 **수집 구간 앞**이다. 모델은 `claude -p` subprocess 로만 부르고
+    # Anthropic API 를 직접 호출하지 않는다. 안에서 기존 CLI 를 다시 부르는데
+    # (조립·검증·[4]) 그 호출들은 위 분기로 내려가 재귀가 끝난다.
+    if args.panel_auto or args.panel_auto_check:
+        return _panel_auto(args, settings)
+
+    # ---- 0-b. 시장 기준선 캘리브레이션 (Phase 6-B) -----------------------
+    # 여기도 **수집 구간 앞**이다. 쌓인 기록을 읽어 재기만 하고 파일을
+    # 고치지 않으며, 잰 값을 `predict.py`·`Match.probs` 에 되돌려 넣지
+    # 않는다 — 이 단계는 측정 전용이다.
+    if args.market_eval:
+        from . import marketeval
+        print(marketeval.format_summary(
+            marketeval.evaluate(marketeval.load_rows())))
+        return 0
+
+    # ---- 0-c. 회차 결과만 정산 (Phase 6-C-2) -----------------------------
+    # 여기도 **수집 구간 앞**이다. 리그 색인 한 장만 받고 `round_matches.csv`
+    # 의 결과 칸만 채운다 — 베트맨·피나클·후스코어드를 부르지 않고, 리포트도
+    # 저장본도 다시 만들지 않는다.
+    if args.settle_round:
+        return _settle_round(args, settings)
+
+    # ---- 0. 저장된 회차 분석 결과로 되돌아가기 (Phase 4-C) ---------------
+    # 패널 파일만 주고 그 회차의 artifact 가 있으면 **수집을 다시 하지
+    # 않는다.** 클로드 채팅 작업이 며칠 걸려도 ① 을 다시 돌릴 필요가 없다.
+    # 다시 돌리면 순위표·배당이 그때와 달라져(§1-1-7) 경기자료 MD 를 만든
+    # 분석과 패널 결과를 붙이는 분석이 서로 다른 것이 된다.
+    panel_file = (args.import_panel_result or args.validate_panel_result
+                  or args.audit_panel_result or args.paste_panel_result)
+    if panel_file is not None and args.round_id and not args.demo:
+        from . import artifact
+        saved, why = artifact.load(args.round_id)
+        if saved is not None:
+            log.info("저장된 회차 분석 결과를 씁니다 (수집하지 않습니다) — "
+                     "%s", artifact.path_for(args.round_id))
+            return _panel_only(saved, args, settings, panel_file)
+        log.info("%s — 회차를 수집해서 진행합니다.", why)
+
+    resolver = TeamResolver()
+    cache = Cache(enabled=not args.no_cache)
+    report = Report(generated_at=datetime.now().strftime("%Y-%m-%d %H:%M"))
+
+    # ---- 1. 경기 목록 -----------------------------------------------------
+    if args.demo:
+        from .fixtures import build_demo_matches
+        matches = build_demo_matches()
+        report.round_id = "DEMO"
+        report.source_status["데이터"] = "ok (샘플 · 실제 배당/성적 아님)"
+        log.info("데모 모드 — 샘플 14경기로 리포트를 만듭니다.")
+    else:
+        from .sources import betman
+        if args.matches_file:
+            matches = betman.load_matches_file(args.matches_file, settings)
+            report.round_id = args.round_id or "manual"
+            report.source_status["경기목록"] = (
+                f"ok (수동 {len(matches)}경기)" if matches else "실패 (파일 읽기)")
+        else:
+            matches, detected = betman.fetch_matches(
+                settings, round_id=args.round_id, cache=cache)
+            report.round_id = detected or (args.round_id or "")
+            report.source_status["경기목록"] = (
+                f"ok (베트맨 {len(matches)}경기)" if matches else "실패")
+
+        if not matches:
+            log.error("경기 목록이 비었습니다. --matches-file 로 직접 입력하거나 "
+                      "--demo 로 동작을 확인해 보세요.")
+            return 1
+
+        expected = int(settings.betman.get("expected_matches", 14))
+        if len(matches) != expected:
+            report.warnings.append(
+                f"경기 수가 {len(matches)}개입니다 (승무패는 {expected}경기). "
+                f"목록을 확인하세요.")
+
+        _resolve_teams(matches, resolver, report, settings)
+
+        # ---- 2. FotMob (순위·홈원정 승점·폼·맞대결) -------------------------
+        # 배당보다 먼저 돌린다. 순위표를 읽으면서 승강으로 바뀐 소속 리그를
+        # 정정하는데, 그게 끝난 뒤라야 피나클이 옳은 리그 피드를 조회한다.
+        # (2026 시즌에 대구·수원FC 가 K2 로, 인천·부천이 K1 로 옮겼는데 표가
+        #  2025 상태여서 배당 조회가 전부 헛돌고 폴백으로 겨우 건졌다.)
+        if args.skip_fotmob:
+            report.source_status["순위·폼"] = "생략"
+        else:
+            from .sources import fotmob
+            if args.skip_match_details:
+                # 설정을 직접 바꾸지 않고 이번 실행에만 끈다
+                settings.fotmob = dict(settings.fotmob, match_detail_matches=0)
+            try:
+                report.source_status["순위·폼"] = fotmob.enrich(
+                    matches, settings, resolver, cache=cache,
+                    # Phase 2 가 쓸 시즌 경기 색인. 새로 수집하지 않고
+                    # 이미 받은 리그 응답을 옮겨 담는다.
+                    season_out=report.season_matches)
+            except Exception as exc:
+                log.error("FotMob 수집 중 오류: %s", exc)
+                report.source_status["순위·폼"] = "실패"
+
+        # ---- 3. 배당률 ----------------------------------------------------
+        if args.skip_odds:
+            report.source_status["배당률"] = "생략"
+        else:
+            from .sources import pinnacle
+            try:
+                report.source_status["배당률"] = pinnacle.fetch_odds(
+                    matches, settings, resolver, cache=cache)
+            except Exception as exc:
+                log.error("배당률 수집 중 오류: %s", exc)
+                report.source_status["배당률"] = "실패"
+
+        # ---- 4. 후스코어드 (강점/약점·스타일·팀 통계) ------------------------
+        if args.skip_whoscored:
+            report.source_status["상세데이터"] = "생략"
+            for match in matches:
+                if match.home_profile is None:
+                    match.home_profile = TeamProfile(team=match.home,
+                                                     league=match.league)
+                if match.away_profile is None:
+                    match.away_profile = TeamProfile(team=match.away,
+                                                     league=match.league)
+        else:
+            from .sources import whoscored
+            try:
+                report.source_status["상세데이터"] = whoscored.enrich(
+                    matches, settings, resolver, cache=cache)
+            except Exception as exc:
+                log.error("후스코어드 수집 중 오류: %s", exc)
+                report.source_status["상세데이터"] = "실패"
+                for match in matches:
+                    if match.home_profile is None:
+                        match.home_profile = TeamProfile(team=match.home,
+                                                         league=match.league)
+                    if match.away_profile is None:
+                        match.away_profile = TeamProfile(team=match.away,
+                                                         league=match.league)
+
+        resolver.save_learned()
+        resolver.save_leagues()
+
+    # ---- 5. 분석 ----------------------------------------------------------
+    report.matches = matches
+    run_all(matches, settings, season_matches=report.season_matches)
+
+    # ---- 5-B. 패널 (Phase 3-B) — **--panel 없이는 호출하지 않는다** --------
+    # 유료 API 라 기본은 꺼져 있다. 분석 결과를 읽기만 하고 되먹이지 않는다.
+    if args.panel:
+        from . import panel
+        report.source_status["패널"] = panel.attach_panels(
+            matches, settings, cache=cache)
+
+    # ---- 5-C. Panel Result JSON 가져오기 (Phase 4-B) ----------------------
+    # 클로드 채팅에서 손으로 만든 결과를 되받는 자리다. **API 를 부르지
+    # 않는다.** 오류가 하나라도 있으면 붙이지 않는다(부분 import 금지).
+    if panel_file is not None:
+        try:
+            _handle_panel_file(report, args, settings, panel_file)
+        except Exception as exc:                        # noqa: BLE001
+            report.source_status["패널 가져오기"] = f"실패 ({exc})"
+            log.warning("패널 가져오기 실패: %s", exc)
+            log.debug("패널 가져오기 traceback", exc_info=True)
+
+    # 회차 승산 (지침 §5)
+    expected = int(settings.betman.get("expected_matches", 14))
+    report.verdict = evaluate_round(matches, expected_total=expected)
+
+    missing_odds = [m.no for m in matches if not m.probs]
+    if missing_odds:
+        report.warnings.append(
+            "배당률을 가져오지 못한 경기: " + ", ".join(f"{n}번" for n in missing_odds))
+
+    # ---- 6. 렌더링 --------------------------------------------------------
+    out = _write_report(report, args, settings, "생성 완료")
+
+    # 폰에서 보기 — 동기화 폴더에도 복사한다 (실패해도 실행은 성공으로 끝난다)
+    from .publish import publish
+    for dest in publish(out, settings):
+        log.info("폰에서 보기용 사본 → %s", dest)
+    for key, value in report.source_status.items():
+        log.info("  · %s: %s", key, value)
+    if report.warnings:
+        log.warning("확인 필요 %d건 — 리포트 상단에 표시했습니다.", len(report.warnings))
+
+    v = report.verdict
+    if v is not None and v.n:
+        log.info("회차 승산: E=%.2f σ=%.2f z=%+.2f P(>=11)=%.0f%% → %s",
+                 v.expected, v.sigma, v.z, v.p_ge11 * 100, v.verdict_ko)
+        if v.incomplete:
+            log.warning("  배당 미수집 경기가 있어 %d경기만으로 계산했습니다.", v.n)
+        log.info("회차로그 1줄 (지침 §8):")
+        log.info("  %s", _log_line(report))
+
+    # 경기자료 MD (Phase 4-A). 프로그램과 클로드 채팅 사이의 인터페이스라
+    # 리포트가 나온 뒤 그대로 직렬화만 한다.
+    if args.export_match_material:
+        try:
+            from . import match_material
+            log.info("경기자료 MD: %s",
+                     match_material.export(report, settings))
+        except Exception as exc:                        # noqa: BLE001
+            log.warning("경기자료 MD 실패: %s", exc)
+            log.debug("경기자료 MD traceback", exc_info=True)
+
+    # 패널 자료 내보내기. API 를 부르지 않으므로 리포트가 나온 뒤에 한다.
+    # `--panel-export-all` 은 `--panel-export` 를 켠다 — 둘을 함께 적게
+    # 하면 하나만 적고 아무것도 안 나오는 일이 생긴다.
+    if args.panel_export or args.panel_export_all:
+        try:
+            from . import panelexport
+            log.info("패널 자료 내보내기: %s", panelexport.export(
+                report, include_without_evidence=args.panel_export_all,
+                settings=settings))
+        except Exception as exc:                        # noqa: BLE001
+            log.warning("패널 자료 내보내기 실패: %s", exc)
+            log.debug("패널 자료 내보내기 traceback", exc_info=True)
+
+    # 회차 분석 결과 저장 (Phase 4-C). 나중에 패널 결과만 가져올 때 수집을
+    # 다시 하지 않기 위해서다 — 다시 돌리면 순위표·배당이 그때와 달라진다.
+    # 실패해도 리포트는 이미 나왔으므로 실행을 죽이지 않는다 (§1-6).
+    try:
+        from . import artifact
+        log.info("회차 분석 저장: %s", artifact.save(report))
+    except Exception as exc:                            # noqa: BLE001
+        log.warning("회차 분석 저장 실패: %s", exc)
+        log.debug("회차 분석 저장 traceback", exc_info=True)
+
+    # 회차 기록 축적. 지나간 회차는 되돌릴 수 없으므로 매 실행이 남긴다.
+    # 실패해도 리포트는 이미 나왔으므로 실행을 죽이지 않는다 (§1-6).
+    try:
+        from . import roundlog
+        log.info("회차 기록: %s", roundlog.record(report))
+    except Exception as exc:                            # noqa: BLE001
+        log.warning("회차 기록 실패: %s", exc)
+        log.debug("회차 기록 traceback", exc_info=True)
+
+    if args.open:
+        webbrowser.open(out.resolve().as_uri())
+    if args.serve:
+        from .publish import serve
+        return serve(settings, port=args.serve_port, open_path=out.name)
+    return 0
+
+
+def _log_line(report: Report) -> str:
+    """지침 §8 스키마의 회차로그 한 줄 (정산 전이라 결과 칸은 비운다)."""
+    v = report.verdict
+    sum_draw = sum(m.probs.draw for m in report.matches if m.probs is not None)
+    return " | ".join([
+        report.round_id or "", report.generated_at[:10],
+        str(v.n), f"{v.expected:.2f}", f"{v.sigma:.2f}", f"{v.z:+.2f}",
+        f"{v.p_ge11 * 100:.0f}%", v.verdict_ko,
+        "", "", f"{sum_draw:.2f}", "", "", "", "",
+        "정산 전",
+    ])
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,816 @@
+"""데이터 소스 점검 — 파서를 쓰기 전에 실물 구조를 확인한다.
+
+이 도구는 **아무것도 파싱하지 않는다.** 각 소스에 실제로 접속해서
+"응답이 오는가 / 우리가 필요한 리그가 있는가 / 필요한 지표가 실제 테이블·
+JSON 에 들어 있는가"만 관찰해 출력한다.
+
+지금까지 실물을 못 본 채 셀렉터를 추측해 쓰다가 여러 번 왕복했다. 이 출력만
+있으면 파서를 한 번에 맞출 수 있다.
+
+    python tools/probe_sources.py              # requests 로 점검
+    python tools/probe_sources.py --browser    # 차단되면 실제 브라우저로 재시도
+    python tools/probe_sources.py --only fbref
+
+출력을 그대로 복사해서 전달하면 된다.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+DUMP = ROOT / "cache" / "probe"
+
+UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
+
+# 이번 회차(260043)가 전부 J리그·K리그였다. 아시아 커버리지가 최우선이다.
+FBREF = {
+    "comps 색인": "https://fbref.com/en/comps/",
+    "K리그1": "https://fbref.com/en/comps/55/K-League-1-Stats",
+    "J1리그": "https://fbref.com/en/comps/25/J1-League-Stats",
+    "프리미어리그(대조군)": "https://fbref.com/en/comps/9/Premier-League-Stats",
+}
+
+# FBref 에서 확보하려는 지표 (제안서의 '못 구하는 절반')
+WANT_COLS = {
+    "피슈팅": ("sh_against", "shots against", "sot_against"),
+    "xG": ("xg", "expected goals"),
+    "xGA": ("xga", "xg_against", "expected goals against"),
+    "SCA(슈팅창출)": ("sca",),
+    "전진패스 PrgP": ("prgp", "progressive"),
+    "최종3분의1 진입": ("final_third", "1/3"),
+    "키패스": ("kp", "key pass"),
+}
+
+# 경로가 바뀌었을 수 있어 후보를 여러 개 시도한다.
+FOTMOB = {
+    # 3차 점검에서 확인 완료 — 순위표(all/home/away)를 여기서 읽어 쓰고 있다.
+    # 구조가 또 바뀌지 않았는지 확인하는 용도로만 남긴다.
+    "api/data/leagues?id=9080 (K1)": "https://www.fotmob.com/api/data/leagues?id=9080",
+    # 아직 안 본 것: 팀 상세. 점유율·슈팅·xG 가 여기 있으면 후스코어드
+    # 없이도 레이더를 채울 수 있다. (id=92630 = FC Seoul)
+    "api/data/teams?id=92630 (서울)": "https://www.fotmob.com/api/data/teams?id=92630",
+    "api/teams?id=92630 (구경로)": "https://www.fotmob.com/api/teams?id=92630",
+}
+
+SOFASCORE = {
+    "api 검색(K League)": "https://api.sofascore.com/api/v1/search/all?q=K%20League",
+    "api 검색(J1)": "https://api.sofascore.com/api/v1/search/all?q=J1%20League",
+}
+
+UNDERSTAT = {
+    "K리그(있을까)": "https://understat.com/league/K_League",
+    "EPL(대조군)": "https://understat.com/league/EPL",
+}
+
+# --analyze 로 저장본에서 찾을 키. 레이더에 아직 못 채운 항목들이다.
+DEFAULT_ANALYZE_KEYS = (
+    "possession", "xg", "expected", "shot", "pass", "duel", "aerial",
+    "tackle", "interception", "rating", "injur", "suspend", "form",
+)
+
+
+# --------------------------------------------------------------------------
+def _session():
+    import requests
+    s = requests.Session()
+    s.headers.update({
+        "User-Agent": UA,
+        "Accept-Language": "en-US,en;q=0.9,ko;q=0.8",
+        "Accept": "text/html,application/json,*/*",
+    })
+    return s
+
+
+def fetch(url: str, browser=None, timeout: int = 25) -> tuple[int, str, str]:
+    """(status, text, note) — 실패해도 예외를 던지지 않는다."""
+    if browser is not None:
+        try:
+            code, html = browser.get_raw(url)
+            return code, html, "browser"
+        except Exception as exc:
+            return 0, "", f"browser 오류: {exc}"
+    try:
+        r = _session().get(url, timeout=timeout)
+        return r.status_code, r.text, ""
+    except Exception as exc:
+        return 0, "", _short_error(exc)
+
+
+def _short_error(exc: Exception) -> str:
+    """연결 오류 메시지를 한 줄로 줄인다 (원문은 매우 길다)."""
+    text = str(exc)
+    if "Max retries exceeded" in text or "ConnectionPool" in text:
+        if "403" in text or "Tunnel connection failed" in text:
+            return "연결 차단됨 (프록시/방화벽 403)"
+        if "NameResolution" in text or "getaddrinfo" in text:
+            return "DNS 조회 실패"
+        if "timed out" in text.lower():
+            return "시간 초과"
+        return "연결 실패 (차단 또는 네트워크)"
+    return text.split("(Caused by")[0].strip()[:90]
+
+
+def save(name: str, text: str) -> None:
+    try:
+        DUMP.mkdir(parents=True, exist_ok=True)
+        (DUMP / f"{re.sub(r'[^0-9A-Za-z가-힣._-]+', '_', name)[:60]}.txt").write_text(
+            text[:4000000], encoding="utf-8")
+    except Exception:
+        pass
+
+
+def head(title: str) -> None:
+    print()
+    print("=" * 74)
+    print(title)
+    print("=" * 74)
+
+
+def _why_blocked(text: str) -> str:
+    """응답 본문에서 차단 사유 단서를 뽑는다."""
+    if not text:
+        return ""
+    low = text[:6000].lower()
+    for sig, why in (
+            ("cloudflare", "Cloudflare"),
+            ("just a moment", "Cloudflare 챌린지"),
+            ("captcha", "CAPTCHA"),
+            ("incapsula", "Incapsula"),
+            ("access denied", "접근 거부"),
+            ("rate limit", "요청 과다"),
+            ("429", "요청 과다(429)"),
+            ("forbidden", "Forbidden"),
+            ("__next_data__", "Next.js SPA (내장 JSON 있음)"),
+            ("<!doctype html", "HTML 문서 (API 아님)")):
+        if sig in low:
+            return why
+    return ""
+
+
+def _excerpt(text: str, n: int = 150) -> str:
+    """본문에서 태그를 걷어낸 앞부분."""
+    if not text:
+        return ""
+    body = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", text[:20000],
+                  flags=re.S | re.I)
+    body = re.sub(r"<[^>]+>", " ", body)
+    body = re.sub(r"\s+", " ", body).strip()
+    return body[:n]
+
+
+def status_line(label: str, code: int, text: str, note: str) -> bool:
+    ok = code == 200 and len(text) > 500
+    mark = "OK " if ok else "실패"
+    size = f"{len(text) / 1024:.0f}KB" if text else "0KB"
+    extra = f"  {note}" if note else ""
+    print(f"  [{mark}] {label:<26} HTTP {code or '---'}  {size:>7}{extra}")
+    if not ok and text:
+        why = _why_blocked(text)
+        if why:
+            print(f"         단서: {why}")
+        ex = _excerpt(text)
+        if ex:
+            print(f"         본문: {ex}")
+    return ok
+
+
+# --------------------------------------------------------------------------
+# FBref
+# --------------------------------------------------------------------------
+def unwrap_json(text: str) -> str:
+    """브라우저로 JSON URL 을 열면 <pre> 로 감싼 HTML 이 돌아온다. 알맹이만 꺼낸다."""
+    if not text:
+        return text
+    stripped = text.lstrip()
+    if stripped[:1] in "{[":
+        return text
+    m = re.search(r"<pre[^>]*>(.*?)</pre>", text, re.S | re.I)
+    if m:
+        import html as _h
+        return _h.unescape(m.group(1))
+    return text
+
+
+def _soup(html: str):
+    from bs4 import BeautifulSoup
+    try:
+        return BeautifulSoup(html, "lxml")
+    except Exception:
+        return BeautifulSoup(html, "html.parser")
+
+
+def _fbref_tables(html: str):
+    """FBref 는 상당수 표를 HTML 주석 안에 넣어둔다. 주석까지 펼쳐서 찾는다."""
+    from bs4 import Comment
+    soup = _soup(html)
+    tables = list(soup.find_all("table"))
+    commented = 0
+    for c in soup.find_all(string=lambda t: isinstance(t, Comment)):
+        if "<table" not in c:
+            continue
+        try:
+            inner = _soup(str(c))
+        except Exception:
+            continue
+        found = inner.find_all("table")
+        tables.extend(found)
+        commented += len(found)
+    return tables, commented
+
+
+def probe_fbref(browser=None) -> None:
+    head("① FBref — 정량 지표 (피슈팅 · xG · xGA · SCA · 전진패스)")
+    print("  ※ FBref 는 표 상당수를 HTML 주석 안에 넣어둔다. 주석까지 펼쳐 센다.")
+    print("  ※ 연속 요청 시 429 가 나므로 요청 사이에 4초 쉰다.")
+    if browser is not None:
+        print("  ※ Cloudflare 챌린지(Just a moment)는 몇 초 뒤 자동 해제된다.")
+        print("    브라우저 모드에서는 해제를 기다렸다가 다시 읽는다.")
+
+    for i, (label, url) in enumerate(FBREF.items()):
+        if i:
+            time.sleep(4)
+        code, text, note = fetch(url, browser)
+        # Cloudflare 인터스티셜이면 해제를 기다렸다가 한 번 더 읽는다
+        if browser is not None and "just a moment" in (text or "")[:4000].lower():
+            print(f"      Cloudflare 챌린지 감지 — 12초 대기 후 재시도")
+            time.sleep(12)
+            code2, text2, _ = fetch(url, browser)
+            if code2 == 200 and "just a moment" not in (text2 or "")[:4000].lower():
+                code, text = code2, text2
+        ok = status_line(label, code, text, note)
+        if not ok:
+            continue
+        save(f"fbref_{label}", text)
+
+        if label == "comps 색인":
+            soup = _soup(text)
+            hits = []
+            for a in soup.find_all("a", href=True):
+                t = a.get_text(" ", strip=True)
+                if re.search(r"K.?League|J\d?.?League|Korea|Japan", t, re.I):
+                    hits.append(f"{t} → {a['href']}")
+            print(f"      한국/일본 대회 링크 {len(hits)}개:")
+            for h in sorted(set(hits))[:14]:
+                print(f"        {h}")
+            continue
+
+        tables, commented = _fbref_tables(text)
+        print(f"      표 {len(tables)}개 (그중 주석 안 {commented}개)")
+        cols_all = set()
+        for t in tables[:14]:
+            tid = t.get("id") or "(id없음)"
+            hdr = t.find("thead")
+            names = []
+            if hdr:
+                names = [th.get("data-stat") or th.get_text(" ", strip=True)
+                         for th in hdr.find_all("th")]
+            cols_all.update(n.lower() for n in names if n)
+            rows = len(t.find_all("tr"))
+            print(f"        · {tid:<34} {rows:>3}행  컬럼 {len(names)}개")
+            if names:
+                print(f"          {', '.join(names[:18])}")
+        print("      필요한 지표가 실제로 있는지:")
+        for want, keys in WANT_COLS.items():
+            hit = [c for c in cols_all if any(k in c for k in keys)]
+            mark = "있음" if hit else "없음"
+            sample = f"  ({', '.join(sorted(hit)[:4])})" if hit else ""
+            print(f"        {want:<16} {mark}{sample}")
+
+
+# --------------------------------------------------------------------------
+# JSON API (FotMob / Sofascore)
+# --------------------------------------------------------------------------
+def _walk_keys(obj, prefix="", depth=0, out=None, maxd=3):
+    if out is None:
+        out = []
+    if depth > maxd:
+        return out
+    if isinstance(obj, dict):
+        for k, v in list(obj.items())[:24]:
+            p = f"{prefix}.{k}" if prefix else k
+            if isinstance(v, (dict, list)):
+                out.append(f"{p} ({type(v).__name__}"
+                           + (f", {len(v)}" if isinstance(v, list) else "") + ")")
+                _walk_keys(v, p, depth + 1, out, maxd)
+            else:
+                out.append(f"{p} = {str(v)[:40]}")
+    elif isinstance(obj, list) and obj:
+        _walk_keys(obj[0], f"{prefix}[0]", depth + 1, out, maxd)
+    return out
+
+
+def _sample(value) -> str:
+    """값을 한 줄로 줄여 보여준다."""
+    if isinstance(value, dict):
+        keys = ", ".join(list(value)[:6])
+        return f"(dict: {keys})" if keys else "(dict, 비어 있음)"
+    if isinstance(value, list):
+        if not value:
+            return "(list, 0)"
+        first = value[0]
+        if isinstance(first, dict):
+            return f"(list, {len(value)}) 첫 원소 키: " + ", ".join(list(first)[:6])
+        return f"(list, {len(value)}) 예: {str(first)[:40]}"
+    return str(value)[:60]
+
+
+def find_key_paths(data, patterns: tuple, max_paths: int = 60,
+                   max_nodes: int = 400_000) -> list[tuple[str, list[str]]]:
+    """patterns 가 **키 이름 또는 문자열 값**에 들어간 경로를 전부 찾는다.
+
+    두 가지를 다 봐야 한다. FotMob 은 지표 이름을 키가 아니라 값에 담는다 —
+    `seasonStats[].localizedTitleId = "expected_goals"` 처럼. 키만 훑으면
+    "xG 가 없다"는 잘못된 결론이 나온다.
+
+    리스트는 첫 원소만 보지 않고 전부 훑되, 경로의 인덱스를 `[]` 로 뭉개
+    같은 모양이 수백 줄 반복되지 않게 한다.
+    """
+    from collections import deque
+    found: dict[str, list[str]] = {}
+    order: list[str] = []
+    queue = deque([("", data)])
+    nodes = 0
+
+    def note(path: str, sample: str) -> None:
+        if path not in found:
+            if len(order) >= max_paths:
+                return
+            found[path] = []
+            order.append(path)
+        bucket = found[path]
+        if sample not in bucket and len(bucket) < 3:
+            bucket.append(sample)
+
+    while queue and nodes < max_nodes:
+        path, node = queue.popleft()
+        nodes += 1
+        if isinstance(node, dict):
+            for key, value in node.items():
+                child = f"{path}.{key}" if path else str(key)
+                low_k = str(key).lower()
+                if any(p in low_k for p in patterns):
+                    note(child, _sample(value))
+                elif isinstance(value, str) and any(p in value.lower() for p in patterns):
+                    note(child, value[:60])
+                queue.append((child, value))
+        elif isinstance(node, list):
+            for item in node:
+                queue.append((f"{path}[]", item))
+    return [(p, found[p]) for p in order]
+
+
+def report_key_paths(data, hint_keys: tuple) -> None:
+    if not hint_keys:
+        return
+    patterns = tuple(k.lower() for k in hint_keys)
+    hits = find_key_paths(data, patterns)
+    if not hits:
+        print(f"      찾는 키({', '.join(hint_keys)})가 경로에 없습니다.")
+        return
+    print(f"      ▼ 찾는 지표가 실제로 있는 경로 ({len(hits)}개):")
+    for path, samples in hits:
+        print(f"        {path} = {' | '.join(samples)}")
+
+
+def _iter_paths(node, max_nodes: int = 400_000):
+    """(정규화된 경로, 값) 을 얕은 것부터. 리스트 인덱스는 [] 로 뭉갠다."""
+    from collections import deque
+    queue = deque([("", node)])
+    seen = 0
+    while queue and seen < max_nodes:
+        path, cur = queue.popleft()
+        seen += 1
+        yield path, cur
+        if isinstance(cur, dict):
+            for key, value in cur.items():
+                queue.append((f"{path}.{key}" if path else str(key), value))
+        elif isinstance(cur, list):
+            for item in cur:
+                queue.append((f"{path}[]", item))
+
+
+def catalog_values(data, needle: str, limit: int = 80) -> list[str]:
+    """경로에 needle 이 든 모든 스칼라 값을 중복 없이 모은다.
+
+    find_key_paths 는 값 샘플을 3개까지만 보여준다. '이 리그에서 받을 수 있는
+    통계 종류가 전부 무엇인가' 같은 질문에는 전량이 필요하다.
+    """
+    out: list[str] = []
+    for path, value in _iter_paths(data):
+        if needle in path and isinstance(value, (str, int, float)) \
+                and not isinstance(value, bool):
+            text = str(value)
+            if text not in out:
+                out.append(text)
+                if len(out) >= limit:
+                    break
+    return out
+
+
+def expand_subtree(data, needle: str, maxd: int = 4, limit: int = 45) -> None:
+    """경로가 needle 로 끝나는 첫 노드의 하위 구조를 펼친다."""
+    for path, value in _iter_paths(data):
+        if path.endswith(needle) and isinstance(value, (dict, list)) and value:
+            lines = _walk_keys(value, path, maxd=maxd)
+            if not lines:
+                continue
+            print(f"     ▼ {path} 펼침 ({len(lines)}개 중 앞 {min(limit, len(lines))}개):")
+            for line in lines[:limit]:
+                print(f"        {line}")
+            return
+    print(f"     ({needle} 를 찾지 못했습니다)")
+
+
+def find_filled(data, key: str, limit: int = 2) -> None:
+    """해당 키가 비어 있지 않은 실제 사례를 찾아 보여준다.
+
+    `injury = None` 만 보면 필드가 있다는 것만 알 뿐, 값이 들어올 때 어떤
+    모양인지는 모른다. 결장자를 걸러내려면 그 모양을 알아야 한다.
+    """
+    shown = 0
+    for path, value in _iter_paths(data):
+        if not isinstance(value, dict) or key not in value:
+            continue
+        if value[key] in (None, "", [], {}):
+            continue
+        keep = {k: v for k, v in value.items()
+                if k in ("name", "id", key, "rating", "minutesPlayed", "role")}
+        print(f"     · {path}: {json.dumps(keep, ensure_ascii=False)[:220]}")
+        shown += 1
+        if shown >= limit:
+            return
+    if not shown:
+        print(f"     ('{key}' 에 값이 든 사례가 이 응답에는 없습니다)")
+
+
+# 저장본에서 자동으로 펼쳐 볼 지점. 4차 점검에서 '여기 있다'까지는 확인됐지만
+# 안쪽 모양을 못 본 곳들이다.
+EXPAND_POINTS = (
+    ("경기 스탯 표 (점유율·슈팅·피슈팅)", "content.stats"),
+    ("슛맵 1건 (팀별 슈팅/유효슈팅 집계용)", "shotmap.shots"),
+    ("선수 명단 1명 (결장·평점 필터용)", "squad[].members"),
+)
+
+
+def analyze_dumps(hint_keys: tuple) -> int:
+    """저장된 응답을 다시 뜯어본다 — 네트워크 없이 즉시 실행된다.
+
+    한 번 받아둔 응답이 cache/probe 에 그대로 있는데, 구조를 더 보려고
+    매번 다시 접속할 이유가 없다.
+    """
+    head("저장된 응답 다시 분석 (네트워크 사용 안 함)")
+    files = sorted(DUMP.glob("*.txt")) if DUMP.exists() else []
+    if not files:
+        print(f"  {DUMP} 에 저장된 응답이 없습니다.")
+        print("  먼저 점검을 한 번 실행하세요 (메뉴 [7]).")
+        return 1
+
+    for path in files:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        print(f"\n  ── {path.name}  ({len(text) / 1024:.0f}KB)")
+        body = unwrap_json(text)
+        try:
+            data = json.loads(body)
+        except Exception as exc:
+            m = re.search(
+                r'<script[^>]+id="__NEXT_DATA__"[^>]*>(.*?)</script>', body, re.S)
+            if not m:
+                print(f"     JSON 이 아닙니다 ({exc.__class__.__name__}) — 건너뜁니다.")
+                continue
+            try:
+                data = json.loads(m.group(1))
+                print("     __NEXT_DATA__ 내장 JSON 으로 분석합니다.")
+            except Exception:
+                print("     내장 JSON 도 잘렸습니다 — 건너뜁니다.")
+                continue
+        report_key_paths(data, hint_keys)
+
+        # FotMob 통계 피드 카탈로그 — stats.teams[] 에 이 리그에서 받을 수
+        # 있는 팀 통계 종류가 전부 들어 있다. 여기서 '피슈팅'이 나오는지가
+        # '수비 견고함' 축의 성립 여부를 가른다.
+        names = catalog_values(data, "stats.teams[].header")
+        if names:
+            print(f"     ▼ 이 리그에서 받을 수 있는 팀 통계 {len(names)}종:")
+            for i in range(0, len(names), 3):
+                print("        " + " · ".join(names[i:i + 3]))
+            ids = catalog_values(data, "stats.teams[].name")
+            if ids:
+                print(f"     ▼ 피드 이름(URL 조각) {len(ids)}개:")
+                for i in range(0, len(ids), 4):
+                    print("        " + " · ".join(ids[i:i + 4]))
+
+        for title, needle in EXPAND_POINTS:
+            if any(needle.rstrip("[]") in p for p, _ in _iter_paths(data)):
+                print(f"     ── {title}")
+                expand_subtree(data, needle)
+
+        if any("injury" in p for p, _ in _iter_paths(data)):
+            print("     ── 결장(injury) 값이 실제로 든 사례")
+            find_filled(data, "injury")
+    print()
+    return 0
+
+
+def _get_json(url: str, browser=None) -> tuple[dict | list | None, str]:
+    """(파싱된 JSON, 상태설명). 실패해도 예외를 던지지 않는다."""
+    code, text, note = fetch(url, browser)
+    if code != 200 or not text:
+        return None, f"HTTP {code or '---'} {_why_blocked(text) or note}".strip()
+    try:
+        return json.loads(unwrap_json(text)), f"HTTP 200 {len(text) / 1024:.0f}KB"
+    except Exception:
+        return None, f"HTTP 200 이지만 JSON 아님 ({len(text) / 1024:.0f}KB)"
+
+
+# --------------------------------------------------------------------------
+# 경기별 스탯 — '최근 폼 기반 레이더'가 성립하는지 가르는 지점
+# --------------------------------------------------------------------------
+def probe_fotmob_match(browser=None) -> None:
+    """리그 응답에서 끝난 경기 하나를 골라 경기 상세를 열어본다.
+
+    이게 핵심 질문이다. 시즌 누적 스탯은 '최근 6경기'나 '홈/원정 분리'로
+    쪼갤 수 없다. 경기별 점유율·슈팅·피슈팅이 나와야 제안서가 말한
+    '최근 폼 기반 + 홈원정 분리' 레이더를 실제로 만들 수 있다.
+    """
+    head("②-2 FotMob 경기 상세 — 경기별 점유율·슈팅·피슈팅이 있는가")
+    league, status = _get_json(
+        "https://www.fotmob.com/api/data/leagues?id=9080", browser)
+    print(f"  리그 응답: {status}")
+    if league is None:
+        print("  리그 응답을 못 받아 경기 ID 를 고를 수 없습니다.")
+        return
+
+    match_id = None
+    for node in _iter_all(league):
+        if not isinstance(node, dict):
+            continue
+        st = node.get("status")
+        if (isinstance(st, dict) and st.get("finished") is True
+                and isinstance(node.get("id"), (int, str))
+                and isinstance(node.get("home"), dict)):
+            match_id = node["id"]
+            print(f"  고른 경기: {node['home'].get('name')} vs "
+                  f"{(node.get('away') or {}).get('name')}  (id={match_id})")
+            break
+    if match_id is None:
+        print("  끝난 경기를 찾지 못했습니다.")
+        return
+
+    time.sleep(1.5)
+    for label, url in (
+            ("api/data/matchDetails",
+             f"https://www.fotmob.com/api/data/matchDetails?matchId={match_id}"),
+            ("api/matchDetails(구경로)",
+             f"https://www.fotmob.com/api/matchDetails?matchId={match_id}"),
+    ):
+        data, status = _get_json(url, browser)
+        print(f"  [{'OK ' if data is not None else '실패'}] {label:<26} {status}")
+        if data is None:
+            continue
+        save(f"fotmob_matchDetails_{match_id}", json.dumps(data)[:4000000])
+        report_key_paths(data, ("possession", "shot", "xg", "expected",
+                                "pass", "duel", "corner", "stat"))
+        return
+
+
+def probe_fotmob_stat_feed(browser=None) -> None:
+    """팀 통계 피드(data.fotmob.com)의 실제 스키마를 본다.
+
+    리그 응답의 stats.teams[] 가 통계 29종과 각각의 fetchAllUrl 을 알려준다.
+    URL 은 응답이 준 그대로 쓰지만, 그 안의 '팀 이름 ↔ 값' 구조는 아직 본 적이
+    없다. 파서는 모양으로 찾도록 짜뒀으니 이건 검증용이다.
+    """
+    head("②-3 FotMob 팀 통계 피드 — 팀 이름과 값이 어떤 모양인가")
+    league, status = _get_json(
+        "https://www.fotmob.com/api/data/leagues?id=9080", browser)
+    print(f"  리그 응답: {status}")
+    if league is None:
+        return
+
+    feeds: list[tuple[str, str, str]] = []
+    for node in _iter_all(league):
+        if not isinstance(node, dict):
+            continue
+        name, url, header = (node.get("name"), node.get("fetchAllUrl"),
+                             node.get("header"))
+        if isinstance(name, str) and isinstance(url, str) \
+                and url.startswith("http") and "_team" in name:
+            feeds.append((name, str(header or ""), url))
+    print(f"  팀 통계 피드 {len(feeds)}종 발견")
+    if not feeds:
+        print("  stats.teams[] 를 찾지 못했습니다.")
+        return
+
+    # 점유율이 있으면 그걸로, 없으면 첫 번째로 확인한다
+    pick = next((f for f in feeds if "possession" in f[0]), feeds[0])
+    print(f"  확인 대상: {pick[1]} ({pick[0]})")
+    print(f"    {pick[2]}")
+    time.sleep(1.5)
+    data, status = _get_json(pick[2], browser)
+    print(f"  [{'OK ' if data is not None else '실패'}] 피드 응답  {status}")
+    if data is None:
+        return
+    save(f"fotmob_feed_{pick[0]}", json.dumps(data)[:4000000])
+    print("     ▼ 전체 구조:")
+    for line in _walk_keys(data, maxd=5)[:40]:
+        print(f"        {line}")
+
+
+def probe_sofascore_stats(browser=None) -> None:
+    """Sofascore 팀 시즌 통계 — FotMob 에 피슈팅이 없을 때의 대안."""
+    head("③-2 Sofascore 팀 시즌 통계 — 피슈팅(shots against) 이 있는가")
+    ut = 196                                    # 3차 점검에서 확인한 J1 League
+    seasons, status = _get_json(
+        f"https://api.sofascore.com/api/v1/unique-tournament/{ut}/seasons", browser)
+    print(f"  시즌 목록: {status}")
+    if seasons is None:
+        return
+    sid = None
+    for node in _iter_all(seasons):
+        if isinstance(node, dict) and isinstance(node.get("id"), int) \
+                and node.get("year"):
+            sid = node["id"]
+            print(f"  고른 시즌: {node.get('year')} (id={sid})")
+            break
+    if sid is None:
+        print("  시즌 ID 를 찾지 못했습니다.")
+        return
+
+    for label, url in (
+            ("리그 전체 팀 통계",
+             f"https://api.sofascore.com/api/v1/unique-tournament/{ut}"
+             f"/season/{sid}/statistics?limit=20&order=-rating"),
+            ("팀 시즌 통계(대안 경로)",
+             f"https://api.sofascore.com/api/v1/unique-tournament/{ut}"
+             f"/season/{sid}/team-statistics/overall"),
+    ):
+        time.sleep(1.5)
+        data, status = _get_json(url, browser)
+        print(f"  [{'OK ' if data is not None else '실패'}] {label:<26} {status}")
+        if data is None:
+            continue
+        save(f"sofascore_{label}", json.dumps(data)[:4000000])
+        report_key_paths(data, ("shotsagainst", "shots_against", "against",
+                                "possession", "shot", "xg", "expected"))
+        return
+
+
+def _iter_all(node, max_nodes: int = 300_000):
+    """JSON 트리의 모든 dict/list 원소를 훑는다 (얕은 것부터)."""
+    from collections import deque
+    queue = deque([node])
+    seen = 0
+    while queue and seen < max_nodes:
+        cur = queue.popleft()
+        seen += 1
+        yield cur
+        if isinstance(cur, dict):
+            queue.extend(cur.values())
+        elif isinstance(cur, list):
+            queue.extend(cur)
+
+
+def probe_json(title: str, urls: dict, browser=None,
+               hint_keys: tuple = ()) -> None:
+    head(title)
+    for i, (label, url) in enumerate(urls.items()):
+        if i:
+            time.sleep(1.5)
+        code, text, note = fetch(url, browser)
+        ok = status_line(label, code, text, note)
+        if not ok:
+            continue
+        save(f"{title[:6]}_{label}", text)
+        text = unwrap_json(text)
+        try:
+            data = json.loads(text)
+        except Exception:
+            # SPA 페이지라면 내장 JSON(__NEXT_DATA__)에 데이터가 들어 있다.
+            m = re.search(
+                r'<script[^>]+id="__NEXT_DATA__"[^>]*>(.*?)</script>', text, re.S)
+            if m:
+                print("      JSON 이 아니라 SPA 페이지 — __NEXT_DATA__ 발견")
+                try:
+                    data = json.loads(m.group(1))
+                    print(f"      내장 JSON 크기 {len(m.group(1)) / 1024:.0f}KB")
+                except Exception as exc:
+                    print(f"      내장 JSON 파싱 실패: {exc}")
+                    continue
+            else:
+                print("      JSON 파싱 실패, 내장 JSON 도 없음 (차단 가능성)")
+                continue
+        keys = _walk_keys(data)
+        print(f"      최상위 구조 ({len(keys)}개 경로 중 앞부분):")
+        for k in keys[:20]:
+            print(f"        {k}")
+
+        # 찾는 지표가 '어느 경로에' 있는지 — 이게 파서를 쓰는 데 필요한 정보다.
+        # (예전에는 본문에 문자열이 있는지 예/아니오만 찍어서, 있다는 건
+        #  알아도 어디서 꺼내야 하는지는 알 수 없었다.)
+        report_key_paths(data, hint_keys)
+
+
+# --------------------------------------------------------------------------
+def probe_understat(browser=None) -> None:
+    head("④ Understat — xG 전문 (유럽 5대 리그 한정으로 알려져 있음)")
+    for i, (label, url) in enumerate(UNDERSTAT.items()):
+        if i:
+            time.sleep(1.5)
+        code, text, note = fetch(url, browser)
+        ok = status_line(label, code, text, note)
+        if ok:
+            has = "teamsData" in text or "datesData" in text
+            print(f"      내장 JSON(teamsData) 존재: {'예' if has else '아니오'}")
+
+
+# --------------------------------------------------------------------------
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description="데이터 소스 접속·구조 점검")
+    ap.add_argument("--browser", action="store_true",
+                    help="requests 가 막히면 실제 브라우저로 시도")
+    ap.add_argument("--only", default="",
+                    help="fbref / fotmob / sofascore / understat 중 하나만")
+    ap.add_argument("--analyze", action="store_true",
+                    help="접속하지 않고, 저장된 응답만 다시 뜯어본다")
+    ap.add_argument("--keys", default="",
+                    help="--analyze 로 찾을 키 (쉼표 구분). 기본: 지표 키 모음")
+    args = ap.parse_args(argv if argv is not None else sys.argv[1:])
+
+    if args.analyze:
+        keys = tuple(k.strip() for k in args.keys.split(",") if k.strip()) \
+            or DEFAULT_ANALYZE_KEYS
+        print("저장된 응답을 다시 분석합니다 (접속하지 않습니다).")
+        print(f"찾는 키: {', '.join(keys)}")
+        return analyze_dumps(keys)
+
+    try:
+        import requests  # noqa: F401
+        import bs4       # noqa: F401
+    except Exception as exc:
+        print(f"필수 패키지가 없습니다: {exc}")
+        print("pip install -r requirements-toto.txt 를 먼저 실행하세요.")
+        return 1
+
+    print("데이터 소스 점검 — 파싱하지 않고 구조만 관찰합니다.")
+    print(f"원본 응답은 {DUMP} 에 저장됩니다.")
+
+    browser = None
+    ctx = None
+    if args.browser:
+        try:
+            sys.path.insert(0, str(ROOT))
+            from toto.cache import Cache
+            from toto.settings import load_settings
+            from toto.sources.whoscored import WhoScoredBrowser
+            s = load_settings()
+            s.whoscored = dict(s.whoscored, delay_sec=2.0)
+            ctx = WhoScoredBrowser(s, cache=Cache(enabled=True))
+            browser = ctx.__enter__()
+            if not browser.available:
+                print("브라우저를 띄우지 못해 requests 로 진행합니다.")
+                browser = None
+        except Exception as exc:
+            print(f"브라우저 준비 실패({exc}) — requests 로 진행합니다.")
+            browser = None
+
+    try:
+        only = args.only.lower()
+        if not only or only == "fbref":
+            probe_fbref(browser)
+        if not only or only == "fotmob":
+            probe_json("② FotMob — 팀 상세에 점유율·xG 가 있는지", FOTMOB, browser,
+                       hint_keys=("possession", "expected_goals", "xg",
+                                  "shotsOnTarget", "rating", "injur"))
+            probe_fotmob_match(browser)
+            probe_fotmob_stat_feed(browser)
+        if not only or only == "sofascore":
+            probe_json("③ Sofascore — 아시아 리그 보조", SOFASCORE, browser,
+                       hint_keys=("k league", "j1 league", "uniqueTournament"))
+            probe_sofascore_stats(browser)
+        if not only or only == "understat":
+            probe_understat(browser)
+    finally:
+        if ctx is not None:
+            try:
+                ctx.__exit__(None, None, None)
+            except Exception:
+                pass
+
+    print()
+    print("=" * 74)
+    print("점검 끝. 위 출력을 그대로 복사해서 전달해 주세요.")
+    if browser is None:
+        print("실패가 많다면 메뉴 [7] 에서 브라우저 사용에 'y' 로 다시 실행해 보세요.")
+        print("(requests 는 UA 만 바꾸므로 Cloudflare 계열 차단을 통과하지 못합니다)")
+    print("=" * 74)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

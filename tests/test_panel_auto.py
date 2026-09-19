@@ -214,8 +214,18 @@ def test_a6_usage_limit_stops_the_workflow():
     assert panelauto._classify("Claude usage limit reached") \
         == panelauto.AGENT_USAGE_LIMIT
     assert panelauto._classify("rate_limit") == panelauto.AGENT_USAGE_LIMIT
+    # **실물에서 온 문구** (2026-09-19 · 윈도우 260054, 두 번 모두 이 말).
+    # 표에 없어서 `failed` 로 떨어졌고 화면에 고장처럼 보였다.
+    assert panelauto._classify(
+        "You've hit your session limit · resets 2:30am (Asia/Seoul)") \
+        == panelauto.AGENT_USAGE_LIMIT
     assert panelauto.WORKFLOW_STOPPED_USAGE_LIMIT \
         == "WORKFLOW_STOPPED_USAGE_LIMIT"
+    # 한도에서 멈출 때도 **보존·재개**를 말해 준다 — 재개가 가장 필요한
+    # 자리인데 예전에는 실패 갈래에만 있었다.
+    body = code_of(fn_node(panelauto, "_run_stages"))
+    head, _, tail = body.partition("AGENT_USAGE_LIMIT")
+    assert "보존" in tail.split("else")[0], "한도 갈래가 보존을 말하지 않는다"
     # 모르는 오류를 한도로 오해하지 않는다 — 그 반대도 마찬가지다.
     assert panelauto._classify("무슨 소린지 모를 오류") \
         == panelauto.AGENT_FAILED

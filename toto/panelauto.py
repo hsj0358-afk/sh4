@@ -143,7 +143,11 @@ WORKFLOW_STOPPED_USAGE_LIMIT = "WORKFLOW_STOPPED_USAGE_LIMIT"
 
 # 구독 한도·인증 실패를 알아보는 표식. **문구가 바뀌면 못 알아볼 수 있으므로
 # 못 알아본 것은 `failed` 로 남기고 과금 전환은 어느 경우에도 하지 않는다.**
-_USAGE_MARKERS = ("usage limit", "rate limit", "rate_limit",
+#   · `session limit` 은 **실물에서 관측한 문구**다 (2026-09-19 · 윈도우
+#     260054, 두 번 모두 이 말로 왔다) — `You've hit your session limit ·
+#     resets 2:30am (Asia/Seoul)`. 표에 없어서 `failed` 로 떨어졌고, 화면에는
+#     한도가 아니라 고장처럼 보였다. 추측으로 늘리지 않고 **본 것만** 넣는다.
+_USAGE_MARKERS = ("usage limit", "rate limit", "rate_limit", "session limit",
                   "사용량", "한도", "quota", "upgrade to", "limit reached")
 _AUTH_MARKERS = ("authentication_failed", "invalid api key", "not logged in",
                  "please run /login", "unauthorized", "oauth")
@@ -1252,6 +1256,10 @@ def _run_stages(report, settings, out: AutoResult, pre: Preflight, done: dict,
             echo("Claude 사용량 한도에 도달했습니다.")
             echo("  자동으로 API 과금으로 전환하지 않습니다 — 한도가 "
                  "회복된 뒤 다시 실행하면 이어서 진행합니다.")
+            # 한도에서 멈췄을 때 사용자가 가장 알아야 하는 것이 이것이다 —
+            # 예전에는 실패 갈래에만 있어서, 정작 재개가 필요한 자리에서
+            # 보존 여부를 말해 주지 않았다.
+            echo("  완료된 경기 결과는 보존되었습니다.")
         else:
             out.stopped_reason = f"{stage_name}: {res.message}"
             echo("")

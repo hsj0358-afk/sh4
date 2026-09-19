@@ -567,7 +567,12 @@ def preflight(report: Report | None, round_id: str,
             # `claude.cmd` 는 npm 셸 심이라 Node 가 없으면 이렇게 된다.
             out.problems.append(f"claude 를 실행하지 못했습니다 ({cli}): {why}")
         else:
-            out.notes.append(f"claude 실행 파일 {cli}")
+            # **버전도 함께 적는다.** 경로만으로는 "찾았다" 까지만 알 수
+            # 있고, 이 줄이 뜬 근거는 실제로 띄워 `--version` 을 받은
+            # 것이다 (`cli_probe`). 무엇을 확인했는지 그대로 적는다.
+            out.notes.append(
+                f"claude {version} — {cli}" if version
+                else f"claude 실행 파일 {cli}")
 
             # ②-b 인증 — 여기서 막히면 14경기를 시작하지 않는다.
             auth = auth_status(cli)

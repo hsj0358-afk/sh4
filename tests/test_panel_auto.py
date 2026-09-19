@@ -1076,6 +1076,9 @@ def test_h15_preflight_reports_what_it_checked():
     assert pre.version.startswith("9.9.9"), pre.version
     joined = " ".join(pre.notes)
     assert str(cli) in joined, "어느 실행 파일을 쓰는지 안 적었다"
+    # 경로만으로는 '찾았다' 까지다. 이 줄이 뜬 근거는 실제로 띄워
+    # `--version` 을 받은 것이므로 그 버전도 적는다.
+    assert "9.9.9" in joined, f"버전을 안 적었다: {joined}"
     assert "인증" in joined, joined
     assert pre.auth is not None and pre.auth.ok
 

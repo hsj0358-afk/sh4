@@ -6087,6 +6087,213 @@ Phase 의 범위 밖이라(§20) 고치지 않았다.
 고친 것이 정확히 그것이다(음성 대조). 통과하는 10개는 '바뀌지 않아야
 한다' 를 지키는 것들이라 양쪽에서 통과하는 것이 맞다.
 
+### 1-48. 있다 ≠ 쓸 수 있다 (Phase 6-F-12) — 체크포인트·재개·출처
+
+6-F-6 이 자동 실행을 만들면서 재개 판정을 `panelwork.workflow()` 에
+맡겼는데, 그 함수가 보는 것은 **파일이 있느냐** 하나였다.
+
+```python
+# 6-F-12 이전 — `_run_stages`
+state = panelwork.workflow(out.round_id, base=base)
+done = {s.key: s.done for s in state.stages}      # done = path.is_file()
+if done.get(key): ...건너뛴다
+```
+
+사람이 화면에서 진행 상태를 볼 때는 그것으로 충분하다(§1-41 이 그렇게
+정했다). 그런데 같은 판정이 **다음 단계에 돈을 쓸지**를 정하기 시작하면
+두 가지가 조용히 지나간다.
+
+  · 잘렸거나 손으로 고쳐진 보관본이 '완료' 로 읽힌다. 실물 재현: 3경기
+    회차의 `analyst_a.json` 을 1경기로 잘라도 `A_COMPLETE · done=True`
+    이고 A 를 건너뛴다. 뒤늦게 조립에서 터지는데 그때는 B 에 이미 돈을
+    쓴 뒤다.
+  · **출처가 다른** 보관본이 그대로 재사용된다. 회차를 다시 수집하면
+    순위표·배당이 달라지는데(§1-1-7), 옛 A·B 를 두고 새 자료로 만든
+    사회자 시트에 C 를 돌리면 **한 회차 안에 두 시점이 섞인다.**
+
+#### 재개는 다섯 문을 지난다
+
+```
+있나 → 읽히나 → JSON 인가 → 기존 검증기를 지나나 → 출처가 맞나
+```
+
+**검증기를 새로 쓰지 않는다** (§1-8). 1·2단계는 `parse_stage()`,
+3단계는 `parse_moderator_result()` — 보관할 때 지난 그 문이고, 그것이
+다시 `panel.parse_opinion()` · `panelimport.validate()` ·
+`moderator.parse_result()` 를 부른다. 근거 ID 도 **그 경기의 것**인지
+거기서 걸린다.
+
+| 상태 | 뜻 | 재사용 |
+|---|---|---|
+| `missing` | 파일이 없다 | 아니오 |
+| `unreadable` | 있는데 읽히지 않는다 | 아니오 |
+| `invalid` | 읽혔는데 검증을 통과하지 못한다 | 아니오 |
+| `stale` | 통과하는데 **출처가 지금과 다르다** | 아니오 |
+| `unverified` | 통과하는데 출처 **기록이 없다** | **예** |
+| `complete` | 통과 + 출처 일치 | 예 |
+
+**`unverified` 가 재사용되는 것이 이 절의 핵심이다.** 채팅 경로로 넣은
+보관본과 6-F-12 이전 파일에는 기록이 없다 — 그것을 '불일치' 로 보면
+멀쩡한 체크포인트가 하루아침에 전부 무효가 되고, 사용자는 이유도 모른 채
+세 세션을 다시 쓴다. 6-F-7 이 인증에서 `unknown` 을 `실패` 로 치지 않은
+것과 같은 태도다 (§1-6). 실물 260052 의 다섯 체크포인트가 지금 전부
+이 상태이고 그대로 쓰인다.
+
+같은 이유로 **사람이 고친 파일도 버리지 않는다.** 기록된 해시와 다르면
+`unverified` 로 두고 "보관한 뒤 파일이 바뀌었습니다" 만 적는다 — 고쳤다는
+이유로 돈이 드는 재실행을 강요하지 않는다. 대신 그 파일을 먹은 **뒤
+단계**는 해시가 어긋나 낡는다.
+
+**`.tmp` 는 어느 문에도 닿지 않는다.** `checkpoint_path()` 가 실제 이름만
+돌려주므로 쓰다 만 파일이 체크포인트가 될 수 없다는 것이 **경로 단계에서**
+정해진다. 원자적 저장은 `_atomic_write()` 한 곳으로 모았다 — 세 보관
+함수가 같은 문을 지나고, `fsync` 는 되는 자리에서만 한다.
+
+#### 출처는 `workflow_manifest.json` 한 장
+
+```
+panel_work/<회차>/  analyst_a.json        ← 모델이 돌려준 배열 **그대로**
+                    analyst_b.json
+                    moderator_result.json
+                    workflow_manifest.json ← 6-F-12 에서 는 유일한 파일
+```
+
+**보관본에 메타데이터를 섞지 않는다.** 그 파일은 "모델이 무엇을 말했나"
+를 되짚는 원자료라 한 칸도 더할 수 없다 (6-F-3 §6). `PanelResult` 스키마도
+그대로 `1.1` 이고 새 DB 도 만들지 않았다.
+
+**적는 쪽이 둘이고 아는 것이 다르다.**
+
+| 적는 곳 | 아는 것 |
+|---|---|
+| `save_stage` · `save_moderator_result` · `build_completed_sheet` | 저장한 파일의 해시·경기 수·시각·프롬프트 판, 그리고 **무엇을 먹었나**(`depends`) |
+| `panelauto._run_stage` | **무엇으로 만들었나**(packet·system 해시)와 **누가**(모델·세션) |
+
+그래서 수동 경로는 packet 기록을 남기지 않고 자연히 `unverified` 가
+된다 — 관측하지 않은 것을 적지 않는다 (§1-5).
+
+**검증을 통과한 뒤에만 적는다.** 순서가 반대면 실패한 실행의 출처가 남아
+다음 재개가 그것을 '완료' 로 읽는다. 그리고 **실패는 체크포인트 기록을
+덮지 않는다** — `status`·`sha256` 은 저장된 파일을 설명하는 칸이고 실패는
+`last_attempt` 로 간다. 한도는 `STAGE_FAILED_LIMIT`, 그 밖은
+`STAGE_FAILED` 다 (§1-6 의 두 층 — `AGENT_USAGE_LIMIT` 이 실행 한 번의
+분류라면 이쪽은 워크플로가 본 단계의 결말이다).
+
+**실패 기록만 있는 행은 체크포인트를 승격시키지 않는다.** 행이 있다는
+것으로 판정하면 확인하지 않은 파일이 `complete` 가 된다 — 우리가 그
+파일을 저장하며 **해시를 적은** 경우에만 보증한다.
+
+#### A·B 가 같은 packet 을 받았다는 것이 파일로 남는다
+
+```
+a.packet_sha256 == b.packet_sha256      (§1-9 불변조건 2)
+a.stdin_sha256  == b.stdin_sha256
+a.system_sha256 != b.system_sha256      역할 차이는 프롬프트에만
+a.session_id    != b.session_id
+```
+
+C 는 `depends` 에 A·B·시트의 해시와 `moderator_prompt_version` 을 적는다.
+
+#### 의존성이 아래로 흐른다
+
+```
+source ─→ packet ─→ A · B ─→ 사회자 시트 ─→ C ─→ 반영
+```
+
+앞 단계를 다시 만들면 뒤 단계도 다시 만든다. **A 와 B 는 서로를 모르므로
+어느 쪽도 상대를 낡게 하지 않는다** — A 가 깨져도 B 는 재사용된다(실측:
+호출 2회).
+
+  · A·B 는 `source_sha256_16` · `packet_sha256` · `packet_version` ·
+    `panel_prompt_version` 이 어긋나면 `stale`
+  · C 는 `moderator_prompt_version` 과 `depends` 로 판정한다
+  · **한쪽에 기록이 없는 칸은 묻지 않는다.** 없는 것을 불일치로 세면
+    옛 파일이 전부 낡은 것이 된다
+
+#### Resume 이 기본이고 Rerun 은 명시할 때만
+
+```bash
+python -m toto --round R --panel-auto            # 멈춘 단계부터 재개 (기본)
+python -m toto --round R --panel-auto-rerun      # 처음부터 — 세션 3회를 다시 쓴다
+```
+
+메뉴 `[2]` 도 묻되 **기본이 아니오**다. 끝난 단계를 다시 부르는 것은 세
+세션에 돈을 쓰는 일이라 기본값이 될 수 없다. `force_rerun()` 은 판정을
+복제하지 않고 **이미 만든 계획의 결정만 뒤집으며**, 체크포인트 상태는
+그대로 실어 둔다 — 무엇이 있었는지는 보이고 쓰지 않을 뿐이다.
+
+#### 무엇을 다시 돌릴지 **$0 에** 먼저 보여 준다
+
+`preflight()` 가 계획을 만들고 `check()` 와 `run()` 이 **그 하나**를 쓴다
+(§1-8) — 점검이 통과했는데 실행이 다르게 도는 일이 없다.
+
+```
+  체크포인트
+    a: 재사용 (unverified) — 출처 기록이 없습니다 (수동 경로이거나 옛 파일)
+    …
+  · 시작 단계 없음 (전부 재사용) · Claude 호출 0회 예정
+```
+
+#### 실측 — 호출 수 (가짜 에이전트 · 비용 0)
+
+| 상태 | 부르는 단계 | 호출 |
+|---|---|---|
+| 아무것도 없음 | A · B · C | 3 |
+| A 만 있음 | B · C | 2 |
+| A·B 있음 | C | 1 |
+| 전부 있음 | — | **0** |
+| A 가 깨짐 | A · C (B 는 재사용) | 2 |
+| packet 이 바뀜 | A · B · C | 3 |
+| `--panel-auto-rerun` | A · B · C | 3 |
+
+실패 주입 다섯 갈래도 같은 방식으로 고정했다 — A 실패는 B·C 를 부르지
+않고, B 실패에도 A 는 남으며, 한도에서 멈출 때 **과금으로 넘기지 않고**,
+형식 위반은 체크포인트를 만들지 않으며, 다음 실행이 남은 단계만 부른다.
+
+#### 값이 바뀌지 않았다
+
+`--demo` **675,280** · `--rerender-artifact 260052` **949,635** · 경기자료
+MD **1,209,043** · 공통 packet sha **`8e919c77693c5423`**(612,886자) ·
+PANEL **5** · MODERATOR **6** · 지침 지문 **`4a54e7ad`** · schema **1.1** ·
+`PACKET_VERSION` **`6-F-10-common-v2`** 가 전부 그대로다 —
+**프로젝트 지침을 다시 붙여넣을 필요가 없다.**
+
+`panel.py`·`moderator.py`·`panelpacket.py`·`panelimport.py`·
+`panelpaste.py`·`panelaudit.py`·`panelexport.py`·`render.py`·`analyze.py`·
+`models.py`·`predict.py`·`config_toto.yaml`·`data/teams.yaml`·`briefing/`
+**diff 0줄**. 실물 `panel_work/260052/` 는 한 글자도 바뀌지 않았고
+매니페스트도 생기지 않았다 — 손상 시험은 **사본**에서만 했다.
+
+#### 곁가지로 구멍 하나를 막았다
+
+`_file_sha()` 와 `load_stage()` 가 `OSError` 만 잡고 있어, cp949 나 깨진
+바이트로 저장된 보관본이 `UnicodeDecodeError` 를 올려 **회차 전체를
+죽였다**. 한국어 윈도우에서 편집기로 열었다 저장하면 실제로 나는 일이다
+(§1-7 과 같은 계열). 이제 '못 읽음' 으로 떨어지고 그 단계만 다시 돈다 —
+새 테스트가 이것을 잡아냈다.
+
+#### 기존 테스트 넷의 범위를 옮겼다 — 기대값을 바꾼 것이 아니다
+
+  · `test_panel_auto.test_g4` — `panelwork.workflow` 를 못 박고 있었다.
+    판정이 `resume_plan` 으로 옮겨 갔으므로 새 자리에서 고정하고,
+    `panelauto` 가 **스스로 정하지 않는다**는 것도 함께 본다.
+  · `test_panel_auto.test_l14` · `test_panel_workflow.test_b18` —
+    `save_stage`·`save_moderator_result` 안에 `os.replace` 가 있는지
+    보고 있었다. 원자적 저장이 `_atomic_write` 로 모였으므로 헬퍼까지
+    따라가고, **세 보관 함수가 전부** 그 문을 지나는지 함께 본다(더
+    강해졌다).
+  · `test_panel_auto.test_e5` — `panelwork` 소스에 `panelauto` 라는
+    **글자**가 없는지 보는 검사였는데, 설명글이 "출처를 적는 것은
+    `panelauto` 다" 라고 적으면서 걸렸다. §1-31 의 `test_j2` 와 같은
+    교정으로 docstring 을 걷고, import·호출·속성 접근을 AST 로 직접
+    본다 — 글자 검색보다 강하다.
+
+회귀 테스트: `python tests/test_panel_resume.py` (63개). 변경 전 트리에
+돌리면 **53개가 깨진다**(음성 대조). 그중 행동 차이를 그대로 보여 주는
+것이 잘린 체크포인트다 — 옛 트리에서는 1/3경기짜리 `analyst_a.json` 이
+`A_COMPLETE · done=True` 로 읽히고, 지금은 `CHECKPOINT_INVALID` 로
+다시 돈다.
+
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
 260052 실행이 남긴 것은 후스코어드 `팀명 매칭 실패` 5건과 `강점 0개` 3팀이다.
@@ -6698,6 +6905,7 @@ python -m toto --round R --save-moderator-result F.json  # 3단계 결과 검증
 python -m toto --round R --panel-workflow-status  # 어디까지 왔나 · 파일만 읽는다 (6-F-4 §1-41)
 python -m toto --round R --panel-auto-check # 준비됐는지만 본다 · 모델 호출 0회 (§1-43 J)
 python -m toto --round R --panel-auto      # 패널 자동 분석 A·B·C → [4] → HTML · claude -p · 구독 (6-F-6 §1-42)
+python -m toto --round R --panel-auto-rerun # 끝난 단계도 처음부터 · 세션 3회를 다시 쓴다 (기본은 재개 · 6-F-12 §1-48)
 python -m toto --round R --panel-auto --auto-model cli      # 모델 지정 없이 Claude Code 기본 모델로 (기본값은 sonnet · §1-43)
 #  보관한 3단계 결과는 기존 --paste-panel-result 에 그대로 태운다 (새 포맷 없음)
 #  메뉴 [6] 이 위 전부를 한다 — [3] 뒤, [4] 앞에 쓴다
@@ -6759,6 +6967,7 @@ python tests/test_panel_workflow.py       # 3단계 결과 보관·[4] 연결·�
 python tests/test_panel_auto.py           # 패널 자동 실행 6-F-6 §1-42 · 윈도우 6-F-7 §1-43 · 자료 접기 6-F-8 §1-44 · 3세션 배치 6-F-9 §1-45 · 공통 packet 6-F-10 §1-46 (123개)
 python tests/test_report_nav.py           # 리포트 내비게이션·앵커 6-F-7 §1-43 (22개)
 python tests/test_b_score_prompt.py       # B 예상 스코어 출력 규칙 6-F-11 §1-47 (19개)
+python tests/test_panel_resume.py         # 체크포인트·재개·A/B/C provenance 6-F-12 §1-48 (63개)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)

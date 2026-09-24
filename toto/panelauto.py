@@ -119,6 +119,12 @@ AUTO_DIRNAME = "auto"
 ROLE_DIRS = {panel.DATA_ANALYST: "a", panel.MATCHUP_ANALYST: "b"}
 MODERATOR_DIR = "c"
 
+# 이 모듈의 단계 이름 → `panelwork` 의 체크포인트 단계 키 (6-F-12).
+# 두 이름을 이어 두는 자리를 **한 곳**으로 둔다 (§1-8).
+WORK_STAGE = {panel.DATA_ANALYST: panelwork.STAGE_A,
+              panel.MATCHUP_ANALYST: panelwork.STAGE_B,
+              MODERATOR_DIR: panelwork.STAGE_RESULT}
+
 # **작업 폴더를 저장소 밖에 두는 이유는 토큰이다** (6-F-9). 저장소 안에서
 # 돌리면 Claude Code 가 이 저장소의 `CLAUDE.md`(371KB ≈ 94,480토큰)를
 # 자동 발견해 **호출마다** 문맥에 싣는다 — 6-F-6 실행 기록에서 실제로
@@ -331,6 +337,10 @@ class Preflight:
     # 불변조건 2). 두 번 만들면 같은 자료에서도 갈릴 여지가 생긴다.
     packet_text: str = ""
     index: "panelpacket.PanelIndex | None" = None
+    # 체크포인트를 그대로 써도 되는지 가리는 기준 (6-F-12). packet 에서
+    # 파생되므로 여기서 만든다 — 판정은 `panelwork` 가 한다 (§1-8).
+    expect: dict = field(default_factory=dict)
+    plan: "panelwork.ResumePlan | None" = None
     problems: list = field(default_factory=list)
     notes: list = field(default_factory=list)
     auth: "AuthStatus | None" = None
@@ -742,6 +752,14 @@ def preflight(report: Report | None, round_id: str,
                 out.chars = chars
                 out.tokens = int(chars / EST_CHARS_PER_TOKEN)
                 out.index, out.packet, out.packet_text = idx, stats, body
+                # **출처 기준은 packet 에서 그대로 나온다** (6-F-12).
+                # 여기서 새 해시 규칙을 만들지 않는다 — `source_manifest()`
+                # 가 이미 쓰는 칸 이름을 그대로 쓴다 (§1-8).
+                out.expect = dict(panelpacket.source_manifest(idx))
+                out.expect["packet_sha256"] = panelpacket.packet_digest(body)
+                out.expect["packet_version"] = panelpacket.PACKET_VERSION
+                out.expect["moderator_prompt_version"] = \
+                    moderator.MODERATOR_PROMPT_VERSION
                 out.notes.append(
                     f"회차 원본 {chars:,}자 ≈ {out.tokens:,}토큰 "
                     f"(실측 {EST_CHARS_PER_TOKEN}자/토큰)")
@@ -759,6 +777,17 @@ def preflight(report: Report | None, round_id: str,
     # ⑤ 프롬프트 판 — 수동 경로와 같은 것을 쓴다는 기록
     out.notes.append(f"프롬프트 판 PANEL {panel.PANEL_PROMPT_VERSION} · "
                      f"MODERATOR {moderator.MODERATOR_PROMPT_VERSION}")
+
+    # ⑥ 재개 — **어느 단계부터 도는지 시작 전에 정한다** (6-F-12 §19·§22).
+    # 모델을 부르지 않으므로 `check()` 에서도 같은 값을 $0 로 볼 수 있다.
+    if report is not None:
+        try:
+            out.plan = panelwork.resume_plan(report, out.round_id, base,
+                                             expect=out.expect)
+        except Exception as exc:                            # noqa: BLE001
+            # 재개 판정이 안 되면 **전부 다시 돌리는 쪽**이 아니라 막는다 —
+            # 모르는 채로 세 단계에 돈을 쓰지 않는다.
+            out.problems.append(f"체크포인트를 확인하지 못했습니다: {exc}")
 
     out.ok = not out.problems
     return out
@@ -1272,14 +1301,18 @@ def _stage_file(round_id: str, stage: str, base: Path | None = None) -> Path:
 def _run_stage(report: Report, stage: str, prompt: str, stdin_text: str,
                save_argv: list, settings=None, *, model: str = "",
                cli: str = "", base: Path | None = None,
-               timeout: int) -> StageResult:
+               timeout: int, expect: dict | None = None) -> StageResult:
     """한 단계를 **1회** 실행하고 결과를 기존 검증 경로에 태운다.
 
     A·B·C 가 이 함수 하나를 쓴다 — 다르게 두면 격리·검증·실패 처리가
     단계마다 갈라진다 (§1-8). 다른 것은 stdin 과 지시문과 저장 경로뿐이다.
+
+    **검증을 통과한 뒤에만 출처를 적는다** (6-F-12). 순서가 반대면 실패한
+    실행의 출처가 남아 다음 재개가 그것을 보고 '완료' 로 읽는다.
     """
     out = StageResult(role=stage, expected=len(report.matches))
     round_id = report.round_id or ""
+    key = WORK_STAGE[stage]
     ws = stage_workspace(round_id, stage, base)
     ws.mkdir(parents=True, exist_ok=True)
     (ws / AGENT_FAIL).unlink(missing_ok=True)
@@ -1290,10 +1323,22 @@ def _run_stage(report: Report, stage: str, prompt: str, stdin_text: str,
             (ws / AGENT_FAIL).write_text(f"{status}: {why}", encoding="utf-8")
         except OSError:
             pass
+        # **시도를 적되 체크포인트를 건드리지 않는다.** `status`·`sha256`
+        # 은 저장된 파일을 설명하는 칸이고, 실패는 `last_attempt` 로 간다
+        # — 그래야 앞서 성공한 기록이 실패로 덮이지 않는다 (§17·§20).
+        panelwork.record_stage(
+            round_id, key, base,
+            last_attempt={
+                "status": (panelwork.STAGE_FAILED_LIMIT
+                           if status == AGENT_USAGE_LIMIT
+                           else panelwork.STAGE_FAILED),
+                "agent_status": status, "reason": why,
+                "session_id": out.session_id, "model": model,
+                "at": panelwork.now_utc()})
         return out
 
-    run = run_agent(prompt, stage_system(ws, stage, settings), ws,
-                    timeout=timeout, model=model, cli=cli,
+    system = stage_system(ws, stage, settings)
+    run = run_agent(prompt, system, ws, timeout=timeout, model=model, cli=cli,
                     stdin_text=stdin_text)
     out.session_id = run.session_id or run.requested_session_id
     out.cost_usd, out.turns, out.usage = run.cost_usd, run.turns, run.usage
@@ -1324,12 +1369,30 @@ def _run_stage(report: Report, stage: str, prompt: str, stdin_text: str,
         return fail(AGENT_INVALID, "결과 검증에 실패했습니다 (위 로그 참고)")
     out.status = AGENT_OK
     out.matches = len(report.matches)
+    # 통과했다. 저장 함수가 이미 적어 둔 행에 **자동 경로만 아는 것**을
+    # 합친다 — 무엇으로 만들었나(packet·시스템 프롬프트)와 누가 만들었나
+    # (모델·세션)다. 여기서 해시 규칙을 새로 만들지 않는다.
+    extra = {k: v for k, v in (expect or {}).items()
+             if k in panelwork.PACKET_KEYS
+             or k == "moderator_prompt_version"}
+    panelwork.record_stage(round_id, key, base, origin="auto", model=model,
+                           session_id=out.session_id,
+                           system_sha256=panelwork._sha(system),
+                           stdin_sha256=panelwork._sha(stdin_text),
+                           turns=run.turns, cost_usd=run.cost_usd,
+                           last_attempt={"status": panelwork.STAGE_COMPLETE,
+                                         "agent_status": AGENT_OK,
+                                         "session_id": out.session_id,
+                                         "model": model,
+                                         "at": panelwork.now_utc()},
+                           **extra)
     return out
 
 
 def run_stage_analyst(report: Report, role: str, settings=None, *,
                       model: str = "", cli: str = "",
                       base: Path | None = None, index=None, packet: str = "",
+                      expect: dict | None = None,
                       timeout: int = ANALYST_AGENT_TIMEOUT) -> StageResult:
     """한 역할로 회차 전체를 **1회** 분석한다 (6-F-9 §5·§6).
 
@@ -1348,11 +1411,13 @@ def run_stage_analyst(report: Report, role: str, settings=None, *,
         packet or common_packet_text(report, settings, index),
         ["--round", report.round_id or "", "--role", role,
          "--save-panel-opinion"],
-        settings, model=model, cli=cli, base=base, timeout=timeout)
+        settings, model=model, cli=cli, base=base, timeout=timeout,
+        expect=expect)
 
 
 def run_stage_moderator(report: Report, settings=None, *, model: str = "",
                         cli: str = "", base: Path | None = None,
+                        expect: dict | None = None,
                         timeout: int = MODERATOR_AGENT_TIMEOUT
                         ) -> StageResult:
     """사회자를 **1회** 실행한다 (6-F-9 §7).
@@ -1369,7 +1434,8 @@ def run_stage_moderator(report: Report, settings=None, *, model: str = "",
         report, MODERATOR_DIR, moderator_prompt(len(report.matches)),
         stdin_text,
         ["--round", report.round_id or "", "--save-moderator-result"],
-        settings, model=model, cli=cli, base=base, timeout=timeout)
+        settings, model=model, cli=cli, base=base, timeout=timeout,
+        expect=expect)
 
 
 # ==========================================================================
@@ -1445,6 +1511,18 @@ def check(round_id: str, report: Report | None = None, *,
              "멈춥니다.")
         return False
     echo("")
+    # **무엇을 다시 돌릴지 $0 에 보여 준다** (6-F-12 §21). 실행이 쓰는
+    # 것과 같은 `preflight()` 의 계획이라 여기서 본 것이 그대로 돈다.
+    if pre.plan is not None:
+        echo("  체크포인트")
+        for line in pre.plan.lines():
+            echo(f"  {line}")
+        start = pre.plan.resume_from
+        todo = [s for s in pre.plan.stages
+                if not s.reuse and s.stage in WORK_STAGE.values()]
+        echo(f"  · 시작 단계 {start or '없음 (전부 재사용)'} · "
+             f"Claude 호출 {len(todo)}회 예정")
+        echo("")
     echo(f"  ✓ 준비됐습니다 — {pre.matches}경기")
     echo(f"    이제 [2] 패널 자동 분석 을 돌리면 됩니다. 회차 하나에 "
          f"A·B·C 합쳐 {EXPECTED_SESSIONS}회를 부릅니다.")
@@ -1452,7 +1530,7 @@ def check(round_id: str, report: Report | None = None, *,
 
 
 def run(round_id: str, report: Report | None = None, settings=None, *,
-        model: str = "", base: Path | None = None,
+        model: str = "", base: Path | None = None, rerun: bool = False,
         progress=None, echo=print) -> AutoResult:
     """`[패널 자동 분석]` 의 본체. 한 번 부르면 [4] 까지 간다.
 
@@ -1517,14 +1595,27 @@ def run(round_id: str, report: Report | None = None, settings=None, *,
         except OSError as exc:
             out.lines.append(f"packet 캐시를 쓰지 못했습니다: {exc}")
 
-    state = panelwork.workflow(out.round_id, base=base)
-    done = {s.key: s.done for s in state.stages}
+    # **재개 계획을 시작 전에 보여 준다** (6-F-12 §22). `preflight` 가
+    # 이미 만들어 둔 것이라 `--panel-auto-check` 와 같은 값이다 — 점검이
+    # 통과했는데 실행이 다르게 도는 일이 없다 (§1-8).
+    plan = pre.plan if pre.plan is not None else panelwork.resume_plan(
+        report, out.round_id, base, expect=pre.expect, settings=settings)
+    # **Resume 이 기본이고 Rerun 은 명시할 때만이다** (6-F-12 §19).
+    # 다시 돌리는 것은 세 단계에 돈을 쓰는 일이라 기본값이 될 수 없다.
+    if rerun:
+        plan = panelwork.force_rerun(plan)
+        echo("다시 실행 (요청) — 끝난 단계도 처음부터 돌립니다")
+    echo("재개 계획")
+    for line in plan.lines():
+        echo(line)
+    echo(f"  시작 단계: {plan.resume_from or '없음 (전부 재사용)'}")
+    echo("")
 
     # Ctrl+C 로 멈춰도 **자식을 남기지 않고**(`run_agent`) 끝난 단계는
-    # 보존된다 — 재개는 `panelwork.workflow()` 가 파일을 보고 정한다.
+    # 보존된다 — 재개는 `panelwork.resume_plan()` 이 파일을 읽고 정한다.
     # 예외를 삼키지 않는다: 종료코드 정책은 `main()` 것이다 (§1-7-1).
     try:
-        return _run_stages(report, settings, out, pre, done, model=model,
+        return _run_stages(report, settings, out, pre, plan, model=model,
                            base=base, progress=progress, echo=echo,
                            index=pre.index)
     except KeyboardInterrupt:
@@ -1534,12 +1625,16 @@ def run(round_id: str, report: Report | None = None, settings=None, *,
         raise
 
 
-def _run_stages(report, settings, out: AutoResult, pre: Preflight, done: dict,
-                *, model: str, base, progress, echo, index=None) -> AutoResult:
+def _run_stages(report, settings, out: AutoResult, pre: Preflight,
+                plan: "panelwork.ResumePlan", *, model: str, base, progress,
+                echo, index=None) -> AutoResult:
     """A → B → 조립 → C → [4]. `run()` 이 준비한 것 위에서 돈다.
 
     **단계가 checkpoint 다** (§11). 경기 단위 재개가 없으므로, 한 단계가
     실패하면 그 단계 전체를 다시 돌린다 — 앞 단계 결과는 그대로 쓴다.
+
+    건너뛸지는 **`plan` 이 정한다** (6-F-12). 파일이 있느냐가 아니라
+    내용이 검증을 지나고 출처가 맞느냐다 — 6-F-6~11 까지는 존재만 봤다.
     """
     total = len(report.matches)
 
@@ -1573,10 +1668,15 @@ def _run_stages(report, settings, out: AutoResult, pre: Preflight, done: dict,
         """단계 하나. 이미 끝나 있으면 **부르지 않는다** (§11)."""
         label = STAGE_LABEL[stage]
         head = f"[{order}/{EXPECTED_SESSIONS}] {label} — {total} matches"
-        if done.get(key):
+        row = plan.plan(key)
+        if row is not None and row.reuse:
+            cp = row.checkpoint
             res = StageResult(role=stage, status=AGENT_OK, reused=True,
-                              expected=total, matches=total)
-            echo(f"{head}  ✓  (이미 완료 — 건너뜁니다)")
+                              expected=total,
+                              matches=(cp.matches if cp else total))
+            note = f" · {row.reason}" if row.reason else ""
+            echo(f"{head}  ✓  (이미 완료 — 건너뜁니다"
+                 f"{'; ' + cp.state if cp else ''}{note})")
         else:
             echo(head)
             echo("      Claude session started")
@@ -1604,7 +1704,8 @@ def _run_stages(report, settings, out: AutoResult, pre: Preflight, done: dict,
                  lambda: run_stage_analyst(report, panel.DATA_ANALYST,
                                            settings, model=model,
                                            cli=pre.cli, base=base,
-                                           index=index, packet=packet))
+                                           index=index, packet=packet,
+                                           expect=pre.expect))
     if not res.ok:
         return _stop("A", res)
 
@@ -1613,12 +1714,13 @@ def _run_stages(report, settings, out: AutoResult, pre: Preflight, done: dict,
                  lambda: run_stage_analyst(report, panel.MATCHUP_ANALYST,
                                            settings, model=model,
                                            cli=pre.cli, base=base,
-                                           index=index, packet=packet))
+                                           index=index, packet=packet,
+                                           expect=pre.expect))
     if not res.ok:
         return _stop("B", res)
 
     # ---- 조립 — A·B 가 **여기서 처음 만난다** ---------------------------
-    if not done.get(panelwork.STAGE_INPUT):
+    if not plan.reuse(panelwork.STAGE_INPUT):
         if run_existing_cli(["--round", out.round_id,
                              "--build-moderator-input"]) != 0:
             out.status = AGENT_FAILED
@@ -1629,7 +1731,8 @@ def _run_stages(report, settings, out: AutoResult, pre: Preflight, done: dict,
     # ---- [3/3] C ---------------------------------------------------------
     res = _stage(3, panelwork.STAGE_RESULT, MODERATOR_DIR,
                  lambda: run_stage_moderator(report, settings, model=model,
-                                             cli=pre.cli, base=base))
+                                             cli=pre.cli, base=base,
+                                             expect=pre.expect))
     if not res.ok:
         return _stop("C", res)
 
@@ -1664,6 +1767,7 @@ def _run_stages(report, settings, out: AutoResult, pre: Preflight, done: dict,
 
 __all__ = [
     "AUTO_DIRNAME", "AUTO_ENV", "AUTO_SCRATCH", "ROLE_DIRS", "MODERATOR_DIR",
+    "WORK_STAGE",
     "AGENT_STDIN", "AGENT_SYSTEM", "AGENT_ENVELOPE", "AGENT_RESULT",
     "AGENT_FAIL",
     "COMMON_FILE", "ROLE_PROMPT_FILES", "MODERATOR_PROMPT_FILE",

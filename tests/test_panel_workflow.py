@@ -568,9 +568,20 @@ def test_b17_validation_is_not_reimplemented():
 
 
 def test_b18_save_writes_atomically():
-    node = fn_node(panelwork, "save_moderator_result")
-    body = ast.unparse(node)
-    assert "os.replace" in body and ".tmp" in body
+    """원자적 저장. 6-F-12 에서 **세 보관 함수가 한 헬퍼를 쓴다.**
+
+    6-F-4 때는 이 함수 안에 `os.replace` 가 직접 있었다. 지키려는 것은
+    '이 함수가 그 줄을 갖고 있다' 가 아니라 **쓰다 만 파일이 자리에 남지
+    않는다** 이므로, 한 곳으로 모은 뒤에도 그대로 고정한다 — 오히려
+    보관 함수가 하나 늘어도 같은 규칙을 지나게 된다.
+    """
+    body = ast.unparse(fn_node(panelwork, "save_moderator_result"))
+    assert "_atomic_write" in body, "원자적 저장 경로를 거치지 않는다"
+    helper = ast.unparse(fn_node(panelwork, "_atomic_write"))
+    assert "os.replace" in helper and ".tmp" in helper
+    # 1·2단계와 조립본도 같은 문을 지난다.
+    for name in ("save_stage", "build_completed_sheet"):
+        assert "_atomic_write" in ast.unparse(fn_node(panelwork, name)), name
 
 
 # ==========================================================================

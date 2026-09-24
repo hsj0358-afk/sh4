@@ -471,7 +471,14 @@ def _panel_auto_args() -> list[str] | None:
     if rnd is None or not rnd.strip():
         print("회차를 알 수 없어 실행하지 않았습니다.")
         return None
-    return ["--round", rnd.strip(), "--panel-auto"]
+    argv = ["--round", rnd.strip(), "--panel-auto"]
+    # **기본은 재개다** (6-F-12 §19). 끝난 단계를 다시 부르면 Claude 세션
+    # 3회를 다시 쓰므로 일부러 골라야 한다 — 기본값이 '아니오' 인 이유다.
+    again = _ask("끝난 단계도 처음부터 다시 돌릴까요? "
+                 "(Claude 세션 3회를 다시 씁니다) [y/N]: ")
+    if (again or "").strip().lower() in ("y", "yes", "ㅇ"):
+        argv.append("--panel-auto-rerun")
+    return argv
 
 
 def _rerender_args() -> list[str] | None:

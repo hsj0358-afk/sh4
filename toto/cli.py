@@ -136,6 +136,13 @@ def build_parser() -> argparse.ArgumentParser:
                    help="--panel-auto 를 돌릴 수 있는 상태인지만 본다 — "
                         "CLI·인증·저장본·모델을 확인하고 멈춘다. "
                         "모델을 부르지 않는다(비용 0)")
+    # Phase 6-F-12. **기본은 재개(resume)** 이고 이 인자를 줄 때만 처음부터
+    # 돈다 — 끝난 단계를 다시 부르는 것은 세 세션에 돈을 쓰는 일이라
+    # 기본값이 될 수 없다.
+    p.add_argument("--panel-auto-rerun", action="store_true",
+                   help="--panel-auto 를 **처음부터** 돌린다. 끝난 단계도 "
+                        "건너뛰지 않으므로 Claude 세션 3회를 다시 쓴다 "
+                        "(기본은 멈춘 단계부터 재개)")
     p.add_argument("--auto-model", default=None, metavar="MODEL",
                    help="--panel-auto 가 claude 에 넘길 모델. 주지 않으면 "
                         "실측으로 검증된 기본 모델(sonnet)을 쓴다 — "
@@ -459,7 +466,8 @@ def _panel_auto(args, settings) -> int:
                                     model=(args.auto_model or "")) else 1
 
     result = panelauto.run(round_id, report, settings,
-                           model=(args.auto_model or ""))
+                           model=(args.auto_model or ""),
+                           rerun=bool(args.panel_auto_rerun))
     if result.ok and args.open and result.report_path:
         webbrowser.open(result.report_path.resolve().as_uri())
     return 0 if result.ok else 1
@@ -689,7 +697,7 @@ def main(argv: list[str] | None = None) -> int:
     # 여기도 **수집 구간 앞**이다. 모델은 `claude -p` subprocess 로만 부르고
     # Anthropic API 를 직접 호출하지 않는다. 안에서 기존 CLI 를 다시 부르는데
     # (조립·검증·[4]) 그 호출들은 위 분기로 내려가 재귀가 끝난다.
-    if args.panel_auto or args.panel_auto_check:
+    if args.panel_auto or args.panel_auto_check or args.panel_auto_rerun:
         return _panel_auto(args, settings)
 
     # ---- 0-b. 시장 기준선 캘리브레이션 (Phase 6-B) -----------------------

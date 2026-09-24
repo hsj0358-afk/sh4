@@ -722,11 +722,32 @@ def test_e4_workspace_is_confined():
 
 
 def test_e5_downstream_modules_do_not_know_panelauto():
-    """연결은 **한 방향**이다 — 기존 모듈이 자동화를 참조하지 않는다."""
+    """연결은 **한 방향**이다 — 기존 모듈이 자동화를 참조하지 않는다.
+
+    6-F-12 에서 `panelwork` 의 설명글이 "출처를 적는 것은 `panelauto` 다"
+    라고 적으면서 글자 검색에 걸렸다. 지키려는 것은 **코드가 참조하지
+    않는다** 이므로 docstring 을 걷고 본다 — `test_continental_collection.
+    test_j2` 가 같은 교정을 한 적이 있다 (§1-31). 대신 import·호출·속성
+    접근을 직접 보므로 글자 검색보다 강하다.
+    """
     from toto import panelaudit, panelpaste
     for mod in (panelimport, panelpaste, panelaudit, panel, moderator,
                 panelwork):
-        assert "panelauto" not in source_of(mod), mod.__name__
+        tree = ast.parse(source_of(mod))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for a in node.names:
+                    assert "panelauto" not in a.name, mod.__name__
+            elif isinstance(node, ast.ImportFrom):
+                names = {a.name for a in node.names}
+                assert "panelauto" not in names, mod.__name__
+                assert "panelauto" not in (node.module or ""), mod.__name__
+            elif isinstance(node, ast.Attribute):
+                base = node.value
+                assert not (isinstance(base, ast.Name)
+                            and base.id == "panelauto"), mod.__name__
+            elif isinstance(node, ast.Name):
+                assert node.id != "panelauto", mod.__name__
 
 
 def test_e6_canonical_serialization_is_untouched():
@@ -868,11 +889,19 @@ def test_g3_apply_uses_the_existing_paste_path():
 
 
 def test_g4_completed_stages_are_skipped():
-    """상태를 먼저 읽고 끝난 단계는 건너뛴다 (§23)."""
+    """상태를 먼저 읽고 끝난 단계는 건너뛴다 (§23).
+
+    6-F-12 에서 그 판정이 `panelwork.workflow()`(파일이 있나)에서
+    `panelwork.resume_plan()`(써도 되나)으로 옮겨 갔다 — 지키려는 것은
+    **끝난 단계를 다시 부르지 않는다** 이므로 새 자리에서 고정한다.
+    `panelauto` 가 건너뛸지를 **스스로 정하지 않는다**는 것도 함께 본다.
+    """
     body = workflow_code()
-    assert "panelwork.workflow" in body
+    assert "panelwork.resume_plan" in body, "재개 계획을 읽지 않는다"
     for key in ("STAGE_A", "STAGE_B", "STAGE_INPUT", "STAGE_RESULT"):
         assert key in body, f"{key} 를 보지 않는다"
+    # 판정을 두 벌 만들지 않는다 — `.is_file()` 로 직접 건너뛰지 않는다.
+    assert ".reuse" in body, "계획이 아니라 다른 기준으로 건너뛴다"
 
 
 def test_g5_sequential_not_parallel():
@@ -1820,8 +1849,10 @@ def test_l14_result_is_saved_atomically_and_only_when_valid():
                                rep, base)
     assert not bad.success
     assert path.read_text(encoding="utf-8") == keep, "깨진 결과가 덮어썼다"
-    body = code_of(fn_node(panelwork, "save_stage"))
-    assert "os.replace" in body
+    # 6-F-12 에서 원자적 저장이 `_atomic_write` 한 곳으로 모였다. 지키려는
+    # 것은 **쓰다 만 파일이 남지 않는다** 이므로 헬퍼까지 따라가 본다.
+    assert "_atomic_write" in code_of(fn_node(panelwork, "save_stage"))
+    assert "os.replace" in code_of(fn_node(panelwork, "_atomic_write"))
 
 
 def test_l15_stage_logs_are_stage_shaped():

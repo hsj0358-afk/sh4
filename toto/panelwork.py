@@ -66,13 +66,46 @@
 
 첨부할 파일 이름은 **폴더를 읽어서** 만든다. `02_경기자료_3of7.md` 처럼
 회차마다 개수와 이름이 달라지므로 코드에 적어 두면 조용히 낡는다 (§10).
+
+## 있다 ≠ 쓸 수 있다 (Phase 6-F-12)
+
+위 문단은 **사람이 화면에서 볼 때**는 지금도 맞다. 그런데 6-F-6 부터
+`panelauto` 가 그 판정을 **재개 결정**에 쓰기 시작했다 — `done` 이 참이면
+그 단계를 부르지 않는다. 존재만으로 건너뛰면 두 가지가 조용히 지나간다.
+
+  · 손으로 고쳐졌거나 잘린 보관본이 '완료' 로 읽힌다. 뒤늦게 조립·반영
+    단계에서 터지는데, 그때는 이미 다음 단계에 돈을 쓴 뒤다.
+  · **출처가 다른** 보관본이 그대로 재사용된다. 회차를 다시 수집하면
+    순위표·배당이 달라지는데(§1-1-7), 옛 A·B 를 그대로 두고 새 자료로
+    만든 사회자 시트에 C 를 돌리면 **한 회차 안에 두 시점이 섞인다.**
+
+그래서 재개 판정은 다섯 문을 지난다 — 파일이 있나 · 읽히나 · JSON 인가 ·
+**기존 검증기**(`parse_stage` / `parse_moderator_result`)를 지나나 ·
+기록된 출처가 지금 것과 맞나. 검증기를 새로 쓰지 않는다 (§1-8).
+
+**출처 기록이 없는 것은 어긋난 것이 아니다.** 채팅 경로로 넣은 보관본과
+6-F-12 이전의 파일에는 기록이 없다 — 그것을 '불일치' 로 보면 멀쩡한
+체크포인트가 하루아침에 전부 무효가 된다. `unverified` 로 적고 **그대로
+쓴다**. 6-F-7 이 인증 상태에서 `unknown` 을 `실패` 로 치지 않은 것과 같은
+태도다 (§1-6).
+
+출처는 `workflow_manifest.json` **한 장**에 모은다. 새 DB 도 아니고
+`PanelResult` 스키마도 건드리지 않는다 — 보관본 자체는 **클로드가 돌려준
+배열 그대로**여야 하므로(§6) 그 안에 메타데이터를 섞을 수 없다.
+
+**이 모듈은 매니페스트를 읽어 판정만 하고, 자동 경로의 출처를 적는 것은
+`panelauto` 다.** 무엇으로 만들었는지(packet·모델·세션)를 아는 쪽이
+거기이기 때문이고, 그래서 수동 경로는 기록을 남기지 않아 자연히
+`unverified` 가 된다 — 관측하지 않은 것을 적지 않는다 (§1-5).
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 from . import moderator, panel, panelexport, panelimport, panelpaste
@@ -109,8 +142,33 @@ COMPLETED_SHEET = "03_사회자자료_완성.md"
 # 만든다. 둘을 같은 파일로 두면 '모델이 무엇을 말했나' 를 되짚을 수 없다.
 MODERATOR_RESULT_FILE = "moderator_result.json"
 
+# 출처 기록 (Phase 6-F-12). 보관본 **옆**에 두고 보관본 자체는 건드리지
+# 않는다 — 그 파일은 모델이 돌려준 배열 그대로여야 한다 (§6).
+MANIFEST_FILE = "workflow_manifest.json"
+MANIFEST_VERSION = "1"
+
 # 붙여넣기 입력의 경기 번호 키. 1·2·3단계 출력이 전부 이 이름을 쓴다.
 STAGE_NO = panelpaste.PASTE_NO
+
+
+def _atomic_write(path: Path, payload: str) -> None:
+    """옆에 다 쓰고 **바꿔 끼운다.** 쓰다 만 파일이 자리에 남지 않는다.
+
+    1·2·3단계 보관본과 매니페스트가 **같은 함수**를 쓴다 — 세 곳에 따로
+    적어 두면 한 곳만 고쳐진다 (§1-8). `fsync` 는 되는 자리에서만 한다.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(payload)
+        fh.flush()
+        try:
+            os.fsync(fh.fileno())
+        except (OSError, AttributeError):
+            # 일부 파일시스템·플랫폼에서 지원하지 않는다. 그 사실이
+            # 저장을 실패로 만들지는 않는다.
+            pass
+    os.replace(tmp, path)
 
 
 def work_dir(round_id: str, base: Path | None = None) -> Path:
@@ -305,18 +363,23 @@ def save_stage(text: str, role: str, report: Report,
 
     # 클로드가 돌려준 구조를 **그대로** 보관한다 (§6) — 프로그램이 재구성한
     # 판을 저장하면 나중에 "모델이 무엇을 말했나" 를 되짚을 수 없다.
-    path = path_for(report.round_id or "unknown", role, base)
+    round_id = report.round_id or "unknown"
+    path = path_for(round_id, role, base)
+    body = json.dumps(data, ensure_ascii=False, indent=1)
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(path.name + ".tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1),
-                       encoding="utf-8")
-        os.replace(tmp, path)
+        _atomic_write(path, body)
     except OSError as exc:
         out.add(panelimport.ERROR, "STAGE_NOT_SAVED",
                 f"파일을 쓰지 못했습니다: {exc}", field=str(path))
         return out
     out.path = path
+    # 출처 — **아는 것만 적는다.** packet·모델·세션은 자동 경로가 알고
+    # 있으므로 `panelauto` 가 뒤이어 합쳐 넣는다 (§1-5).
+    stage = STAGE_A if role == panel.DATA_ANALYST else STAGE_B
+    record_stage(round_id, stage, base, sha256=_sha(body),
+                 matches=out.saved_matches, created_at=now_utc(),
+                 panel_prompt_version=panel.PANEL_PROMPT_VERSION,
+                 status=STAGE_COMPLETE)
     return out
 
 
@@ -338,8 +401,9 @@ def load_stage(round_id: str, role: str, report: Report,
                 f"({path}) — 먼저 그 단계 결과를 넣으십시오", field=role)
         return {}, out
     try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as exc:
+        text = path.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeDecodeError) as exc:
+        # BOM·cp949 로 저장된 파일이 올라와 회차를 죽이지 않게 한다 (§1-7).
         out.add(panelimport.ERROR, "UNREADABLE", str(exc), field=str(path))
         return {}, out
     opinions, _data, parsed = parse_stage(text, role, report)
@@ -402,19 +466,27 @@ def build_completed_sheet(report: Report, settings=None,
     payloads = [panel.build_panel_payload(m) for m in report.matches]
     target = Path(outdir) if outdir else panelexport.round_dir(round_id)
     path = target.joinpath(COMPLETED_SHEET)
+    body = panelexport.moderator_data_sheet(round_id, payloads,
+                                            opinions_by_no=merged)
     try:
-        target.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(path.name + ".tmp")
-        tmp.write_text(
-            panelexport.moderator_data_sheet(round_id, payloads,
-                                             opinions_by_no=merged),
-            encoding="utf-8")
-        os.replace(tmp, path)
+        _atomic_write(path, body)
     except OSError as exc:
         out.add(panelimport.ERROR, "SHEET_NOT_WRITTEN",
                 f"파일을 쓰지 못했습니다: {exc}", field=str(path))
         return out
     out.path = path
+    # **무엇을 먹고 만들어졌는지 적는다** (§14). 이 함수는 A·B 를 실제로
+    # 읽었으므로 그 해시를 단언할 자격이 있다 — 뒤에 A 가 바뀌면 이
+    # 조립본이 낡았다는 것이 해시 비교로 드러난다.
+    record_stage(round_id, STAGE_INPUT, base, sha256=_sha(body),
+                 matches=out.matches, created_at=now_utc(),
+                 status=STAGE_COMPLETE,
+                 depends={STAGE_A: _file_sha(path_for(round_id,
+                                                      panel.DATA_ANALYST,
+                                                      base)),
+                          STAGE_B: _file_sha(path_for(round_id,
+                                                      panel.MATCHUP_ANALYST,
+                                                      base))})
     return out
 
 
@@ -471,17 +543,28 @@ def save_moderator_result(text: str, report: Report, settings=None,
     if data is None or not out.success:
         return None, out
 
-    path = moderator_result_path(report.round_id or "unknown", base)
+    round_id = report.round_id or "unknown"
+    path = moderator_result_path(round_id, base)
+    body = json.dumps(array, ensure_ascii=False, indent=1)
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(path.name + ".tmp")
-        tmp.write_text(json.dumps(array, ensure_ascii=False, indent=1),
-                       encoding="utf-8")
-        os.replace(tmp, path)
+        _atomic_write(path, body)
     except OSError as exc:
         out.add(panelimport.ERROR, "MODERATOR_RESULT_NOT_WRITTEN",
                 f"파일을 쓰지 못했습니다: {exc}", field=str(path))
         return None, out
+    # 3단계는 사회자 자료와 A·B 를 보고 나온 것이다. **지금 자리에 있는
+    # 것**을 적는다 — 붙여넣기 경로에서는 그것이 우리가 아는 전부다.
+    record_stage(round_id, STAGE_RESULT, base, sha256=_sha(body),
+                 matches=len(report.matches), created_at=now_utc(),
+                 status=STAGE_COMPLETE,
+                 moderator_prompt_version=moderator.MODERATOR_PROMPT_VERSION,
+                 depends={
+                     STAGE_A: _file_sha(path_for(round_id,
+                                                 panel.DATA_ANALYST, base)),
+                     STAGE_B: _file_sha(path_for(round_id,
+                                                 panel.MATCHUP_ANALYST, base)),
+                     STAGE_INPUT: _file_sha(
+                         checkpoint_path(round_id, STAGE_INPUT, base))})
     return path, out
 
 
@@ -503,6 +586,450 @@ PANEL_RESULT_COMPLETE = "PANEL_RESULT_COMPLETE"
 STAGE_A, STAGE_B = "a", "b"
 STAGE_INPUT, STAGE_RESULT, STAGE_APPLY = "input", "result", "apply"
 
+# 실행 순서. 의존성 전파가 이 순서를 따른다.
+STAGE_ORDER = (STAGE_A, STAGE_B, STAGE_INPUT, STAGE_RESULT, STAGE_APPLY)
+
+# 단계 → 그 단계가 서 있으려면 무엇이 먼저 서 있어야 하나 (§14).
+# **A 와 B 는 서로를 모른다** — 둘 다 아무 단계에도 기대지 않는다.
+STAGE_UPSTREAM = {
+    STAGE_A: (),
+    STAGE_B: (),
+    STAGE_INPUT: (STAGE_A, STAGE_B),
+    STAGE_RESULT: (STAGE_A, STAGE_B, STAGE_INPUT),
+    STAGE_APPLY: (STAGE_RESULT,),
+}
+
+STAGE_ROLE = {STAGE_A: panel.DATA_ANALYST, STAGE_B: panel.MATCHUP_ANALYST}
+
+
+# ==========================================================================
+# 체크포인트 (Phase 6-F-12) — **있다 ≠ 쓸 수 있다**
+# ==========================================================================
+CP_MISSING = "missing"          # 파일이 없다
+CP_UNREADABLE = "unreadable"    # 있는데 읽히지 않는다 (JSON 아님·인코딩)
+CP_INVALID = "invalid"          # 읽혔는데 검증을 통과하지 못한다
+CP_STALE = "stale"              # 검증은 통과하는데 **출처가 지금과 다르다**
+CP_UNVERIFIED = "unverified"    # 통과했는데 출처 기록이 없다 — 쓴다
+CP_COMPLETE = "complete"        # 통과 + 출처 일치
+
+# 재사용해도 되는 상태. **`unverified` 가 여기 있는 것이 이 절의 핵심이다**
+# — 기록이 없는 것과 어긋난 것은 다르다 (§1-6).
+CP_USABLE = (CP_COMPLETE, CP_UNVERIFIED)
+
+# 매니페스트에 적는 단계 시도 결과 (§17). `panelauto` 의 `AGENT_*` 는
+# **실행 한 번의 분류**이고 이쪽은 **워크플로가 본 단계의 결말**이다 —
+# `AGENT_USAGE_LIMIT` → `WORKFLOW_STOPPED_USAGE_LIMIT` 과 같은 두 층이다.
+STAGE_COMPLETE = "STAGE_COMPLETE"
+STAGE_FAILED = "STAGE_FAILED"
+STAGE_FAILED_LIMIT = "STAGE_FAILED_LIMIT"
+
+# A·B 가 같은 자료에서 나왔는지 보는 칸. 이름은 `panelpacket.
+# source_manifest()` 가 이미 쓰는 것을 그대로 쓴다 (§1-8).
+PACKET_KEYS = ("source_sha256_16", "packet_sha256", "packet_version",
+               "panel_prompt_version")
+
+# 재개 결정
+REUSE = "reuse"
+RERUN = "rerun"
+
+
+def _sha(text: str) -> str:
+    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+
+
+def _file_sha(path: Path) -> str:
+    """파일 내용의 해시. 못 읽으면 **빈 문자열** — 0 으로 치지 않는다.
+
+    인코딩 실패도 '못 읽음' 이다. 한국어 윈도우에서 편집기가 cp949 로
+    저장하면 `UnicodeDecodeError` 가 나는데(§1-7 과 같은 계열), 그것이
+    올라가면 체크포인트 하나 때문에 회차 전체가 죽는다.
+    """
+    try:
+        return _sha(path.read_text(encoding="utf-8-sig"))
+    except (OSError, UnicodeDecodeError):
+        return ""
+
+
+def now_utc() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def manifest_path(round_id: str, base: Path | None = None) -> Path:
+    return work_dir(round_id, base).joinpath(MANIFEST_FILE)
+
+
+def read_manifest(round_id: str, base: Path | None = None) -> dict:
+    """출처 기록. **없거나 깨졌으면 빈 dict** — 지어내지 않는다 (§1-5).
+
+    기록이 없다고 체크포인트가 무효가 되지는 않는다. 그 경우는
+    `unverified` 이고 그대로 쓴다.
+    """
+    path = manifest_path(round_id, base)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    if data.get("manifest_version") != MANIFEST_VERSION:
+        # 판이 다르면 읽지 않는다 — 조용히 다른 뜻으로 해석하는 것보다
+        # 못 읽는 편이 낫다 (`artifact` 와 같은 태도, §1-16).
+        return {}
+    return data
+
+
+def stage_record(round_id: str, stage: str, base: Path | None = None) -> dict:
+    rows = read_manifest(round_id, base).get("stages")
+    row = rows.get(stage) if isinstance(rows, dict) else None
+    return dict(row) if isinstance(row, dict) else {}
+
+
+def record_stage(round_id: str, stage: str, base: Path | None = None,
+                 **fields) -> dict:
+    """그 단계의 출처를 적는다. 기존 칸은 **덮지 않고 합친다.**
+
+    나눠 적는 이유는 아는 쪽이 다르기 때문이다 — 보관 함수는 무엇을
+    저장했는지(해시·경기 수)를 알고, `panelauto` 는 무엇으로 만들었는지
+    (packet·모델·세션)를 안다. 워크플로는 순차적이라 겹쳐 쓸 일이 없다.
+
+    **실패해도 예외를 올리지 않는다.** 기록은 감사용이고, 그것 때문에
+    보관이 실패하면 안 된다 (§1-6).
+    """
+    rid = str(round_id or "unknown")
+    data = read_manifest(rid, base)
+    data["manifest_version"] = MANIFEST_VERSION
+    data["round"] = rid
+    rows = data.get("stages")
+    if not isinstance(rows, dict):
+        rows = {}
+    row = dict(rows.get(stage) or {})
+    row.update({k: v for k, v in fields.items() if v is not None})
+    row["stage"] = stage
+    row.setdefault("created_at", now_utc())
+    rows[stage] = row
+    data["stages"] = rows
+    try:
+        _atomic_write(manifest_path(rid, base),
+                      json.dumps(data, ensure_ascii=False, indent=1))
+    except OSError as exc:
+        log.warning("출처 기록을 쓰지 못했습니다 (%s 단계): %s", stage, exc)
+    return row
+
+
+def checkpoint_path(round_id: str, stage: str, base: Path | None = None,
+                    outdir: Path | None = None) -> Path:
+    """그 단계의 체크포인트 자리. **다섯 경로를 한 곳에서 정한다** (§1-8).
+
+    `.tmp` 는 여기서 나오지 않는다 — 쓰다 만 파일이 체크포인트가 될 수
+    없다는 것이 경로 단계에서 정해진다 (§5).
+    """
+    rid = str(round_id or "")
+    if stage in STAGE_ROLE:
+        return path_for(rid, STAGE_ROLE[stage], base)
+    if stage == STAGE_RESULT:
+        return moderator_result_path(rid, base)
+    if stage == STAGE_INPUT:
+        folder = Path(outdir) if outdir else panelexport.round_dir(rid)
+        return folder.joinpath(COMPLETED_SHEET)
+    if stage == STAGE_APPLY:
+        return panelimport.inbox_dir(base).joinpath(
+            f"{rid}{panelimport.FILE_SUFFIX}")
+    raise KeyError(stage)
+
+
+@dataclass
+class Checkpoint:
+    """한 단계의 체크포인트. **존재·검증·출처를 따로 담는다.**"""
+    stage: str = ""
+    path: Path | None = None
+    state: str = CP_MISSING
+    matches: int = 0
+    sha256: str = ""                            # 지금 파일의 해시
+    recorded: dict = field(default_factory=dict)
+    reasons: list = field(default_factory=list)
+
+    @property
+    def exists(self) -> bool:
+        return self.path is not None and self.path.is_file()
+
+    @property
+    def usable(self) -> bool:
+        return self.state in CP_USABLE
+
+    @property
+    def verified(self) -> bool:
+        return self.state == CP_COMPLETE
+
+
+def _expect_mismatch(recorded: dict, expect: dict, keys) -> list:
+    """기록과 지금이 어긋난 칸. **한쪽이 없으면 묻지 않는다.**"""
+    out = []
+    for key in keys:
+        want, got = expect.get(key), recorded.get(key)
+        if want and got and want != got:
+            out.append(f"{key} 가 다릅니다 (기록 {got} · 지금 {want})")
+    return out
+
+
+def _depends_mismatch(recorded: dict, current: dict) -> list:
+    """앞 단계가 기록된 뒤 바뀌었나. 기록이 없으면 묻지 않는다."""
+    dep = recorded.get("depends")
+    if not isinstance(dep, dict):
+        return []
+    out = []
+    for key, was in dep.items():
+        now = current.get(key)
+        if was and now and was != now:
+            out.append(f"{key} 가 바뀌었습니다")
+    return out
+
+
+def checkpoint_state(round_id: str, stage: str, report: Report | None = None,
+                     base: Path | None = None, outdir: Path | None = None,
+                     expect: dict | None = None, settings=None,
+                     current: dict | None = None) -> Checkpoint:
+    """다섯 문을 지난다 — 있나 · 읽히나 · JSON 인가 · 검증을 지나나 ·
+    출처가 맞나.
+
+    **검증기를 새로 쓰지 않는다** (§1-8). 1·2단계는 `parse_stage()`,
+    3단계는 `parse_moderator_result()` — 보관할 때 지난 그 문이다.
+
+    `report` 가 없으면 내용 검증을 **하지 않고** 존재만 본다. 6-F-4 부터
+    `workflow()` 는 회차 자료 없이도 불릴 수 있어야 하고(§1-41), 그 경로의
+    뜻을 바꾸지 않는다 — 대신 상태가 `unverified` 로 남아 "확인하지 않았다"
+    는 사실이 드러난다.
+    """
+    out = Checkpoint(stage=stage)
+    try:
+        out.path = checkpoint_path(round_id, stage, base, outdir)
+    except KeyError:
+        out.reasons.append(f"모르는 단계입니다 ({stage})")
+        return out
+    if not out.path.is_file():
+        out.state = CP_MISSING
+        return out
+
+    out.sha256 = _file_sha(out.path)
+    if not out.sha256:
+        out.state = CP_UNREADABLE
+        out.reasons.append("파일을 읽지 못했습니다")
+        return out
+    out.recorded = stage_record(round_id, stage, base)
+
+    # ---- 내용 검증 -------------------------------------------------------
+    if report is None:
+        out.state = CP_UNVERIFIED
+        out.reasons.append("회차 자료가 없어 내용을 확인하지 않았습니다")
+    else:
+        why = _verify_content(out, stage, report, settings)
+        if why:
+            out.reasons.extend(why)
+            return out
+
+    # ---- 출처 -----------------------------------------------------------
+    bad = []
+    if stage in (STAGE_A, STAGE_B):
+        bad += _expect_mismatch(out.recorded, expect or {}, PACKET_KEYS)
+    elif stage == STAGE_RESULT:
+        bad += _expect_mismatch(out.recorded, expect or {},
+                                ("moderator_prompt_version",))
+    bad += _depends_mismatch(out.recorded, current or {})
+    if bad:
+        out.state = CP_STALE
+        out.reasons.extend(bad)
+        return out
+
+    was = out.recorded.get("sha256")
+    if was and was != out.sha256:
+        # 사람이 고쳤을 수 있다. 내용은 검증을 지났으므로 **버리지 않고**
+        # 출처를 보증하지 않는다고만 적는다 — 고친 것을 이유로 돈이 드는
+        # 재실행을 강요하지 않는다.
+        out.state = CP_UNVERIFIED
+        out.reasons.append("보관한 뒤 파일이 바뀌었습니다")
+        return out
+    if out.state == CP_UNVERIFIED:
+        return out
+    if not was:
+        # **행이 있다는 것으로는 부족하다.** 실패한 시도만 적힌 행이 있을 수
+        # 있고(`last_attempt`), 그것을 출처로 치면 확인하지 않은 파일이
+        # `complete` 로 승격된다. 우리가 그 파일을 저장하며 해시를 적은
+        # 경우에만 보증한다.
+        out.state = CP_UNVERIFIED
+        out.reasons.append("출처 기록이 없습니다 (수동 경로이거나 옛 파일)")
+        return out
+    out.state = CP_COMPLETE
+    return out
+
+
+def _verify_content(cp: Checkpoint, stage: str, report: Report,
+                    settings=None) -> list:
+    """내용 검증. 통과하면 `cp.state` 를 잠정 통과로 두고 빈 목록을 준다."""
+    path = cp.path
+    if stage in STAGE_ROLE:
+        opinions, res = load_stage(report.round_id or "", STAGE_ROLE[stage],
+                                   report, base=_base_of(path, stage))
+        if res.errors:
+            cp.state = CP_INVALID
+            return [str(i) for i in res.errors[:4]]
+        cp.matches = len(opinions)
+        return []
+    if stage == STAGE_RESULT:
+        try:
+            text = path.read_text(encoding="utf-8-sig")
+        except (OSError, UnicodeDecodeError) as exc:
+            cp.state = CP_UNREADABLE
+            return [str(exc)]
+        data, _array, res = parse_moderator_result(text, report, settings)
+        if data is None or not res.success:
+            cp.state = CP_INVALID
+            return [str(i) for i in res.errors[:4]]
+        cp.matches = len(report.matches)
+        return []
+    if stage == STAGE_INPUT:
+        # 조립본은 markdown 이다. 내용 검증은 **앞 단계가 이미 했고**
+        # (`collect_opinions` 가 A·B 를 다시 검증한다) 여기서는 비어
+        # 있지 않은지만 본다 — 같은 검사를 두 번 하지 않는다.
+        try:
+            body = path.read_text(encoding="utf-8-sig")
+        except (OSError, UnicodeDecodeError) as exc:
+            cp.state = CP_UNREADABLE
+            return [str(exc)]
+        if not body.strip():
+            cp.state = CP_INVALID
+            return ["조립본이 비어 있습니다"]
+        cp.matches = len(report.matches)
+        return []
+    if stage == STAGE_APPLY:
+        # 반영본은 **매 실행 다시 만들어진다** (`_run_stages` 가 건너뛰지
+        # 않는다). 그래서 재개 결정에 쓰이지 않고, 깊은 검증을 해도 달라질
+        # 판단이 없다 — 읽히고 회차가 맞는지만 본다.
+        try:
+            data = json.loads(path.read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError) as exc:
+            cp.state = CP_UNREADABLE
+            return [str(exc)]
+        rid = str(report.round_id or "")
+        got = str((data or {}).get("round", "")) if isinstance(data, dict) \
+            else ""
+        if rid and got and rid != got:
+            cp.state = CP_INVALID
+            return [f"회차가 다릅니다 (파일 {got} · 지금 {rid})"]
+        rows = (data or {}).get("matches") if isinstance(data, dict) else None
+        cp.matches = len(rows) if isinstance(rows, list) else 0
+        return []
+    cp.state = CP_INVALID
+    return [f"모르는 단계입니다 ({stage})"]
+
+
+def _base_of(path: Path | None, stage: str) -> Path | None:
+    """체크포인트 경로에서 `base` 를 되찾는다 (`load_stage` 에 넘기려고).
+
+    `panel_work/<회차>/<파일>` 의 두 단계 위가 `base` 다. 기본 위치면
+    `None` 을 돌려 기존 동작 그대로 간다.
+    """
+    if path is None or stage not in STAGE_ROLE:
+        return None
+    from .settings import ROOT
+    root = path.parent.parent.parent
+    try:
+        return None if root == ROOT else root
+    except OSError:
+        return None
+
+
+@dataclass
+class StagePlan:
+    """한 단계의 재개 결정. **판정과 사유를 함께 담는다.**"""
+    stage: str = ""
+    decision: str = RERUN
+    checkpoint: Checkpoint | None = None
+    reason: str = ""
+
+    @property
+    def reuse(self) -> bool:
+        return self.decision == REUSE
+
+
+@dataclass
+class ResumePlan:
+    round_id: str = ""
+    stages: list = field(default_factory=list)
+
+    def plan(self, stage: str) -> StagePlan | None:
+        return next((s for s in self.stages if s.stage == stage), None)
+
+    def reuse(self, stage: str) -> bool:
+        row = self.plan(stage)
+        return bool(row and row.reuse)
+
+    @property
+    def resume_from(self) -> str:
+        """다시 돌려야 하는 **첫** 단계. 전부 재사용이면 빈 문자열."""
+        row = next((s for s in self.stages if not s.reuse), None)
+        return row.stage if row else ""
+
+    def lines(self) -> list:
+        out = []
+        for row in self.stages:
+            cp = row.checkpoint
+            mark = "재사용" if row.reuse else "다시 실행"
+            tail = f" — {row.reason}" if row.reason else ""
+            out.append(f"  {row.stage}: {mark} "
+                       f"({cp.state if cp else CP_MISSING}){tail}")
+        return out
+
+
+def resume_plan(report: Report | None, round_id: str = "",
+                base: Path | None = None, outdir: Path | None = None,
+                expect: dict | None = None, settings=None) -> ResumePlan:
+    """어느 단계부터 다시 돌려야 하나. **모델을 부르지 않는다.**
+
+    앞 단계를 다시 만들면 뒤 단계도 다시 만든다 (§14) — 옛 A 로 만든 C 를
+    새 A 옆에 두면 한 회차 안에 두 시점이 섞인다.
+    """
+    rid = str(round_id or (report.round_id if report is not None else "") or "")
+    out = ResumePlan(round_id=rid)
+    current: dict = {}
+    rerun: set = set()
+    for stage in STAGE_ORDER:
+        cp = checkpoint_state(rid, stage, report, base, outdir, expect,
+                              settings, current)
+        current[stage] = cp.sha256
+        upstream = [s for s in STAGE_UPSTREAM[stage] if s in rerun]
+        if upstream:
+            rerun.add(stage)
+            out.stages.append(StagePlan(
+                stage=stage, decision=RERUN, checkpoint=cp,
+                reason=f"앞 단계를 다시 만듭니다 ({', '.join(upstream)})"))
+            continue
+        if cp.usable:
+            out.stages.append(StagePlan(
+                stage=stage, decision=REUSE, checkpoint=cp,
+                reason="; ".join(cp.reasons)))
+            continue
+        rerun.add(stage)
+        out.stages.append(StagePlan(
+            stage=stage, decision=RERUN, checkpoint=cp,
+            reason="; ".join(cp.reasons) or _MISSING_KO.get(cp.state, "")))
+    return out
+
+
+_MISSING_KO = {CP_MISSING: "아직 없습니다"}
+
+
+def force_rerun(plan: ResumePlan) -> ResumePlan:
+    """모든 단계를 다시 실행으로 바꾼 **새 계획**을 준다 (§19).
+
+    **판정 로직을 복제하지 않는다** — 이미 만든 계획의 결정만 뒤집고
+    체크포인트 상태는 그대로 실어 둔다. 무엇이 있었는지는 그대로 보이고,
+    쓰지 않을 뿐이다. 원래 계획을 고치지 않으므로 부르는 쪽이 둘을
+    견줄 수 있다.
+    """
+    return ResumePlan(round_id=plan.round_id, stages=[
+        StagePlan(stage=s.stage, decision=RERUN, checkpoint=s.checkpoint,
+                  reason="다시 실행하도록 요청했습니다")
+        for s in plan.stages])
+
 
 @dataclass
 class Stage:
@@ -515,6 +1042,9 @@ class Stage:
     detail: str = ""
     attachments: tuple = ()
     todo: str = ""
+    # 6-F-12. `report` 를 준 호출에서만 채워진다 — 없으면 `None` 이고,
+    # 그 사실이 곧 "내용을 확인하지 않았다" 는 뜻이다 (§1-5).
+    checkpoint: Checkpoint | None = None
 
     def line(self) -> str:
         mark = "✔" if self.done else "·"
@@ -573,13 +1103,20 @@ def _by_prefix(files, prefix: str) -> tuple:
 
 
 def workflow(round_id: str, base: Path | None = None,
-             outdir: Path | None = None) -> Workflow:
-    """이 회차가 어디까지 왔나. **파일이 있느냐만 본다.**
+             outdir: Path | None = None, report: Report | None = None,
+             expect: dict | None = None, settings=None) -> Workflow:
+    """이 회차가 어디까지 왔나.
 
-    회차 자료(artifact)도 네트워크도 필요하지 않다 — 그래서 수집 전에도
-    부를 수 있고, 상태를 따로 저장하지 않으므로 실제와 어긋날 수가 없다.
+    **`report` 가 없으면 파일이 있느냐만 본다.** 회차 자료(artifact)도
+    네트워크도 필요하지 않고, 그래서 수집 전에도 부를 수 있다 (§1-41).
+
+    `report` 를 주면 6-F-12 의 다섯 문을 지난 결과가 실린다 — 내용이
+    검증되고 출처가 대조된다. 그때 `done` 은 '파일이 있다' 가 아니라
+    **'그대로 써도 된다'** 이고, 아니면 사유가 `detail` 에 남는다.
     """
     rid = str(round_id or "")
+    plan = (resume_plan(report, rid, base, outdir, expect, settings)
+            if report is not None else None)
     files = export_files(rid, outdir)
     folder = Path(outdir) if outdir else panelexport.round_dir(rid)
 
@@ -648,8 +1185,44 @@ def workflow(round_id: str, base: Path | None = None,
               todo=("[6] → [5] 로 보관해 둔 3단계 결과를 반영하십시오 "
                     "(기존 [4] 와 같은 경로입니다).")),
     ]
+    if plan is not None:
+        _apply_plan(stages, plan)
     return Workflow(round_id=rid, stages=stages, export_dir=folder,
                     export_files=tuple(files))
+
+
+# 파일은 있는데 그대로 쓸 수 없는 상태. **단계마다 이름을 만들지 않는다** —
+# 뜻이 단계에 달려 있지 않기 때문이다.
+CHECKPOINT_STALE = "CHECKPOINT_STALE"
+CHECKPOINT_INVALID = "CHECKPOINT_INVALID"
+CHECKPOINT_UNREADABLE = "CHECKPOINT_UNREADABLE"
+CHECKPOINT_SUPERSEDED = "CHECKPOINT_SUPERSEDED"   # 자신은 멀쩡한데 앞이 바뀐다
+
+_CP_STATE_NAME = {CP_STALE: CHECKPOINT_STALE,
+                  CP_INVALID: CHECKPOINT_INVALID,
+                  CP_UNREADABLE: CHECKPOINT_UNREADABLE}
+
+
+def _apply_plan(stages: list, plan: ResumePlan) -> None:
+    """검증·출처 결과를 단계 줄에 겹친다. **`report` 를 준 호출에만.**
+
+    `report` 없는 호출의 출력은 한 글자도 바뀌지 않는다 (§1-41).
+    """
+    for st in stages:
+        row = plan.plan(st.key)
+        if row is None or row.checkpoint is None:
+            continue
+        cp = row.checkpoint
+        st.checkpoint = cp
+        st.done = row.reuse
+        if not cp.exists:
+            continue
+        if not row.reuse:
+            st.state = _CP_STATE_NAME.get(cp.state, CHECKPOINT_SUPERSEDED)
+            st.detail = row.reason or st.detail
+        elif row.reason:
+            st.detail = (f"{st.detail} · {row.reason}" if st.detail
+                         else row.reason)
 
 
 def workflow_lines(wf: Workflow) -> list[str]:
@@ -674,6 +1247,18 @@ __all__ = [
     "collect_opinions", "build_completed_sheet", "opinion_count",
     "report_lines", "parse_moderator_result", "save_moderator_result",
     "Stage", "Workflow", "workflow", "workflow_lines", "export_files",
+    # 6-F-12 — 체크포인트·출처·재개
+    "MANIFEST_FILE", "MANIFEST_VERSION", "STAGE_ORDER", "STAGE_UPSTREAM",
+    "STAGE_ROLE", "PACKET_KEYS",
+    "CP_MISSING", "CP_UNREADABLE", "CP_INVALID", "CP_STALE",
+    "CP_UNVERIFIED", "CP_COMPLETE", "CP_USABLE",
+    "STAGE_COMPLETE", "STAGE_FAILED", "STAGE_FAILED_LIMIT",
+    "CHECKPOINT_STALE", "CHECKPOINT_INVALID", "CHECKPOINT_UNREADABLE",
+    "CHECKPOINT_SUPERSEDED",
+    "REUSE", "RERUN", "Checkpoint", "StagePlan", "ResumePlan",
+    "manifest_path", "read_manifest", "stage_record", "record_stage",
+    "force_rerun",
+    "checkpoint_path", "checkpoint_state", "resume_plan", "now_utc",
     "A_NOT_STARTED", "A_COMPLETE", "B_NOT_STARTED", "B_COMPLETE",
     "MODERATOR_INPUT_NOT_BUILT", "MODERATOR_INPUT_READY",
     "MODERATOR_RESULT_NOT_SAVED", "MODERATOR_RESULT_SAVED",

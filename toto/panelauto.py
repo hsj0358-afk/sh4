@@ -143,12 +143,27 @@ WORKFLOW_STOPPED_USAGE_LIMIT = "WORKFLOW_STOPPED_USAGE_LIMIT"
 
 # 구독 한도·인증 실패를 알아보는 표식. **문구가 바뀌면 못 알아볼 수 있으므로
 # 못 알아본 것은 `failed` 로 남기고 과금 전환은 어느 경우에도 하지 않는다.**
-#   · `session limit` 은 **실물에서 관측한 문구**다 (2026-09-19 · 윈도우
-#     260054, 두 번 모두 이 말로 왔다) — `You've hit your session limit ·
-#     resets 2:30am (Asia/Seoul)`. 표에 없어서 `failed` 로 떨어졌고, 화면에는
-#     한도가 아니라 고장처럼 보였다. 추측으로 늘리지 않고 **본 것만** 넣는다.
 _USAGE_MARKERS = ("usage limit", "rate limit", "rate_limit", "session limit",
                   "사용량", "한도", "quota", "upgrade to", "limit reached")
+
+# **실물에서 관측한 문구는 한 템플릿이고 가운데 낱말만 다르다** (윈도우 260054).
+#
+#     You've hit your session limit · resets 2:30am (Asia/Seoul)   2026-09-19
+#     You've hit your weekly  limit · resets Sep 24, 9am           2026-09-20
+#
+# 낱말 하나씩 표에 더하면 다음 표현(daily·monthly…)에서 또 `failed` 로 떨어져
+# 한도가 고장처럼 보인다 — 실제로 두 번 그랬다. 그래서 **관측한 두 건이
+# 공유하는 모양**으로 잡는다. 없는 문구를 상상해 넣는 것이 아니라, 변하는
+# 자리가 어디인지를 두 표본이 알려 준 것이다 (§1-1-1 의 태도와 같다).
+_USAGE_SHAPE = ("hit your", "limit")
+
+
+def _matches_usage_shape(low: str) -> bool:
+    """`hit your <무엇> limit` 모양인가. 낱말이 **순서대로** 있어야 한다."""
+    at = low.find(_USAGE_SHAPE[0])
+    return at >= 0 and _USAGE_SHAPE[1] in low[at:]
+
+
 _AUTH_MARKERS = ("authentication_failed", "invalid api key", "not logged in",
                  "please run /login", "unauthorized", "oauth")
 
@@ -517,7 +532,7 @@ def build_agent_env(env: dict | None = None) -> dict:
 def _classify(text: str) -> str:
     """실행 실패 문구를 분류한다. 모르는 것은 `failed` 로 둔다."""
     low = (text or "").lower()
-    if any(m in low for m in _USAGE_MARKERS):
+    if any(m in low for m in _USAGE_MARKERS) or _matches_usage_shape(low):
         return AGENT_USAGE_LIMIT
     if any(m in low for m in _AUTH_MARKERS):
         return AGENT_AUTH

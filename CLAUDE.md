@@ -5401,15 +5401,24 @@ ID 이고 검증기를 지난다.
 
 #### 곁가지 — 한도 문구를 못 알아보고 있었다
 
-실물이 두 번 다 이 말로 멈췄다.
+실물이 멈춘 문구가 **둘인데 같은 템플릿이고 가운데 낱말만 다르다.**
 
 ```
-You've hit your session limit · resets 2:30am (Asia/Seoul)
+You've hit your session limit · resets 2:30am (Asia/Seoul)      2026-09-19
+You've hit your weekly  limit · resets Sep 24, 9am              2026-09-20
 ```
 
-`_USAGE_MARKERS` 에 `session limit` 이 없어서 `AGENT_FAILED` 로 떨어졌고,
-화면에 `failed:` 로 나와 **한도가 아니라 고장처럼 보였다.** 관측한 문구
-하나만 넣었다 — 추측으로 표를 늘리지 않는다 (§1-1-1 과 같은 태도).
+`_USAGE_MARKERS` 에 없어서 둘 다 `AGENT_FAILED` 로 떨어졌고, 화면에 `failed:`
+로 나와 **한도가 아니라 고장처럼 보였다.**
+
+**처음에는 `session limit` 한 낱말만 넣었다가 다음 실행에서 `weekly limit`
+으로 똑같이 당했다.** 낱말을 하나씩 쫓으면 `daily`·`monthly` 에서 또 같은
+일이 난다. 그래서 **관측한 두 건이 공유하는 모양**으로 잡는다 —
+`hit your` 뒤에 `limit` 이 오는 것(`_matches_usage_shape`).
+
+이것은 없는 문구를 상상한 것이 아니라 **변하는 자리가 어디인지를 두 표본이
+알려 준 것**이다. 낱말 둘이 그냥 들어 있는 것으로는 부족하고 **순서**가
+맞아야 한다 — `hit your head` 나 `limit` 하나는 그대로 `failed` 다(테스트).
 
 그리고 한도 갈래가 `완료된 경기 결과는 보존되었습니다` 를 말하지 않고
 있었다. 재개가 가장 필요한 자리인데 그 줄이 실패 갈래에만 있었다.

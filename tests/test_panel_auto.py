@@ -214,11 +214,18 @@ def test_a6_usage_limit_stops_the_workflow():
     assert panelauto._classify("Claude usage limit reached") \
         == panelauto.AGENT_USAGE_LIMIT
     assert panelauto._classify("rate_limit") == panelauto.AGENT_USAGE_LIMIT
-    # **실물에서 온 문구** (2026-09-19 · 윈도우 260054, 두 번 모두 이 말).
-    # 표에 없어서 `failed` 로 떨어졌고 화면에 고장처럼 보였다.
-    assert panelauto._classify(
-        "You've hit your session limit · resets 2:30am (Asia/Seoul)") \
-        == panelauto.AGENT_USAGE_LIMIT
+    # **실물에서 온 문구 둘** (윈도우 260054). 같은 템플릿인데 가운데 낱말만
+    # 다르다 — 낱말 하나씩 더하면 다음 표현에서 또 `failed` 로 떨어진다.
+    for real in ("You've hit your session limit · resets 2:30am (Asia/Seoul)",
+                 "You've hit your weekly limit · resets Sep 24, 9am (Asia/Seoul)"):
+        assert panelauto._classify(real) == panelauto.AGENT_USAGE_LIMIT, real
+    # 변하는 자리는 기간 낱말뿐이다 — 본 적 없는 낱말도 같은 모양이면 잡는다.
+    for kind in ("daily", "monthly", "5-hour"):
+        assert panelauto._classify(f"You've hit your {kind} limit") \
+            == panelauto.AGENT_USAGE_LIMIT, kind
+    # **모양이 아니면 잡지 않는다** — 낱말 둘이 따로 있는 것으로는 부족하다.
+    for other in ("limit", "hit your head", "the limit of what you hit"):
+        assert panelauto._classify(other) == panelauto.AGENT_FAILED, other
     assert panelauto.WORKFLOW_STOPPED_USAGE_LIMIT \
         == "WORKFLOW_STOPPED_USAGE_LIMIT"
     # 한도에서 멈출 때도 **보존·재개**를 말해 준다 — 재개가 가장 필요한

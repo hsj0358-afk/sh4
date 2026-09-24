@@ -326,7 +326,10 @@ class Preflight:
     matches: int = 0
     chars: int = 0                  # 회차 원본 자료 크기 (6-F-9 기준선)
     tokens: int = 0                 # 위를 실측 비율로 환산한 어림
-    packets: dict = field(default_factory=dict)   # 역할별 packet 실측 (6-F-10)
+    packet: dict = field(default_factory=dict)    # 공통 packet 실측 (6-F-10)
+    # **여기서 한 번 만들고 A·B 가 이 문자열을 그대로 받는다** (§1-9
+    # 불변조건 2). 두 번 만들면 같은 자료에서도 갈릴 여지가 생긴다.
+    packet_text: str = ""
     index: "panelpacket.PanelIndex | None" = None
     problems: list = field(default_factory=list)
     notes: list = field(default_factory=list)
@@ -719,20 +722,26 @@ def preflight(report: Report | None, round_id: str,
                 f"({', '.join(str(n) for n in without)}번) — 축 지표만으로 "
                 f"분석합니다")
         # **회차 전체를 한 번에 보내므로 크기를 먼저 적는다** (6-F-9).
-        # 6-F-10 부터는 원본이 아니라 **역할별 packet** 이 나가므로 둘을
+        # 6-F-10 부터는 원본이 아니라 **공통 packet** 이 나가므로 둘을
         # 함께 잰다 — 줄어든 것이 실측이라는 것을 시작 전에 보여 준다.
+        #
+        # **packet 을 여기서 만든다.** A·B 가 받는 문자열이 이 한 번의
+        # 결과이고, 시작 전에 적는 크기도 그 문자열을 잰 값이다 — 보고와
+        # 실제가 어긋날 자리가 없다.
         if report.matches:
             try:
                 chars = len(pack_round_data(report))
                 idx = index if index is not None \
                     else panelpacket.build_panel_index(report)
-                stats = panelpacket.measure(idx)
+                body = panelpacket.packet_text(
+                    panelpacket.build_compact_packet(idx))
+                stats = panelpacket.measure(idx, body)
             except Exception as exc:                        # noqa: BLE001
                 out.problems.append(f"회차 자료를 만들지 못했습니다: {exc}")
             else:
                 out.chars = chars
                 out.tokens = int(chars / EST_CHARS_PER_TOKEN)
-                out.index, out.packets = idx, stats
+                out.index, out.packet, out.packet_text = idx, stats, body
                 out.notes.append(
                     f"회차 원본 {chars:,}자 ≈ {out.tokens:,}토큰 "
                     f"(실측 {EST_CHARS_PER_TOKEN}자/토큰)")
@@ -1078,21 +1087,23 @@ def pack_round_data(report: Report, settings=None) -> str:
     return "\n\n".join(parts)
 
 
-def role_packet_text(report: Report, role: str, settings=None,
-                     index=None) -> str:
-    """A·B 가 stdin 으로 받는 **역할별 compact packet** (Phase 6-F-10).
+def common_packet_text(report: Report, settings=None, index=None) -> str:
+    """A·B 가 stdin 으로 받는 **공통 compact packet** (Phase 6-F-10).
 
     6-F-9 까지는 `pack_round_data()` 의 회차 원본 전체(실측 1,746,547자 ≈
     836,470토큰)가 두 역할에 그대로 갔다. 이제 `panelpacket` 이 반복되는
     메타데이터를 legend 로 올린 packet 을 만든다 — **값도 근거도 한 칸
-    버리지 않고** 실측 −65% 다.
+    버리지 않고** 실측 −64% 다.
+
+    **역할을 인자로 받지 않는다.** 두 분석가가 같은 문자열을 받는다는 것이
+    시그니처로 표현된다 (§1-9 불변조건 2) — `pack_round_data()` 가 6-F-9
+    에서 그랬던 것과 같은 방식이다.
 
     자료를 고르는 규칙은 전부 `panelpacket` 에 있다. 여기서 칸을 더하거나
     빼지 않는다 (§1-8).
     """
     idx = index if index is not None else panelpacket.build_panel_index(report)
-    return panelpacket.packet_text(
-        panelpacket.build_analyst_packet(idx, role))
+    return panelpacket.packet_text(panelpacket.build_compact_packet(idx))
 
 
 def pack_moderator_data(report: Report, base: Path | None = None) -> tuple:
@@ -1318,19 +1329,23 @@ def _run_stage(report: Report, stage: str, prompt: str, stdin_text: str,
 
 def run_stage_analyst(report: Report, role: str, settings=None, *,
                       model: str = "", cli: str = "",
-                      base: Path | None = None, index=None,
+                      base: Path | None = None, index=None, packet: str = "",
                       timeout: int = ANALYST_AGENT_TIMEOUT) -> StageResult:
     """한 역할로 회차 전체를 **1회** 분석한다 (6-F-9 §5·§6).
 
-    **A 와 B 는 서로의 결과를 보지 않는다.** stdin 은 `role_packet_text()`
-    하나에서 오고, 그 함수는 **결과가 아니라 회차 자료만** 본다 — A 의
-    결과가 B 의 입력에 들어갈 경로가 코드에 없다 (테스트로 고정).
+    **A 와 B 는 서로의 결과를 보지 않는다.** stdin 은
+    `common_packet_text()` 하나에서 오고, 그 함수는 **결과가 아니라 회차
+    자료만** 본다 — A 의 결과가 B 의 입력에 들어갈 경로가 코드에 없다
+    (테스트로 고정).
 
-    두 역할의 **정량 본체는 바이트까지 같다** (6-F-10 · `panelpacket`).
+    **두 역할이 받는 문자열은 같다** (6-F-10 · §1-9 불변조건 2).
+    `packet` 을 주면 그 문자열을 그대로 쓴다 — 호출부가 한 번 만들어
+    둘에 넘기므로 두 번 만들어 갈릴 자리가 없다. 주지 않으면 여기서
+    만드는데, 그것도 역할을 보지 않으므로 결과는 같다.
     """
     return _run_stage(
         report, role, analyst_prompt(len(report.matches)),
-        role_packet_text(report, role, settings, index),
+        packet or common_packet_text(report, settings, index),
         ["--round", report.round_id or "", "--role", role,
          "--save-panel-opinion"],
         settings, model=model, cli=cli, base=base, timeout=timeout)
@@ -1486,16 +1501,19 @@ def run(round_id: str, report: Report | None = None, settings=None, *,
          f"{auto_dir(out.round_id, base)}")
     out.model = model
     # **무엇을 얼마나 보내는지 먼저 보여 준다** (6-F-10 §26·§34).
-    if pre.packets:
+    # 한 덩어리이고 A·B 가 그것을 그대로 받는다 — 역할마다 줄을 나누지
+    # 않는다.
+    if pre.packet:
         echo("")
-        for line in panelpacket.report_lines(pre.packets):
+        for line in panelpacket.report_lines(pre.packet):
             echo(line)
         echo("")
     # 색인·packet·측정값을 남긴다 (6-F-10 §18). 진단용이고 **실패해도
     # 실행을 죽이지 않는다** — 리포트는 이것과 무관하다 (§1-6).
+    # **보낸 문자열 그대로** 남긴다 — 다시 만들면 캐시와 실제가 갈린다.
     if pre.index is not None:
         try:
-            panelpacket.write_cache(pre.index, base)
+            panelpacket.write_cache(pre.index, base, pre.packet_text)
         except OSError as exc:
             out.lines.append(f"packet 캐시를 쓰지 못했습니다: {exc}")
 
@@ -1577,12 +1595,16 @@ def _run_stages(report, settings, out: AutoResult, pre: Preflight, done: dict,
             progress(stage, order, EXPECTED_SESSIONS, res)
         return res
 
+    # **packet 은 preflight 가 만든 그 하나다** (6-F-10 · §1-9 불변조건 2).
+    # 두 호출에 **같은 문자열 객체**를 넘긴다 — 여기서 다시 만들지 않는다.
+    packet = pre.packet_text
+
     # ---- [1/3] A ---------------------------------------------------------
     res = _stage(1, panelwork.STAGE_A, panel.DATA_ANALYST,
                  lambda: run_stage_analyst(report, panel.DATA_ANALYST,
                                            settings, model=model,
                                            cli=pre.cli, base=base,
-                                           index=index))
+                                           index=index, packet=packet))
     if not res.ok:
         return _stop("A", res)
 
@@ -1591,7 +1613,7 @@ def _run_stages(report, settings, out: AutoResult, pre: Preflight, done: dict,
                  lambda: run_stage_analyst(report, panel.MATCHUP_ANALYST,
                                            settings, model=model,
                                            cli=pre.cli, base=base,
-                                           index=index))
+                                           index=index, packet=packet))
     if not res.ok:
         return _stop("B", res)
 
@@ -1660,7 +1682,7 @@ __all__ = [
     "auto_root", "auto_dir", "stage_workspace",
     "one_line", "agent_argv", "run_agent",
     "parse_envelope", "parse_claude_result",
-    "round_data_sheets", "pack_round_data", "role_packet_text",
+    "round_data_sheets", "pack_round_data", "common_packet_text",
     "pack_moderator_data",
     "write_prompt_files", "stage_system",
     "analyst_prompt", "moderator_prompt", "verify_match",

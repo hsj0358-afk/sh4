@@ -1613,27 +1613,20 @@ def test_l2_no_per_match_session():
 
 
 def test_l3_analysts_compare_the_same_facts():
-    """A·B 가 **같은 정량 사실**을 받는다 (3-B 불변조건 2).
+    """A·B 가 **글자까지 같은 자료**를 받는다 (3-B 불변조건 2).
 
-    6-F-10 이 역할별 packet 을 넣으면서 이 단언의 범위를 옮겼다 — 예전에는
-    "두 stdin 이 글자까지 같다" 였는데, 그 조항이 지키려는 것은
-    "역할별 payload 를 만들면 두 의견이 **비교 불가능**해진다" 이고 비교되는
-    것은 정량 사실이다. 그래서 **정량 본체가 바이트까지 같은지**를 본다
-    (§1-29·§1-31·§1-42 와 같은 교정).
+    6-F-10 초판이 역할별 packet 을 넣으면서 이 단언을 '정량 본체가 같다'
+    로 좁혔었다. 공통 packet 으로 되돌아오면서 **조항의 원래 형태**로
+    복귀한다 — 두 stdin 이 바이트까지 같다.
     """
     rep = FakeReport(3)
     calls = stage_calls(rep)
-    a, b = json.loads(calls[0]["stdin"]), json.loads(calls[1]["stdin"])
-    assert a["legend"] == b["legend"]
-    core = [k for k in panelpacket.ROLE_VIEWS[panel.DATA_ANALYST]]
-    for ra, rb in zip(a["data"], b["data"]):
-        for key in core:
-            assert ra.get(key) == rb.get(key), f"{key} 가 역할마다 다르다"
+    assert calls[0]["stdin"] == calls[1]["stdin"], "A·B 의 stdin 이 다르다"
     # 자료를 고르는 규칙은 **한 곳**에 있다 — panelauto 가 칸을 더하지 않는다.
-    body = code_of(fn_node(panelauto, "role_packet_text"))
+    body = code_of(fn_node(panelauto, "common_packet_text"))
     assert "panelpacket" in body
     for bad in ("evidence", "qualitative", "metrics"):
-        assert bad not in body, f"role_packet_text 가 {bad} 를 직접 만진다"
+        assert bad not in body, f"common_packet_text 가 {bad} 를 직접 만진다"
 
 
 def test_l4_b_never_sees_a_result():
@@ -1650,9 +1643,9 @@ def test_l4_b_never_sees_a_result():
     for bad in (panelauto.ANALYST_A_TAG, "analyst_a", "analyst_b"):
         for where in ("stdin", "system", "prompt"):
             assert bad not in b[where], f"B 의 {where} 에 {bad} 가 있다"
-    # 받은 정량 자료는 A 와 같다 (test_l3) — 다른 것은 역할 지침과
-    # 정성 자료뿐이고, 어느 쪽도 A 의 **결과**가 아니다.
-    assert json.loads(b["stdin"])["legend"] == json.loads(a_result)["legend"]
+    # 받은 자료는 A 와 **같은 문자열**이다 (test_l3) — 다른 것은 역할
+    # 지침뿐이고, 그것은 A 의 **결과**가 아니다.
+    assert b["stdin"] == a_result
     assert b["system"] != calls[0]["system"]
     # 코드에도 경로가 없다.
     body = code_of(fn_node(panelauto, "run_stage_analyst"))
@@ -1886,11 +1879,12 @@ def test_l18_the_safety_devices_survived():
 
 
 # ==========================================================================
-# M. 역할별 compact packet (Phase 6-F-10 · CLAUDE.md §1-46)
+# M. 공통 compact packet (Phase 6-F-10 · CLAUDE.md §1-46)
 #
 #    6-F-9 가 세션을 셋으로 줄였지만 A·B 는 회차 원본 전체(실측 1,746,547자
 #    ≈ 836,470토큰)를 그대로 받았다. 이 절은 그 사이에 들어간 deterministic
-#    전처리가 **자료를 한 칸도 잃지 않으면서** 반복을 걷어내는지 본다.
+#    전처리가 **자료를 한 칸도 잃지 않으면서** 반복을 걷어내는지, 그리고
+#    **A 와 B 가 그 결과를 글자까지 같게 받는지**(§1-9 불변조건 2) 본다.
 # ==========================================================================
 def real_index():
     """실물 260052 저장본으로 색인을 만든다. 없으면 건너뛴다."""
@@ -1928,10 +1922,9 @@ def test_m1_index_identifies_every_match():
 def test_m2_packet_carries_every_match():
     """packet 에 14경기가 전부 들어간다 — 나누지 않는다 (§15·§33)."""
     idx = demo_index(4)
-    for role in panelpacket.ROLE_VIEWS:
-        pk = panelpacket.build_analyst_packet(idx, role)
-        assert pk["matches"] == 4
-        assert [r["match_no"] for r in pk["data"]] == [1, 2, 3, 4]
+    pk = panelpacket.build_compact_packet(idx)
+    assert pk["matches"] == 4
+    assert [r["match_no"] for r in pk["data"]] == [1, 2, 3, 4]
 
 
 def test_m3_folding_is_lossless():
@@ -1940,7 +1933,7 @@ def test_m3_folding_is_lossless():
     되풀면 원본과 글자까지 같아야 한다 — 실물로 확인한다.
     """
     idx = real_index() or demo_index(3)
-    pk = panelpacket.build_analyst_b_packet(idx)
+    pk = panelpacket.build_compact_packet(idx)
     legend, checked = pk["legend"], 0
     for entry, row in zip(idx.entries, pk["data"]):
         for key in ("home", "away", "data_quality"):
@@ -1959,13 +1952,12 @@ def test_m4_every_evidence_id_survives():
     `(경기, ID)` 쌍으로 센다.
     """
     idx = real_index() or demo_index(3)
-    for role in panelpacket.ROLE_VIEWS:
-        rep = panelpacket.audit(idx, role)
-        assert not rep["evidence_missing"], rep["evidence_missing"][:5]
-        assert not rep["evidence_invented"], rep["evidence_invented"][:5]
-        assert rep["evidence_packet"] == rep["evidence_source"]
+    rep = panelpacket.audit(idx)
+    assert not rep["evidence_missing"], rep["evidence_missing"][:5]
+    assert not rep["evidence_invented"], rep["evidence_invented"][:5]
+    assert rep["evidence_packet"] == rep["evidence_source"]
     # 근거의 메타데이터도 그대로다.
-    pk = panelpacket.build_analyst_a_packet(idx)
+    pk = panelpacket.build_compact_packet(idx)
     for entry, row in zip(idx.entries, pk["data"]):
         assert list(row.get("evidence") or ()) == list(entry.body["evidence"])
 
@@ -1973,9 +1965,8 @@ def test_m4_every_evidence_id_survives():
 def test_m5_nothing_is_invented():
     """packet 에 원본에 없던 자리가 생기지 않는다 (§21 · §2 원칙 2)."""
     idx = real_index() or demo_index(3)
-    for role in panelpacket.ROLE_VIEWS:
-        rep = panelpacket.audit(idx, role)
-        assert not rep["added_paths"], rep["added_paths"][:5]
+    rep = panelpacket.audit(idx)
+    assert not rep["added_paths"], rep["added_paths"][:5]
 
 
 def test_m6_no_new_statistics():
@@ -1985,7 +1976,7 @@ def test_m6_no_new_statistics():
     `estimate_tokens`)는 자료가 아니라 문자 수를 다루므로 대상이 아니다.
     """
     for name in ("_pack_axis", "_pack_side", "_pack_quality",
-                 "build_analyst_packet", "build_panel_index"):
+                 "build_compact_packet", "build_panel_index"):
         node = fn_node(panelpacket, name)
         for n in ast.walk(node):
             assert not isinstance(n, (ast.BinOp, ast.AugAssign)), \
@@ -1999,40 +1990,136 @@ def test_m6_no_new_statistics():
         assert bad not in code, f"{bad} 라는 파생값을 만든다"
 
 
-def test_m7_the_quantitative_core_is_identical_for_both_roles():
-    """**두 역할의 정량 본체가 바이트까지 같다** (§1-9 불변조건 2 의 실질).
+def test_ab_identical_packet():
+    """**A 와 B 가 같은 packet 을 받는다** (§1-9 불변조건 2).
 
-    그 조항이 지키려는 것은 "두 의견이 비교 가능해야 한다" 이고, 비교되는
-    것은 정량 사실이다. 그래서 축 지표·근거·data_quality·시장 기준선·
-    legend 가 같은지를 직접 본다.
+    6-F-10 초판은 `qualitative` 를 B 에게만 보냈다. 자료를 역할로 가르는
+    그 구조 자체가 조항이 금지하는 것이라 되돌렸다 — 이제 dict 도 문자열도
+    같다.
     """
     idx = real_index() or demo_index(3)
-    a = panelpacket.build_analyst_a_packet(idx)
-    b = panelpacket.build_analyst_b_packet(idx)
-    assert a["legend"] == b["legend"], "legend 가 갈렸다"
-    core = ("match_no", "league", "home_team", "away_team", "kickoff_kst",
-            "as_of", "home", "away", "evidence", "conflicts",
-            "data_quality", "market_reference")
-    for ra, rb in zip(a["data"], b["data"]):
-        for key in core:
-            assert ra.get(key) == rb.get(key), f"{key} 가 역할마다 다르다"
+    one = panelpacket.build_compact_packet(idx)
+    two = panelpacket.build_compact_packet(idx)
+    assert one == two
+    rep = FakeReport(3)
+    calls = stage_calls(rep)
+    a, b = calls[0], calls[1]
+    assert a["stage"] == panel.DATA_ANALYST
+    assert b["stage"] == panel.MATCHUP_ANALYST
+    assert a["stdin"] == b["stdin"], "A·B 의 stdin 이 다르다"
+    assert json.loads(a["stdin"]) == json.loads(b["stdin"])
 
 
-def test_m8_the_only_role_difference_is_documented():
-    """역할 차이는 **하나뿐이고 표에 적혀 있다** (§7·§8)."""
-    va = set(panelpacket.ROLE_VIEWS[panel.DATA_ANALYST])
-    vb = set(panelpacket.ROLE_VIEWS[panel.MATCHUP_ANALYST])
-    assert vb - va == {"qualitative"}, vb - va
-    assert not va - vb, va - vb
-    # 맞대결 분석가의 프롬프트가 실제로 그 칸을 쓴다.
+def test_ab_identical_hash():
+    """같다는 것을 **sha256 으로도** 확인한다 (§10)."""
+    calls = stage_calls(FakeReport(3))
+    da = panelpacket.packet_digest(calls[0]["stdin"])
+    db = panelpacket.packet_digest(calls[1]["stdin"])
+    assert da == db, f"{da[:16]} != {db[:16]}"
+    assert len(da) == 64                      # 자르지 않은 sha256
+    # 감사도 실제로 보낸 문자열을 잰다.
+    idx = demo_index(3)
+    rep = panelpacket.audit(idx, calls[0]["stdin"])
+    assert rep["packet_sha256"] == da
+    assert set(rep["roles_served"]) == {panel.DATA_ANALYST,
+                                        panel.MATCHUP_ANALYST}
+
+
+def test_common_packet_single_generation():
+    """packet 은 **한 번 만들어 둘이 나눠 쓴다** (§11).
+
+    두 번 만들면 같은 자료에서도 갈릴 여지가 생긴다. preflight 가 만들고
+    `_run_stages` 가 그 문자열을 두 호출에 넘긴다.
+    """
+    made = []
+    real = panelpacket.build_compact_packet
+
+    def counting(idx):
+        made.append(idx)
+        return real(idx)
+
+    rep = FakeReport(3)
+    panelpacket.build_compact_packet = counting
+    try:
+        calls = stage_calls(rep)
+    finally:
+        panelpacket.build_compact_packet = real
+    assert len(calls) == 3
+    assert len(made) == 1, f"packet 을 {len(made)}번 만들었다"
+    # 배선으로도 고정한다 — preflight 가 담고 _run_stages 가 넘긴다.
+    assert "packet_text" in code_of(fn_node(panelauto, "preflight"))
+    body = code_of(fn_node(panelauto, "_run_stages"))
+    assert "pre.packet_text" in body
+    assert body.count("packet=packet") == 2, body.count("packet=packet")
+
+
+def test_role_data_not_embedded():
+    """packet 에 **역할 지시가 없다** (§13).
+
+    역할은 시스템 프롬프트에서만 온다. packet 이 "당신은 …분석가" 를
+    들고 있으면 자료와 지시가 한 문서에서 읽히고, 그 순간 역할 분리가
+    자료 쪽으로 새기 시작한다 (§1-11-1 이 자료 파일에 지시문을 넣지 않는
+    이유와 같다).
+    """
+    idx = real_index() or demo_index(3)
+    text = panelpacket.packet_text(panelpacket.build_compact_packet(idx))
+    for bad in ("data_analyst", "matchup_tactical_analyst", "역할",
+                "데이터 분석가", "맞대결", "당신은", "분석가입니다"):
+        assert bad not in text, f"packet 에 역할 지시 {bad!r} 가 있다"
+    # 모듈에도 역할 분기가 없다.
+    code = module_code(panelpacket)
+    for bad in ("ROLE_VIEWS", "build_analyst_a_packet",
+                "build_analyst_b_packet", "role_view"):
+        assert bad not in code, f"{bad} 가 남아 있다"
+    node = fn_node(panelpacket, "build_compact_packet")
+    args = [a.arg for a in node.args.args + node.args.kwonlyargs]
+    assert "role" not in args, args
+
+
+def test_common_packet_contains_previous_union():
+    """packet 은 A·B 가 쓰던 칸의 **합집합**이다 (§4).
+
+    초판에서 B 에게만 가던 `qualitative` 가 여기 들어 있다. 무엇을 볼지는
+    프롬프트가 정하고 자료는 같게 둔다.
+    """
+    prev_a = ("match_no", "league", "home_team", "away_team", "kickoff_kst",
+              "as_of", "home", "away", "evidence", "conflicts",
+              "data_quality", "market_reference")
+    fields = set(panelpacket.PACKET_FIELDS)
+    assert set(prev_a) | {"qualitative"} == fields, fields
+    idx = real_index() or demo_index(3)
+    pk = panelpacket.build_compact_packet(idx)
+    seen = set()
+    for row in pk["data"]:
+        seen |= set(row)
+    assert seen <= fields, seen - fields
+    # 원본에 정성 자료가 있으면 packet 에도 있다 — 역할로 빼지 않는다.
+    if any("qualitative" in e.body for e in idx.entries):
+        assert "qualitative" in seen
+    # `conflicts` 의 유무 규칙은 A·B 에 똑같이 적용된다 (한 packet 이므로).
+    calls = stage_calls(FakeReport(3))
+    assert ('"conflicts"' in calls[0]["stdin"]) == \
+           ('"conflicts"' in calls[1]["stdin"])
+
+
+def test_a_b_prompts_differ():
+    """**역할 차이는 프롬프트에만 있다** (§13·§14).
+
+    자료가 같아졌으므로 두 의견이 갈리는 유일한 이유가 이것이다 —
+    실제로 다른지 확인한다.
+    """
+    calls = stage_calls(FakeReport(3))
+    a, b = calls[0], calls[1]
+    assert a["system"] != b["system"], "역할 프롬프트가 같다"
+    assert panel.ROLE_PROMPTS[panel.DATA_ANALYST] in a["system"]
+    assert panel.ROLE_PROMPTS[panel.MATCHUP_ANALYST] in b["system"]
+    # 역할 프롬프트는 지우지 않았다 (§2 금지).
+    assert panel.ROLE_PROMPTS[panel.DATA_ANALYST].strip()
+    assert panel.ROLE_PROMPTS[panel.MATCHUP_ANALYST].strip()
+    # 맞대결 분석가의 프롬프트가 정성 자료를 쓰고, 데이터 분석가는 쓰지
+    # 않는다 — **자료가 아니라 여기서** 갈린다.
     assert "qualitative" in panel.ROLE_PROMPTS[panel.MATCHUP_ANALYST]
     assert "qualitative" not in panel.ROLE_PROMPTS[panel.DATA_ANALYST]
-    # 실제 packet 에도 그대로 나타난다.
-    idx = demo_index(2)
-    a = panelpacket.build_analyst_a_packet(idx)
-    b = panelpacket.build_analyst_b_packet(idx)
-    assert all("qualitative" not in r for r in a["data"])
-    assert any("qualitative" in r for r in b["data"])
 
 
 def test_m9_measurement_has_no_hardcoded_target():
@@ -2040,13 +2127,14 @@ def test_m9_measurement_has_no_hardcoded_target():
     idx = demo_index(3)
     stats = panelpacket.measure(idx)
     assert stats["source_chars"] > 0 and stats["matches"] == 3
-    for role in panelpacket.ROLE_VIEWS:
-        row = stats["roles"][role]
-        assert row["chars"] > 0 and row["tokens"] > 0
-        # 실제 문자 수에서 나온 값이다.
-        text = panelpacket.packet_text(
-            panelpacket.build_analyst_packet(idx, role))
-        assert row["chars"] == len(text)
+    assert stats["chars"] > 0 and stats["tokens"] > 0
+    # 실제 문자 수에서 나온 값이다.
+    text = panelpacket.packet_text(panelpacket.build_compact_packet(idx))
+    assert stats["chars"] == len(text)
+    assert stats["sha256"] == panelpacket.packet_digest(text)
+    # 넘겨받은 문자열이 있으면 **그것을** 잰다 — 보고와 실제가 어긋나지
+    # 않는다.
+    assert panelpacket.measure(idx, "1234")["chars"] == 4
     code = module_code(panelpacket)
     for bad in ("150000", "150_000", "200000", "200_000", "target_tokens"):
         assert bad not in code, f"목표치 {bad} 를 박았다"
@@ -2060,9 +2148,8 @@ def test_m10_suspiciously_small_packets_are_flagged():
     ok = panelpacket.measure(idx)
     assert not panelpacket.too_small(ok), panelpacket.too_small(ok)
     tiny = {"round": "T", "matches": 2, "source_chars": 1_000_000,
-            "source_tokens": 500_000,
-            "roles": {panel.DATA_ANALYST: {"chars": 8_000, "tokens": 4_000,
-                                           "reduction": 0.992}}}
+            "source_tokens": 500_000, "chars": 8_000, "tokens": 4_000,
+            "reduction": 0.992}
     flags = panelpacket.too_small(tiny)
     assert flags and panelpacket.PACKET_TOO_SMALL in flags[0]
     # preflight 가 그것을 problems 로 올린다 — 시작하지 않는다.
@@ -2102,8 +2189,16 @@ def test_m13_cache_holds_data_not_interpretation():
     assert panelpacket.MANIFEST_FILE in names
     assert panelpacket.INDEX_FILE in names
     assert panelpacket.STATS_FILE in names
-    for f in panelpacket.PACKET_FILES.values():
-        assert f in names
+    # **packet 파일은 하나다.** 두 벌을 남기면 갈릴 자리가 생긴다.
+    assert panelpacket.COMMON_PACKET_FILE in names
+    for old in panelpacket.LEGACY_PACKET_FILES:
+        assert old not in names, f"{old} 를 아직 쓴다"
+    # 보낸 문자열 그대로 남는다 — 다시 만들지 않는다.
+    sent = "{\"sent\":true}"
+    again = panelpacket.write_cache(idx, base, sent)
+    assert (again / panelpacket.COMMON_PACKET_FILE).read_text("utf-8") == sent
+    stats = json.loads((again / panelpacket.STATS_FILE).read_text("utf-8"))
+    assert stats["chars"] == len(sent)
     man = json.loads((out / panelpacket.MANIFEST_FILE).read_text("utf-8"))
     for key in ("round", "matches", "source_sha256_16", "parser_version"):
         assert key in man, key
@@ -2122,22 +2217,18 @@ def test_m14_audit_reports_what_was_left_out():
     `data_quality` 가 통째로 빠졌다고 나왔다.
     """
     idx = real_index() or demo_index(3)
-    rep_a = panelpacket.audit(idx, panel.DATA_ANALYST)
-    rep_b = panelpacket.audit(idx, panel.MATCHUP_ANALYST)
-    assert "data_quality" not in rep_a["omitted_kinds"], rep_a["omitted_kinds"]
-    assert "home" not in rep_a["omitted_kinds"]
-    assert "evidence" not in rep_a["omitted_kinds"]
-    # A 에서만 정성 자료가 빠진다.
-    assert "qualitative" in rep_a["omitted_kinds"]
-    assert "qualitative" not in rep_b["omitted_kinds"]
-    lines = panelpacket.audit_lines(rep_a)
+    rep = panelpacket.audit(idx)
+    for key in ("data_quality", "home", "evidence", "qualitative"):
+        assert key not in rep["omitted_kinds"], rep["omitted_kinds"]
+    lines = panelpacket.audit_lines(rep)
     assert any("evidence" in ln for ln in lines)
+    assert any("공통" in ln for ln in lines), lines
 
 
 def test_m15_no_presentation_markup_in_the_packet():
     """HTML·CSS·SVG 는 분석 자료가 아니다 (§12)."""
     idx = real_index() or demo_index(3)
-    text = panelpacket.packet_text(panelpacket.build_analyst_b_packet(idx))
+    text = panelpacket.packet_text(panelpacket.build_compact_packet(idx))
     for bad in ("<table", "<div", "<svg", "<style", "</td>", "viewBox"):
         assert bad not in text, f"{bad} 가 실렸다"
 
@@ -2149,7 +2240,7 @@ def test_m16_the_format_explains_itself():
     메타데이터(source·basis·표본 n)는 지우지 않는다.
     """
     idx = real_index() or demo_index(2)
-    pk = panelpacket.build_analyst_a_packet(idx)
+    pk = panelpacket.build_compact_packet(idx)
     how = pk["how_to_read"]
     assert "metric" in how and "legend" in how["metric"]
     meta = set(panelpacket.METRIC_META)
@@ -2176,8 +2267,7 @@ def test_m17_the_original_is_not_touched():
     before = [panel.serialize_payload(panel.build_panel_payload(m))
               for m in rep.matches]
     idx = panelpacket.build_panel_index(rep)
-    panelpacket.build_analyst_a_packet(idx)
-    panelpacket.build_analyst_b_packet(idx)
+    panelpacket.build_compact_packet(idx)
     after = [panel.serialize_payload(panel.build_panel_payload(m))
              for m in rep.matches]
     assert before == after, "원본 직렬화가 달라졌다"
@@ -2190,9 +2280,9 @@ def test_m18_packing_is_deterministic():
     """같은 자료면 같은 글자가 나온다 (§19 — deterministic preprocessing)."""
     rep = FakeReport(3)
     one = panelpacket.packet_text(
-        panelpacket.build_analyst_a_packet(panelpacket.build_panel_index(rep)))
+        panelpacket.build_compact_packet(panelpacket.build_panel_index(rep)))
     two = panelpacket.packet_text(
-        panelpacket.build_analyst_a_packet(panelpacket.build_panel_index(rep)))
+        panelpacket.build_compact_packet(panelpacket.build_panel_index(rep)))
     assert one == two
     body = module_code(panelpacket)
     for bad in ("random", "uuid", "time.time", "datetime.now"):
@@ -2204,10 +2294,13 @@ def test_m19_preflight_measures_before_spending():
     rep = FakeReport(3)
     with patched(cli="/bin/true"):
         pre = panelauto.preflight(rep, "TEST", scratch())
-    assert pre.packets and pre.index is not None
-    assert pre.packets["source_chars"] > 0
-    for role in panelpacket.ROLE_VIEWS:
-        assert pre.packets["roles"][role]["chars"] > 0
+    assert pre.packet and pre.index is not None
+    assert pre.packet["source_chars"] > 0
+    assert pre.packet["chars"] == len(pre.packet_text) > 0
+    assert pre.packet["sha256"] == panelpacket.packet_digest(pre.packet_text)
+    # 화면에 **한 덩어리**로 적는다 — 역할마다 줄을 나누지 않는다.
+    lines = panelpacket.report_lines(pre.packet)
+    assert sum("packet:" in ln for ln in lines) == 1, lines
     assert any("Retrieval" in n for n in pre.notes), pre.notes
     assert any("reduction" in n for n in pre.notes), pre.notes
     # 문맥 초과는 사용량 한도와 다른 상태로 남아 있다 (§16).
@@ -2229,7 +2322,7 @@ def test_m20_no_read_write_or_bash_is_needed():
 
 
 def main() -> int:
-    print("Phase 6-F-6~10 — 패널 자동 실행 (3세션 · 역할별 packet)")
+    print("Phase 6-F-6~10 — 패널 자동 실행 (3세션 · 공통 packet)")
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
             check(name, fn)

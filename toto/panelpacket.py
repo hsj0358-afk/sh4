@@ -1,12 +1,12 @@
-"""역할별 compact packet (Phase 6-F-10) — **Python 이 고르고 Claude 는 분석만 한다.**
+"""공통 compact packet (Phase 6-F-10) — **Python 이 고르고 Claude 는 분석만 한다.**
 
 6-F-9 가 세션을 셋으로 줄였지만 A·B 는 여전히 회차 원본 전체를 받았다 —
 실측 **1,746,547자 ≈ 836,470토큰**을 두 번. 이 모듈이 그 사이에 결정적
 전처리 계층을 넣는다.
 
     PanelPayload 14개  →  build_panel_index()  →  PanelIndex
-                       →  build_analyst_packet(role)  →  compact packet
-                       →  packet_text()  →  stdin 한 번
+                       →  build_compact_packet()  →  **공통 packet 하나**
+                       →  packet_text()  →  A·B 의 stdin 에 **같은 문자열**
 
 ## 새 통계를 만들지 않는다
 
@@ -54,21 +54,29 @@ packet 에 들어가는 모든 수는 `PanelPayload` 에 이미 있던 그 수�
 (§1-9 불변조건 3). `panel.parse_opinion()` 이 packet 에 없는 ID 를 거부하므로,
 여기서 한 건이라도 빠뜨리면 그 경기가 통째로 실패한다.
 
-## 역할별 view
+## packet 은 **하나**다 — 역할 차이는 프롬프트에만 있다
 
-`ROLE_VIEWS` 가 역할마다 실을 칸을 정한다. **오늘 다른 것은 하나뿐이다** —
-`qualitative`(정성 특성·관계)는 맞대결 분석가에게만 간다. 데이터 분석가의
-역할 프롬프트는 그 칸을 한 번도 언급하지 않고("관측된 **수치**만"), 맞대결
-분석가의 프롬프트는 그것을 중심으로 쓰여 있다.
+`build_compact_packet(index)` 가 돌려주는 것이 전부이고, 두 분석가가 그
+**같은 문자열**을 받는다 (§1-9 불변조건 2). 자료를 역할에 따라 고르는
+분기가 이 모듈에 없다 — `role` 인자를 받는 함수도, 역할을 키로 하는 view
+표도 없다(테스트로 고정).
 
-**§1-9 불변조건 2 가 지키려는 것은 그대로다.** 그 조항이 말하는 것은
-"역할별 payload 를 만들면 두 의견이 **비교 불가능**해진다" 이고, 비교되는
-것은 정량 사실이다. 그래서 **정량 본체(축 지표·근거·data_quality·시장
-기준선·legend)가 두 역할에서 바이트까지 같다**는 것을 테스트로 고정한다 —
-조항의 실질을 더 좁고 검사 가능한 형태로 옮긴 것이다.
+    build_compact_packet(index)  →  packet 하나
+    packet_text(packet)          →  A 의 stdin == B 의 stdin (sha256 동일)
 
-바꾸려면 `ROLE_VIEWS` 한 줄이다. 실측 기여가 0.9% 라 크기 때문에 나눈 것이
-아니라 역할 분리 때문에 나눴다.
+**한 번 만들어 둘이 나눠 쓴다.** 두 번 만들면 같은 자료에서도 두 문자열이
+갈릴 여지가 생기고(직렬화·legend 번호가 순서에 달려 있다), 그 순간
+불변조건이 '검사하면 대체로 같다' 로 약해진다. 호출부(`panelauto.run()`)가
+preflight 에서 한 번 만들어 두 runner 에 넘긴다.
+
+**칸은 A·B 가 필요로 하는 것의 합집합이다** (`PACKET_FIELDS`).
+`qualitative`(정성 특성·관계)가 여기 들어간다 — 6-F-10 초판은 그것을
+맞대결 분석가에게만 보냈는데, 자료를 역할로 가르는 그 구조 자체가
+불변조건 2 가 금지하는 것이다. 데이터 분석가의 역할 프롬프트는 그 칸을
+한 번도 언급하지 않으므로(“관측된 **수치**만”), **무엇을 볼지는 프롬프트가
+정하고 자료는 같게 둔다.**
+
+실측 기여도 0.9% 라 크기가 이유였던 적이 없다.
 """
 from __future__ import annotations
 
@@ -86,7 +94,7 @@ from .models import Report
 # ==========================================================================
 # 파서 판. **바뀌면 캐시를 버린다** (§18) — 같은 원본에서 다른 packet 이
 # 나오는데 옛 packet 을 읽으면 조용히 낡은 자료를 보낸다 (§1-4 와 같은 이유).
-PACKET_VERSION = "1"
+PACKET_VERSION = "6-F-10-common-v2"
 
 # 캐시 자리. 저장소 안이지만 **에이전트 작업 폴더가 아니다** — 여기는
 # Python 만 읽고 쓰고, Claude 는 이 경로를 모른다.
@@ -94,14 +102,22 @@ CACHE_DIRNAME = "panel_cache"
 MANIFEST_FILE = "source_manifest.json"
 INDEX_FILE = "index.json"
 STATS_FILE = "stats.json"
-PACKET_FILES = {panel.DATA_ANALYST: "analyst_a_packet.json",
-                panel.MATCHUP_ANALYST: "analyst_b_packet.json"}
+COMMON_PACKET_FILE = "common_packet.json"
+
+# 초판(역할별 packet)이 남긴 파일 이름. **읽기 위해서만 남긴다** — 옛
+# 캐시 폴더에 이 둘이 있으면 그것이 v1 이라는 뜻이고, `PACKET_VERSION` 이
+# 다르므로 어차피 다시 만든다. 쓰는 곳은 없다(테스트로 고정).
+LEGACY_PACKET_FILES = ("analyst_a_packet.json", "analyst_b_packet.json")
 
 # 실측 자/토큰 비. **어림에만 쓴다** — 이 값으로 자료를 자르거나 요약하지
 # 않는다.
 #
 #   원본 payload   2.088 자/토큰   (6-F-8 분석 · 한국어 JSON)
-#   역할별 packet  1.819 자/토큰   (6-F-10 실호출 · 597,146자 → 328,326토큰)
+#   compact packet 1.819 자/토큰   (6-F-10 실호출 · 597,146자 → 328,326토큰)
+#
+# 공통 packet 실호출에서 다시 쟀더니 612,886자 → 335,526토큰 = **1.827**
+# 이었다. **값을 바꾸지 않는다** — 1.819 로 잡으면 336,935 로 0.42% 더
+# 크게 나오고, 문맥 여유는 넉넉히 잡는 쪽이 틀렸을 때 안전하다.
 #
 # **packet 이 더 조밀하다.** legend 로 접으면 한국어 문장이 빠지고 숫자·
 # 괄호·짧은 키가 남기 때문이다. 원본 비율(2.088)을 그대로 쓰면 packet 을
@@ -117,14 +133,12 @@ AXIS_NOTES = "notes"
 # 지표 메타의 칸. **이 다섯이 legend 로 올라간다.**
 METRIC_META = ("label", "unit", "source", "basis", "provenance")
 
-# 역할별로 실을 최상위 칸. **정량 본체는 두 역할에 같다** (모듈 설명 참고).
-_CORE = ("match_no", "league", "home_team", "away_team", "kickoff_kst",
-         "as_of", "home", "away", "evidence", "conflicts", "data_quality",
-         "market_reference")
-ROLE_VIEWS = {
-    panel.DATA_ANALYST: _CORE,
-    panel.MATCHUP_ANALYST: _CORE + ("qualitative",),
-}
+# packet 에 실을 최상위 칸. **A·B 가 필요로 하는 것의 합집합**이고 역할로
+# 갈리지 않는다 (모듈 설명 참고). `qualitative` 가 여기 들어 있다.
+PACKET_FIELDS = ("match_no", "league", "home_team", "away_team",
+                 "kickoff_kst", "as_of", "home", "away", "evidence",
+                 "conflicts", "data_quality", "market_reference",
+                 "qualitative")
 
 # **의심스럽게 작으면 멈춘다** (§32). 토큰이 줄었다는 것 자체를 성공으로
 # 치지 않는다 — 자료를 잘못 잘라 분석이 불가능해진 것과 구분이 안 된다.
@@ -311,23 +325,25 @@ def _pack_quality(quality: dict, legend: _Legend) -> dict:
 
 
 # ==========================================================================
-# 역할별 packet
+# 공통 packet — **역할 인자가 없다**
 # ==========================================================================
-def build_analyst_packet(index: PanelIndex, role: str) -> dict:
-    """역할 하나의 compact packet. **14경기 전부가 들어간다** (§15).
+def build_compact_packet(index: PanelIndex) -> dict:
+    """회차 하나의 compact packet. **14경기 전부가 들어간다** (§15).
 
     경기를 나누지 않는다 — 나누면 세션이 늘어나고 그것은 6-F-9 가 없앤
-    구조다 (§33).
+    구조다. 역할로도 나누지 않는다 — 두 분석가가 같은 사실을 보아야
+    의견이 비교 가능하다 (§1-9 불변조건 2).
+
+    **역할 지시가 packet 에 들어가지 않는다.** 여기 실리는 문자열은
+    자료와 형식 설명(`how_to_read`)뿐이고, "당신은 …분석가입니다" 는
+    시스템 프롬프트에만 있다.
     """
-    if role not in ROLE_VIEWS:
-        raise ValueError(f"모르는 역할: {role}")
-    fields = ROLE_VIEWS[role]
     legend = _Legend()
     rows = []
     for entry in index.entries:
         body = entry.body
         row = {}
-        for key in fields:
+        for key in PACKET_FIELDS:
             if key not in body:
                 continue
             value = body[key]
@@ -348,19 +364,18 @@ def build_analyst_packet(index: PanelIndex, role: str) -> dict:
     }
 
 
-def build_analyst_a_packet(index: PanelIndex) -> dict:
-    """데이터 분석가용 (§7)."""
-    return build_analyst_packet(index, panel.DATA_ANALYST)
-
-
-def build_analyst_b_packet(index: PanelIndex) -> dict:
-    """맞대결·전술 분석가용 (§8)."""
-    return build_analyst_packet(index, panel.MATCHUP_ANALYST)
-
-
 def packet_text(packet: dict) -> str:
     """stdin 으로 나갈 문자열. compact JSON 이다 (§9 — 실측으로 골랐다)."""
     return _dump(packet)
+
+
+def packet_digest(text: str) -> str:
+    """A·B 가 **같은 것을 받았는지** 로그·감사로 확인할 수 있게 한다.
+
+    비교는 이 값이 아니라 문자열 자체로도 할 수 있지만, 실행 로그에
+    650KB 를 적을 수는 없다. 자르지 않은 sha256 을 쓴다.
+    """
+    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
 
 
 # ==========================================================================
@@ -378,53 +393,54 @@ def expand_metric(cell, legend: dict) -> dict:
 # ==========================================================================
 # 측정 (§4) — **목표 토큰 수를 코드에 박지 않는다**
 # ==========================================================================
-def measure(index: PanelIndex) -> dict:
-    """원본과 역할별 packet 의 크기. 전부 **실측**이고 목표값이 없다."""
+def measure(index: PanelIndex, text: str = "") -> dict:
+    """원본과 **공통 packet 하나**의 크기. 전부 실측이고 목표값이 없다.
+
+    `text` 를 주면 그것을 재고, 없으면 만들어 잰다 — 호출부가 이미 만들어
+    둔 문자열이 있으면 그 문자열을 그대로 재야 보고와 실제가 어긋나지
+    않는다.
+    """
     source = index.source_text()
-    out = {"round": index.round_id, "matches": index.matches,
-           "source_chars": len(source),
-           "source_tokens": estimate_tokens(source), "roles": {}}
-    for role in ROLE_VIEWS:
-        text = packet_text(build_analyst_packet(index, role))
-        chars = len(text)
-        out["roles"][role] = {
-            "chars": chars,
-            "tokens": estimate_tokens(text, PACKET_CHARS_PER_TOKEN),
-            "reduction": (1 - chars / len(source)) if source else 0.0,
-        }
-    return out
+    body = text if text else packet_text(build_compact_packet(index))
+    chars = len(body)
+    return {
+        "round": index.round_id, "matches": index.matches,
+        "source_chars": len(source),
+        "source_tokens": estimate_tokens(source),
+        "chars": chars,
+        "tokens": estimate_tokens(body, PACKET_CHARS_PER_TOKEN),
+        "reduction": (1 - chars / len(source)) if source else 0.0,
+        "sha256": packet_digest(body),
+    }
 
 
 def report_lines(stats: dict) -> list:
-    """사람이 읽을 요약 (§26·§34). 없는 값을 지어내지 않는다."""
-    lines = [f"[Retrieval] {stats['round']} · {stats['matches']}경기",
-             f"  source: {stats['source_chars']:,} chars / "
-             f"~{stats['source_tokens']:,} tokens (예상)"]
-    for role in ROLE_VIEWS:
-        row = stats["roles"].get(role) or {}
-        if not row:
-            continue
-        ko = panel.ROLE_KO.get(role, role)
-        lines.append(f"  {ko} packet: {row['chars']:,} chars / "
-                     f"~{row['tokens']:,} tokens (예상) · "
-                     f"reduction {100 * row['reduction']:.1f}%")
-    return lines
+    """사람이 읽을 요약 (§26·§34). 없는 값을 지어내지 않는다.
+
+    **한 줄이다.** 두 줄로 적으면 역할마다 다른 자료가 있는 것처럼 보인다.
+    """
+    return [
+        f"[Retrieval] {stats['round']} · {stats['matches']}경기",
+        f"  source: {stats['source_chars']:,} chars / "
+        f"~{stats['source_tokens']:,} tokens (예상)",
+        f"  common packet: {stats['chars']:,} chars / "
+        f"~{stats['tokens']:,} tokens (예상) · "
+        f"reduction {100 * stats['reduction']:.1f}% · "
+        f"sha256 {stats.get('sha256', '')[:16]}",
+        "  A·B 가 이 packet 을 그대로 받습니다 (역할 차이는 프롬프트에만)",
+    ]
 
 
 def too_small(stats: dict) -> list:
     """**줄어든 것 자체를 성공으로 치지 않는다** (§32). 사유 목록을 준다."""
-    out = []
-    for role, row in (stats.get("roles") or {}).items():
-        if not stats.get("source_chars"):
-            continue
-        ratio = row["chars"] / stats["source_chars"]
-        if ratio < MIN_PACKET_RATIO:
-            out.append(
-                f"{PACKET_TOO_SMALL}: {panel.ROLE_KO.get(role, role)} packet 이 "
-                f"원본의 {100 * ratio:.1f}% 입니다 (최소 "
-                f"{100 * MIN_PACKET_RATIO:.0f}%) — 자료가 잘렸는지 "
-                f"확인하십시오")
-    return out
+    if not stats.get("source_chars"):
+        return []
+    ratio = stats["chars"] / stats["source_chars"]
+    if ratio >= MIN_PACKET_RATIO:
+        return []
+    return [f"{PACKET_TOO_SMALL}: 공통 packet 이 원본의 "
+            f"{100 * ratio:.1f}% 입니다 (최소 "
+            f"{100 * MIN_PACKET_RATIO:.0f}%) — 자료가 잘렸는지 확인하십시오"]
 
 
 # ==========================================================================
@@ -473,15 +489,19 @@ def _restore(key: str, value, legend: dict):
     return value
 
 
-def audit(index: PanelIndex, role: str) -> dict:
-    """원본과 packet 을 견준다. (§22 의 '삭제된 필드 보고서')
+def audit(index: PanelIndex, text: str = "") -> dict:
+    """원본과 **공통 packet** 을 견준다. (§22 의 '삭제된 필드 보고서')
 
     packet 이 legend 로 접혀 있으므로 **되풀어서** 비교한다 — 접힌 것을
     빠진 것으로 세면 보고서가 거짓이 된다.
+
+    `text` 를 주면 **그 문자열이 두 역할에 간 그것인지**도 함께 적는다
+    (`packet_sha256`). 감사가 묻는 것이 "A 와 B 가 같은 것을 받았나" 이므로
+    실제로 보낸 바이트를 재야 한다.
     """
-    packet = build_analyst_packet(index, role)
+    packet = build_compact_packet(index)
     legend = packet["legend"]
-    fields = ROLE_VIEWS[role]
+    fields = PACKET_FIELDS
 
     src_paths, out_paths = set(), set()
     ev_src, ev_out = set(), set()
@@ -498,9 +518,11 @@ def audit(index: PanelIndex, role: str) -> dict:
 
     omitted = sorted(p for p in src_paths - out_paths)
     kinds = sorted({p.split(".")[1] for p in omitted if "." in p})
+    body = text if text else packet_text(packet)
     return {
-        "role": role,
         "fields": list(fields),
+        "roles_served": [panel.DATA_ANALYST, panel.MATCHUP_ANALYST],
+        "packet_sha256": packet_digest(body),
         "source_paths": len(src_paths),
         "packet_paths": len(out_paths),
         "omitted_paths": len(omitted),
@@ -515,8 +537,11 @@ def audit(index: PanelIndex, role: str) -> dict:
 
 
 def audit_lines(report: dict) -> list:
-    ko = panel.ROLE_KO.get(report["role"], report["role"])
-    lines = [f"[Retrieval audit] {ko}",
+    served = " · ".join(panel.ROLE_KO.get(r, r)
+                        for r in report.get("roles_served") or ())
+    lines = ["[Retrieval audit] 공통 packet"
+             + (f" → {served}" if served else ""),
+             f"  sha256: {report.get('packet_sha256', '')[:16]}",
              f"  source fields: {report['source_paths']:,}",
              f"  packet fields: {report['packet_paths']:,}",
              f"  omitted: {report['omitted_paths']:,}"
@@ -551,16 +576,26 @@ def source_manifest(index: PanelIndex) -> dict:
             "panel_prompt_version": panel.PANEL_PROMPT_VERSION}
 
 
-def write_cache(index: PanelIndex, base: Path | None = None) -> Path:
-    """색인·packet·측정값을 남긴다. **LLM 산출물은 담지 않는다** (§19)."""
+def write_cache(index: PanelIndex, base: Path | None = None,
+                text: str = "") -> Path:
+    """색인·packet·측정값을 남긴다. **LLM 산출물은 담지 않는다** (§19).
+
+    **packet 파일은 하나다** (`common_packet.json`). 두 벌을 남기면 나중에
+    둘을 견주다가 같은지 다른지를 파일에서 판정하게 되는데, 같아야 하는
+    것을 두 번 적어 두는 것 자체가 갈릴 자리를 만드는 일이다.
+    """
     out = cache_dir(index.round_id, base)
     out.mkdir(parents=True, exist_ok=True)
-    stats = measure(index)
+    body = text if text else packet_text(build_compact_packet(index))
+    stats = measure(index, body)
 
     def _write(name: str, obj) -> None:
+        _write_text(name, _dump(obj))
+
+    def _write_text(name: str, payload: str) -> None:
         path = out / name
         tmp = path.with_name(path.name + ".tmp")
-        tmp.write_text(_dump(obj), encoding="utf-8")
+        tmp.write_text(payload, encoding="utf-8")
         os.replace(tmp, path)
 
     _write(MANIFEST_FILE, source_manifest(index))
@@ -568,22 +603,22 @@ def write_cache(index: PanelIndex, base: Path | None = None) -> Path:
         {"match_no": e.match_no, "home": e.home, "away": e.away,
          "kickoff_kst": e.kickoff_kst, "evidence_ids": list(e.evidence_ids),
          "source_sections": list(e.source_paths)} for e in index.entries]})
-    for role, name in PACKET_FILES.items():
-        _write(name, build_analyst_packet(index, role))
+    # **보낸 문자열 그대로** 남긴다 — 다시 직렬화하면 캐시의 sha 가 실제로
+    # 보낸 것과 갈릴 여지가 생긴다.
+    _write_text(COMMON_PACKET_FILE, body)
     _write(STATS_FILE, stats)
     return out
 
 
 __all__ = [
     "PACKET_VERSION", "CACHE_DIRNAME", "MANIFEST_FILE", "INDEX_FILE",
-    "STATS_FILE", "PACKET_FILES", "CHARS_PER_TOKEN",
-    "PACKET_CHARS_PER_TOKEN",
-    "METRIC_META", "ROLE_VIEWS", "HOW_TO_READ",
+    "STATS_FILE", "COMMON_PACKET_FILE", "LEGACY_PACKET_FILES",
+    "CHARS_PER_TOKEN", "PACKET_CHARS_PER_TOKEN",
+    "METRIC_META", "PACKET_FIELDS", "HOW_TO_READ",
     "MIN_PACKET_RATIO", "PACKET_TOO_SMALL",
     "MatchEntry", "PanelIndex",
-    "build_panel_index", "build_analyst_packet",
-    "build_analyst_a_packet", "build_analyst_b_packet",
-    "packet_text", "expand_metric", "estimate_tokens",
+    "build_panel_index", "build_compact_packet",
+    "packet_text", "packet_digest", "expand_metric", "estimate_tokens",
     "measure", "report_lines", "too_small",
     "audit", "audit_lines",
     "cache_dir", "source_manifest", "write_cache",

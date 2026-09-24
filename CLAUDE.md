@@ -5654,6 +5654,155 @@ MD **1,209,043** 이 전부 그대로이고, 전체 55개 스위트가 통과한
 
 회귀 테스트: `python tests/test_panel_auto.py` (99개 — L절 18개가 6-F-9).
 
+### 1-46. 역할별 compact packet (Phase 6-F-10) — `toto/panelpacket.py`
+
+6-F-9 가 세션을 셋으로 줄였지만 **A·B 는 회차 원본 전체를 그대로 받았다** —
+실측 1,746,547자 ≈ 836,470토큰을 두 번. 이 Phase 는 세션 수를 더 줄이지
+않고(§1-45 구조 그대로), 그 사이에 **deterministic 전처리 계층**을 넣는다.
+
+```
+PanelPayload 14개 → build_panel_index() → PanelIndex
+                  → build_analyst_packet(role) → compact packet → stdin 1회
+```
+
+#### 줄어드는 이유는 **버려서가 아니라 반복을 걷어내서**다
+
+측정이 설계를 정했다 (실물 260052 · 14경기).
+
+| | |
+|---|---|
+| 지표 칸 | 8,910개 |
+| 고유 지표 키 | 252개 |
+| 고유 메타(label·unit·source·basis·provenance) | **57개** — 평균 **156회** 반복 |
+| 고유 `degraded_reason` | **4개** (1,092칸에) |
+| 고유 축 notes 문장 | 411개 (99,030자) |
+
+그래서 반복되는 문자열만 `legend` 로 올리고 본문이 그것을 가리킨다.
+
+```
+"season.goals": {"label":"득점","value":1.5,"n":3,"unit":"per_match",
+                 "source":"standings","basis":"final_score",
+                 "provenance":"observed"}          ← 170자
+
+"season.goals": [1.5, 3, 12]                       ← 27자
+                 └ legend.metric["12"] 이 나머지를 들고 있다
+```
+
+**지표 키는 본문에 그대로 남긴다.** 분석가가 실제로 추론하는 것은
+`recent10.xg` 같은 키이고, 올라가는 것은 표시·출처 메타데이터뿐이다 —
+근거를 인용할 때 필요하지만 추론에는 쓰이지 않는다.
+
+**무손실이다.** 되풀면 원본과 **글자까지 같다** — 실물 42개 묶음
+(축 28 + data_quality 14) 전부 일치, 근거는 `(경기, ID)` 쌍으로 **343/343**
+보존, packet 에만 있는 자리는 **0개**다(`audit()`).
+
+#### 실측 — 추정이 아니라 잰 값이다
+
+| | 자 | 토큰 | |
+|---|---:|---:|---|
+| 원본 (A·B 각각 받던 것) | 1,742,390 | 834,477 (예상) | |
+| **데이터 분석가 packet** | **597,146** | **328,282** (예상) | **−65.7%** |
+| **맞대결·전술 분석가 packet** | **612,871** | **336,927** (예상) | **−64.8%** |
+
+**실제 Claude 1회로 확인했다** (A 역할 · 실물 260052 · sonnet).
+
+```
+turns 1 · 172초 · $1.4815
+usage  input 2 · cache_creation 324,918 · cache_read 3,406 · output 18,114
+       → 실제 입력 328,326 토큰
+결과   14경기 전부 · 검증 오류 0건 · 근거 ID 유효
+```
+
+**1턴이다.** 6-F-8 의 경기 하나가 7턴 · 487,563토큰이었던 것과 견주면,
+이제 **회차 전체**가 그보다 적은 입력으로 한 턴에 끝난다.
+
+**추정 비율을 그 실호출로 교정했다.** 원본은 2.088자/토큰인데 packet 은
+**1.819**다 — legend 로 접으면 한국어 문장이 빠지고 숫자·괄호·짧은 키가
+남아 더 조밀하다. 옛 비율을 그대로 쓰면 packet 을 15% 적게 잡아 문맥
+여유를 실제보다 넉넉히 보고한다. 교정 뒤 예상 328,282 ↔ 실제 328,326
+(차이 0.01%).
+
+#### 새 통계를 만들지 않는다
+
+**고르고 다시 배열할 뿐이다.** `_pack_axis`·`_pack_side`·`_pack_quality`·
+`build_analyst_packet`·`build_panel_index` 에 **산술이 한 줄도 없고**
+`sum`·`round`·`max`·`min` 을 부르지 않는다(AST 테스트).
+`strength_score`·`balance_index`·`composite`·`percentile` 같은 이름이
+모듈에 없다. packet 의 모든 수는 `PanelPayload` 에 이미 있던 그 수다.
+
+**LLM 전처리를 쓰지 않는다** (§33). 요약·해석·순위를 만들지 않고, 같은
+자료면 같은 글자가 나온다(테스트). `embedding`·`vector`·`mcp` 도 이번
+Phase 에 만들지 않았다 (§24·§25) — 먼저 재고 그 결과로 다음을 정한다.
+
+#### 역할별 view — 다른 것은 **하나뿐**이다
+
+`ROLE_VIEWS` 가 역할마다 실을 칸을 정하고, 오늘 갈리는 것은
+`qualitative`(정성 특성·관계) 하나다. 데이터 분석가의 역할 프롬프트는 그
+칸을 **한 번도 언급하지 않고**("관측된 **수치**만"), 맞대결 분석가의
+프롬프트는 그것을 중심으로 쓰여 있다 — 둘 다 테스트로 확인한다.
+
+**§1-9 불변조건 2 의 범위를 옮겼다.** 그 조항은 "역할별 payload 를 만들면
+두 의견이 **비교 불가능**해진다" 이고, 비교되는 것은 정량 사실이다. 그래서
+단언을 **"두 stdin 이 글자까지 같다"에서 "정량 본체가 바이트까지 같다"**로
+옮겼다 — 축 지표·근거·`data_quality`·시장 기준선·legend 가 두 역할에서
+같은지 직접 본다(`test_l3`·`test_m7`). §1-29·§1-31·§1-42 와 같은 교정이다.
+
+크기 때문에 나눈 것이 아니다 — `qualitative` 의 기여는 **0.9%** 다.
+되돌리려면 `ROLE_VIEWS` 한 줄이다.
+
+#### 원본을 버리지 않는다
+
+`PanelPayload` 도 회차 자료 시트(`panelexport.data_sheet()`)도 그대로 있고
+`pack_round_data()` 도 남아 있다 — preflight 가 **기준선**으로 계속 잰다.
+색인은 `panel.build_panel_payload()`·`serialize_payload()` 를 그대로 쓴다.
+회차 시트의 `<panel_payload no="N">` 를 텍스트로 되읽지 않는다 — 같은
+함수에서 나온 값을 두 번 해석하는 경로를 만들지 않는다 (§1-8).
+
+#### 줄었다는 것 자체를 성공으로 치지 않는다
+
+`too_small()` 이 원본의 `MIN_PACKET_RATIO`(5%) 밑으로 떨어진 packet 을
+`PACKET_SUSPICIOUSLY_SMALL` 로 올리고 **preflight 가 시작하지 않는다.**
+자료를 잘못 잘라 분석이 불가능해진 것과 잘 줄인 것을 크기만으로는 가를 수
+없기 때문이다.
+
+**감사가 무엇이 빠졌는지 적는다** (`audit()`). 접힌 것을 빠진 것으로 세면
+보고서가 거짓이 되므로 **되풀어서** 비교한다 — 첫 판에서 실제로
+`data_quality` 가 통째로 '빠졌다' 고 나왔다.
+
+#### 캐시 — 속도용이고 의미를 바꾸지 않는다
+
+`panel_cache/<회차>/` 에 `source_manifest.json`(원본 해시·파서 판) ·
+`index.json` · 역할별 packet · `stats.json` 을 남긴다. **LLM 산출물을 담지
+않는다**(테스트). `.gitignore` 에 넣었다 — 원본에서 다시 만들 수 있는
+파생물이라 `panel_work/` 와 같은 취급이다.
+
+#### 데모에서는 줄지 않는다 — 그게 정상이다
+
+데모 픽스처(3경기)는 분석 축이 없어 packet 이 원본보다 **커질 수도** 있다
+(실측 B −4.6%). legend 에는 고정 비용이 있고 데모에는 접을 반복이 없기
+때문이다. **감소율은 자료에 달렸고 목표치를 코드에 박지 않았다** (§4) —
+`150000` 같은 수가 모듈에 없는 것을 테스트가 본다.
+
+#### 값이 바뀌지 않았다
+
+`--demo` **675,280** · `--rerender-artifact 260052` **949,635** · 경기자료
+MD **1,209,043** 이 전부 그대로다. `panel.py`·`moderator.py`·`panelwork.py`·
+`panelimport.py`·`panelpaste.py`·`panelaudit.py`·`panelexport.py`·
+`analyze.py`·`models.py`·`predict.py`·`render.py`·`menu.py`·`cli.py`·
+`briefing/` **diff 0줄**이고 CLI 인자도 그대로다. 프롬프트 판(PANEL 4 ·
+MODERATOR 6)·지침 지문 `fe098456`·schema 1.1 도 그대로다 — **프로젝트
+지침을 다시 붙여넣을 필요가 없다.**
+
+**아직 확인하지 못한 것 둘.**
+
+  · **260054 로 재지 못했다.** 이 저장소의 저장본은 260052 하나뿐이고
+    (`data/artifacts/`), 260054 는 사용자 PC 에 있다. 위 수치는 전부
+    260052 실측이다 — 260054 의 감소율은 자료가 달라 같지 않을 수 있다.
+  · **B 역할은 실호출로 재지 않았다.** 형식이 A 와 같고 packet 이 2.6%
+    클 뿐이라 비슷할 것으로 보이지만, **그것은 추정이고 실측이 아니다.**
+
+회귀 테스트: `python tests/test_panel_auto.py` (119개 — M절 20개가 6-F-10).
+
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
 260052 실행이 남긴 것은 후스코어드 `팀명 매칭 실패` 5건과 `강점 0개` 3팀이다.
@@ -6323,7 +6472,7 @@ python tests/test_relationship_delivery.py # 관계 전달 경로·qualitative 6
 python tests/test_real_recollection.py     # 실측 재수집·스타일 제목·placeholder 6-E-5 §1-39 (26개)
 python tests/test_panel_work.py           # 1·2단계 보관·3단계 조립 6-F-3 §1-40 (60개)
 python tests/test_panel_workflow.py       # 3단계 결과 보관·[4] 연결·상태 6-F-4 §1-41 (49개)
-python tests/test_panel_auto.py           # 패널 자동 실행 6-F-6 §1-42 · 윈도우 안전성 6-F-7 §1-43 · 자료 접기 6-F-8 §1-44 · 3세션 배치 6-F-9 §1-45 (99개)
+python tests/test_panel_auto.py           # 패널 자동 실행 6-F-6 §1-42 · 윈도우 6-F-7 §1-43 · 자료 접기 6-F-8 §1-44 · 3세션 배치 6-F-9 §1-45 · 역할별 packet 6-F-10 §1-46 (119개)
 python tests/test_report_nav.py           # 리포트 내비게이션·앵커 6-F-7 §1-43 (22개)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개

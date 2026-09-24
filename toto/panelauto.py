@@ -106,7 +106,7 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import moderator, panel, panelexport, panelwork
+from . import moderator, panel, panelexport, panelpacket, panelwork
 from .models import Report
 
 # ==========================================================================
@@ -324,8 +324,10 @@ class Preflight:
     version: str = ""
     round_id: str = ""
     matches: int = 0
-    chars: int = 0                  # 회차 자료 크기 (A·B 가 받을 stdin)
+    chars: int = 0                  # 회차 원본 자료 크기 (6-F-9 기준선)
     tokens: int = 0                 # 위를 실측 비율로 환산한 어림
+    packets: dict = field(default_factory=dict)   # 역할별 packet 실측 (6-F-10)
+    index: "panelpacket.PanelIndex | None" = None
     problems: list = field(default_factory=list)
     notes: list = field(default_factory=list)
     auth: "AuthStatus | None" = None
@@ -627,7 +629,7 @@ def _classify(text: str) -> str:
 # Preflight
 # ==========================================================================
 def preflight(report: Report | None, round_id: str,
-              base: Path | None = None) -> Preflight:
+              base: Path | None = None, index=None) -> Preflight:
     """시작해도 되는지 본다. **API 키가 있으면 시작하지 않는다.**
 
     `report` 가 `None` 이면 저장본을 읽지 못한 것이다 — 그것도 막는다.
@@ -717,19 +719,26 @@ def preflight(report: Report | None, round_id: str,
                 f"({', '.join(str(n) for n in without)}번) — 축 지표만으로 "
                 f"분석합니다")
         # **회차 전체를 한 번에 보내므로 크기를 먼저 적는다** (6-F-9).
-        # 경기별로 나눠 보내던 때는 한 호출이 작았지만 이제는 14경기가
-        # 한 문맥에 들어간다 — 들어가는지를 시작 전에 알아야 한다.
+        # 6-F-10 부터는 원본이 아니라 **역할별 packet** 이 나가므로 둘을
+        # 함께 잰다 — 줄어든 것이 실측이라는 것을 시작 전에 보여 준다.
         if report.matches:
             try:
                 chars = len(pack_round_data(report))
+                idx = index if index is not None \
+                    else panelpacket.build_panel_index(report)
+                stats = panelpacket.measure(idx)
             except Exception as exc:                        # noqa: BLE001
                 out.problems.append(f"회차 자료를 만들지 못했습니다: {exc}")
             else:
                 out.chars = chars
                 out.tokens = int(chars / EST_CHARS_PER_TOKEN)
+                out.index, out.packets = idx, stats
                 out.notes.append(
-                    f"회차 자료 {chars:,}자 ≈ {out.tokens:,}토큰 "
-                    f"(A·B 각 1회 · 실측 {EST_CHARS_PER_TOKEN}자/토큰)")
+                    f"회차 원본 {chars:,}자 ≈ {out.tokens:,}토큰 "
+                    f"(실측 {EST_CHARS_PER_TOKEN}자/토큰)")
+                out.notes.extend(panelpacket.report_lines(stats))
+                # **줄어든 것 자체를 성공으로 치지 않는다** (§32).
+                out.problems.extend(panelpacket.too_small(stats))
 
     # ④ 작업 폴더
     try:
@@ -1069,6 +1078,23 @@ def pack_round_data(report: Report, settings=None) -> str:
     return "\n\n".join(parts)
 
 
+def role_packet_text(report: Report, role: str, settings=None,
+                     index=None) -> str:
+    """A·B 가 stdin 으로 받는 **역할별 compact packet** (Phase 6-F-10).
+
+    6-F-9 까지는 `pack_round_data()` 의 회차 원본 전체(실측 1,746,547자 ≈
+    836,470토큰)가 두 역할에 그대로 갔다. 이제 `panelpacket` 이 반복되는
+    메타데이터를 legend 로 올린 packet 을 만든다 — **값도 근거도 한 칸
+    버리지 않고** 실측 −65% 다.
+
+    자료를 고르는 규칙은 전부 `panelpacket` 에 있다. 여기서 칸을 더하거나
+    빼지 않는다 (§1-8).
+    """
+    idx = index if index is not None else panelpacket.build_panel_index(report)
+    return panelpacket.packet_text(
+        panelpacket.build_analyst_packet(idx, role))
+
+
 def pack_moderator_data(report: Report, base: Path | None = None) -> tuple:
     """C 가 stdin 으로 받는 자료. (본문, 사유).
 
@@ -1292,17 +1318,19 @@ def _run_stage(report: Report, stage: str, prompt: str, stdin_text: str,
 
 def run_stage_analyst(report: Report, role: str, settings=None, *,
                       model: str = "", cli: str = "",
-                      base: Path | None = None,
+                      base: Path | None = None, index=None,
                       timeout: int = ANALYST_AGENT_TIMEOUT) -> StageResult:
     """한 역할로 회차 전체를 **1회** 분석한다 (6-F-9 §5·§6).
 
-    **A 와 B 는 같은 자료를 받고 서로의 결과를 보지 않는다.** stdin 은
-    `pack_round_data()` 하나에서 오고 그 함수는 역할을 모른다. A 의 결과가
-    B 의 입력에 들어갈 경로가 코드에 없다 (테스트로 고정).
+    **A 와 B 는 서로의 결과를 보지 않는다.** stdin 은 `role_packet_text()`
+    하나에서 오고, 그 함수는 **결과가 아니라 회차 자료만** 본다 — A 의
+    결과가 B 의 입력에 들어갈 경로가 코드에 없다 (테스트로 고정).
+
+    두 역할의 **정량 본체는 바이트까지 같다** (6-F-10 · `panelpacket`).
     """
     return _run_stage(
         report, role, analyst_prompt(len(report.matches)),
-        pack_round_data(report, settings),
+        role_packet_text(report, role, settings, index),
         ["--round", report.round_id or "", "--role", role,
          "--save-panel-opinion"],
         settings, model=model, cli=cli, base=base, timeout=timeout)
@@ -1457,6 +1485,19 @@ def run(round_id: str, report: Report | None = None, settings=None, *,
     echo(f"      └ 모델 {model or 'Claude Code 기본'} · 작업 폴더 "
          f"{auto_dir(out.round_id, base)}")
     out.model = model
+    # **무엇을 얼마나 보내는지 먼저 보여 준다** (6-F-10 §26·§34).
+    if pre.packets:
+        echo("")
+        for line in panelpacket.report_lines(pre.packets):
+            echo(line)
+        echo("")
+    # 색인·packet·측정값을 남긴다 (6-F-10 §18). 진단용이고 **실패해도
+    # 실행을 죽이지 않는다** — 리포트는 이것과 무관하다 (§1-6).
+    if pre.index is not None:
+        try:
+            panelpacket.write_cache(pre.index, base)
+        except OSError as exc:
+            out.lines.append(f"packet 캐시를 쓰지 못했습니다: {exc}")
 
     state = panelwork.workflow(out.round_id, base=base)
     done = {s.key: s.done for s in state.stages}
@@ -1466,7 +1507,8 @@ def run(round_id: str, report: Report | None = None, settings=None, *,
     # 예외를 삼키지 않는다: 종료코드 정책은 `main()` 것이다 (§1-7-1).
     try:
         return _run_stages(report, settings, out, pre, done, model=model,
-                           base=base, progress=progress, echo=echo)
+                           base=base, progress=progress, echo=echo,
+                           index=pre.index)
     except KeyboardInterrupt:
         echo("")
         echo("  중단했습니다 — 끝난 단계 결과는 보존되었습니다. "
@@ -1475,7 +1517,7 @@ def run(round_id: str, report: Report | None = None, settings=None, *,
 
 
 def _run_stages(report, settings, out: AutoResult, pre: Preflight, done: dict,
-                *, model: str, base, progress, echo) -> AutoResult:
+                *, model: str, base, progress, echo, index=None) -> AutoResult:
     """A → B → 조립 → C → [4]. `run()` 이 준비한 것 위에서 돈다.
 
     **단계가 checkpoint 다** (§11). 경기 단위 재개가 없으므로, 한 단계가
@@ -1539,7 +1581,8 @@ def _run_stages(report, settings, out: AutoResult, pre: Preflight, done: dict,
     res = _stage(1, panelwork.STAGE_A, panel.DATA_ANALYST,
                  lambda: run_stage_analyst(report, panel.DATA_ANALYST,
                                            settings, model=model,
-                                           cli=pre.cli, base=base))
+                                           cli=pre.cli, base=base,
+                                           index=index))
     if not res.ok:
         return _stop("A", res)
 
@@ -1547,7 +1590,8 @@ def _run_stages(report, settings, out: AutoResult, pre: Preflight, done: dict,
     res = _stage(2, panelwork.STAGE_B, panel.MATCHUP_ANALYST,
                  lambda: run_stage_analyst(report, panel.MATCHUP_ANALYST,
                                            settings, model=model,
-                                           cli=pre.cli, base=base))
+                                           cli=pre.cli, base=base,
+                                           index=index))
     if not res.ok:
         return _stop("B", res)
 
@@ -1616,7 +1660,8 @@ __all__ = [
     "auto_root", "auto_dir", "stage_workspace",
     "one_line", "agent_argv", "run_agent",
     "parse_envelope", "parse_claude_result",
-    "round_data_sheets", "pack_round_data", "pack_moderator_data",
+    "round_data_sheets", "pack_round_data", "role_packet_text",
+    "pack_moderator_data",
     "write_prompt_files", "stage_system",
     "analyst_prompt", "moderator_prompt", "verify_match",
     "run_existing_cli", "run_stage_analyst", "run_stage_moderator",

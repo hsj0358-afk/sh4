@@ -885,10 +885,31 @@ def test_25g_panel_does_not_synthesize():
     예전에는 `moderator.py` 가 없다는 것으로 확인했는데 3-C 에서 생겼다.
     지키려는 것은 '파일이 없다' 가 아니라 **패널이 두 의견을 비교·평균·
     투표하지 않는다** 이므로 그쪽을 본다.
+
+    **6-F-11 에서 범위를 옮겼다.** 낱말 검사가 소스 전체를 훑어서, B 역할
+    프롬프트에 넣은 **금지 문구**(`가중평균 … 만들지 않습니다`)에 걸렸다 —
+    §1-38 의 `test_25d`(`strength` ↔ `strength_side`)와 같은 종류다.
+    프롬프트는 모델에게 보내는 **글**이고 이 테스트가 지키려는 것은 **코드**
+    이므로, 프롬프트 상수를 걷어낸 뒤 코드만 본다. 대신 프롬프트 쪽에서는
+    그 낱말이 **금지로만** 쓰이는지 따로 확인한다.
     """
     src = inspect.getsource(panel)
+    prompts = [panel.SYSTEM_COMMON, panel.RETRY_HINT,
+               *panel.ROLE_PROMPTS.values()]
+    code = src
+    for text in prompts:
+        code = code.replace(text, "")
     for banned in ("다수결", "평균", "투표", "consensus", "majority"):
-        assert banned not in src, banned
+        assert banned not in code, banned
+    # 프롬프트에 남아 있다면 **하지 말라는 말**이어야 한다.
+    for text in prompts:
+        for banned in ("다수결", "평균", "투표"):
+            if banned not in text:
+                continue
+            near = text[max(0, text.index(banned) - 120):
+                        text.index(banned) + 160]
+            assert "않습니다" in near or "마십시오" in near, \
+                f"프롬프트가 {banned} 를 지시하고 있다: {near}"
     tree = ast.parse(src)
     for node in ast.walk(tree):
         if isinstance(node, ast.Compare):

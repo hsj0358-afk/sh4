@@ -744,7 +744,14 @@ def test_e6_canonical_serialization_is_untouched():
 
 
 def test_e7_prompt_versions_are_unchanged():
-    assert panel.PANEL_PROMPT_VERSION == "4"
+    """**6-F-11 에서 범위를 옮겼다.** 6-F-6 은 "이 Phase 는 프롬프트를 건드리지
+    않았다" 를 숫자로 적어 뒀는데, 6-F-11 이 바로 B 역할 프롬프트를 고치는
+    Phase 다 (§1-29·§1-31·§1-42 와 같은 교정).
+
+    자동 실행이 지키려는 것은 특정 숫자가 아니라 ① 사회자·스키마는 그대로
+    이고 ② 프롬프트를 고쳤으면 **판이 올라가 캐시가 무효화된다** 이다.
+    """
+    assert int(panel.PANEL_PROMPT_VERSION) >= 5
     assert moderator.MODERATOR_PROMPT_VERSION == "6"
     assert panelimport.SCHEMA_VERSION == "1.1"
 
@@ -1551,7 +1558,8 @@ def test_k5_the_system_text_itself_is_unchanged():
     assert run.ok, (run.status, run.message)
     got = (ws / panelauto.AGENT_SYSTEM).read_text(encoding="utf-8")
     assert got == system, "시스템 프롬프트가 달라졌다"
-    assert panel.PANEL_PROMPT_VERSION == "4"
+    # 6-F-7 이 지키려는 것은 **자리를 옮겨도 글자가 그대로**라는 것이고,
+    # 그것은 위 한 줄이 본다. PANEL 판 숫자는 6-F-11 이 올린다 (§1-47).
     assert moderator.MODERATOR_PROMPT_VERSION == "6"
 
 

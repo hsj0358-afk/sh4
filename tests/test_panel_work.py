@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import inspect
 import json
 import sys
 import tempfile
@@ -698,9 +699,19 @@ def test_n4_role_files_are_distinct_and_cover_both_roles():
 # P. 계약을 넓히지 않았다 (§1 · §26)
 # ==========================================================================
 def test_p1_prompt_versions_are_untouched():
-    assert panel.PANEL_PROMPT_VERSION == "4"
+    """**6-F-11 에서 범위를 옮겼다.** 6-F-3 은 "보관·조립은 프롬프트를
+    건드리지 않는다" 를 숫자로 적어 뒀는데, 6-F-11 이 B 역할 프롬프트를
+    고치는 Phase 다 (§1-29 와 같은 교정).
+
+    6-F-3 이 실제로 지키는 것은 **이 모듈이 프롬프트를 만지지 않는다**
+    이므로 그쪽을 본다 — 사회자는 그대로이고, `panelwork` 에 프롬프트
+    문자열이 없다.
+    """
     assert moderator.MODERATOR_PROMPT_VERSION == "6"
-    assert panelexport.instructions_fingerprint() == "fe098456"
+    assert int(panel.PANEL_PROMPT_VERSION) >= 5
+    src = inspect.getsource(panelwork)
+    for text in (panel.SYSTEM_COMMON, *panel.ROLE_PROMPTS.values()):
+        assert text not in src, "panelwork 가 프롬프트 사본을 들고 있다"
 
 
 def test_p2_panel_result_schema_is_untouched():

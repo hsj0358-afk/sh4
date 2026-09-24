@@ -663,7 +663,8 @@ def test_g5_instructions_fingerprint_changed():
     from toto import panelexport
     fp = panelexport.instructions_fingerprint()
     assert fp != "e99bf42f", "지문이 그대로면 지침이 낡은 줄 모른다"
-    assert fp == "fe098456", fp        # 6-E-4 `b389d4f0` → 6-E-6
+    # 6-E-4 `b389d4f0` → 6-E-6 `fe098456` → 6-F-11 (B 예상 스코어 규칙).
+    assert fp == "4a54e7ad", fp
 
 
 def test_g6_prompt_forbids_scoring_the_intensities():

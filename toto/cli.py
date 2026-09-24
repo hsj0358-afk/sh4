@@ -129,8 +129,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="패널 자동 분석 — Claude Code(claude -p)로 A·B·C 를 "
                         "돌리고 기존 [4] 반영까지 한 번에 한다. 구독 인증만 "
                         "쓰고 Anthropic API 를 직접 부르지 않는다")
-    # 비용 0 짜리 준비 점검. 회차 전체는 29회 호출이라, "내 PC 가 준비
-    # 됐나" 를 그 29회를 시작해서 알아내면 안 된다.
+    # 비용 0 짜리 준비 점검. 회차 전체는 Claude 세션 셋이고 각 세션이
+    # 회차 자료를 통째로 읽으므로, "내 PC 가 준비됐나" 를 그것을
+    # 시작해서 알아내면 안 된다 (6-F-9).
     p.add_argument("--panel-auto-check", action="store_true",
                    help="--panel-auto 를 돌릴 수 있는 상태인지만 본다 — "
                         "CLI·인증·저장본·모델을 확인하고 멈춘다. "

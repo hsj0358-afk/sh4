@@ -5436,6 +5436,224 @@ You've hit your weekly  limit · resets Sep 24, 9am              2026-09-20
 변경 전 트리에 돌리면 **4개가 깨진다**(음성 대조). 나머지 셋은 '바뀌지
 않아야 한다' 를 지키는 것이라 양쪽에서 통과하는 것이 맞다.
 
+### 1-45. 3세션 배치 (Phase 6-F-9) — 사람이 채팅에서 하는 그대로
+
+6-F-6~8 의 자동 경로는 **경기마다 세션을 열었다** — A 14 + B 14 + C 1 =
+29회. 그런데 사람이 채팅에서 하는 것은 대화 **셋**이다 (§1-11-1). 자동화는
+사람의 수동 절차를 배치로 돌리는 것이어야 하므로 호출 수를 셋으로 맞춘다.
+
+```
+      사람 (채팅)                    프로그램 (6-F-9)
+대화 1  자료 7개 + 역할 A → 14경기     claude -p  A  1회
+대화 2  같은 7개 + 역할 B → 14경기     claude -p  B  1회
+대화 3  사회자 자료 + A·B → 14경기     claude -p  C  1회
+```
+
+**경기 단위 세션·경기 단위 checkpoint·경기 단위 재개가 없다.** 체크포인트는
+`panelwork` 의 단계 산출물 셋뿐이다 — `analyst_a.json` · `analyst_b.json` ·
+`moderator_result.json`. `run_match_role`·`collect_stage`·`match_workspace`·
+`_completed`·`_read_output` 을 지웠다 (§1-23: 죽은 함수를 남기면 다음 사람이
+다시 부른다). 테스트가 그 이름들이 **없는지** 본다.
+
+#### 무엇이 사용량을 태우고 있었나 — 측정부터 했다
+
+6-F-8 판의 실행 기록(`~/.claude/projects/…jsonl`)을 턴 단위로 뜯었다.
+봉투의 `usage` 는 **문맥 크기가 아니라 호출별 입력의 합**이다.
+
+| 턴 | 요청 문맥 | 출력 | 한 일 |
+|---:|---:|---:|---|
+| 1 | 30,177 | 67 | Bash `cat payload.md` |
+| 2 | 31,301 | 174 | Read (흘림 파일) |
+| 3 | 53,648 | 217 | Read offset 304 |
+| 4 | 75,889 | 218 | Read offset 607 |
+| 5 | 93,972 | 6,297 | Bash `pwd && ls -la` |
+| 6 | 100,501 | 1,444 | Write out.json |
+| 7 | 102,075 | 5 | DONE |
+| **계** | **487,563** | 8,422 | 7회 |
+
+읽어낸 것 넷이 이 Phase 의 설계를 전부 정했다.
+
+  · **최종 문맥은 102,075 토큰인데 입력 합계가 487,563 이다** — 79.1%가
+    재전송이고, 그중 경기자료만 192,277토큰(39.4%)이다. 턴을 줄이면 사라진다.
+  · **`--allowedTools` 는 도구를 제한하지 않는다.** `"Read,Write"` 아래서
+    에이전트가 Bash `cat` 을 실제로 실행했다. 실제 제한은 **`--tools`** 이고
+    `""` 가 "도구 없음" 이다 (`claude --help`).
+  · **작업 폴더가 저장소 안이라 `CLAUDE.md` 가 호출마다 실렸다** — 6-F-6
+    기록의 `attachment.instructions` 가 `/home/user/sh4/CLAUDE.md`
+    **197,275자 ≈ 94,480토큰**이다. scratchpad 에서 돌린 측정에는 0자였으므로
+    487,563 은 운영보다 **낮게** 잡힌 수다.
+  · **턴 5·6·7 의 입력 202,576토큰(41.6%)이 분석이 끝난 뒤에 들었다** —
+    1,303자짜리 파일 하나를 쓰려고.
+
+실측 회차 전체(6-F-6, 저장소 안): **98,234,986 입력 토큰.** 주간 한도가 왜
+터졌는지가 이 한 줄이다.
+
+#### 자료는 Python 이 읽어 stdin 으로 한 번 준다
+
+```
+Python  ─ 자료 로드 · stdin 패킹 · 검증 · 조립 · [4] 실행
+Claude  ─ 분석만 한다 (**도구 없음**)
+```
+
+에이전트는 파일을 읽지도 쓰지도 않는다. 결과는 `--output-format json` 의
+`result` 로 돌아오고 Python 이 파싱·검증·저장한다.
+
+**설치된 CLI 로 확인하고 구현했다** (§1-4). 한 번의 호출($0.0099)로 넷이
+동시에 확인됐다 — stdin 이 사용자 입력으로 들어가고, `--tools ""` 로
+`num_turns` 가 **1** 이 되고, `--append-system-prompt-file` 이 적용되고,
+`result` 가 모델의 최종 출력이다. 도구를 끄니 기본 문맥이
+**30,177 → 5,197토큰**이 됐다.
+
+#### 작업 폴더를 저장소 밖에 둔다
+
+`auto_root()` 가 OS 임시 폴더를 쓴다 (`TOTO_PANEL_AUTO_DIR` 로 바꿀 수 있다).
+**저장소의 `CLAUDE.md` 를 지우지 않는다** — 그것은 이 프로젝트의 개발
+규칙서이지 패널 에이전트의 지침이 아니고, 지우면 지금까지의 기록이 사라진다.
+자동 발견을 끊는 것으로 충분하다.
+
+  · 체크포인트(`panel_work/<회차>/*.json`)는 **저장소 안 그대로**다. 축적이
+    목적인 산출물과 에이전트 scratch 는 다른 것이다.
+  · 홈의 사용자 수준 `CLAUDE.md` 는 이 장치로 막지 못한다 — 그건 사용자
+    설정이고 프로그램이 정할 일이 아니다.
+
+#### 공통 규칙과 역할 규칙을 나눠 그 단계에만 싣는다
+
+패널의 공통 규칙은 `panel.SYSTEM_COMMON`, 역할 규칙은 `panel.ROLE_PROMPTS`
+와 `moderator.system_prompt()` 에 **이미 나뉘어 있었다.** 그 넷을 작업
+폴더에 파일로 **생성해** 시스템 프롬프트로만 주입한다.
+
+```
+<workspace>/common.md            panel.SYSTEM_COMMON
+            data_analyst.md      panel.ROLE_PROMPTS[DATA_ANALYST]
+            matchup_analyst.md   panel.ROLE_PROMPTS[MATCHUP_ANALYST]
+            moderator.md         moderator.system_prompt(N)
+```
+
+**저장소에 사본을 두지 않는다** (§1-11-1). 손으로 베껴 두면 채팅 판과 자동
+판이 조용히 갈라지고, 그 뒤로는 "왜 결과가 다르지" 를 영원히 묻게 된다.
+테스트가 `SYSTEM_COMMON` 의 문장이 `panelauto.py` 에 **없는지** 본다.
+
+그래서 **프롬프트 판이 바뀌지 않았다** — `PANEL_PROMPT_VERSION` 4 ·
+`MODERATOR_PROMPT_VERSION` 6 · 지침 지문 `fe098456` 그대로다.
+**프로젝트 지침을 다시 붙여넣을 필요가 없다.**
+
+#### 자료를 고치지 않는다
+
+`pack_round_data()` 는 `panelexport._chunks()` 와 `panelexport.data_sheet()`
+가 만든 시트를 **그대로** 잇는다 — 채팅에 첨부하는 것과 같은 함수다 (§25).
+붙는 것은 `<ROUND: …>` 와 `<FILE: NN>` 뿐이고 공백도 건드리지 않는다.
+
+  · **A 와 B 가 같은 결과를 받는다** — 이 함수는 **역할을 인자로 받지
+    않는다.** 3-B 불변조건 2 가 시그니처로 표현된다.
+  · `[3] 패널 자료 내보내기` 를 먼저 돌렸는지와 무관하게 **메모리에서**
+    만든다. 디스크 파일을 읽으면 그 파일이 낡았을 때 조용히 옛 자료를 보낸다.
+  · C 는 `03_사회자자료_완성.md` 와 A·B 결과 배열만 받는다 —
+    `<panel_payload` 가 한 번도 나오지 않는다(테스트).
+
+#### 격리는 넷으로 건다
+
+```
+새 OS 프로세스 + 호출마다 새 세션 ID + 부모 세션 ID 제거
+              + `--continue`·`--resume` 를 쓰지 않는다
+```
+
+작업 폴더도 `a`·`b`·`c` 로 나눈다 — **A 를 돌리면 B 폴더가 아예 생기지
+않는다**(테스트). B 의 stdin 은 A 와 글자까지 같은 자료이고 A 가 내놓은
+요약·근거가 한 글자도 들어가지 않는다.
+
+#### 검증기를 새로 쓰지 않는다
+
+```
+A·B  →  --save-panel-opinion     →  panelwork.save_stage()   →  panel.parse_opinion()
+C    →  --save-moderator-result  →  panelpaste.convert() + panelimport.validate()
+                                                            →  moderator.parse_result()
+```
+
+스펙 §13 이 요구한 것(배열인가 · 정확히 14개인가 · `match_no` 1~14 가 한
+번씩인가 · 스코어가 0 이상 정수 또는 null 인가 · `summary`/`rationale`/
+`evidence_ids` 의 형 · **그 경기의 근거 ID 인가**)은 전부 `panelwork.
+parse_stage()` 가 이미 한다. 원자적 저장(`os.replace`)과 "통과한 것만
+쓴다" 도 그쪽 규칙이다 — 깨진 결과가 정상 결과를 덮어쓰지 않는다.
+
+**`panelauto` 는 `panelpaste` 를 import 하지 않는다.** 코드펜스 제거도
+여기서 하지 않고 검증기에 맡긴다 — 한 번 더 손대면 자동 경로만 관대해진다.
+
+#### 문맥 초과를 한도와 다른 상태로 적는다
+
+회차 전체를 한 번에 보내므로 크기가 처음으로 문제가 된다. 실물 260052 는
+**1,746,547자 ≈ 836,470토큰**이고, `claude -p` 봉투의 `modelUsage` 가
+`claude-sonnet-5` 의 `contextWindow` 를 **1,000,000** 으로 적는다(실측).
+들어가지만 여유가 크지 않다.
+
+  · `preflight` 가 **시작 전에** 크기를 적는다 — `회차 자료 1,746,547자 ≈
+    836,470토큰`. 돌려 보고 알게 하지 않는다 (§1-6-1).
+  · `_classify` 가 `AGENT_TOO_LARGE` 를 따로 낸다. 한도와 낱말이 겹칠 수
+    있는데(`limit`) **사용자가 할 일이 정반대다** — 한도는 기다리는 것이고
+    문맥 초과는 자료를 줄이거나 나누는 것이다.
+  · 같은 봉투에서 `claude-haiku-4-5` 의 `contextWindow` 는 **200,000** 이다.
+    기본 모델이 sonnet 이어야 하는 이유가 하나 더 생겼다 (§1-43 E).
+  · 어림에 쓰는 비율은 실측 **2.088자/토큰**이다. 이 값으로 자료를 자르거나
+    요약하지 않는다.
+
+#### 로그가 단계 중심이다
+
+```
+[1/3] Data Analyst — 14 matches
+      Claude session started
+      Claude session completed
+      입력 800,010 · 출력 9,000 · 1턴 · $0.5000
+      Data Analyst result validated: 14/14
+…
+Panel completed
+Claude sessions: 3
+```
+
+사용량은 **단계마다** 적고, 없으면 적지 않는다 (§1-5).
+
+#### 안전장치는 그대로다
+
+API 키 차단 · `--bare` 금지 · 구독 인증 확인(`oauth_token`·`firstParty`) ·
+`claude --version` 실행 점검 · 사용량 한도에서 **멈춘다**(과금 전환 없음) ·
+윈도우 프로세스 트리 종료 · POSIX 프로세스 그룹 종료 · Ctrl+C 전파 ·
+콘솔 인코딩 · 명령줄에 줄바꿈·`%` 없음 — 전부 유지하고 테스트로 고정했다.
+**자료가 stdin 으로 가면서 명령줄 길이가 회차 크기와 무관해졌다** — 6-F-7
+§K 가 고친 `cmd.exe` 문제를 한 겹 더 막는다.
+
+#### 값이 바뀌지 않았다
+
+`--demo` **675,280** · `--rerender-artifact 260052` **949,635** · 경기자료
+MD **1,209,043** 이 전부 그대로이고, 전체 55개 스위트가 통과한다.
+`panel.py`·`moderator.py`·`panelwork.py`·`panelimport.py`·`panelpaste.py`·
+`panelaudit.py`·`panelexport.py`·`analyze.py`·`models.py`·`predict.py`·
+`render.py`·`briefing/` **diff 0줄**. CLI 인자도 그대로다 — 새로 는 것이
+없고 `--panel-auto`·`--panel-auto-check`·`--auto-model` 이 그대로다.
+
+#### 기존 테스트의 범위를 옮겼다 — 기대값을 바꾼 것이 아니다
+
+전부 **경기 단위 구조를 전제로 쓰인 것**이고, 6-F-9 가 바로 그 전제를
+없애는 Phase 다 (§1-29·§1-31·§1-42 와 같은 교정).
+
+  · `test_b3`·`test_b4`·`test_h13` — `match_workspace` → `stage_workspace`.
+    지키던 것(역할마다 폴더가 다르다 · A 를 돌리면 B 폴더가 안 생긴다)은
+    그대로이고 단위만 단계로 옮겼다.
+  · `test_c4`~`test_c7` — `_read_output` → `parse_claude_result` +
+    `panelwork.parse_stage`. "고쳐 주지 않는다" 는 더 강해졌다: 울타리를
+    **검증기가** 걷으므로 자동 경로가 따로 관대해질 수 없다.
+  · `test_d1`~`test_d4` — 경기 단위 재개 → **단계 단위 재개.** `test_d2` 는
+    제거한 함수들이 실제로 없는지 보는 검사로 바뀌었다.
+  · `test_e3` — `AGENT_TOOLS == "Read,Write"` 였다. 그 단언이 지키려던 것은
+    "Bash 를 주지 않는다" 인데 **실제로는 막지 못하고 있었다.** 이제
+    `--tools ""` 를 단언하고 `--allowedTools` 가 argv 에 **없는지**도 본다.
+  · `test_e6`·`test_l1`~`test_l7`(6-F-8 접기) — `payload_text` 는 에이전트가
+    파일을 Read 하던 시절의 장치라 함께 사라졌다. 그것이 지키던 것(자료가
+    바뀌지 않는다 · A·B 가 같은 문자열을 받는다)은 `pack_round_data` 위에서
+    그대로 확인한다.
+  · `test_g2`·`test_h7`·`test_h14`·`test_j1`·`test_k3`·`test_k4` — 함수
+    이름만 새 자리로.
+  · `test_g6` 의 표준 라이브러리 목록에 `tempfile` 을 더했다.
+
+회귀 테스트: `python tests/test_panel_auto.py` (99개 — L절 18개가 6-F-9).
+
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
 260052 실행이 남긴 것은 후스코어드 `팀명 매칭 실패` 5건과 `강점 0개` 3팀이다.
@@ -6105,7 +6323,7 @@ python tests/test_relationship_delivery.py # 관계 전달 경로·qualitative 6
 python tests/test_real_recollection.py     # 실측 재수집·스타일 제목·placeholder 6-E-5 §1-39 (26개)
 python tests/test_panel_work.py           # 1·2단계 보관·3단계 조립 6-F-3 §1-40 (60개)
 python tests/test_panel_workflow.py       # 3단계 결과 보관·[4] 연결·상태 6-F-4 §1-41 (49개)
-python tests/test_panel_auto.py           # 패널 자동 실행·비용 안전장치·A/B 격리 6-F-6 §1-42 · 윈도우 안전성 6-F-7 §1-43 · 자료 접기 6-F-8 §1-44 (88개)
+python tests/test_panel_auto.py           # 패널 자동 실행 6-F-6 §1-42 · 윈도우 안전성 6-F-7 §1-43 · 자료 접기 6-F-8 §1-44 · 3세션 배치 6-F-9 §1-45 (99개)
 python tests/test_report_nav.py           # 리포트 내비게이션·앵커 6-F-7 §1-43 (22개)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개

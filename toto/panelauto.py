@@ -1,10 +1,54 @@
-"""패널 자동 실행 (Phase 6-F-6) — Claude Code headless 오케스트레이터.
+"""패널 자동 실행 (Phase 6-F-6 → **6-F-9 3세션 배치**) — Claude Code
+headless 오케스트레이터.
 
 6-F-4 까지 사람이 하던 일은 **분석이 아니라 운반**이었다. 6-F-5 조사가
 `claude -p`(Claude Code headless)로 그 운반을 없앨 수 있다는 것을 실측으로
 확인했고, 이 모듈이 그것을 실제 경로로 만든다.
 
-    [3] 회차 자료  →  A 14경기  →  B 14경기  →  조립  →  C  →  기존 [4]
+    [1] 회차 분석  →  A 1회  →  B 1회  →  조립  →  C 1회  →  기존 [4]
+
+## 6-F-9 — 사람이 채팅에서 하는 것과 **같은 모양**으로 부른다
+
+사람은 채팅에서 대화 셋을 연다 — 1단계에 경기자료 7개를 붙이고 14경기를
+한 번에, 2단계에 **같은** 7개를 붙이고 다시 14경기를 한 번에, 3단계에
+사회자 자료와 1·2단계 결과를 붙이고 14경기를 한 번에. 그런데 6-F-6~8 의
+자동 경로는 **경기마다 세션을 새로 열어** A 14 + B 14 + C 1 = 29회를 불렀다.
+자동화는 사람의 수동 절차를 배치로 돌리는 것이어야 하므로, 이 판에서
+호출 수를 셋으로 맞춘다.
+
+    정상 실행 = Claude Code 세션 **정확히 3개** (A 1 · B 1 · C 1)
+
+경기 단위 세션·경기 단위 checkpoint·경기 단위 재개는 **없다.** 체크포인트는
+`panelwork` 의 단계 산출물 셋뿐이다 (`analyst_a.json` · `analyst_b.json` ·
+`moderator_result.json`).
+
+## 자료는 Python 이 읽어 stdin 으로 한 번 준다
+
+6-F-8 까지는 자료를 파일로 써 두고 에이전트에게 `Read` 시켰다. 실측하면
+그 Read 하나가 Claude Code 의 도구 스키마·스킬 목록까지 문맥에 끌고 들어와
+경기 하나에 **7턴 · 입력 487,563토큰**이 들었고, 자료 자체는 그중 39%가
+같은 내용의 재전송이었다. 이제 Python 이 파일을 읽어 **stdin 한 번**으로
+넘기고 도구를 아예 끈다 (`--tools ""`).
+
+    Python  ─ 자료 로드 · stdin 패킹 · 검증 · 조립 · [4] 실행
+    Claude  ─ 분석만 한다 (**도구 없음**)
+
+에이전트는 파일을 읽지도 쓰지도 않는다. 결과는 `--output-format json` 의
+`result` 로 돌아오고 그것을 Python 이 파싱·검증·저장한다.
+
+## 작업 폴더를 저장소 밖에 둔다
+
+6-F-6 실행 기록을 뜯어 보니 작업 폴더가 `panel_work/…`(저장소 안)이라
+Claude Code 가 이 저장소의 `CLAUDE.md` 를 자동 발견해 **호출마다 197,275자
+≈ 94,480토큰**을 문맥에 실었다. 저장소의 `CLAUDE.md` 는 이 프로젝트의
+개발 규칙서이지 패널 에이전트의 지침이 아니므로 **지우지 않고**, 작업
+폴더를 저장소 밖(OS 임시 폴더)으로 옮겨 자동 발견을 끊는다.
+
+패널의 공통 규칙은 `panel.SYSTEM_COMMON`, 역할별 규칙은
+`panel.ROLE_PROMPTS` 와 `moderator.system_prompt()` 에 이미 나뉘어 있다.
+그 넷을 작업 폴더에 `common.md`·`data_analyst.md`·`matchup_analyst.md`·
+`moderator.md` 로 **코드에서 생성해** 시스템 프롬프트로만 주입한다 —
+손으로 베낀 사본을 만들지 않는다 (§1-11-1).
 
 ## 이 모듈이 쓰지 않는 것
 
@@ -16,17 +60,10 @@
 
 브라우저 자동화·GUI 좌표 클릭·Cowork deep link 도 쓰지 않는다.
 
-## 책임 분리
-
-    Claude   ─ 분석만 한다 (Read·Write 권한뿐, Bash 없음)
-    Python   ─ 검증·조립·[4] 실행을 전부 맡는다
-
-그래서 에이전트가 실패해도 잘못된 값이 다음 단계로 넘어갈 수 없다.
-
 ## 검증기를 새로 만들지 않는다
 
 경기 하나의 내용은 `panel.parse_opinion()` 이 본다 — 수동 경로(6-F-3)와
-API 경로가 쓰는 바로 그 함수다. 조립된 회차 결과는 기존 CLI 인자
+API 경로가 쓰는 바로 그 함수다. 회차 배열은 기존 CLI 인자
 (`--save-panel-opinion`·`--build-moderator-input`·`--save-moderator-result`·
 `--paste-panel-result`)를 그대로 태운다. 규칙을 두 벌 두면 자동 경로와
 수동 경로가 조용히 갈라진다 (§1-8).
@@ -40,12 +77,15 @@ API 경로가 쓰는 바로 그 함수다. 조립된 회차 결과는 기존 CLI
 
 ## A 와 B 는 구조로 격리한다
 
-프롬프트로 "보지 마십시오" 라고 적는 것으로는 부족하다 (6-F-5 §9). 셋을
+프롬프트로 "보지 마십시오" 라고 적는 것으로는 부족하다 (6-F-5 §9). 넷을
 모두 건다.
 
     새 OS 프로세스  +  호출마다 새 세션 ID  +  부모 세션 ID 제거
+    +  `--continue`·`--resume` 를 쓰지 않는다
 
 그리고 작업 폴더 자체를 나눈다 — A 의 workspace 에 B 의 산출물이 **없다.**
+B 의 stdin 은 A 와 **글자까지 같은 자료**이고 A 의 결과는 한 글자도 들어
+가지 않는다 (테스트로 고정). 사회자만 두 결과를 받는다.
 
 ## 비용은 프로그램이 결정하지 않는다
 
@@ -61,6 +101,7 @@ import os
 import shutil
 import signal
 import subprocess
+import tempfile
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -71,24 +112,41 @@ from .models import Report
 # ==========================================================================
 # 상수
 # ==========================================================================
-# 경기별 작업 폴더. `panel_work/<회차>/auto/<역할>/<번호>/` 로 내려간다 —
-# 보관본(analyst_a.json)과 같은 회차 폴더 아래 두어 함께 지워지게 한다.
+# 단계별 작업 폴더의 이름. `<auto_root>/<회차>/<a|b|c>/` 로 내려간다.
 AUTO_DIRNAME = "auto"
 
 # 역할 → 폴더 이름. `panelwork.ROLE_FILES` 와 같은 표기(a·b)를 쓴다.
 ROLE_DIRS = {panel.DATA_ANALYST: "a", panel.MATCHUP_ANALYST: "b"}
 MODERATOR_DIR = "c"
 
-AGENT_INPUT = "payload.md"          # 에이전트가 읽을 자료
-AGENT_OUTPUT = "out.json"           # 에이전트가 쓸 결과
+# **작업 폴더를 저장소 밖에 두는 이유는 토큰이다** (6-F-9). 저장소 안에서
+# 돌리면 Claude Code 가 이 저장소의 `CLAUDE.md`(371KB ≈ 94,480토큰)를
+# 자동 발견해 **호출마다** 문맥에 싣는다 — 6-F-6 실행 기록에서 실제로
+# 그랬다. 저장소의 `CLAUDE.md` 는 개발 규칙서이지 패널 지침이 아니므로
+# 지우지 않고, 작업 폴더를 옮겨 자동 발견을 끊는다.
+AUTO_ENV = "TOTO_PANEL_AUTO_DIR"    # 자리를 직접 정하고 싶을 때의 탈출구
+AUTO_SCRATCH = "toto_panel_auto"
+
+# 작업 폴더 안의 파일. **에이전트는 이 중 어느 것도 읽거나 쓰지 않는다** —
+# 자료는 stdin 으로 가고 결과는 stdout 으로 온다. 전부 진단용 사본이다.
+AGENT_STDIN = "stdin.txt"           # 실제로 넘긴 사용자 입력 (사본)
 AGENT_SYSTEM = "system.md"          # 시스템 프롬프트 (명령줄에 싣지 않는다)
 AGENT_ENVELOPE = "run.json"         # claude -p 가 돌려준 실행 봉투
-AGENT_FAIL = "fail.txt"             # 실패 사유 (있으면 그 경기는 실패다)
+AGENT_RESULT = "result.json"        # 모델이 돌려준 배열 (Python 이 쓴다)
+AGENT_FAIL = "fail.txt"             # 실패 사유 (있으면 그 단계는 실패다)
 
-# 한 경기가 멈춰도 회차 전체가 무한 대기하지 않게 한다. 실측 기준(6-F-5)
-# 에서 경기 하나가 수 분이라 넉넉히 잡되, 상수로 두어 바꿀 수 있게 한다.
-PANEL_AGENT_TIMEOUT = 900           # 경기 하나 (A·B)
-MODERATOR_AGENT_TIMEOUT = 2400      # 사회자 (회차 전체를 한 번에)
+# 시스템 프롬프트의 원천 파일. **여기 적히는 글자는 전부 코드 상수에서
+# 온다** — 손으로 베낀 사본을 만들면 채팅 판과 자동 판이 갈라진다
+# (§1-11-1). 파일로 떨어뜨리는 것은 사람이 열어 볼 수 있게 하기 위해서다.
+COMMON_FILE = "common.md"
+ROLE_PROMPT_FILES = {panel.DATA_ANALYST: "data_analyst.md",
+                     panel.MATCHUP_ANALYST: "matchup_analyst.md"}
+MODERATOR_PROMPT_FILE = "moderator.md"
+
+# 한 단계가 멈춰도 회차 전체가 무한 대기하지 않게 한다. **6-F-9 부터는
+# 한 호출이 14경기를 통째로 다루므로** 경기 하나 기준(900초)으로는 모자란다.
+ANALYST_AGENT_TIMEOUT = 3600        # A · B (회차 전체를 한 번에)
+MODERATOR_AGENT_TIMEOUT = 3600      # 사회자 (회차 전체를 한 번에)
 
 # **자식 환경에서 반드시 지우는 것.**
 #   · API 인증  — 있으면 구독이 아니라 API 로 과금된다 (공식 문서 경고)
@@ -99,9 +157,16 @@ SCRUB_SESSION = ("CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_REMOTE_SESSION_ID",
                  "CLAUDE_CODE_CHILD_SESSION", "CLAUDECODE",
                  "CLAUDE_CODE_ENTRYPOINT")
 
-# 에이전트에게 주는 권한. **Bash 를 주지 않는다** — 분석가는 읽고 쓰기만
-# 하면 되고, [4] 실행은 Python 이 한다 (§13).
-AGENT_TOOLS = "Read,Write"
+# 에이전트에게 주는 도구. **하나도 주지 않는다** (6-F-9 §15 금지 2·5·7).
+# 자료는 Python 이 읽어 stdin 으로 주고 결과는 stdout 으로 받으므로 분석가가
+# 파일을 읽거나 쓸 일이 없다.
+#
+# **`--allowedTools` 가 아니라 `--tools` 다.** 앞의 것은 *자동승인* 목록일
+# 뿐이라 거기 없는 도구도 여전히 쓸 수 있다 — 6-F-8 실행 기록에서 에이전트가
+# `--allowedTools "Read,Write"` 아래서 Bash `cat` 을 실제로 실행했다. 실제
+# 제한은 `--tools` 이고, 빈 문자열이 "도구 없음" 이다 (설치된 CLI 의
+# `--help` 로 확인하고 실행으로 재확인했다 — `num_turns` 1).
+AGENT_TOOLS = ""
 
 # **기본 모델 (Phase 6-F-7 §5).** 6-F-6 실측이 이 값을 정했다 —
 # sonnet 은 A·B·C 세 단계가 전부 정상 동작했고(A $1.08 · B $1.67 ·
@@ -140,6 +205,19 @@ AGENT_FAILED = "failed"             # 그 밖의 실패
 
 # 워크플로 중단 사유. §26 이 이름을 정해 두었다.
 WORKFLOW_STOPPED_USAGE_LIMIT = "WORKFLOW_STOPPED_USAGE_LIMIT"
+
+# **한국어 JSON 의 실측 자/토큰 비** (6-F-8 분석: 세 tool_result 에서
+# 46,263자→22,347토큰 · 46,873→22,241 · 37,729→18,083, 평균 2.088).
+# 회차 자료가 문맥에 들어가는지 **시작 전에** 어림하는 데만 쓴다 — 이 값으로
+# 무엇을 자르거나 요약하지 않는다.
+EST_CHARS_PER_TOKEN = 2.088
+
+# 문맥을 넘겼을 때의 표식. 한도·인증과 **다른 상태**다 — 같은 `failed` 로
+# 뭉뚱그리면 "자료가 너무 크다" 를 "왜인지 모르게 실패" 로 읽게 된다.
+AGENT_TOO_LARGE = "too_large"
+_TOO_LARGE_MARKERS = ("prompt is too long", "context window",
+                      "context_length", "too many tokens",
+                      "input is too long", "exceeds the maximum")
 
 # 구독 한도·인증 실패를 알아보는 표식. **문구가 바뀌면 못 알아볼 수 있으므로
 # 못 알아본 것은 `failed` 로 남기고 과금 전환은 어느 경우에도 하지 않는다.**
@@ -180,21 +258,9 @@ class AgentRun:
     returncode: int | None = None
     cost_usd: float | None = None
     duration_ms: int | None = None
-    message: str = ""
-
-    @property
-    def ok(self) -> bool:
-        return self.status == AGENT_OK
-
-
-@dataclass
-class MatchResult:
-    """경기 하나의 자동 분석 결과."""
-    no: int = 0
-    role: str = ""
-    status: str = AGENT_FAILED
-    reused: bool = False            # 이미 있어 건너뛴 경기
-    session_id: str = ""
+    turns: int | None = None
+    usage: dict = field(default_factory=dict)
+    text: str = ""                  # 모델의 최종 출력 (봉투의 `result`)
     message: str = ""
 
     @property
@@ -204,20 +270,31 @@ class MatchResult:
 
 @dataclass
 class StageResult:
-    """한 단계(A·B·C)의 결과."""
+    """한 단계(A·B·C)의 결과. **경기 단위 결과를 담지 않는다** (6-F-9).
+
+    단계 하나가 호출 하나이고 체크포인트 하나다. 경기별 상태를 여기에 두면
+    "경기 7번부터 재개" 같은 구조가 다시 생긴다.
+    """
     role: str = ""
-    matches: list = field(default_factory=list)
     status: str = AGENT_FAILED
     message: str = ""
-    session_ids: list = field(default_factory=list)
+    session_id: str = ""
+    matches: int = 0                # 검증을 통과한 경기 수
+    expected: int = 0
+    reused: bool = False            # 이미 끝나 있어 부르지 않았다
+    cost_usd: float | None = None
+    turns: int | None = None
+    usage: dict = field(default_factory=dict)
+    lines: list = field(default_factory=list)   # 검증기가 남긴 보고
 
     @property
     def ok(self) -> bool:
         return self.status == AGENT_OK
 
     @property
-    def failed(self) -> list:
-        return [m for m in self.matches if not m.ok]
+    def called(self) -> bool:
+        """이 단계가 실제로 Claude 를 불렀나. 호출 수를 세는 자리다."""
+        return not self.reused
 
 
 @dataclass
@@ -247,6 +324,8 @@ class Preflight:
     version: str = ""
     round_id: str = ""
     matches: int = 0
+    chars: int = 0                  # 회차 자료 크기 (A·B 가 받을 stdin)
+    tokens: int = 0                 # 위를 실측 비율로 환산한 어림
     problems: list = field(default_factory=list)
     notes: list = field(default_factory=list)
     auth: "AuthStatus | None" = None
@@ -532,6 +611,11 @@ def build_agent_env(env: dict | None = None) -> dict:
 def _classify(text: str) -> str:
     """실행 실패 문구를 분류한다. 모르는 것은 `failed` 로 둔다."""
     low = (text or "").lower()
+    # **문맥 초과를 먼저 본다.** 한도 표식과 낱말이 겹칠 수 있는데(`limit`),
+    # 둘은 사용자가 할 일이 정반대다 — 한도는 기다리는 것이고 문맥 초과는
+    # 자료를 줄이거나 나누는 것이다 (§1-6).
+    if any(m in low for m in _TOO_LARGE_MARKERS):
+        return AGENT_TOO_LARGE
     if any(m in low for m in _USAGE_MARKERS) or _matches_usage_shape(low):
         return AGENT_USAGE_LIMIT
     if any(m in low for m in _AUTH_MARKERS):
@@ -632,6 +716,20 @@ def preflight(report: Report | None, round_id: str,
                 f"근거 0건인 경기 {len(without)}개 "
                 f"({', '.join(str(n) for n in without)}번) — 축 지표만으로 "
                 f"분석합니다")
+        # **회차 전체를 한 번에 보내므로 크기를 먼저 적는다** (6-F-9).
+        # 경기별로 나눠 보내던 때는 한 호출이 작았지만 이제는 14경기가
+        # 한 문맥에 들어간다 — 들어가는지를 시작 전에 알아야 한다.
+        if report.matches:
+            try:
+                chars = len(pack_round_data(report))
+            except Exception as exc:                        # noqa: BLE001
+                out.problems.append(f"회차 자료를 만들지 못했습니다: {exc}")
+            else:
+                out.chars = chars
+                out.tokens = int(chars / EST_CHARS_PER_TOKEN)
+                out.notes.append(
+                    f"회차 자료 {chars:,}자 ≈ {out.tokens:,}토큰 "
+                    f"(A·B 각 1회 · 실측 {EST_CHARS_PER_TOKEN}자/토큰)")
 
     # ④ 작업 폴더
     try:
@@ -651,18 +749,32 @@ def preflight(report: Report | None, round_id: str,
 # ==========================================================================
 # 작업 폴더
 # ==========================================================================
+def auto_root() -> Path:
+    """작업 폴더의 뿌리. **저장소 밖이다** (`AUTO_ENV` 로 바꿀 수 있다).
+
+    저장소 안에 두면 Claude Code 가 `CLAUDE.md` 를 자동 발견해 호출마다
+    94,480토큰을 더 싣는다 — 상수 주석에 실측을 적어 두었다.
+    """
+    env = os.environ.get(AUTO_ENV, "").strip()
+    if env:
+        return Path(env)
+    return Path(tempfile.gettempdir()).joinpath(AUTO_SCRATCH)
+
+
 def auto_dir(round_id: str, base: Path | None = None) -> Path:
-    return panelwork.work_dir(round_id, base).joinpath(AUTO_DIRNAME)
+    """회차의 작업 폴더. `base` 를 주면 그 아래에 둔다 (테스트용)."""
+    if base is not None:
+        return panelwork.work_dir(round_id, base).joinpath(AUTO_DIRNAME)
+    return auto_root().joinpath(str(round_id or "unknown"))
 
 
-def match_workspace(round_id: str, role: str, no: int,
+def stage_workspace(round_id: str, stage: str,
                     base: Path | None = None) -> Path:
-    """경기 하나의 작업 폴더. **역할마다 다른 가지에 둔다** (§9·§10)."""
-    return auto_dir(round_id, base).joinpath(ROLE_DIRS[role], f"{no:02d}")
+    """단계 하나의 작업 폴더. **A·B·C 가 서로 다른 가지다** (§17).
 
-
-def moderator_workspace(round_id: str, base: Path | None = None) -> Path:
-    return auto_dir(round_id, base).joinpath(MODERATOR_DIR)
+    `stage` 는 역할 식별자이거나 `MODERATOR_DIR` 이다.
+    """
+    return auto_dir(round_id, base).joinpath(ROLE_DIRS.get(stage, stage))
 
 
 # ==========================================================================
@@ -682,7 +794,8 @@ def one_line(text: str) -> str:
 
 
 def agent_argv(exe: str, prompt: str, system_file, workspace: Path,
-               session_id: str, model: str = "") -> list:
+               session_id: str, model: str = "",
+               tools: str = AGENT_TOOLS) -> list:
     """`claude -p` 명령줄. **실행하지 않고 만들기만 한다** (테스트 가능).
 
     `--bare` 를 넣지 않는다 — 그 모드는 구독 로그인을 읽지 않고
@@ -695,15 +808,21 @@ def agent_argv(exe: str, prompt: str, system_file, workspace: Path,
 
     **모델에게 가는 시스템 프롬프트 글자는 바뀌지 않는다** — 같은 문자열을
     인자 대신 파일로 옮겼을 뿐이다 (`PANEL_PROMPT_VERSION` 무관).
+
+    **자료는 여기 없다** (6-F-9). 경기자료는 stdin 으로 가므로 명령줄 길이가
+    회차 크기와 무관해진다 — 윈도우 `cmd.exe` 의 8191자 한계와도 무관하다.
+
+    `--continue`·`--resume` 를 넣지 않는다 (§17) — 넣는 순간 A·B 격리가
+    깨진다. 테스트가 이 낱말들이 없는 것을 고정한다.
     """
     argv = [exe, "-p", one_line(prompt),
             "--output-format", "json",
-            "--session-id", session_id,      # 호출마다 새 세션 (§8)
+            "--session-id", session_id,      # 호출마다 새 세션 (§8·§17)
             "--append-system-prompt-file", str(system_file),
             "--add-dir", str(workspace),     # 작업 폴더 바깥은 보지 않는다
             "--permission-mode", "acceptEdits",
             "--permission-prompts", "none",  # 물어야 하는 것은 거부된다
-            "--allowedTools", AGENT_TOOLS]   # Bash 없음 (§13)
+            "--tools", tools]                # 기본은 **도구 없음** (§15)
     if model:
         argv += ["--model", model]
     return argv
@@ -763,14 +882,53 @@ def _kill_tree(proc) -> None:
         pass
 
 
+def parse_envelope(raw: str) -> dict:
+    """`--output-format json` 의 봉투. 읽지 못하면 **빈 dict** 다.
+
+    봉투와 모델 출력을 헷갈리지 않으려고 자리를 나눈다 (§14) — 봉투는
+    `session_id`·`usage`·`num_turns` 같은 실행 정보이고, 모델이 만든 것은
+    그 안의 `result` 한 칸뿐이다.
+    """
+    try:
+        data = json.loads((raw or "").strip()) if (raw or "").strip() else {}
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def parse_claude_result(raw: str) -> tuple[str, str]:
+    """봉투 → (모델 최종 출력, 사유). **꺼내 주기만 한다.**
+
+    코드펜스 제거도 JSON 파싱도 여기서 하지 않는다 — 내용은 전부
+    `panelwork` 가 보고, 그쪽이 이미 `panelpaste._strip_fence()` 를 거쳐
+    붙여넣기·파일 경로와 **같은 문**을 지난다 (§1-8). 여기서 한 번 더
+    손대면 자동 경로만 관대해진다.
+    """
+    data = parse_envelope(raw)
+    if not data:
+        return "", "실행 봉투를 JSON 으로 읽지 못했습니다"
+    if data.get("is_error"):
+        return "", str(data.get("result") or "실행이 오류로 끝났습니다")
+    text = str(data.get("result") or "").strip()
+    if not text:
+        return "", "모델이 빈 응답을 돌려줬습니다"
+    return text, ""
+
+
 def run_agent(prompt: str, system: str, workspace: Path, *,
               timeout: int, model: str = "", cli: str = "",
-              env: dict | None = None) -> AgentRun:
+              env: dict | None = None, stdin_text: str = "",
+              tools: str = AGENT_TOOLS) -> AgentRun:
     """`claude -p` 한 번. **API 를 직접 부르지 않고 CLI 를 띄운다.**
 
     `--bare` 를 쓰지 않는다 — 그 모드는 구독 로그인을 읽지 않는다.
     `--permission-prompts none` 이라 사람에게 물어야 하는 것은 승인되지
     않고 거부되며, 그래서 무인 실행이 조용히 멈추지 않는다.
+
+    **자료는 `stdin_text` 로 간다** (6-F-9). 명령줄에도 파일에도 싣지
+    않으므로 회차 크기와 명령줄 길이가 무관해지고, 에이전트가 자료를
+    `Read` 하느라 턴을 쓰지 않는다. 넘긴 것과 같은 글자를 작업 폴더에
+    사본으로 남긴다 — 실패했을 때 "무엇을 보냈나" 를 되짚을 자료다.
 
     **시간이 넘치거나 Ctrl+C 가 오면 손자까지 끝낸다** (`_kill_tree`).
     `subprocess.run(timeout=)` 은 직접 자식만 죽이는데, 윈도우에서는 그
@@ -782,29 +940,35 @@ def run_agent(prompt: str, system: str, workspace: Path, *,
         out.message = "claude 실행 파일을 찾지 못했습니다"
         return out
 
-    wanted = str(uuid.uuid4())          # 호출마다 **새 세션** (§8)
+    wanted = str(uuid.uuid4())          # 호출마다 **새 세션** (§8·§17)
     out.requested_session_id = wanted
     # 시스템 프롬프트는 **명령줄이 아니라 파일**로 간다 (`one_line` 주석).
     sys_file = workspace / AGENT_SYSTEM
     try:
         sys_file.write_text(system, encoding="utf-8")
+        if stdin_text:
+            (workspace / AGENT_STDIN).write_text(stdin_text,
+                                                 encoding="utf-8")
     except OSError as exc:
-        out.message = f"{AGENT_SYSTEM} 를 쓰지 못했습니다: {exc}"
+        out.message = f"작업 폴더에 쓰지 못했습니다: {exc}"
         return out
-    argv = agent_argv(exe, prompt, sys_file, workspace, wanted, model)
+    argv = agent_argv(exe, prompt, sys_file, workspace, wanted, model,
+                      tools=tools)
 
     try:
         proc = subprocess.Popen(
             argv, cwd=str(workspace), env=build_agent_env(env),
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            stdin=subprocess.DEVNULL, text=True, encoding="utf-8",
+            stdin=subprocess.PIPE if stdin_text else subprocess.DEVNULL,
+            text=True, encoding="utf-8",
             errors="replace", shell=False, **_spawn_kwargs())
     except OSError as exc:
         out.message = f"실행하지 못했습니다: {exc}"
         return out
 
     try:
-        stdout, stderr = proc.communicate(timeout=timeout)
+        stdout, stderr = proc.communicate(input=stdin_text or None,
+                                          timeout=timeout)
     except subprocess.TimeoutExpired:
         _kill_tree(proc)
         out.status = AGENT_TIMEOUT
@@ -826,21 +990,21 @@ def run_agent(prompt: str, system: str, workspace: Path, *,
             raw or proc_stderr, encoding="utf-8")
     except OSError:
         pass
-    try:
-        data = json.loads(raw) if raw else {}
-    except ValueError:
-        data = {}
-    if isinstance(data, dict):
+    data = parse_envelope(raw)
+    if data:
         out.session_id = str(data.get("session_id") or "")
         out.cost_usd = data.get("total_cost_usd")
         out.duration_ms = data.get("duration_ms")
+        out.turns = data.get("num_turns")
+        usage = data.get("usage")
+        out.usage = usage if isinstance(usage, dict) else {}
         text = str(data.get("result") or "")
     else:
         text = raw
 
-    if proc.returncode == 0 and isinstance(data, dict) \
-            and not data.get("is_error"):
+    if proc.returncode == 0 and data and not data.get("is_error"):
         out.status = AGENT_OK
+        out.text = text
         out.message = text[:200]
         return out
 
@@ -856,112 +1020,182 @@ def run_agent(prompt: str, system: str, workspace: Path, *,
 
 
 # ==========================================================================
-# A · B — 경기 단위
+# 자료 패킹 — **Python 이 읽어 stdin 으로 한 번 준다** (6-F-9 §4·§16)
 # ==========================================================================
-# 한 줄에 담을 글자 수. **Read 도구가 한 번에 가져가게** 만드는 값이다 —
-# 줄이 너무 길면 잘려 읽히고(6-F-6 실측), 너무 짧으면 줄 수가 불어나 여러
-# 번 읽게 된다. 실물 260052 열네 경기에서 최악이 885줄 · 814자다.
-PAYLOAD_LINE_BUDGET = 800
+ROUND_TAG = "<ROUND: {round}>"
+FILE_TAG = "<FILE: {no:02d}>"
+MODERATOR_TAG = "=== MODERATOR_DATA ==="
+ANALYST_A_TAG = "=== ANALYST_A ==="
+ANALYST_B_TAG = "=== ANALYST_B ==="
 
 
-def _wrap_json(obj, level: int = 0) -> str:
-    """JSON 을 **줄당 `PAYLOAD_LINE_BUDGET` 자 안쪽**으로 접어 쓴다.
+def round_data_sheets(report: Report, settings=None) -> list:
+    """회차 경기자료 시트들. **채팅에 첨부하는 것과 같은 함수**로 만든다.
 
-    한 노드의 compact 표현이 예산 안에 들면 그대로 한 줄로 두고, 넘칠 때만
-    자식으로 내려간다. 그래서 줄 수가 최소가 되면서도 어떤 줄도 길어지지
-    않는다 — 고정 들여쓰기(`indent=1`)가 스칼라마다 줄을 바꾸던 것과 반대다.
+    `panelexport._chunks()` 가 정한 부수·차례 그대로이고 본문도
+    `panelexport.data_sheet()` 가 만든다 — 자동 경로가 자기 판을 따로
+    만들면 "채팅에서 하는 것과 같은 것을 보낸다" 가 깨진다 (§25).
+
+    `[3] 패널 자료 내보내기` 를 먼저 돌렸는지와 무관하게 **메모리에서**
+    만든다. 디스크의 파일을 읽으면 그 파일이 낡았을 때 조용히 옛 자료를
+    보내게 된다.
     """
-    flat = json.dumps(obj, ensure_ascii=False, sort_keys=True,
-                      separators=(",", ":"))
-    if len(flat) + level <= PAYLOAD_LINE_BUDGET \
-            or not isinstance(obj, (dict, list)) or not obj:
-        return flat
-    pad, inner = " " * level, " " * (level + 1)
-    if isinstance(obj, dict):
-        rows = [f"{inner}{json.dumps(k, ensure_ascii=False)}: "
-                f"{_wrap_json(v, level + 1)}" for k, v in sorted(obj.items())]
-        return "{\n" + ",\n".join(rows) + "\n" + pad + "}"
-    rows = [inner + _wrap_json(v, level + 1) for v in obj]
-    return "[\n" + ",\n".join(rows) + "\n" + pad + "]"
+    payloads = [panel.build_panel_payload(m) for m in report.matches]
+    budget = panelexport.DEFAULT_MAX_BYTES
+    if settings is not None:
+        budget = int(getattr(settings, "panel", {}).get(
+            "export_max_bytes", budget) or budget)
+    groups = panelexport._chunks(payloads, budget)
+    round_id = report.round_id or "unknown"
+    return [panelexport.data_sheet(round_id, g, i + 1, len(groups))
+            for i, g in enumerate(groups)]
 
 
-def payload_text(payload) -> str:
-    """에이전트가 읽을 자료. **자료는 canonical 직렬화 그대로다.**
+def pack_round_data(report: Report, settings=None) -> str:
+    """A·B 가 stdin 으로 받는 자료 한 덩어리.
 
-    `panel.serialize_payload()` 는 캐시 키의 근거라 minified 한 줄로 나온다
-    (실측 134,536자 · 줄바꿈 0개). 그것을 그대로 파일에 쓰면 Read 도구가
-    긴 줄을 잘라 읽어서 모델이 **부분 읽기를 15회** 반복했다 — 실측으로 한
-    경기에 $1.55 가 들었다. 그래서 6-F-6 이 `indent=1` 로 줄을 넣었다.
+    **원문을 요약하거나 변형하지 않는다** (§16) — 공백도 건드리지 않는다.
+    붙는 것은 회차 표시와 파일 구분 머리표뿐이고, 그것이 없으면 모델이
+    어디서 어디까지가 한 파일인지 알 수 없다.
 
-    **그 줄바꿈이 이번에는 반대로 비쌌다 (6-F-8).** 스칼라마다 줄을 바꾸니
-    한 경기가 **6,857줄**이 됐는데 Read 는 한 번에 2,000줄까지만 가져간다 —
-    자료를 다 보기까지 Read 가 네 번 넘게 들어가고, **턴마다 앞서 읽은
-    내용이 다시 실려 간다.** 실물에서 A 8회 + B 3회로 세션 한도에 닿았다.
-
-    이제 같은 자료를 **줄당 800자 안쪽으로 접어** 쓴다 — 실물 한 경기가
-    6,857줄 → 858줄, 166,541자 → 139,307자(들여쓰기 공백이 빠진다).
-
-    **자료는 한 칸도 바뀌지 않는다.** `json.loads` 한 결과가 서로 같고
-    (테스트로 고정), A·B 가 받는 문자열은 여전히 **똑같다** (3-B 불변조건
-    2). `serialize_payload()` 자체는 한 글자도 바뀌지 않으므로 수동 경로·
-    캐시 키도 그대로다.
+    **A 와 B 가 이 함수의 같은 결과를 받는다** (3-B 불변조건 2). 역할을
+    인자로 받지 않으므로 역할마다 다른 자료가 나갈 수 없다.
     """
-    return _wrap_json(json.loads(panel.serialize_payload(payload)))
+    sheets = round_data_sheets(report, settings)
+    parts = [ROUND_TAG.format(round=report.round_id or "unknown")]
+    for i, sheet in enumerate(sheets, start=1):
+        parts.append(FILE_TAG.format(no=i))
+        parts.append(sheet)
+    return "\n\n".join(parts)
 
 
-def _io_contract(keys: str) -> str:
-    """파일 입출력 계약. **분석 지시는 한 줄도 여기에 없다.**
+def pack_moderator_data(report: Report, base: Path | None = None) -> tuple:
+    """C 가 stdin 으로 받는 자료. (본문, 사유).
 
-    분석 규칙은 전부 `panel.SYSTEM_COMMON` 과 역할 프롬프트에서 온다
-    (§11). 이 문장은 "무엇을 읽고 무엇을 쓰라" 만 말한다.
+    **경기자료 7개가 들어가지 않는다** (§7·§15 금지 4). 들어가는 것은 셋
+    뿐이다 — 사회자 자료(축 지표가 빠진 판) · A 결과 배열 · B 결과 배열.
+
+    사회자 자료는 `[--build-moderator-input]` 이 만들어 둔
+    `03_사회자자료_완성.md` 를 그대로 쓴다. 그 안에 이미 경기별
+    `"opinions"` 가 채워져 있으므로(6-F-3) A·B 배열은 **원문 보존용**으로
+    따로 싣는다 — 사회자가 분석가가 실제로 적은 문장을 그대로 볼 수 있어야
+    한다.
     """
-    return (f"작업 폴더의 `{AGENT_INPUT}` 를 읽고, 분석 결과를 "
-            f"`{AGENT_OUTPUT}` 에 **JSON 객체 하나**로 쓰십시오.\n\n"
-            f"필수 키: {keys}\n\n"
-            f"`{AGENT_OUTPUT}` 외의 파일을 만들지 말고, 코드펜스나 설명 "
-            f"문장을 파일에 넣지 마십시오. 다 쓰면 DONE 만 답하십시오.")
+    round_id = report.round_id or "unknown"
+    sheet = panelexport.round_dir(round_id) / panelwork.COMPLETED_SHEET
+    if not sheet.is_file():
+        return "", f"{panelwork.COMPLETED_SHEET} 이 없습니다 ({sheet})"
+    try:
+        # 우리가 UTF-8 로 쓴 파일이지만 `-sig` 로 읽는다 — 사용자가 윈도우
+        # 편집기로 열었다 저장하면 BOM 이 붙는다 (§1-7 과 같은 계열).
+        body = sheet.read_text(encoding="utf-8-sig")
+    except OSError as exc:
+        return "", f"{panelwork.COMPLETED_SHEET} 을 읽지 못했습니다: {exc}"
+
+    blocks = [ROUND_TAG.format(round=round_id), MODERATOR_TAG, body]
+    for tag, role in ((ANALYST_A_TAG, panel.DATA_ANALYST),
+                      (ANALYST_B_TAG, panel.MATCHUP_ANALYST)):
+        path = panelwork.path_for(round_id, role, base)
+        if not path.is_file():
+            return "", (f"{panel.ROLE_KO.get(role, role)} 결과가 없습니다 "
+                        f"({path})")
+        try:
+            rows = json.loads(path.read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError) as exc:
+            return "", f"{path.name} 을 읽지 못했습니다: {exc}"
+        blocks.append(tag)
+        # compact 직렬화 — 공백을 줄인다 (§7). 내용은 그대로다.
+        blocks.append(json.dumps(rows, ensure_ascii=False,
+                                 separators=(",", ":")))
+    return "\n\n".join(blocks), ""
 
 
+# ==========================================================================
+# 시스템 프롬프트 — **공통 규칙과 역할 규칙을 파일로 나눈다** (§3·§8·§9)
+# ==========================================================================
+def write_prompt_files(workspace: Path, stage: str,
+                       settings=None) -> tuple:
+    """공통·역할 지침을 작업 폴더에 쓰고 (공통 경로, 역할 경로) 를 준다.
+
+    **내용은 전부 코드 상수에서 온다** — `panel.SYSTEM_COMMON` ·
+    `panel.ROLE_PROMPTS` · `moderator.system_prompt()`. 손으로 베낀 사본을
+    저장소에 두면 채팅 판과 자동 판이 조용히 갈라지고, 그 뒤로는 "왜 결과가
+    다르지" 를 영원히 묻게 된다 (§1-11-1).
+
+    파일로 떨어뜨리는 이유는 사람이 열어 볼 수 있게 하려는 것이고, 실제로
+    `--append-system-prompt-file` 에 넘어가는 것은 둘을 이어 붙인
+    `system.md` 다 (`run_agent` 가 쓴다).
+    """
+    workspace.mkdir(parents=True, exist_ok=True)
+    common = workspace / COMMON_FILE
+    common.write_text(panel.SYSTEM_COMMON, encoding="utf-8")
+    if stage == MODERATOR_DIR:
+        sims = moderator.simulations_of(settings) if settings is not None \
+            else moderator.DEBATE_SIMULATIONS
+        role_path = workspace / MODERATOR_PROMPT_FILE
+        role_path.write_text(moderator.system_prompt(sims), encoding="utf-8")
+    else:
+        role_path = workspace / ROLE_PROMPT_FILES[stage]
+        role_path.write_text(panel.ROLE_PROMPTS[stage], encoding="utf-8")
+    return common, role_path
+
+
+def stage_system(workspace: Path, stage: str, settings=None) -> str:
+    """그 단계의 시스템 프롬프트. **역할 규칙은 그 단계에만 실린다** (§15 금지 6).
+
+    사회자 지침은 `moderator.system_prompt()` 가 이미 공통 규칙을 포함하고
+    있어 그것만 싣는다 — 두 번 실으면 같은 말이 두 벌 들어간다.
+    """
+    common, role_path = write_prompt_files(workspace, stage, settings)
+    role_text = role_path.read_text(encoding="utf-8")
+    if stage == MODERATOR_DIR:
+        return role_text
+    return common.read_text(encoding="utf-8") + "\n\n" + role_text
+
+
+# ==========================================================================
+# 지시문 — **분석 규칙은 한 줄도 여기에 없다** (전부 시스템 프롬프트에서 온다)
+# ==========================================================================
 # `panel.parse_opinion()` 이 요구하는 칸. 이름이 갈라지지 않도록 한 곳에
-# 적고 테스트가 그 함수와 대조한다.
-OPINION_KEYS = ("predicted_home(0 이상 정수 또는 null)",
+# 적고 테스트가 그 함수와 대조한다. 회차 배열이므로 `match_no` 가 붙는다.
+OPINION_KEYS = ("match_no(정수)",
+                "predicted_home(0 이상 정수 또는 null)",
                 "predicted_away(0 이상 정수 또는 null)",
                 "summary(문자열)", "rationale(문자열 배열)",
                 "evidence_ids(이 경기의 근거 ID 배열)")
 
-
-def _read_output(workspace: Path):
-    """에이전트가 쓴 결과를 읽는다. (obj, 사유).
-
-    **BOM 을 견디고, 디코딩 실패를 그 경기의 사유로 만든다.** 윈도우에서
-    도구가 UTF-8 BOM 을 붙이거나 cp949 로 쓰는 일이 있는데, 예전에는
-    `UnicodeDecodeError` 가 그대로 올라가 **회차 전체가 죽었다** — 한
-    경기의 결과가 깨진 것은 그 경기의 실패이지 회차의 실패가 아니다
-    (§1-6).
-    """
-    path = workspace / AGENT_OUTPUT
-    if not path.is_file():
-        return None, f"{AGENT_OUTPUT} 를 만들지 않았습니다"
-    try:
-        raw = path.read_text(encoding="utf-8-sig")
-    except OSError as exc:
-        return None, f"읽지 못했습니다: {exc}"
-    except UnicodeDecodeError as exc:
-        return None, f"UTF-8 이 아닙니다: {exc}"
-    from .llm import strip_fence      # 코드펜스만 걷는다 (기존 함수 재사용)
-    try:
-        data = json.loads(strip_fence(raw.strip()))
-    except ValueError as exc:
-        return None, f"JSON 이 아닙니다: {exc}"
-    if not isinstance(data, dict):
-        return None, f"객체가 아닙니다 ({type(data).__name__})"
-    return data, ""
+# `moderator.parse_result()` 가 요구하는 칸.
+MODERATOR_KEYS = ("match_no(정수)", "simulations", "distribution",
+                  "adopted_home", "adopted_away", "adopted_from",
+                  "conclusion", "common_points", "differences",
+                  "counterpoints", "uncertainty", "evidence_ids")
 
 
+def _array_contract(count: int, keys) -> str:
+    """"입력을 다 보고 배열로만 답하라" 한 문장. 장식을 붙이지 않는다 (§15 금지 8)."""
+    return (f"표준입력에 이 회차 {count}경기 자료가 들어 있습니다. "
+            f"{count}경기를 모두 분석하고 결과를 JSON 배열로만 출력하십시오 "
+            f"(경기 하나가 객체 하나).\n\n"
+            f"각 객체의 칸: {' · '.join(keys)}\n\n"
+            f"코드펜스·머리말·설명 문장을 붙이지 말고 배열만 출력하십시오.")
+
+
+def analyst_prompt(count: int) -> str:
+    return _array_contract(count, OPINION_KEYS)
+
+
+def moderator_prompt(count: int) -> str:
+    return _array_contract(count, MODERATOR_KEYS)
+
+
+# ==========================================================================
+# 검증 — **기존 검증기를 그대로 쓴다** (§13)
+# ==========================================================================
 def verify_match(data: dict, match, role: str):
     """경기 하나의 결과를 **기존 검증기**로 본다. (의견, 사유).
 
-    `panel.parse_opinion()` — 수동 경로·API 경로가 쓰는 그 함수다.
+    `panel.parse_opinion()` — 수동 경로·API 경로가 쓰는 그 함수다. 회차
+    배열 전체는 `panelwork.parse_stage()` 가 같은 함수로 본다.
     """
     allowed = panel.build_panel_payload(match).evidence_ids
     body = dict(data)
@@ -972,76 +1206,6 @@ def verify_match(data: dict, match, role: str):
     except panel.ValidationError as exc:
         return None, str(exc)
     return opinion, ""
-
-
-def _completed(workspace: Path, match, role: str) -> bool:
-    """이미 끝난 경기인가. **검증까지 통과해야 끝난 것으로 본다** (§16)."""
-    data, why = _read_output(workspace)
-    if data is None:
-        return False
-    opinion, why = verify_match(data, match, role)
-    return opinion is not None
-
-
-def run_match_role(match, role: str, round_id: str, *, model: str = "",
-                   cli: str = "", base: Path | None = None,
-                   timeout: int = PANEL_AGENT_TIMEOUT) -> MatchResult:
-    """경기 하나를 한 역할로 분석한다. **이미 끝났으면 건너뛴다.**"""
-    out = MatchResult(no=match.no, role=role)
-    ws = match_workspace(round_id, role, match.no, base)
-    ws.mkdir(parents=True, exist_ok=True)
-
-    if _completed(ws, match, role):
-        out.status, out.reused = AGENT_OK, True
-        return out
-    (ws / AGENT_FAIL).unlink(missing_ok=True)
-
-    # 자료는 **두 역할에 같은 문자열**로 간다 (3-B 불변조건 2).
-    payload = panel.build_panel_payload(match)
-    (ws / AGENT_INPUT).write_text(payload_text(payload), encoding="utf-8")
-
-    system = panel.SYSTEM_COMMON + "\n\n" + panel.ROLE_PROMPTS[role]
-    run = run_agent(_io_contract(" · ".join(OPINION_KEYS)), system, ws,
-                    timeout=timeout, model=model, cli=cli)
-    out.session_id = run.session_id or run.requested_session_id
-
-    if not run.ok:
-        out.status, out.message = run.status, run.message
-        (ws / AGENT_FAIL).write_text(f"{run.status}: {run.message}",
-                                     encoding="utf-8")
-        return out
-
-    data, why = _read_output(ws)
-    if data is None:
-        out.status = AGENT_NO_OUTPUT if AGENT_OUTPUT in why else AGENT_INVALID
-        out.message = why
-        (ws / AGENT_FAIL).write_text(why, encoding="utf-8")
-        return out
-
-    opinion, why = verify_match(data, match, role)
-    if opinion is None:
-        out.status, out.message = AGENT_INVALID, why
-        (ws / AGENT_FAIL).write_text(why, encoding="utf-8")
-        return out
-
-    out.status = AGENT_OK
-    return out
-
-
-def collect_stage(report: Report, role: str,
-                  base: Path | None = None) -> tuple[list, list]:
-    """경기별 결과를 배열로 모은다. (배열, 빠진 번호)."""
-    rows, missing = [], []
-    for match in report.matches:
-        ws = match_workspace(report.round_id or "", role, match.no, base)
-        data, _why = _read_output(ws)
-        if data is None:
-            missing.append(match.no)
-            continue
-        body = dict(data)
-        body[panelwork.STAGE_NO] = match.no     # 번호는 프로그램이 정한다
-        rows.append(body)
-    return rows, missing
 
 
 # ==========================================================================
@@ -1058,122 +1222,111 @@ def run_existing_cli(argv: list) -> int:
     return cli_main(list(argv))
 
 
-def _save_stage(round_id: str, role: str, rows: list,
-                base: Path | None = None) -> int:
-    """조립한 배열을 **기존 `--save-panel-opinion`** 에 태운다."""
-    path = auto_dir(round_id, base) / f"{ROLE_DIRS[role]}_stage.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(rows, ensure_ascii=False, indent=1),
-                    encoding="utf-8")
-    return run_existing_cli(["--round", round_id,
-                             "--save-panel-opinion", str(path),
-                             "--role", role])
-
-
-# ==========================================================================
-# 단계 — A · B · C
-# ==========================================================================
-def run_stage_ab(report: Report, role: str, *, model: str = "",
-                 cli: str = "", base: Path | None = None,
-                 timeout: int = PANEL_AGENT_TIMEOUT,
-                 progress=None) -> StageResult:
-    """한 역할로 14경기를 **순차** 실행한다 (§15).
-
-    동시에 띄우지 않는 이유는 실패 위치를 분명히 하고 사용량이 한꺼번에
-    빠져나가지 않게 하기 위해서다. 한 경기가 실패하면 **거기서 멈춘다** —
-    잘못된 결과로 다음 단계에 가지 않는다 (§17).
-    """
-    out = StageResult(role=role)
-    total = len(report.matches)
-    for i, match in enumerate(report.matches, start=1):
-        res = run_match_role(match, role, report.round_id or "", model=model,
-                             cli=cli, base=base, timeout=timeout)
-        out.matches.append(res)
-        if res.session_id:
-            out.session_ids.append(res.session_id)
-        if progress:
-            progress(role, i, total, res)
-        if not res.ok:
-            out.status = res.status
-            out.message = f"{res.no}번 경기: {res.message}"
-            return out
-
-    rows, missing = collect_stage(report, role, base)
-    if missing:
-        out.status = AGENT_INVALID
-        out.message = f"결과가 없는 경기: {missing}"
-        return out
-    if _save_stage(report.round_id or "", role, rows, base) != 0:
-        out.status = AGENT_INVALID
-        out.message = "회차 결과 검증에 실패했습니다 (위 로그 참고)"
-        return out
-    out.status = AGENT_OK
-    return out
-
-
-def run_stage_c(report: Report, settings=None, *, model: str = "",
-                cli: str = "", base: Path | None = None,
-                timeout: int = MODERATOR_AGENT_TIMEOUT) -> StageResult:
-    """사회자를 **1회** 실행한다 (§20).
-
-    C 는 A·B 원본을 읽지 않는다 — 기존 경로가 만든 `03_사회자자료_완성.md`
-    하나만 본다. 그래서 수동 경로와 자료가 같다.
-    """
-    out = StageResult(role="moderator")
-    round_id = report.round_id or ""
-    sheet = panelexport.round_dir(round_id) / panelwork.COMPLETED_SHEET
-    if not sheet.is_file():
-        out.status = AGENT_INVALID
-        out.message = f"{panelwork.COMPLETED_SHEET} 이 없습니다"
-        return out
-
-    ws = moderator_workspace(round_id, base)
+def _stage_file(round_id: str, stage: str, base: Path | None = None) -> Path:
+    """모델이 돌려준 배열을 담을 자리. **Python 이 쓴다** (§15 금지 5)."""
+    ws = stage_workspace(round_id, stage, base)
     ws.mkdir(parents=True, exist_ok=True)
-    # 조립본은 우리가 UTF-8 로 쓴 것이지만 `-sig` 로 읽는다 — 사용자가
-    # 윈도우 편집기로 열었다 저장하면 BOM 이 붙는다 (§1-7 과 같은 계열).
-    (ws / AGENT_INPUT).write_text(sheet.read_text(encoding="utf-8-sig"),
-                                  encoding="utf-8")
+    return ws / AGENT_RESULT
+
+
+# ==========================================================================
+# 단계 — A · B · C.  **한 단계가 Claude 호출 한 번이다** (6-F-9 §0)
+# ==========================================================================
+def _run_stage(report: Report, stage: str, prompt: str, stdin_text: str,
+               save_argv: list, settings=None, *, model: str = "",
+               cli: str = "", base: Path | None = None,
+               timeout: int) -> StageResult:
+    """한 단계를 **1회** 실행하고 결과를 기존 검증 경로에 태운다.
+
+    A·B·C 가 이 함수 하나를 쓴다 — 다르게 두면 격리·검증·실패 처리가
+    단계마다 갈라진다 (§1-8). 다른 것은 stdin 과 지시문과 저장 경로뿐이다.
+    """
+    out = StageResult(role=stage, expected=len(report.matches))
+    round_id = report.round_id or ""
+    ws = stage_workspace(round_id, stage, base)
+    ws.mkdir(parents=True, exist_ok=True)
     (ws / AGENT_FAIL).unlink(missing_ok=True)
 
-    sims = moderator.simulations_of(settings) if settings is not None \
-        else moderator.DEBATE_SIMULATIONS
-    keys = ("match_no(정수) · simulations · distribution · adopted_home · "
-            "adopted_away · adopted_from · conclusion · common_points · "
-            "differences · counterpoints · uncertainty · evidence_ids")
-    prompt = (f"작업 폴더의 `{AGENT_INPUT}` 를 읽으십시오. 그 안에 이 회차의 "
-              f"경기별 사회자 입력이 들어 있습니다.\n\n"
-              f"경기마다 규칙대로 토론을 진행하고, 결과를 `{AGENT_OUTPUT}` 에 "
-              f"**JSON 배열**로 쓰십시오 (경기 하나가 객체 하나).\n\n"
-              f"각 객체의 칸: {keys}\n\n"
-              f"`{AGENT_OUTPUT}` 외의 파일을 만들지 말고, 코드펜스나 설명 "
-              f"문장을 파일에 넣지 마십시오. 다 쓰면 DONE 만 답하십시오.")
+    def fail(status: str, why: str) -> StageResult:
+        out.status, out.message = status, why
+        try:
+            (ws / AGENT_FAIL).write_text(f"{status}: {why}", encoding="utf-8")
+        except OSError:
+            pass
+        return out
 
-    run = run_agent(prompt, moderator.system_prompt(sims), ws,
-                    timeout=timeout, model=model, cli=cli)
-    if run.session_id:
-        out.session_ids.append(run.session_id)
+    run = run_agent(prompt, stage_system(ws, stage, settings), ws,
+                    timeout=timeout, model=model, cli=cli,
+                    stdin_text=stdin_text)
+    out.session_id = run.session_id or run.requested_session_id
+    out.cost_usd, out.turns, out.usage = run.cost_usd, run.turns, run.usage
     if not run.ok:
-        out.status, out.message = run.status, run.message
-        (ws / AGENT_FAIL).write_text(f"{run.status}: {run.message}",
-                                     encoding="utf-8")
-        return out
+        return fail(run.status, run.message)
 
-    path = ws / AGENT_OUTPUT
-    if not path.is_file():
-        out.status = AGENT_NO_OUTPUT
-        out.message = f"{AGENT_OUTPUT} 를 만들지 않았습니다"
-        return out
+    text, why = parse_claude_result(
+        (ws / AGENT_ENVELOPE).read_text(encoding="utf-8")
+        if (ws / AGENT_ENVELOPE).is_file() else "")
+    if not text:
+        # 봉투를 못 읽었더라도 `run_agent` 가 이미 꺼내 둔 것이 있으면 쓴다.
+        text = (run.text or "").strip()
+        if text:
+            why = ""
+    if not text:
+        return fail(AGENT_NO_OUTPUT, why or "모델이 빈 응답을 돌려줬습니다")
 
-    # 내용 검증은 **기존 경로**가 한다 — `panelpaste.convert` +
-    # `panelimport.validate` + `moderator.parse_result` (§21).
-    if run_existing_cli(["--round", round_id,
-                         "--save-moderator-result", str(path)]) != 0:
-        out.status = AGENT_INVALID
-        out.message = "사회자 결과 검증에 실패했습니다 (위 로그 참고)"
-        (ws / AGENT_FAIL).write_text(out.message, encoding="utf-8")
-        return out
+    path = _stage_file(round_id, stage, base)
+    try:
+        path.write_text(text, encoding="utf-8")
+    except OSError as exc:
+        return fail(AGENT_INVALID, f"결과를 쓰지 못했습니다: {exc}")
+
+    # 내용 검증은 **기존 경로**가 한다 (§13) — 1·2단계는
+    # `panelwork.save_stage()`, 3단계는 `panelpaste.convert()` +
+    # `panelimport.validate()` + `moderator.parse_result()`.
+    if run_existing_cli(save_argv + [str(path)]) != 0:
+        return fail(AGENT_INVALID, "결과 검증에 실패했습니다 (위 로그 참고)")
     out.status = AGENT_OK
+    out.matches = len(report.matches)
     return out
+
+
+def run_stage_analyst(report: Report, role: str, settings=None, *,
+                      model: str = "", cli: str = "",
+                      base: Path | None = None,
+                      timeout: int = ANALYST_AGENT_TIMEOUT) -> StageResult:
+    """한 역할로 회차 전체를 **1회** 분석한다 (6-F-9 §5·§6).
+
+    **A 와 B 는 같은 자료를 받고 서로의 결과를 보지 않는다.** stdin 은
+    `pack_round_data()` 하나에서 오고 그 함수는 역할을 모른다. A 의 결과가
+    B 의 입력에 들어갈 경로가 코드에 없다 (테스트로 고정).
+    """
+    return _run_stage(
+        report, role, analyst_prompt(len(report.matches)),
+        pack_round_data(report, settings),
+        ["--round", report.round_id or "", "--role", role,
+         "--save-panel-opinion"],
+        settings, model=model, cli=cli, base=base, timeout=timeout)
+
+
+def run_stage_moderator(report: Report, settings=None, *, model: str = "",
+                        cli: str = "", base: Path | None = None,
+                        timeout: int = MODERATOR_AGENT_TIMEOUT
+                        ) -> StageResult:
+    """사회자를 **1회** 실행한다 (6-F-9 §7).
+
+    **경기자료 7개를 다시 주지 않는다** — stdin 은 사회자 자료와 A·B
+    결과뿐이다 (`pack_moderator_data`).
+    """
+    out = StageResult(role=MODERATOR_DIR, expected=len(report.matches))
+    stdin_text, why = pack_moderator_data(report, base)
+    if not stdin_text:
+        out.status, out.message = AGENT_INVALID, why
+        return out
+    return _run_stage(
+        report, MODERATOR_DIR, moderator_prompt(len(report.matches)),
+        stdin_text,
+        ["--round", report.round_id or "", "--save-moderator-result"],
+        settings, model=model, cli=cli, base=base, timeout=timeout)
 
 
 # ==========================================================================
@@ -1181,22 +1334,44 @@ def run_stage_c(report: Report, settings=None, *, model: str = "",
 # ==========================================================================
 _BAR = "━" * 44
 
+# 단계 → 화면 이름. 로그가 **경기가 아니라 단계** 중심이다 (§21).
+STAGE_LABEL = {panel.DATA_ANALYST: "Data Analyst",
+               panel.MATCHUP_ANALYST: "Matchup Analyst",
+               MODERATOR_DIR: "Moderator"}
 
-def _default_progress(role, i, total, res):
-    mark = "✓" if res.ok else "✗"
-    tail = " (보존됨)" if res.reused else ""
-    print(f"      {i:02d}/{total} {mark}{tail}")
-    if not res.ok:
-        print(f"      └ {res.status}: {res.message[:150]}")
+# 정상 실행의 Claude 세션 수. **이 수가 늘면 설계가 되돌아간 것이다** (§22).
+EXPECTED_SESSIONS = 3
+
+
+def _usage_line(res: StageResult) -> str:
+    """단계 하나의 사용량. 없으면 빈 문자열이고 지어내지 않는다 (§1-5)."""
+    u = res.usage or {}
+    got = [(k, u.get(k)) for k in ("input_tokens",
+                                   "cache_creation_input_tokens",
+                                   "cache_read_input_tokens",
+                                   "output_tokens")]
+    total_in = sum(v for k, v in got if k != "output_tokens"
+                   and isinstance(v, int))
+    out_tok = u.get("output_tokens")
+    bits = []
+    if total_in:
+        bits.append(f"입력 {total_in:,}")
+    if isinstance(out_tok, int):
+        bits.append(f"출력 {out_tok:,}")
+    if res.turns is not None:
+        bits.append(f"{res.turns}턴")
+    if res.cost_usd is not None:
+        bits.append(f"${res.cost_usd:.4f}")
+    return " · ".join(bits)
 
 
 def check(round_id: str, report: Report | None = None, *,
           model: str = "", base: Path | None = None, echo=print) -> bool:
     """**시작해도 되는지만 본다. 모델을 부르지 않는다.**
 
-    회차 전체는 29회 호출이라 결코 싸지 않다(6-F-6 실측). 그런데 지금까지는
-    "내 PC 가 준비됐나" 를 묻는 방법이 **그 29회를 시작해 보는 것**뿐이었다 —
-    윈도우에서 무언가 어긋나면 돈과 시간을 쓴 뒤에 알게 된다.
+    회차 하나가 Claude 세션 셋이다(6-F-9). 그런데 지금까지는 "내 PC 가
+    준비됐나" 를 묻는 방법이 **그것을 시작해 보는 것**뿐이었다 — 윈도우에서
+    무언가 어긋나면 돈과 시간을 쓴 뒤에 알게 된다.
 
     이 경로는 `preflight()` 만 돌리고 멈춘다. 비용 0 이고, 그러면서도
     CLI 탐색 · 실행 · 인증 · 저장본 · 모델 결정을 **실제로** 확인한다.
@@ -1217,6 +1392,7 @@ def check(round_id: str, report: Report | None = None, *,
     for note in pre.notes:
         echo(f"  · {note}")
     echo(f"  · 모델 {resolve_model(model) or 'Claude Code 기본'}")
+    echo(f"  · 작업 폴더 {auto_dir(pre.round_id, base)}")
     if pre.problems:
         echo("")
         for problem in pre.problems:
@@ -1227,19 +1403,23 @@ def check(round_id: str, report: Report | None = None, *,
         return False
     echo("")
     echo(f"  ✓ 준비됐습니다 — {pre.matches}경기")
-    echo("    이제 [2] 패널 자동 분석 을 돌리면 됩니다. 회차 하나에 "
-         "A·B·C 합쳐 29회를 부릅니다.")
+    echo(f"    이제 [2] 패널 자동 분석 을 돌리면 됩니다. 회차 하나에 "
+         f"A·B·C 합쳐 {EXPECTED_SESSIONS}회를 부릅니다.")
     return True
 
 
 def run(round_id: str, report: Report | None = None, settings=None, *,
         model: str = "", base: Path | None = None,
-        progress=_default_progress, echo=print) -> AutoResult:
+        progress=None, echo=print) -> AutoResult:
     """`[패널 자동 분석]` 의 본체. 한 번 부르면 [4] 까지 간다.
 
     사람에게 확인을 묻지 않는다 (§36). 다만 안전·오류 조건 — API 키 감지,
     인증 없음, 사용량 한도, 스키마 실패, 자료 손상, CLI 없음 — 에서는
     **즉시 멈춘다.**
+
+    `progress` 는 6-F-8 까지 경기별 진행을 찍던 자리다. 6-F-9 는 단계가
+    호출 하나라 경기별 진행이 없고, 인자는 부르는 쪽을 깨지 않으려고
+    남겨 두었다 — 주면 단계마다 한 번 불린다.
     """
     out = AutoResult(round_id=str(round_id or ""))
     # **모델은 여기 한 곳에서 정한다** (§5). 아래 단계 함수들은 받은 값을
@@ -1255,7 +1435,7 @@ def run(round_id: str, report: Report | None = None, settings=None, *,
         from . import artifact
         report, why = artifact.load(out.round_id)
         if report is None:
-            echo(f"[1/5] 자료 확인          ✗  {why}")
+            echo(f"[준비] 자료 확인        ✗  {why}")
             out.status, out.message = AGENT_FAILED, why
             return out
 
@@ -1263,7 +1443,7 @@ def run(round_id: str, report: Report | None = None, settings=None, *,
     for note in pre.notes:
         out.lines.append(note)
     if not pre.ok:
-        echo("[1/5] 자료 확인          ✗")
+        echo("[준비] 자료 확인        ✗")
         for p in pre.problems:
             echo(f"      └ {p}")
         # **막혔을 때야말로 진단이 필요하다.** 정상 경로에서는 notes 를
@@ -1273,29 +1453,36 @@ def run(round_id: str, report: Report | None = None, settings=None, *,
         out.status = AGENT_FAILED
         out.stopped_reason = pre.problems[0]
         return out
-    echo(f"[1/5] 자료 확인          ✓  {pre.matches}경기 · {pre.version}")
-    echo(f"      └ 모델 {model or 'Claude Code 기본'}")
+    echo(f"[준비] 자료 확인        ✓  {pre.matches}경기 · {pre.version}")
+    echo(f"      └ 모델 {model or 'Claude Code 기본'} · 작업 폴더 "
+         f"{auto_dir(out.round_id, base)}")
     out.model = model
 
     state = panelwork.workflow(out.round_id, base=base)
     done = {s.key: s.done for s in state.stages}
 
-    # Ctrl+C 로 멈춰도 **자식을 남기지 않고**(`run_agent`) 끝난 경기는
-    # 보존된다 — 재개는 `_completed()` 가 파일을 다시 검증해서 정한다.
+    # Ctrl+C 로 멈춰도 **자식을 남기지 않고**(`run_agent`) 끝난 단계는
+    # 보존된다 — 재개는 `panelwork.workflow()` 가 파일을 보고 정한다.
     # 예외를 삼키지 않는다: 종료코드 정책은 `main()` 것이다 (§1-7-1).
     try:
         return _run_stages(report, settings, out, pre, done, model=model,
                            base=base, progress=progress, echo=echo)
     except KeyboardInterrupt:
         echo("")
-        echo("  중단했습니다 — 끝난 경기 결과는 보존되었습니다. "
-             "다시 실행하면 멈춘 지점부터 재개합니다.")
+        echo("  중단했습니다 — 끝난 단계 결과는 보존되었습니다. "
+             "다시 실행하면 멈춘 단계부터 재개합니다.")
         raise
 
 
 def _run_stages(report, settings, out: AutoResult, pre: Preflight, done: dict,
                 *, model: str, base, progress, echo) -> AutoResult:
-    """A → B → 조립 → C → [4]. `run()` 이 준비한 것 위에서 돈다."""
+    """A → B → 조립 → C → [4]. `run()` 이 준비한 것 위에서 돈다.
+
+    **단계가 checkpoint 다** (§11). 경기 단위 재개가 없으므로, 한 단계가
+    실패하면 그 단계 전체를 다시 돌린다 — 앞 단계 결과는 그대로 쓴다.
+    """
+    total = len(report.matches)
+
     def _stop(stage_name: str, res: StageResult) -> AutoResult:
         echo(f"      └ {res.status}: {res.message}")
         out.status = res.status
@@ -1305,75 +1492,93 @@ def _run_stages(report, settings, out: AutoResult, pre: Preflight, done: dict,
             echo("Claude 사용량 한도에 도달했습니다.")
             echo("  자동으로 API 과금으로 전환하지 않습니다 — 한도가 "
                  "회복된 뒤 다시 실행하면 이어서 진행합니다.")
-            # 한도에서 멈췄을 때 사용자가 가장 알아야 하는 것이 이것이다 —
-            # 예전에는 실패 갈래에만 있어서, 정작 재개가 필요한 자리에서
-            # 보존 여부를 말해 주지 않았다.
-            echo("  완료된 경기 결과는 보존되었습니다.")
+            echo("  끝난 단계 결과는 보존되었습니다.")
+        elif res.status == AGENT_TOO_LARGE:
+            out.stopped_reason = f"{stage_name}: 문맥 초과"
+            echo("")
+            echo("회차 자료가 모델 문맥에 들어가지 않았습니다.")
+            echo(f"  이 회차는 {total}경기 · 약 {pre.tokens:,}토큰입니다. "
+                 f"문맥이 더 큰 모델로 다시 돌리십시오 "
+                 f"(`--auto-model`) — 기본값은 "
+                 f"{DEFAULT_AUTO_MODEL} 입니다.")
+            echo("  끝난 단계 결과는 보존되었습니다.")
         else:
             out.stopped_reason = f"{stage_name}: {res.message}"
             echo("")
-            echo("  완료된 경기 결과는 보존되었습니다. 다시 실행하면 "
-                 "실패한 지점부터 재개합니다.")
+            echo("  끝난 단계 결과는 보존되었습니다. 다시 실행하면 "
+                 "실패한 단계부터 재개합니다.")
         return out
 
-    # ---- [2/5] A ---------------------------------------------------------
-    if done.get(panelwork.STAGE_A):
-        echo("[2/5] 데이터 분석 A      ✓  (이미 완료 — 건너뜁니다)")
-    else:
-        echo("[2/5] 데이터 분석 A")
-        res = run_stage_ab(report, panel.DATA_ANALYST, model=model, cli=pre.cli,
-                           base=base, progress=progress)
-        out.stages["a"] = res
-        out.agent_calls += sum(1 for m in res.matches if not m.reused)
-        out.reused_calls += sum(1 for m in res.matches if m.reused)
-        if not res.ok:
-            return _stop("A", res)
+    def _stage(order: int, key: str, stage: str, runner) -> StageResult | None:
+        """단계 하나. 이미 끝나 있으면 **부르지 않는다** (§11)."""
+        label = STAGE_LABEL[stage]
+        head = f"[{order}/{EXPECTED_SESSIONS}] {label} — {total} matches"
+        if done.get(key):
+            res = StageResult(role=stage, status=AGENT_OK, reused=True,
+                              expected=total, matches=total)
+            echo(f"{head}  ✓  (이미 완료 — 건너뜁니다)")
+        else:
+            echo(head)
+            echo("      Claude session started")
+            res = runner()
+            if res.ok:
+                echo("      Claude session completed")
+                usage = _usage_line(res)
+                if usage:
+                    echo(f"      {usage}")
+                echo(f"      {label} result validated: "
+                     f"{res.matches}/{res.expected}")
+            out.agent_calls += 1 if res.called else 0
+            out.reused_calls += 0 if res.called else 1
+        out.stages[stage] = res
+        if progress:
+            progress(stage, order, EXPECTED_SESSIONS, res)
+        return res
 
-    # ---- [3/5] B — A 가 끝난 뒤에만 시작한다 (§18) -----------------------
-    if done.get(panelwork.STAGE_B):
-        echo("[3/5] 맞대결 분석 B      ✓  (이미 완료 — 건너뜁니다)")
-    else:
-        echo("[3/5] 맞대결 분석 B")
-        res = run_stage_ab(report, panel.MATCHUP_ANALYST, model=model,
-                           cli=pre.cli, base=base, progress=progress)
-        out.stages["b"] = res
-        out.agent_calls += sum(1 for m in res.matches if not m.reused)
-        out.reused_calls += sum(1 for m in res.matches if m.reused)
-        if not res.ok:
-            return _stop("B", res)
+    # ---- [1/3] A ---------------------------------------------------------
+    res = _stage(1, panelwork.STAGE_A, panel.DATA_ANALYST,
+                 lambda: run_stage_analyst(report, panel.DATA_ANALYST,
+                                           settings, model=model,
+                                           cli=pre.cli, base=base))
+    if not res.ok:
+        return _stop("A", res)
 
-    # ---- [4/5] 조립 + C --------------------------------------------------
+    # ---- [2/3] B — A 가 끝난 뒤에만 시작한다. A 결과는 넘기지 않는다 (§6)
+    res = _stage(2, panelwork.STAGE_B, panel.MATCHUP_ANALYST,
+                 lambda: run_stage_analyst(report, panel.MATCHUP_ANALYST,
+                                           settings, model=model,
+                                           cli=pre.cli, base=base))
+    if not res.ok:
+        return _stop("B", res)
+
+    # ---- 조립 — A·B 가 **여기서 처음 만난다** ---------------------------
     if not done.get(panelwork.STAGE_INPUT):
         if run_existing_cli(["--round", out.round_id,
                              "--build-moderator-input"]) != 0:
             out.status = AGENT_FAILED
             out.stopped_reason = "사회자 자료 조립 실패"
-            echo("[4/5] 사회자 C           ✗  자료 조립 실패")
+            echo("[3/3] Moderator          ✗  자료 조립 실패")
             return out
 
-    if done.get(panelwork.STAGE_RESULT):
-        echo("[4/5] 사회자 C           ✓  (이미 완료 — 건너뜁니다)")
-    else:
-        res = run_stage_c(report, settings, model=model, cli=pre.cli, base=base)
-        out.stages["c"] = res
-        out.agent_calls += 1
-        if not res.ok:
-            echo("[4/5] 사회자 C           ✗")
-            return _stop("C", res)
-        echo("[4/5] 사회자 C           ✓")
+    # ---- [3/3] C ---------------------------------------------------------
+    res = _stage(3, panelwork.STAGE_RESULT, MODERATOR_DIR,
+                 lambda: run_stage_moderator(report, settings, model=model,
+                                             cli=pre.cli, base=base))
+    if not res.ok:
+        return _stop("C", res)
 
-    # ---- [5/5] 기존 [4] 반영 ---------------------------------------------
+    # ---- 반영 ------------------------------------------------------------
     saved = panelwork.moderator_result_path(out.round_id, base)
     if run_existing_cli(["--round", out.round_id,
                          "--paste-panel-result", str(saved)]) != 0:
         out.status = AGENT_FAILED
         out.stopped_reason = "[4] 반영 실패"
-        echo("[5/5] [4] 반영           ✗")
+        echo("[반영] 리포트            ✗")
         echo("")
         echo("  사회자 결과는 보존되었습니다. 다시 실행하면 반영부터 "
              "재개합니다.")
         return out
-    echo("[5/5] [4] 반영           ✓")
+    echo("[반영] 리포트            ✓")
 
     out.status = AGENT_OK
     from .settings import load_settings
@@ -1383,30 +1588,37 @@ def _run_stages(report, settings, out: AutoResult, pre: Preflight, done: dict,
     out.report_path = st.output_dir / name
     echo("")
     echo(_BAR)
-    echo("패널 분석 완료")
+    echo("Panel completed")
+    echo(f"Claude sessions: {out.agent_calls}"
+         + (f" (재사용 {out.reused_calls})" if out.reused_calls else ""))
     echo(f"결과: {out.report_path}")
     echo(_BAR)
     return out
 
 
 __all__ = [
-    "AUTO_DIRNAME", "ROLE_DIRS", "MODERATOR_DIR",
-    "AGENT_INPUT", "AGENT_OUTPUT", "AGENT_SYSTEM", "AGENT_ENVELOPE",
+    "AUTO_DIRNAME", "AUTO_ENV", "AUTO_SCRATCH", "ROLE_DIRS", "MODERATOR_DIR",
+    "AGENT_STDIN", "AGENT_SYSTEM", "AGENT_ENVELOPE", "AGENT_RESULT",
     "AGENT_FAIL",
-    "PANEL_AGENT_TIMEOUT", "MODERATOR_AGENT_TIMEOUT",
-    "SCRUB_API", "SCRUB_SESSION", "AGENT_TOOLS", "OPINION_KEYS",
+    "COMMON_FILE", "ROLE_PROMPT_FILES", "MODERATOR_PROMPT_FILE",
+    "ANALYST_AGENT_TIMEOUT", "MODERATOR_AGENT_TIMEOUT",
+    "SCRUB_API", "SCRUB_SESSION", "AGENT_TOOLS",
+    "OPINION_KEYS", "MODERATOR_KEYS", "EXPECTED_SESSIONS", "STAGE_LABEL",
     "AGENT_OK", "AGENT_INVALID", "AGENT_TIMEOUT", "AGENT_USAGE_LIMIT",
-    "AGENT_AUTH", "AGENT_NO_OUTPUT", "AGENT_FAILED",
-    "WORKFLOW_STOPPED_USAGE_LIMIT",
+    "AGENT_AUTH", "AGENT_NO_OUTPUT", "AGENT_FAILED", "AGENT_TOO_LARGE",
+    "WORKFLOW_STOPPED_USAGE_LIMIT", "EST_CHARS_PER_TOKEN",
     "DEFAULT_AUTO_MODEL", "CLI_DEFAULT_MODEL", "CLI_ENV",
     "AUTH_OK", "AUTH_MISSING", "AUTH_API_KEY", "AUTH_UNKNOWN",
-    "AgentRun", "MatchResult", "StageResult", "AutoResult", "Preflight",
-    "AuthStatus",
+    "AgentRun", "StageResult", "AutoResult", "Preflight", "AuthStatus",
     "cli_candidates", "cli_search_dirs", "cli_diagnosis", "cli_help_lines",
     "cli_probe", "auth_status", "resolve_model",
     "find_claude_cli", "build_agent_env", "preflight",
-    "auto_dir", "match_workspace", "moderator_workspace",
-    "one_line", "agent_argv", "run_agent", "payload_text",
-    "PAYLOAD_LINE_BUDGET", "run_match_role", "verify_match", "collect_stage",
-    "run_existing_cli", "run_stage_ab", "run_stage_c", "run", "check",
+    "auto_root", "auto_dir", "stage_workspace",
+    "one_line", "agent_argv", "run_agent",
+    "parse_envelope", "parse_claude_result",
+    "round_data_sheets", "pack_round_data", "pack_moderator_data",
+    "write_prompt_files", "stage_system",
+    "analyst_prompt", "moderator_prompt", "verify_match",
+    "run_existing_cli", "run_stage_analyst", "run_stage_moderator",
+    "run", "check",
 ]

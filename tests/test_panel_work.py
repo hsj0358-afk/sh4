@@ -682,12 +682,22 @@ def test_n2_parse_stage_does_not_take_the_other_role():
 
 
 def test_n3_the_two_roles_meet_only_in_collect_opinions():
-    """`panel.ROLES` 를 도는 곳이 조립 함수뿐이다."""
+    """`panel.ROLES` 를 도는 곳이 조립 함수뿐이다.
+
+    **6-F-14 에서 범위를 옮겼다.** 최종 반영(`assemble_panel_result`)도 두
+    역할을 함께 읽는다 — C 가 끝난 **뒤**에 세 보관본을 Panel Result 로
+    옮기는 자리라 A·B 가 서로를 보는 경로가 아니다. 지키려던 것은 그대로다:
+    한 단계를 **저장·검증하는** 함수는 다른 역할을 읽지 않는다.
+    """
     tree = ast.parse(source_of(panelwork))
     users = [n.name for n in ast.walk(tree)
              if isinstance(n, ast.FunctionDef)
              and "panel.ROLES" in ast.unparse(n)]
-    assert sorted(users) == ["collect_opinions", "opinion_count"], users
+    assert sorted(users) == ["assemble_panel_result", "collect_opinions",
+                             "opinion_count"], users
+    for name in ("save_stage", "parse_stage", "load_stage", "_read_stage"):
+        body = ast.unparse(fn_node(panelwork, name))
+        assert "panel.ROLES" not in body, f"{name} 가 두 역할을 함께 본다"
 
 
 def test_n4_role_files_are_distinct_and_cover_both_roles():

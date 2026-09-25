@@ -149,6 +149,10 @@ def fake_cli(rnd: Round):
             return 0 if saved is not None else 1
         if "--paste-panel-result" in argv:
             return 0
+        if "--apply-panel-work" in argv:
+            # 6-F-14 반영 — 실제 조립을 돌린다 (§1-49).
+            data, _res = panelwork.assemble_panel_result(report, None, base)
+            return 0 if data is not None else 1
         raise AssertionError(f"모르는 CLI 호출: {argv}")
     return run
 

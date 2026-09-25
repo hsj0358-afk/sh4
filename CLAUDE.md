@@ -4702,6 +4702,12 @@ panel_work/<회차>/analyst_a.json          1단계 (6-F-3)
        → panelaudit.audit() → 리포트 갱신      ← 전부 기존 경로다
 ```
 
+> **6-F-14 에서 `[6]-5` 의 경로가 바뀌었다 — §1-49.** 위 흐름대로 사회자
+> 보관본 하나만 `--paste-panel-result` 에 넘기면 1·2단계 원문이 최종 결과에서
+> 빠졌다 (6-F-13). 이제 `[6]-5` 는 `--apply-panel-work` 로 **세 보관본을 함께**
+> 옮기고, 그 뒤는 위와 같은 `panelimport.run()` → `panelaudit.audit()` 다.
+> `--paste-panel-result` 는 3단계 응답만 가진 경우의 입구로 그대로 있다.
+
 `panelpaste`·`panelimport`·`panelaudit` 어디에도 `panelwork` 라는 낱말이
 없다(테스트) — 연결은 **한 방향**이다. `[4]` 의 두 입력 경로(붙여넣기·파일)도
 그대로 있다.
@@ -4764,7 +4770,8 @@ import 되고 그 함수에 닿지 않는다.
 ```
 
 CLI 인자는 둘만 늘었다 — `--save-moderator-result` · `--panel-workflow-status`.
-`[6]-5` 는 **새 인자를 만들지 않고** 기존 `--paste-panel-result` 를 쓴다.
+`[6]-5` 는 **새 인자를 만들지 않고** 기존 `--paste-panel-result` 를 쓴다
+(6-F-14 에서 `--apply-panel-work` 로 바뀌었다 — §1-49).
 둘 다 **수집 구간 앞**에서 갈라진다.
 
 **값이 바뀌지 않았다.** `--demo` 668,447 · `--rerender-artifact 260052`
@@ -4835,6 +4842,9 @@ CLI 인자는 둘만 늘었다 — `--save-moderator-result` · `--panel-workflo
 C out.json         → --save-moderator-result            (기존 검증)
                    → --paste-panel-result → panelimport → panelaudit → HTML
 ```
+
+(마지막 줄은 6-F-14 에서 `--apply-panel-work` 로 바뀌었다 — 위 경로는 A·B
+원문을 최종 결과에 싣지 못했다. §1-49.)
 
 `panelauto` 는 `panel_results/` 에 쓰지 않고 `panelimport.validate` 도 직접
 부르지 않는다(테스트). **연결은 한 방향**이고 기존 모듈은 `panelauto` 라는
@@ -6055,14 +6065,20 @@ B 원안      **없음**        14경기
     실제로 봤다는 뜻이다.
   · `simulations` 는 14경기 전부 30 이다.
 
-**`initial_scores` 는 0/14 인데 그것이 정상이다.** 그 칸은 **채팅 지침**
+**`initial_scores` 가 0/14 인 것 자체는 맞다.** 그 칸은 **채팅 지침**
 (`00_프로젝트_지침.md`)이 요구하는 것이고 `moderator.SYSTEM` 의 3단계 출력
 스키마에는 없다 (§1-21 · `test_report_ia.test_a2` 가 그것을 고정한다).
-자동 경로의 C 는 후자만 받으므로 적지 않는다 — 그래서 `--paste-panel-result`
-로 반영한 리포트의 감사가 `MODERATOR_ONLY` 로 남고 `원안 일치 0 / 불일치 0`
-으로 적힌다. **A·B 원안은 `panel_work/` 에 그대로 있고**(위 표가 그것으로
-센 값이다) 붙여넣기 경로가 그것을 싣지 않을 뿐이다. C 프롬프트는 이번
-Phase 의 범위 밖이라(§20) 고치지 않았다.
+자동 경로의 C 는 후자만 받으므로 적지 않는다.
+
+> **그러나 그 때문에 감사가 `MODERATOR_ONLY` 로 남는 것은 정상이 아니었다
+> — 이 절이 처음에 "그것이 정상이다" 라고 적은 것은 틀렸다 (6-F-13 교정).**
+> 원인은 C 의 출력이 아니라 **반영 경로**였다. 자동·수동 반영이 사회자
+> 보관본 하나만 `--paste-panel-result` 에 넘겼고, 그 어댑터는 "분석가 원문이
+> 없다" 는 전제로 만든 입구(4-F)라 모든 경기를 `부분` 으로 적었다.
+> `initial_scores` 를 채웠어도 `PanelRun.opinions` 는 비어 `MODERATOR_ONLY`
+> 였을 것이다(§1-21 — 스코어 ≠ 의견). **6-F-14 가 고쳤다 — §1-49.**
+> A·B 원안은 그동안에도 `panel_work/` 에 그대로 있었다(위 표가 그것으로 센
+> 값이다).
 
 #### 기존 핀 다섯의 범위를 옮겼다 — 기대값을 바꾼 것이 아니다
 
@@ -6293,6 +6309,175 @@ PANEL **5** · MODERATOR **6** · 지침 지문 **`4a54e7ad`** · schema **1.1**
 것이 잘린 체크포인트다 — 옛 트리에서는 1/3경기짜리 `analyst_a.json` 이
 `A_COMPLETE · done=True` 로 읽히고, 지금은 `CHECKPOINT_INVALID` 로
 다시 돈다.
+
+### 1-49. 세 보관본을 함께 반영한다 (Phase 6-F-14) — `--apply-panel-work`
+
+6-F-11 이 B 를 정상화한 뒤에도 최종 리포트의 감사는 이랬다.
+
+```
+경기 | 데이터 | 맞대결 | 사회자 | 결정
+01   | —      | —      | 0-1    | MODERATOR_ONLY
+```
+
+체크포인트에는 A·B 스코어가 **14/14** 있는데 최종 파일에는 **0/14** 였다.
+6-F-13 이 원인을 끝까지 따라갔다 — 모델도 프롬프트도 아니고 **반영 경로**다.
+
+```
+panelauto._run_stages / 메뉴 [6]-5
+  → --paste-panel-result panel_work/<회차>/moderator_result.json   ← C 하나만
+  → panelpaste._block()      panel_status="부분" · 사회자 칸만
+  → panelimport._moderator_only()   PanelRun(opinions=())
+  → panelaudit / render      DA — · 맞대결 — · MODERATOR_ONLY
+```
+
+`--paste-panel-result` 는 "3단계 응답만 가진 사람" 을 위한 입구다(4-F) —
+분석가 원문이 없다고 **전제**하고 만든 어댑터라 그 어댑터가 틀린 것이
+아니다. 틀린 것은 A·B 를 **가진** 경로가 그 입구로 들어간 것이었다.
+§1-47 이 이 상태를 "정상이다" 라고 적은 것도 그래서 틀렸다(그 절에 교정을
+남겼다).
+
+#### 고친 것 — 입구 하나를 더 낸다
+
+```
+panel_work/<회차>/analyst_a.json ┐
+                  analyst_b.json ├→ panelwork.assemble_panel_result()
+                  moderator_result.json ┘         (Panel Result 1.1 dict)
+  → panelpaste.write_canonical()   panel_results/<회차>_panel_result.json
+  → panelwork.record_applied()     manifest 의 apply 칸 (depends a·b·result)
+  → panelimport.run() → panelaudit.audit() → 리포트     ← 기존 경로 그대로
+```
+
+```bash
+python -m toto --round R --apply-panel-work        # 메뉴 [6] → [5] 도 이것이다
+```
+
+**자동 경로(`panelauto`)와 메뉴 `[6]-5` 가 같은 인자를 쓴다.** 새 CLI 인자는
+이것 하나뿐이다.
+
+  · **새 스키마를 만들지 않았다.** 1.1 의 `ok` 블록 — `data_analyst` ·
+    `matchup_tactical_analyst` · `moderator` — 이 이미 셋을 받는다.
+    `source` 칸만 `panel-work` 로 적어 채팅 붙여넣기(`moderator-paste`)와
+    파일에서 구분되게 했다 (검증기는 이 칸을 읽지 않는다).
+  · **옮기기만 한다.** A·B 는 저장 때와 같은 문(`parse_stage`)으로 다시
+    검증한 **원배열**에서 `match_no` 하나만 빼고 그대로 싣는다. 의견 객체를
+    다시 dict 로 풀지 않는다 — 그건 옮긴 것이 아니라 다시 쓴 것이다
+    (`_read_stage()` 가 원배열을 함께 돌려준다). 스코어·요약·근거를 다시
+    계산하지 않고 평균·보정·승무패를 만들지 않는다(AST 테스트).
+  · C 는 `panelpaste.convert()` 로 경기를 잇는다 — 사회자 칸을 가르는 규칙과
+    '돌리지 않은 경기' 판정을 두 벌 두지 않는다 (§1-8).
+  · **짝은 `match_no` 로 짓는다.** 배열 순서에 기대지 않는다 — A 를 뒤집고
+    B 를 섞어도 결과가 같다(테스트).
+  · **C 가 돌리지 않은 경기(`생략`)에는 A·B 를 붙이지 않는다.** 붙이면
+    `_not_run` 이 상태 모순으로 거부하고, 그 전에 뜻부터 틀린다 — 끝나지
+    않은 패널을 끝난 것처럼 보이게 한다.
+  · `initial_scores` 를 새로 만들지 않는다. 3단계 결과에 있으면 그대로
+    옮기고 없으면 칸도 없다 (§1-21 — 역추론 금지 그대로).
+
+**`ok` 경로는 사회자 전용보다 엄격하다.** 사회자 전용 경로는 제안 집합이
+없어 `adopted_from` 을 **보존**만 하지만(§1-15-2), 이 경로는 실제 A·B 스코어와
+**대조**한다 — "데이터 분석가 것을 채택" 이라 적고 B 의 스코어를 골랐으면
+여기서 걸린다. 6-F-4 의 3단계 보관(`--save-moderator-result`)을 통과한 결과가
+반영에서 거부될 수 있다는 뜻이고, **그게 의도다** — 그 거짓은 A·B 를 붙여야만
+드러난다(테스트 `test_d5`).
+
+#### 실패는 실패로 적는다
+
+A·B·C 중 하나라도 없거나 깨졌으면 **만들지 않는다.**
+
+  · 사회자 전용으로 **조용히 강등하지 않는다.** 그러면 6-F-13 의 증상
+    (A·B `—`)이 오류 없이 다시 난다. 로그가 "3단계 응답만 가지고 있다면
+    `--paste-panel-result` 를 쓰십시오" 라고 입구를 알려 준다.
+  · **앞서 있던 `panel_results/` 파일을 건드리지 않는다.** 조립은 파일을
+    쓰지 않고(AST 테스트), 쓰는 것은 검증을 통과한 뒤의
+    `write_canonical()` 하나다. 리포트도 다시 쓰지 않는다(종료코드 1).
+  · 저장본(4-C)이 없으면 **수집으로 넘어가지 않는다.** 1·2·3단계는 그
+    저장본으로 만든 자료를 보고 나왔다 — 다시 수집한 자료에 붙이면 한
+    회차 안에 두 시점이 섞인다 (§1-48).
+  · `--apply-panel-work` 와 `--paste-panel-result` 를 함께 주면 거부한다 —
+    입력이 둘이면 무엇을 반영했는지 모른다.
+
+#### `panel_results/` 에 쓰는 곳은 하나다
+
+`panelpaste.write_canonical()` 을 꺼냈다. 붙여넣기(`apply`)와 보관본 반영이
+**같은 자리·같은 모양**으로 써야 둘 중 어느 쪽으로 만든 파일이든
+`--import-panel-result` 에 그대로 다시 태울 수 있다 (§1-8). 옆에 쓰고
+`os.replace` 로 바꿔 끼운다. **쓰는 바이트는 예전과 같다** — 실물 260052 의
+사회자 보관본을 `--paste-panel-result` 에 태우면 저장소에 있는 옛 파일과
+**바이트까지 같은** 파일이 나온다.
+
+연결은 여전히 **한 방향**이다 — `panelpaste`·`panelimport`·`panelaudit` 에
+`panelwork` 라는 낱말이 없고, `panelwork` 는 `panel_results/` 에 쓰지 않는다
+(§1-41 의 테스트 그대로).
+
+#### 재개 — 반영은 매번 다시 한다
+
+§1-48 의 계획표에서 반영(`apply`)은 **재사용되지 않고 매 실행 다시 만든다**
+(Claude 를 부르지 않는 단계다). 그래서 A·B·C 가 다 있는 회차에서
+`--panel-auto` 를 다시 돌리면 **Claude 호출 0회**로 반영만 새 경로로 다시
+한다(테스트 `test_i1`). 다만 **확실히 0회인 것은 `--apply-panel-work` 쪽**이다 —
+`--panel-auto` 는 체크포인트가 낡았다고 판정되면(§1-48) 그 단계를 다시 부를
+수 있다.
+
+#### 실측 — 저장본 260052 (저장소 **사본**에서, 수집 0 · Claude 0)
+
+| | 전 (`--paste-panel-result`) | 후 (`--apply-panel-work`) |
+|---|---|---|
+| `source` | `moderator-paste` | `panel-work` |
+| `panel_status` | `부분` ×14 | `ok` ×14 |
+| 최종 파일의 A 스코어 | 0/14 | **14/14** |
+| 최종 파일의 B 스코어 | 0/14 | **14/14** |
+| 감사 | `MODERATOR_ONLY` ×14 | `PASS · COMPLETE` |
+| 결정 유형 | — | 둘 다 6 · 맞대결 7 · 데이터 1 |
+| HTML 스코어 흐름 블록 | 0 (사회자 전용 카드) | **14** (`—` 칸 0) |
+| `패널 분석 (사회자 결과만 반영)` | 14 | **0** |
+
+  · 최종 파일의 A·B·C 블록 42개가 보관본 원배열과 **전부 일치**한다
+    (`match_no` 만 뺀 dict 비교, 불일치 0).
+  · 보관본 셋의 sha256 이 반영 전후로 **같다** (`c735f6e8…` · `a1dd0bbf…` ·
+    `a1e501b6…`) — 체크포인트를 고치지 않는다.
+  · manifest 의 `apply.depends` 가 세 보관본의 sha 와 같고, `apply.sha256` 이
+    쓴 파일과 같다. 다시 반영하면 파일이 **바이트까지 같다**.
+  · 별도 프로세스의 `sys.modules` 에 `toto.sources*` **없음** · `anthropic`
+    **없음** · `toto.panelauto` **없음**, subprocess 호출 **0회**.
+  · 3번 경기는 A `2-2` · B `1-1` 에서 `1-1` 을 골랐다 — 분포에 `compromise`
+    가 함께 있지만 채택은 B 원안과 같으므로 결정 유형이 `ADOPTED_MATCHUP`
+    이다(§1-17 — 결정은 실제 스코어끼리 견줘 정한다).
+
+**저장소에 커밋된 `panel_results/260052_panel_result.json` 은 그대로 옛
+사회자 전용 판이다.** 이 Phase 는 그 파일을 다시 만들지 않았다 — 커밋할지는
+사용자가 정한다 (§1-20). 다시 만들려면 `python -m toto --round 260052
+--apply-panel-work` 다.
+
+**260054 는 사용자 PC 에만 있다** (§2-1). 같은 명령으로 확인한다.
+
+#### 곁가지 — pytest 에서만 깨지던 47개
+
+`tests/test_panel.py::test_21e` 가 `ANTHROPIC_API_KEY` 를 `setdefault` 로
+넣고 **되돌리지 않았다.** 스크립트 실행은 파일마다 프로세스가 달라 드러나지
+않았지만, `pytest -q` 는 한 프로세스에서 이어 돌므로 그 뒤의 `panelauto`
+테스트 47개가 전부 preflight 에서 "API 키가 있다" 로 멈췄다 — **6-F-12 커밋
+시점에도 똑같이 47개**였다(`git archive HEAD` 로 확인). `finally` 로 되돌리게
+고쳤고 이제 `pytest -q` 가 **2438 passed** 다.
+
+#### 기존 테스트의 범위를 옮겼다 — 지우지 않았다
+
+  · `test_panel_auto.test_g3` — "반영은 `--paste-panel-result` 를 쓴다" →
+    "반영은 **기존 CLI** 를 다시 부르고, 그 인자는 붙여넣기와 **같은 함수**
+    (`_handle_panel_file`)로 들어가 `panelimport.run` 을 지나며, 파일은 **같은
+    작성자**(`write_canonical`)가 쓴다". 옛 경로로 돌아가지 않는 것도 본다.
+  · `test_panel_workflow.test_c3` — `[6]-5` 가 `--apply-panel-work` 를 넘긴다.
+    `--paste-panel-result` 는 `[4]` 의 붙여넣기(`_paste_panel`)에 **남아
+    있는지** 함께 본다 (금지: 제거하지 않는다).
+  · `test_panel_auto.test_e2` · `test_panel_work.test_n3` — 인자 목록과
+    `panel.ROLES` 를 도는 함수 목록에 새 자리를 더했다.
+  · 두 harness(`fake_cli_runner` · `test_panel_resume.fake_cli`)는
+    `--apply-panel-work` 를 받아 **진짜 조립**을 돌린다.
+
+회귀 테스트: `python tests/test_panel_apply.py` (38개). 변경 전 트리에 돌리면
+**28개가 깨지고** 스크립트가 `j1` 에서 멈춘다(옛 파서에 `--apply-panel-work`
+가 없다). `test_i1` 이 옛 트리에서
+`['--paste-panel-result', '…/moderator_result.json']` 으로 깨지는 것이 이번에
+바꾼 것 그대로다(음성 대조).
 
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
@@ -6895,7 +7080,7 @@ python -m toto --export-match-material     # 경기자료 MD 한 장 (Phase 4-A)
 python -m toto --import-panel-result F.json # 채팅 패널 결과 가져오기 (4-B)
 python -m toto --validate-panel-result F.json  # 검사만 (붙이지 않는다)
 python -m toto --audit-panel-result F.json  # 회차 구조 감사 (4-C)
-python -m toto --paste-panel-result F.json  # 3단계 Moderator 결과 원문 → 반영 (4-F)
+python -m toto --paste-panel-result F.json  # 3단계 응답**만** 가진 경우 → 사회자 전용 반영 (4-F)
 python -m toto --rerender-artifact data/artifacts/260052.json   # 저장본만 다시 렌더 · 수집 0회 (5-E3a §1-25)
 python -m toto --market-eval               # 시장 기준선 캘리브레이션 · 읽기만 한다 (6-B §1-27)
 python -m toto --settle-round 260052       # 그 회차의 결과만 채운다 · 사전 스냅샷 불변 (6-C-2 §1-28)
@@ -6903,11 +7088,12 @@ python -m toto --round R --save-panel-opinion F.json --role a  # 클로드 1·2�
 python -m toto --round R --build-moderator-input   # 보관본을 match_no 로 조립 → 03_사회자자료_완성.md (6-F-3 §1-40)
 python -m toto --round R --save-moderator-result F.json  # 3단계 결과 검증·보관 · API 안 부른다 (6-F-4 §1-41)
 python -m toto --round R --panel-workflow-status  # 어디까지 왔나 · 파일만 읽는다 (6-F-4 §1-41)
+python -m toto --round R --apply-panel-work  # 1·2·3단계 보관본을 함께 반영 · 수집 0 · Claude 0 (6-F-14 §1-49)
 python -m toto --round R --panel-auto-check # 준비됐는지만 본다 · 모델 호출 0회 (§1-43 J)
 python -m toto --round R --panel-auto      # 패널 자동 분석 A·B·C → [4] → HTML · claude -p · 구독 (6-F-6 §1-42)
 python -m toto --round R --panel-auto-rerun # 끝난 단계도 처음부터 · 세션 3회를 다시 쓴다 (기본은 재개 · 6-F-12 §1-48)
 python -m toto --round R --panel-auto --auto-model cli      # 모델 지정 없이 Claude Code 기본 모델로 (기본값은 sonnet · §1-43)
-#  보관한 3단계 결과는 기존 --paste-panel-result 에 그대로 태운다 (새 포맷 없음)
+#  보관본 반영은 --apply-panel-work 다 — --paste-panel-result 에 태우면 1·2단계 원문이 빠진다 (§1-49)
 #  메뉴 [6] 이 위 전부를 한다 — [3] 뒤, [4] 앞에 쓴다
 #  메뉴 [9] → [6] 이 같은 일을 한다. 오늘 캐시를 무시하려면 --no-cache 를 함께 준다
 #  메뉴 [4] 가 위 셋을 한 번에 한다 — panel_results/ 에 JSON 을 넣고 고르면 된다 (§1-20)
@@ -6968,6 +7154,7 @@ python tests/test_panel_auto.py           # 패널 자동 실행 6-F-6 §1-42 ·
 python tests/test_report_nav.py           # 리포트 내비게이션·앵커 6-F-7 §1-43 (22개)
 python tests/test_b_score_prompt.py       # B 예상 스코어 출력 규칙 6-F-11 §1-47 (19개)
 python tests/test_panel_resume.py         # 체크포인트·재개·A/B/C provenance 6-F-12 §1-48 (63개)
+python tests/test_panel_apply.py          # A·B·C 보관본 → 최종 Panel Result ok 반영 6-F-14 §1-49 (38개)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)

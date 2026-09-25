@@ -390,6 +390,18 @@ def load_stage(round_id: str, role: str, report: Report,
     **저장할 때와 같은 검증을 다시 지난다** — 파일이 손으로 고쳐졌을 수
     있고, 그때 조용히 통과하면 조립이 틀린 채로 나간다.
     """
+    opinions, _data, out = _read_stage(round_id, role, report, base)
+    return opinions, out
+
+
+def _read_stage(round_id: str, role: str, report: Report,
+                base: Path | None = None):
+    """보관본 → (의견, **원배열**, 결과). `load_stage` 와 최종 조립이 쓴다.
+
+    조립(6-F-14)은 검증된 의견 객체가 아니라 **모델이 돌려준 배열 그대로**
+    를 옮겨야 한다 — 의견 객체를 다시 dict 로 풀면 그것은 옮긴 것이 아니라
+    다시 쓴 것이 된다. 그래서 읽기·검증은 한 벌이고 돌려주는 것만 늘렸다.
+    """
     path = path_for(round_id, role, base)
     out = StageResult(role=role, round_id=str(round_id or ""),
                       expected_matches=len(report.matches))
@@ -399,16 +411,16 @@ def load_stage(round_id: str, role: str, report: Report,
         out.add(panelimport.ERROR, "MISSING_ANALYST",
                 f"{panel.ROLE_KO.get(role, role)} 결과가 없습니다 "
                 f"({path}) — 먼저 그 단계 결과를 넣으십시오", field=role)
-        return {}, out
+        return {}, None, out
     try:
         text = path.read_text(encoding="utf-8-sig")
     except (OSError, UnicodeDecodeError) as exc:
         # BOM·cp949 로 저장된 파일이 올라와 회차를 죽이지 않게 한다 (§1-7).
         out.add(panelimport.ERROR, "UNREADABLE", str(exc), field=str(path))
-        return {}, out
-    opinions, _data, parsed = parse_stage(text, role, report)
+        return {}, None, out
+    opinions, data, parsed = parse_stage(text, role, report)
     parsed.path = path if not parsed.errors else None
-    return opinions, parsed
+    return opinions, data, parsed
 
 
 # ==========================================================================
@@ -566,6 +578,131 @@ def save_moderator_result(text: str, report: Report, settings=None,
                      STAGE_INPUT: _file_sha(
                          checkpoint_path(round_id, STAGE_INPUT, base))})
     return path, out
+
+
+# ==========================================================================
+# 최종 반영 — 세 보관본을 Panel Result 하나로 (Phase 6-F-14)
+# ==========================================================================
+# 이 경로로 만든 Panel Result 의 `source`. 채팅 붙여넣기(`moderator-paste`)와
+# 파일을 열었을 때 구분되도록 이름을 따로 둔다. 검증기는 이 칸을 읽지 않는다.
+APPLY_SOURCE = "panel-work"
+
+
+def assemble_panel_result(report: Report, settings=None,
+                          base: Path | None = None):
+    """A·B·C 보관본 → Panel Result 1.1 dict. (dict | None, 검증 결과).
+
+    6-F-13 이 찾은 것 — 자동·수동 반영이 사회자 보관본 **하나만**
+    `--paste-panel-result` 에 넘겼다. 그 어댑터는 "1·2단계 원문이 없다" 는
+    전제로 만든 것이라(4-F) 모든 경기를 `부분` 으로 적고 분석가 칸을 만들지
+    않았고, 체크포인트에 멀쩡히 있던 A·B 가 최종 파일에 한 번도 닿지 못했다.
+
+    **새 스키마를 만들지 않는다.** 1.1 의 `ok` 블록 — `data_analyst` ·
+    `matchup_tactical_analyst` · `moderator` — 이 이미 셋을 받는다.
+
+    **옮기기만 한다.** 스코어·요약·근거를 다시 계산하지 않는다.
+
+      · A·B 는 `_read_stage()` 가 저장 때와 같은 문(`parse_stage`)으로 다시
+        검증한 **원배열**에서 `match_no` 하나만 빼고 그대로 옮긴다.
+      · C 는 `panelpaste.convert()` 로 경기를 잇는다 — 사회자 칸을 가르는
+        규칙과 '돌리지 않은 경기' 판정을 두 벌 두지 않는다 (§1-8).
+      · **짝은 `match_no` 로 짓는다.** 배열 순서에 기대지 않는다.
+      · 내용 검증은 `panelimport.validate()` 한 곳이다. `ok` 경로라서 사회자의
+        `adopted_from` 이 **실제 원안과 대조된다** — 사회자 전용 경로보다
+        엄격하다.
+
+    **C 가 돌리지 않은 경기(`생략`)에는 A·B 를 붙이지 않는다.** 붙이면
+    `panelimport._not_run` 이 상태 모순으로 거부하고, 그 전에 뜻부터 틀린다 —
+    패널이 끝나지 않은 경기를 끝난 것처럼 보이게 된다.
+
+    **파일을 쓰지 않는다.** `panel_results/` 는 `[4]` 의 자리이고 이 모듈은
+    거기에 쓰지 않는다(§1-41) — 쓰는 것은 `panelpaste.write_canonical()`
+    하나다. A 나 B 가 없거나 깨졌으면 **만들지 않는다** — 빈 분석가를
+    지어내지 않고, 사회자 전용으로 조용히 강등하지도 않는다.
+    """
+    rid = str(report.round_id or "")
+    out = panelimport.PanelImportResult(round_id=rid,
+                                        expected_matches=len(report.matches))
+
+    rows: dict[str, dict] = {}
+    for role in panel.ROLES:
+        _ops, data, stage = _read_stage(rid, role, report, base)
+        out.issues.extend(stage.issues)
+        if not stage.errors and data is not None:
+            rows[role] = {item[STAGE_NO]: item for item in data}
+
+    mod_path = moderator_result_path(rid, base)
+    try:
+        text = mod_path.read_text(encoding="utf-8-sig")
+    except FileNotFoundError:
+        out.add(panelimport.ERROR, "MISSING_MODERATOR",
+                f"3단계 결과가 없습니다 ({mod_path}) — 먼저 그 단계 결과를 "
+                f"넣으십시오", field=panelimport.MODERATOR_ROLE)
+        text = None
+    except (OSError, UnicodeDecodeError) as exc:
+        out.add(panelimport.ERROR, "UNREADABLE", str(exc),
+                field=str(mod_path))
+        text = None
+
+    data = None
+    if text is not None:
+        data, issues = panelpaste.convert(text, report)
+        out.issues.extend(issues)
+    if out.errors or data is None:
+        return None, out
+
+    blocks = []
+    for block in data["matches"]:
+        no = block["match_number"]
+        if block.get("panel_status") == panelimport.STATUS_SKIPPED:
+            blocks.append(block)
+            continue
+        pair = {role: rows.get(role, {}).get(no) for role in panel.ROLES}
+        missing = [panel.ROLE_KO.get(r, r) for r, v in pair.items()
+                   if v is None]
+        if missing:
+            # 검증을 지난 세 배열은 회차 경기를 전부 덮으므로 여기에 닿지
+            # 않는다. 규칙이 바뀌어 닿게 되면 **조용히 합치지 않는다.**
+            out.add(panelimport.ERROR, "MATCH_NO_MISMATCH",
+                    f"{no}번 경기가 {' · '.join(missing)} 결과에 없습니다 — "
+                    f"빠진 경기를 채우거나 번호를 고치지 않습니다",
+                    match_no=no)
+            continue
+        merged = {k: v for k, v in block.items()
+                  if k not in ("panel_status", "panel_status_reason",
+                               panelimport.MODERATOR_ROLE)}
+        merged["panel_status"] = panelimport.STATUS_OK
+        for role in panel.ROLES:
+            merged[role] = {k: v for k, v in pair[role].items()
+                            if k != STAGE_NO}
+        merged[panelimport.MODERATOR_ROLE] = block[panelimport.MODERATOR_ROLE]
+        blocks.append(merged)
+    if out.errors:
+        return None, out
+
+    data = dict(data, source=APPLY_SOURCE, matches=blocks)
+    result = panelimport.validate(data, report, settings)
+    result.issues = list(out.issues) + list(result.issues)
+    return (data if result.success else None), result
+
+
+def record_applied(round_id: str, path: Path, matches: int,
+                   base: Path | None = None) -> dict:
+    """최종 반영의 출처를 적는다 (Phase 6-F-14).
+
+    6-F-12 는 a·b·input·result 까지 적고 **반영에서 끊겼다** — 매니페스트는
+    "C 가 이 A·B 로 만들어졌다" 를 알면서 최종 파일과는 이어지지 않았다.
+    여기서 그 고리를 잇는다. 형식은 다른 단계와 같다 (`depends`).
+    """
+    rid = str(round_id or "unknown")
+    return record_stage(
+        rid, STAGE_APPLY, base, sha256=_file_sha(Path(path)),
+        matches=matches, created_at=now_utc(), status=STAGE_COMPLETE,
+        source=APPLY_SOURCE,
+        depends={STAGE_A: _file_sha(path_for(rid, panel.DATA_ANALYST, base)),
+                 STAGE_B: _file_sha(path_for(rid, panel.MATCHUP_ANALYST,
+                                             base)),
+                 STAGE_RESULT: _file_sha(moderator_result_path(rid, base))})
 
 
 # ==========================================================================
@@ -1182,8 +1319,8 @@ def workflow(round_id: str, base: Path | None = None,
               path=panel_path if panel_path.is_file() else None,
               detail=_json_count(panel_path) if panel_path.is_file() else "",
               attachments=(),
-              todo=("[6] → [5] 로 보관해 둔 3단계 결과를 반영하십시오 "
-                    "(기존 [4] 와 같은 경로입니다).")),
+              todo=("[6] → [5] 로 보관해 둔 1·2·3단계 결과를 함께 "
+                    "반영하십시오.")),
     ]
     if plan is not None:
         _apply_plan(stages, plan)
@@ -1258,6 +1395,8 @@ __all__ = [
     "REUSE", "RERUN", "Checkpoint", "StagePlan", "ResumePlan",
     "manifest_path", "read_manifest", "stage_record", "record_stage",
     "force_rerun",
+    # 6-F-14 — 세 보관본을 Panel Result 하나로
+    "APPLY_SOURCE", "assemble_panel_result", "record_applied",
     "checkpoint_path", "checkpoint_state", "resume_plan", "now_utc",
     "A_NOT_STARTED", "A_COMPLETE", "B_NOT_STARTED", "B_COMPLETE",
     "MODERATOR_INPUT_NOT_BUILT", "MODERATOR_INPUT_READY",

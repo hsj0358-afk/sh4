@@ -705,8 +705,17 @@ def test_21d_corrupt_cache_is_a_miss():
 
 def test_21e_cache_never_stores_the_api_key():
     cache = MemCache()
+    # 넣은 키는 **되돌린다.** 남겨 두면 한 프로세스에서 이어 도는 테스트
+    # (pytest)의 `panelauto` preflight 가 "API 키가 있다" 로 전부 멈춘다 —
+    # 스크립트 실행은 파일마다 프로세스가 달라 드러나지 않았다 (6-F-14 에서 발견).
+    had = os.environ.get(llm.API_KEY_ENV)
     os.environ.setdefault(llm.API_KEY_ENV, "sk-테스트-값")
-    panel.run_match(make_match(), settings=S, cache=cache, client=FakeClient())
+    try:
+        panel.run_match(make_match(), settings=S, cache=cache,
+                        client=FakeClient())
+    finally:
+        if had is None:
+            os.environ.pop(llm.API_KEY_ENV, None)
     blob = json.dumps(list(cache.data.values()), ensure_ascii=False)
     assert "sk-" not in blob
 

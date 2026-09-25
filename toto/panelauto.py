@@ -65,8 +65,10 @@ Claude Code 가 이 저장소의 `CLAUDE.md` 를 자동 발견해 **호출마다
 경기 하나의 내용은 `panel.parse_opinion()` 이 본다 — 수동 경로(6-F-3)와
 API 경로가 쓰는 바로 그 함수다. 회차 배열은 기존 CLI 인자
 (`--save-panel-opinion`·`--build-moderator-input`·`--save-moderator-result`·
-`--paste-panel-result`)를 그대로 태운다. 규칙을 두 벌 두면 자동 경로와
-수동 경로가 조용히 갈라진다 (§1-8).
+`--apply-panel-work`)를 그대로 태운다. 규칙을 두 벌 두면 자동 경로와
+수동 경로가 조용히 갈라진다 (§1-8). 마지막 반영은 6-F-14 부터
+`--paste-panel-result`(사회자 응답만 가진 경우의 입구)가 아니라 세
+보관본을 함께 옮기는 `--apply-panel-work` 다.
 
 ## 프롬프트를 베끼지 않는다
 
@@ -1736,15 +1738,17 @@ def _run_stages(report, settings, out: AutoResult, pre: Preflight,
     if not res.ok:
         return _stop("C", res)
 
-    # ---- 반영 ------------------------------------------------------------
-    saved = panelwork.moderator_result_path(out.round_id, base)
+    # ---- 반영 — **세 보관본을 함께** 옮긴다 (6-F-14) ----------------------
+    # 6-F-13: 예전에는 사회자 보관본 하나만 `--paste-panel-result` 에 넘겨,
+    # 그 어댑터가 "분석가 원문 없음" 으로 적었고 A·B 가 최종 파일에 한 번도
+    # 닿지 못했다. 모델은 여기서 부르지 않는다 — 옮기기만 한다.
     if run_existing_cli(["--round", out.round_id,
-                         "--paste-panel-result", str(saved)]) != 0:
+                         "--apply-panel-work"]) != 0:
         out.status = AGENT_FAILED
         out.stopped_reason = "[4] 반영 실패"
         echo("[반영] 리포트            ✗")
         echo("")
-        echo("  사회자 결과는 보존되었습니다. 다시 실행하면 반영부터 "
+        echo("  1·2·3단계 보관본은 보존되었습니다. 다시 실행하면 반영부터 "
              "재개합니다.")
         return out
     echo("[반영] 리포트            ✓")

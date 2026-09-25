@@ -53,6 +53,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 
 from . import panelimport
@@ -214,6 +215,26 @@ def canonical_path(round_id: str, base: Path | None = None) -> Path:
         f"{round_id}{panelimport.FILE_SUFFIX}")
 
 
+def write_canonical(data: dict, round_id: str,
+                    base: Path | None = None) -> Path:
+    """검증을 **통과한** Panel Result 를 canonical 자리에 쓴다.
+
+    `panel_results/` 에 쓰는 곳은 이 함수 **하나**다 (Phase 6-F-14). 붙여넣기
+    (`apply`)와 체크포인트 반영이 같은 자리·같은 모양으로 써야 둘 중 어느
+    쪽으로 만든 파일이든 `--import-panel-result` 에 그대로 다시 태울 수 있다.
+
+    옆에 다 쓰고 바꿔 끼운다 — 쓰다 만 파일이 자리에 남으면 다음 실행이
+    그것을 집어 든다. 쓰는 바이트는 예전과 같다.
+    """
+    path = canonical_path(round_id or "unknown", base)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1),
+                   encoding="utf-8")
+    os.replace(tmp, path)
+    return path
+
+
 def apply(text: str, report: Report, settings=None,
           base: Path | None = None) -> tuple[Path | None, object]:
     """붙여넣기 → 검증 → (통과하면) 파일 저장. (경로, 검증 결과).
@@ -238,11 +259,7 @@ def apply(text: str, report: Report, settings=None,
     if not result.success:
         return None, result
 
-    path = canonical_path(report.round_id or "unknown", base)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=1),
-                    encoding="utf-8")
-    return path, result
+    return write_canonical(data, report.round_id or "unknown", base), result
 
 
 def report_lines(result) -> list[str]:

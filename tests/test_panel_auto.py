@@ -233,6 +233,12 @@ def fake_cli_runner(report, base: Path, sheet_dir: Path):
             return 0 if saved is not None else 1
         if "--paste-panel-result" in argv:
             return 0
+        if "--apply-panel-work" in argv:
+            # 6-F-14 반영. **실제 조립을 돌린다** — 세 보관본이 `ok` 로
+            # 합쳐지지 않으면 여기서 실패가 난다 (예전 붙여넣기 대역은
+            # 아무것도 하지 않고 0 을 돌려줬다).
+            data, _res = panelwork.assemble_panel_result(report, None, base)
+            return 0 if data is not None else 1
         raise AssertionError(f"모르는 CLI 호출: {argv}")
     return run
 
@@ -692,9 +698,16 @@ def test_e1_prompts_are_not_copied():
 def test_e2_existing_cli_paths_are_reused():
     """조립·검증·[4] 를 다시 구현하지 않는다 (§14·§19·§21·§22)."""
     code = module_code(panelauto)
+    # 6-F-14: 반영 인자가 `--paste-panel-result`(사회자 응답만 가진 경우의
+    # 입구)에서 `--apply-panel-work`(세 보관본을 함께)로 옮겨 갔다. 지키려는
+    # 것 — 기존 CLI 경로를 태우고 다시 구현하지 않는다 — 은 그대로다.
     for flag in ("--save-panel-opinion", "--build-moderator-input",
-                 "--save-moderator-result", "--paste-panel-result"):
+                 "--save-moderator-result", "--apply-panel-work"):
         assert flag in code, f"{flag} 를 쓰지 않는다"
+    # 6-F-13 의 결함 자체를 막는다: 자동 반영이 사회자 전용 어댑터로
+    # 돌아가면 A·B 가 다시 최종 파일에서 빠진다.
+    assert "--paste-panel-result" not in code_of(
+        fn_node(panelauto, "_run_stages")), "반영이 사회자 전용 경로로 돌아갔다"
     # 회차 결과 파일을 직접 만들지 않는다 — `[4]` 의 자리다.
     assert "panel_results" not in code
     assert "panelimport.validate" not in code
@@ -882,10 +895,41 @@ def test_g2_c_reads_only_the_assembled_sheet():
 
 
 def test_g3_apply_uses_the_existing_paste_path():
-    """[4] 반영은 기존 경로다 (§22)."""
+    """[4] 반영은 기존 가져오기·감사 경로를 지난다 (§22).
+
+    **6-F-14 범위 이동.** 6-F-6 은 이것을 "사회자 보관본을
+    `--paste-panel-result` 에 넘긴다" 로 고정했는데, 그 어댑터는 분석가
+    원문이 없다고 전제하는 입구라 A·B 가 최종 결과에서 빠졌다 (6-F-13).
+    지키려던 것은 **그 인자가 아니라 '반영이 기존 검증·가져오기·감사 문을
+    지난다'** 이다. 그래서
+
+      · 자동 경로는 모델을 다시 부르지 않고 **기존 CLI** 를 부른다
+        (`run_existing_cli`) — 이제 인자는 `--apply-panel-work` 다.
+      · 그 인자는 CLI 에서 **붙여넣기와 같은 함수**(`_handle_panel_file`)로
+        들어가 `panelimport.run` 을 지난다. 반영 경로가 따로 생기지 않는다.
+      · 조립한 파일도 붙여넣기와 **같은 작성자**(`panelpaste.write_canonical`)
+        가 쓴다 — `panelauto` 는 `panel_results/` 를 모른다.
+    """
     body = workflow_code()
-    assert "--paste-panel-result" in body
-    assert "moderator_result_path" in body
+    assert "run_existing_cli" in body, "기존 CLI 를 다시 부르지 않는다"
+    assert "--apply-panel-work" in body, "세 보관본을 함께 반영하지 않는다"
+    # 사회자 보관본 하나만 붙여넣기 어댑터에 넘기던 경로로 돌아가지 않는다.
+    assert "--paste-panel-result" not in body
+    assert "moderator_result_path" not in body
+
+    from toto import cli
+    handler = code_of(fn_node(cli, "_handle_panel_file"))
+    assert "apply_panel_work" in handler and "_checkpoints_to_canonical" \
+        in handler, "보관본 반영이 붙여넣기와 같은 문으로 들어오지 않는다"
+    assert "panelimport.run" in handler, "가져오기 문을 지나지 않는다"
+    assert "_paste_to_canonical" in handler, "붙여넣기 입구가 사라졌다"
+
+    writer = code_of(fn_node(cli, "_checkpoints_to_canonical"))
+    assert "panelwork.assemble_panel_result" in writer
+    assert "panelpaste.write_canonical" in writer, \
+        "panel_results/ 에 쓰는 자리가 둘이 됐다"
+    assert "args.import_panel_result" in writer \
+        and "args.audit_panel_result" in writer, "가져오기·감사로 잇지 않는다"
 
 
 def test_g4_completed_stages_are_skipped():

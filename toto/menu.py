@@ -363,15 +363,16 @@ def _panel_work_for(answer: str) -> list[str] | None:
         return ["--round", rnd, "--panel-workflow-status"]
 
     if answer == "5":
-        # **새 반영 경로를 만들지 않는다** — 보관해 둔 배열을 기존
-        # `--paste-panel-result` 에 그대로 태운다 (메뉴 `[4]` 와 같은 경로).
+        # **1·2·3단계 보관본을 함께 반영한다** (6-F-14) — 자동 경로와 같은
+        # 인자다. 예전에는 3단계 보관본만 `--paste-panel-result` 에 넘겨
+        # 1·2단계 원문이 최종 결과에서 빠졌다 (6-F-13). 검증은 CLI 가 한다.
         saved = panelwork.moderator_result_path(rnd)
         if not saved.is_file():
             print(f"\n  보관된 3단계 결과가 없습니다. ({saved})")
             print("  먼저 [4] 로 3단계 결과를 넣으십시오.")
             return None
-        print(f"\n  보관본을 씁니다: {saved}")
-        return ["--round", rnd, "--paste-panel-result", str(saved)]
+        print(f"\n  1·2·3단계 보관본을 함께 반영합니다: {saved.parent}")
+        return ["--round", rnd, "--apply-panel-work"]
 
     if answer == "4":
         if not _confirm_overwrite(panelwork.moderator_result_path(rnd),

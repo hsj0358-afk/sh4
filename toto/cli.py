@@ -123,6 +123,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--panel-workflow-status", action="store_true",
                    help="그 회차가 어느 단계까지 왔는지 파일을 읽어 보여 "
                         "준다. 아무것도 고치지 않고 수집도 하지 않는다")
+    # Phase 6-F-14. 보관된 1·2·3단계 **셋을 함께** 최종 Panel Result 로
+    # 옮긴다. `--paste-panel-result` 는 "3단계 응답만 가진 경우" 의 입구로
+    # 그대로 남는다 — 그 어댑터는 분석가 원문이 없다고 전제한다.
+    p.add_argument("--apply-panel-work", action="store_true",
+                   help="panel_work/<회차>/ 의 1·2·3단계 보관본을 합쳐 "
+                        "Panel Result 로 만들고 가져오기·감사·리포트까지 "
+                        "한다. 셋 중 하나라도 없으면 만들지 않는다. "
+                        "수집하지 않고 모델도 부르지 않는다")
     # Phase 6-F-6. **Anthropic API 를 부르지 않는다** — `claude -p` 를
     # subprocess 로 띄워 A·B·C 를 돌리고 기존 [4] 까지 잇는다.
     p.add_argument("--panel-auto", action="store_true",
@@ -276,6 +284,65 @@ def _paste_to_canonical(report: Report, args, settings, paste_file):
     return path
 
 
+def _checkpoints_to_canonical(report: Report, args, settings):
+    """1·2·3단계 보관본 → Panel Result 파일 (Phase 6-F-14). 실패하면 `None`.
+
+    붙여넣기 입구(`_paste_to_canonical`)와 **같은 자리에 같은 모양**으로 쓰고, 그 뒤는
+    같은 가져오기·감사 문을 지난다. 다른 것은 입력뿐이다 — 저쪽은 사회자
+    응답 하나, 이쪽은 세 보관본이다.
+
+    **셋 중 하나라도 없거나 깨졌으면 만들지 않는다.** 사회자 전용으로
+    조용히 강등하면 6-F-13 이 찾은 증상(A·B `—`)이 오류 없이 다시 난다.
+    사회자 응답만 가진 경우는 `--paste-panel-result` 가 제자리다.
+    """
+    from . import panelpaste, panelwork
+    data, outcome = panelwork.assemble_panel_result(report, settings)
+    if data is None:
+        report.source_status["패널 가져오기"] = outcome.status_line()
+        for line in panelpaste.report_lines(outcome):
+            log.error("보관본 반영: %s", line)
+        log.error("  1·2·3단계 보관본이 모두 있어야 반영합니다. 3단계 "
+                  "응답만 가지고 있다면 --paste-panel-result 를 쓰십시오 "
+                  "(분석가 원문 없이 사회자 결과만 반영됩니다).")
+        return None
+
+    path = panelpaste.write_canonical(data, report.round_id or "unknown")
+    panelwork.record_applied(report.round_id or "", path,
+                             len(data.get("matches") or ()))
+    log.info("보관본 반영 → %s (%d경기 · 1·2·3단계 원문 포함)",
+             path, outcome.imported_matches)
+    args.import_panel_result = path
+    args.audit_panel_result = path
+    return path
+
+
+def _apply_panel_work(args, settings) -> int:
+    """`--apply-panel-work` (Phase 6-F-14). **수집 구간 앞에서 갈라진다.**
+
+    저장본(4-C)이 없으면 **수집으로 넘어가지 않는다.** 1·2·3단계는 그
+    저장본으로 만든 자료를 보고 나왔으므로, 다시 수집한 자료에 붙이면 한
+    회차 안에 두 시점이 섞인다 (§1-48).
+    """
+    from . import artifact
+
+    round_id = (args.round_id or "").strip()
+    if not round_id:
+        log.error("--round 가 필요합니다 — 어느 회차의 결과인지 "
+                  "지어낼 수 없습니다.")
+        return 1
+    if args.paste_panel_result is not None:
+        log.error("--apply-panel-work 와 --paste-panel-result 를 함께 쓸 수 "
+                  "없습니다 — 입력이 둘이면 어느 것을 반영했는지 모릅니다.")
+        return 1
+    report, why = artifact.load(round_id)
+    if report is None:
+        log.error("저장된 회차 분석 결과가 없습니다 — %s", why)
+        return 1
+    log.info("저장된 회차 분석 결과를 씁니다 (수집하지 않습니다) — %s",
+             artifact.path_for(round_id))
+    return _panel_only(report, args, settings, None)
+
+
 def _handle_panel_file(report: Report, args, settings, panel_file) -> None:
     """Panel Result 를 검증·부착하고(4-B) 회차 구조를 감사한다(4-C).
 
@@ -286,6 +353,12 @@ def _handle_panel_file(report: Report, args, settings, panel_file) -> None:
         # 3단계 결과 붙여넣기 (Phase 4-F). **여기서 파이프라인을 새로 만들지
         # 않는다** — Panel Result 로 옮겨 저장한 뒤 아래 같은 경로를 탄다.
         panel_file = _paste_to_canonical(report, args, settings, panel_file)
+        if panel_file is None:
+            return
+    elif getattr(args, "apply_panel_work", False):
+        # 1·2·3단계 보관본 반영 (Phase 6-F-14). 붙여넣기와 **같은 문**을
+        # 지난다 — 입력만 세 보관본이다.
+        panel_file = _checkpoints_to_canonical(report, args, settings)
         if panel_file is None:
             return
 
@@ -416,8 +489,10 @@ def _panel_work(args, settings) -> int:
             (log.error if outcome.errors else log.info)("3단계 결과: %s", line)
         if saved is not None:
             log.info("3단계 결과 보관 → %s", saved)
-            log.info("  이제 --paste-panel-result %s 로 리포트에 "
-                     "반영하십시오 (메뉴 [6] → [5]).", saved)
+            # 6-F-13: 예전에는 여기서 `--paste-panel-result <이 파일>` 을
+            # 권했는데, 그 경로는 1·2단계 원문을 버린다 (사회자 전용 어댑터).
+            log.info("  이제 --round %s --apply-panel-work 로 1·2·3단계를 "
+                     "함께 리포트에 반영하십시오 (메뉴 [6] → [5]).", round_id)
         failed = failed or saved is None
 
     if not failed:
@@ -602,7 +677,9 @@ def _panel_only(report: Report, args, settings, panel_file) -> int:
     if args.import_panel_result is None:
         # 붙여넣기는 통과하면 위에서 `import_panel_result` 를 채운다. 아직
         # 비어 있다면 변환·검증에서 막힌 것이다 (§12 — 파일도 만들지 않았다).
-        if args.paste_panel_result is not None:
+        # 보관본 반영(6-F-14)도 같다.
+        if (args.paste_panel_result is not None
+                or getattr(args, "apply_panel_work", False)):
             return 1
         return 0                        # 검사·감사만 — 리포트를 다시 쓰지 않는다
 
@@ -692,6 +769,11 @@ def main(argv: list[str] | None = None) -> int:
             or args.save_moderator_result is not None
             or args.panel_workflow_status):
         return _panel_work(args, settings)
+
+    # ---- 0-a2b. 1·2·3단계 보관본 반영 (Phase 6-F-14) ---------------------
+    # 여기도 **수집 구간 앞**이다. 저장본이 없으면 수집으로 넘어가지 않는다.
+    if args.apply_panel_work:
+        return _apply_panel_work(args, settings)
 
     # ---- 0-a3. 패널 자동 분석 (Phase 6-F-6) ------------------------------
     # 여기도 **수집 구간 앞**이다. 모델은 `claude -p` subprocess 로만 부르고

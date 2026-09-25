@@ -616,10 +616,26 @@ def test_c2_no_new_result_format():
 
 
 def test_c3_menu_item_5_reuses_the_existing_flag():
-    """`[6]-5` 가 새 CLI 인자를 만들지 않는다."""
+    """`[6]-5` 가 반영을 메뉴에서 다시 구현하지 않고 CLI 인자를 넘긴다.
+
+    **6-F-14 범위 이동.** 6-F-4 는 이것을 "`--paste-panel-result` 를 쓴다"
+    로 고정했는데, 3단계 보관본만 그 어댑터에 넘기면 1·2단계 원문이 최종
+    결과에서 빠졌다 (6-F-13). 이제 `[6]-5` 는 자동 경로와 **같은 인자**
+    `--apply-panel-work` 를 넘긴다. 지키려던 것은 그대로다 —
+
+      · 메뉴는 인자만 만들고 검증·반영은 CLI 가 한다 (`test_c4`).
+      · 번호가 밀리지 않는다 (여섯 개 그대로).
+      · **`--paste-panel-result` 는 없어지지 않았다** — 3단계 응답만 가진
+        경우의 입구로 `[4]` 하위(붙여넣기)에 그대로 남아 있다.
+    """
     from toto import menu
-    src = source_of(menu)
-    assert "--paste-panel-result" in src
+    item5 = code_of(fn_node(menu, "_panel_work_for"))
+    assert "--apply-panel-work" in item5, "[6]-5 가 세 보관본을 반영하지 않는다"
+    assert "--paste-panel-result" not in item5, \
+        "[6]-5 가 사회자 보관본만 붙여넣기 어댑터에 넘긴다"
+    # 사회자 전용 입구는 제자리에 남는다 (6-F-14 금지: 제거하지 않는다).
+    assert "--paste-panel-result" in code_of(fn_node(menu, "_paste_panel")), \
+        "--paste-panel-result 입구가 메뉴에서 사라졌다"
     keys = {k for k, _t, _w in menu.PANEL_WORK}
     assert keys == {"1", "2", "3", "4", "5", "6"}, keys
 

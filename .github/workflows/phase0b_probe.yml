@@ -1,0 +1,205 @@
+# Phase 0-B — TEMPORARY probe. Delete after the test.
+# Manual only. No push / pull_request / schedule triggers.
+# Collects data only. Claude model calls are impossible: every `claude`
+# call goes through .github/phase0b/claude_guard.sh, which allows only
+# `--version` and `auth status` and exits 97 on anything else.
+# NOTE: this repo is PUBLIC -> run logs and uploaded artifacts are visible
+# to others. Nothing secret is printed (secret names only, never values).
+name: phase0b probe (temporary)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "toto branch to test"
+        default: "claude/soccer-toto-analysis-tool-xumkxg"
+      round:
+        description: "round (e.g. 260054) or 'auto' = the round on sale now (betman auto-detect)"
+        default: "260054"
+      collect:
+        description: "run real [1] collection (python -m toto --round R)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read            # read-only token; nothing is pushed
+
+concurrency:
+  group: phase0b
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      R: ${{ inputs.round }}
+      PYTHONIOENCODING: utf-8
+      DISABLE_AUTOUPDATER: "1"
+      HAS_CLAUDE_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+    steps:
+      - name: Checkout toto branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Checkout probe kit (this workflow's branch)
+        uses: actions/checkout@v4
+        with:
+          path: _kit
+          sparse-checkout: .github/phase0b
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"      # same as PC and briefing.yml
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install (requirements-toto + Playwright Chromium + claude CLI)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-toto.txt
+          python -m playwright install --with-deps chromium
+          npm install -g @anthropic-ai/claude-code@2.1.278
+          mkdir -p "$RUNNER_TEMP/p0b"
+          echo "REAL_CLAUDE=$(command -v claude)" >> "$GITHUB_ENV"
+          echo "TOTO_CLAUDE_CLI=$GITHUB_WORKSPACE/_kit/.github/phase0b/claude_guard.sh" >> "$GITHUB_ENV"
+          echo "PHASE0_CLAUDE_LOG=$RUNNER_TEMP/p0b/claude_calls.log" >> "$GITHUB_ENV"
+          chmod +x _kit/.github/phase0b/*.sh
+
+      - name: Environment (UTC default)
+        run: |
+          set -x
+          uname -a; uname -m; head -2 /etc/os-release
+          nproc; free -m | head -2
+          python --version; node --version
+          python -c "from importlib.metadata import version; print('playwright', version('playwright'))"
+          date; date -u; timedatectl 2>/dev/null | head -5 || true
+          python -c "import datetime; print(datetime.datetime.now())"
+          python -c "import datetime; print(datetime.datetime.utcnow())"
+          TZ=Asia/Seoul date
+          TZ=Asia/Seoul python -c "import datetime,time; print(datetime.datetime.now(), time.tzname)"
+          echo "CLAUDE_CODE_OAUTH_TOKEN configured: $HAS_CLAUDE_TOKEN"
+          echo "ANTHROPIC_API_KEY set: ${ANTHROPIC_API_KEY:+yes}"
+
+      - name: Claude CLI version + auth status (no model call)
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          "$TOTO_CLAUDE_CLI" --version
+          "$TOTO_CLAUDE_CLI" auth status --json | python -c "import json,sys; d=json.load(sys.stdin); print({k: d.get(k) for k in ('loggedIn','authMethod','apiProvider')})" || true
+          # guard self-test: a model call must be refused
+          if "$TOTO_CLAUDE_CLI" -p "x" >/dev/null 2>&1; then echo "GUARD BROKEN"; exit 1; else echo "guard refused -p (exit $?)"; fi
+
+      - name: Browser probe (Playwright -> Chromium, project UA)
+        run: |
+          for z in UTC Asia/Seoul; do TZ=$z python _kit/.github/phase0b/browser_probe.py . "$RUNNER_TEMP/p0b/prof"; done
+
+      - name: Network probe — DNS / TCP / TLS / HTTP / redirect
+        run: |
+          UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+          for u in https://www.betman.co.kr/main/mainPage/gamebuy/gameBuyList.do \
+                   https://www.fotmob.com/ https://www.fotmob.com/api/data/leagues?id=47 https://data.fotmob.com/ \
+                   https://www.whoscored.com/ https://guest.api.arcadia.pinnacle.com/0.1/sports/29/leagues \
+                   https://www.pinnacle.com/; do
+            h=$(echo "$u" | cut -d/ -f3)
+            echo "== $u"; getent hosts "$h" | head -1 || echo "DNS FAIL"
+            curl -sS -o /dev/null -A "$UA" --max-time 30 \
+              -w 'http=%{http_code} redirect=%{redirect_url} tcp=%{time_connect}s tls=%{time_appconnect}s total=%{time_total}s ip=%{remote_ip}\n' "$u" || echo "curl error $?"
+          done 2>&1 | tee "$RUNNER_TEMP/p0b/net_curl.txt"
+
+      - name: Source probe (project clients, Playwright for browser sources)
+        run: |
+          TZ=Asia/Seoul python _kit/.github/phase0b/phase0_env.py --repo . --round "$R" --out "$RUNNER_TEMP/p0b/env.txt"
+
+      - name: Real [1] collection — run 1 (network) — NO --panel-auto
+        if: inputs.collect
+        env:
+          TZ: Asia/Seoul
+        run: |
+          if [ "$R" = "auto" ]; then ARGS=""; else ARGS="--round $R"; fi
+          start=$SECONDS
+          set +e
+          python -m toto $ARGS 2>&1 | tee "$RUNNER_TEMP/p0b/collect_1.log"
+          rc=${PIPESTATUS[0]}
+          set -e
+          echo "collect_1 exit=$rc elapsed=$((SECONDS-start))s" | tee -a "$RUNNER_TEMP/p0b/timing.txt"
+          if [ "$R" = "auto" ]; then
+            R=$(ls -t data/artifacts/*.json 2>/dev/null | head -1 | xargs -r -n1 basename | sed 's/\.json$//')
+            echo "auto-detected round: ${R:-none}"
+            echo "R=${R:-auto}" >> "$GITHUB_ENV"
+          fi
+          ls -la data/artifacts reports || true
+          find cache -maxdepth 2 | head -30
+
+      - name: Real [1] collection — run 2 (same-run cache reuse)
+        if: inputs.collect
+        env:
+          TZ: Asia/Seoul
+        run: |
+          start=$SECONDS
+          set +e
+          python -m toto --round "$R" 2>&1 | tee "$RUNNER_TEMP/p0b/collect_2.log"
+          rc=${PIPESTATUS[0]}
+          set -e
+          echo "collect_2 exit=$rc elapsed=$((SECONDS-start))s" | tee -a "$RUNNER_TEMP/p0b/timing.txt"
+          du -sh cache/* 2>/dev/null || true
+
+      - name: Artifact digest (structure for PC comparison)
+        if: inputs.collect
+        run: |
+          python _kit/.github/phase0b/artifact_digest.py . "data/artifacts/$R.json" --out "$RUNNER_TEMP/p0b/digest_$R.json" || echo "no artifact"
+
+      - name: Readiness check (free) + time-zone behaviour + prematch snapshot
+        if: inputs.collect
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          set +e
+          TZ=Asia/Seoul python -m toto --round "$R" --panel-auto-check 2>&1 | tee "$RUNNER_TEMP/p0b/check.txt"
+          TZ=UTC        python _kit/.github/phase0b/tz_probe.py . "$R" | tee "$RUNNER_TEMP/p0b/tz_utc.txt"
+          TZ=Asia/Seoul python _kit/.github/phase0b/tz_probe.py . "$R" | tee "$RUNNER_TEMP/p0b/tz_kst.txt"
+          for z in UTC Asia/Seoul; do
+            TZ=$z python - "$R" <<'PY' | tee -a "$RUNNER_TEMP/p0b/prematch.txt"
+          import os, sys; sys.path.insert(0, '.')
+          from datetime import datetime
+          from toto import artifact, roundlog
+          rep, why = artifact.load(sys.argv[1])
+          if rep is None:
+              print('no artifact', why); raise SystemExit
+          now = datetime.now()
+          started = [m.no for m in rep.matches if roundlog._started(m.kickoff_kst, now)]
+          print(f"TZ={os.environ.get('TZ')} naive now={now:%Y-%m-%d %H:%M} "
+                f"artifact.is_prematch={artifact.is_prematch(rep)} "
+                f"roundlog started={started} first_kickoff={min(m.kickoff_kst for m in rep.matches)}")
+          PY
+          done
+          python -c "import sys; sys.path.insert(0,'.'); from toto import panelauto; print('panel auto root:', panelauto.auto_root())"
+          exit 0
+
+      - name: Claude call log (must contain no model call)
+        if: always()
+        run: |
+          cat "$PHASE0_CLAUDE_LOG" || echo "(no calls)"
+          n=$(grep -cE "argv: (.* )?(-p|--print)( |$)" "$PHASE0_CLAUDE_LOG" 2>/dev/null || true)
+          echo "model-call attempts in log: ${n:-0} (exactly 1 expected = guard self-test, refused with exit 97)"
+
+      - name: Collect outputs
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/p0b/out"
+          cp -v data/artifacts/"$R".json reports/toto_"$R".html "$RUNNER_TEMP/p0b/out/" 2>/dev/null || true
+          cp -v data/round_matches.csv data/rounds.csv "$RUNNER_TEMP/p0b/out/" 2>/dev/null || true
+          git status --short > "$RUNNER_TEMP/p0b/git_status.txt"
+
+      - name: Upload results (download from the run page)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase0b-${{ env.R }}
+          path: ${{ runner.temp }}/p0b
+          retention-days: 3
+          if-no-files-found: warn

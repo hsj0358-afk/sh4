@@ -233,8 +233,19 @@ def _participants(matchup: dict) -> tuple[str, str]:
 
 
 def _find_matchup(matchups: list, resolver: TeamResolver,
-                  home_canon: str, away_canon: str) -> dict | None:
-    """정규명 기준으로 해당 경기를 찾는다."""
+                  home_canon: str, away_canon: str,
+                  strict: bool = False) -> dict | None:
+    """정규명 기준으로 해당 경기를 찾는다.
+
+    `strict` 는 2차 탐색(같은 나라의 다른 대회)에서 켠다. 그 피드에는 2군·
+    리저브·하부리그 팀이 섞여 들어오는데, 비-strict 해석의 부분일치가
+    "Atletico Madrid B" 를 "Atletico Madrid" 로 읽어 **다른 경기의 배당**을
+    붙였다 (260054 10번, Phase 0-B 실측). strict 에서는
+    ① 참가팀명을 정확일치로만 해석하고(§1-29 와 같은 장치)
+    ② 같은 짝의 후보가 둘 이상이면 고르지 않는다 — 잘못된 배당보다 빈 배당이
+       낫다. 기본값은 `False` 라서 1차(리그 피드) 동작은 그대로다.
+    """
+    found: dict = {}
     for mu in matchups or []:
         # 부모 경기만 사용 (파생 마켓/코너 등 제외)
         if mu.get("parentId"):
@@ -246,11 +257,17 @@ def _find_matchup(matchups: list, resolver: TeamResolver,
             continue
         # 같은 나라의 다른 대회까지 훑을 때는 K3·아마추어 팀이 잔뜩 섞여
         # 들어온다. 그건 못 찾는 게 정상이라 경고로 남기지 않는다.
-        rh = resolver.resolve(h, learn=False, quiet=True)
-        ra = resolver.resolve(a, learn=False, quiet=True)
+        rh = resolver.resolve(h, learn=False, quiet=True, strict=strict)
+        ra = resolver.resolve(a, learn=False, quiet=True, strict=strict)
         if rh == home_canon and ra == away_canon:
-            return mu
-    return None
+            if not strict:
+                return mu
+            found.setdefault(str(mu.get("id")), mu)
+    if len(found) > 1:
+        log.warning("피나클 후보가 %d개라 고르지 않습니다: %s vs %s (matchup %s)",
+                    len(found), home_canon, away_canon, sorted(found))
+        return None
+    return next(iter(found.values()), None)
 
 
 def _markets_for(markets: list, matchup_id) -> list:
@@ -354,11 +371,12 @@ def fetch_odds(matches, settings: Settings, resolver: TeamResolver,
 
 
 def _apply_odds(match, matchups: list, markets: list, resolver: TeamResolver,
-                now: str) -> bool:
+                now: str, strict: bool = False) -> bool:
     """matchups 에서 경기를 찾아 배당을 채운다. 채웠으면 True."""
     if not (match.home.canonical and match.away.canonical):
         return False
-    mu = _find_matchup(matchups, resolver, match.home.canonical, match.away.canonical)
+    mu = _find_matchup(matchups, resolver, match.home.canonical,
+                       match.away.canonical, strict=strict)
     if not mu:
         return False
     rows = _markets_for(markets, mu.get("id"))
@@ -386,10 +404,17 @@ def _country_of(settings: Settings, league_key: str) -> str:
 def _search_country_wide(client: "PinnacleClient", missing: list,
                          settings: Settings, resolver: TeamResolver,
                          now: str, max_leagues: int = 15) -> int:
-    """같은 나라에 속한 모든 대회를 훑어 남은 경기의 배당을 찾는다."""
+    """같은 나라에 속한 모든 대회를 훑어 남은 경기의 배당을 찾는다.
+
+    **참가팀명은 정확일치로만 해석한다** (`strict=True`). 이 경로가 훑는
+    대회에는 2군·리저브가 섞여 있어 부분일치가 1군으로 읽는다 — 260054 에서
+    "Atletico Madrid B vs Real Madrid Castilla" 의 배당이 라리가 더비에
+    붙었다. 막은 추측은 한 줄로 남긴다 (§1-6-1).
+    """
     payload = client._all_leagues()
     if not payload:
         return 0
+    blocked_at = len(resolver.strict_blocked)
 
     by_country: dict[str, list] = {}
     for match in missing:
@@ -419,7 +444,12 @@ def _search_country_wide(client: "PinnacleClient", missing: list,
             if not matchups:
                 continue
             for match in remaining:
-                if _apply_odds(match, matchups, markets, resolver, now):
+                if _apply_odds(match, matchups, markets, resolver, now,
+                               strict=True):
                     log.info("  %s → %s 에서 발견", match.title, item.get("name"))
                     filled += 1
+    note = resolver.strict_note(blocked_at)
+    if note:
+        log.warning("피나클 2차 탐색: 정확일치가 아닌 팀명은 붙이지 않았습니다 — "
+                    "추측 차단 %s", note)
     return filled

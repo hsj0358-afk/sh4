@@ -559,9 +559,32 @@ def test_h3_season_param_not_added():
 
 
 def test_h4_pinnacle_untouched():
-    """Pinnacle 은 이번 Phase 범위가 아니다 (§15)."""
+    """Pinnacle 은 6-D-4 범위가 아니다 (§15) — **대회 정책으로 켜지지 않는다.**
+
+    6-D-4 때는 `strict` 라는 낱말 자체가 없는지로 고정했다. 그 뒤 피나클
+    2차 탐색의 2군 오매칭 수정(260054 실측)이 **그 경로에만** strict 를
+    쓰게 되면서 범위를 옮긴다 (§1-29·§1-31 과 같은 교정). 지키던 것은
+    그대로다 — ① 대회 성격 판정(`strict_team_match`·`league_type`)을
+    피나클이 읽지 않는다 ② 1차(리그 피드) 경로의 기본값은 비-strict 다
+    ③ strict 는 2차 탐색 한 곳에서만 켠다.
+    """
+    import ast
+    from toto.sources import pinnacle
     src = (ROOT / "toto" / "sources" / "pinnacle.py").read_text(encoding="utf-8")
-    assert "strict" not in src
+    tree = ast.parse(src)
+    names = {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
+    assert "strict_team_match" not in names and "league_type" not in names
+    import inspect
+    for fn in (pinnacle._find_matchup, pinnacle._apply_odds):
+        assert inspect.signature(fn).parameters["strict"].default is False
+    turned_on = set()
+    for func in (n for n in tree.body if isinstance(n, ast.FunctionDef)):
+        for call in (c for c in ast.walk(func) if isinstance(c, ast.Call)):
+            for kw in call.keywords:
+                if kw.arg == "strict" and isinstance(kw.value, ast.Constant) \
+                        and kw.value.value is True:
+                    turned_on.add(func.name)
+    assert turned_on == {"_search_country_wide"}, turned_on
 
 
 # --------------------------------------------------------------------------

@@ -6534,6 +6534,56 @@ python -m toto --round 260054 --import-panel-result panel_results\260054_panel_r
 않아야 할 것 — `initial_scores` 우선 · 사회자 전용 불변 · 데이터 불변 ·
 산술 없음).
 
+### 1-51. 피나클 2차 탐색은 팀명을 정확일치로만 해석한다 (Phase 0-B 후속)
+
+Phase 0-B 의 GitHub Actions 실측(260054)에서 10번 `AT마드 vs 레알마드` 가
+**다른 경기의 배당**(2.26 / 3.48 / 2.76)을 받았다. 라리가 더비는 이미 끝나
+리그 피드에 없었고, 2차 탐색(같은 나라의 다른 대회)이
+`Spain - Segunda Federacion` 의 2군 경기를 1군 경기로 읽었다.
+
+```
+피나클 참가팀명 "Atletico Madrid B" → normalize_name → "atleticomadridb"
+  → 정확일치 없음 → _fuzzy_candidate 의 부분일치
+    ("atleticomadrid" ⊂ "atleticomadridb") → "Atletico Madrid"
+  → _find_matchup 이 1군 경기로 판정 → _apply_odds 가 배당 연결
+```
+
+`Real Madrid Castilla`·`Real Madrid II`·`Barcelona Atletic`·
+`Valencia Mestalla`·`Arsenal U21`·`Liverpool Women` 이 전부 같은 길로 1군이
+되고, `Rayo Majadahonda`→Rayo Vallecano · `Betis Deportivo`→Deportivo La
+Coruna 처럼 **다른 구단**으로 가기도 한다(해석기 실측).
+
+**2차 탐색에만 `strict` 를 켠다** (`_search_country_wide` → `_apply_odds` →
+`_find_matchup(strict=True)`). §1-29 와 같은 이유다 — 그 경로가 훑는 대회에는
+모르는 팀(2군·하부리그)이 잔뜩 섞여 있어 부분일치가 이득이 아니라 손해다.
+
+  · 참가팀명은 **정확일치로만** 해석한다(`resolve(strict=True)`). 막은 추측은
+    `strict_note()` 로 한 줄 남긴다 (§1-6-1).
+  · 같은 짝의 후보가 **둘 이상이면 고르지 않는다.** 후보는 이름이 아니라
+    matchup id 로 센다(같은 경기가 두 번 실려도 하나다).
+  · 잘못된 배당보다 빈 배당이 낫다 — `fetch_odds` 의 기존 미매칭 표현
+    (`피나클에서 배당을 찾지 못함`)을 그대로 쓴다.
+
+**1차(리그 피드) 동작은 한 줄도 바뀌지 않았다** — `strict` 기본값이 `False`
+이고 1차는 넘기지 않는다. 설정된 리그 피드에는 그 리그의 1군만 있어 이번
+오매칭이 일어날 자리가 아니었다. 1군 표기(EPL·라리가 실측 회차 팀명)는 전부
+`data/teams.yaml` 의 **정확한 별칭**이라 2차 탐색에서도 그대로 붙는다.
+
+`teams.yaml`·해석기·다른 소스는 바꾸지 않았다. 대회 성격 판정
+(`strict_team_match`)을 피나클이 읽지도 않는다 — 6-D-4 의 범위 선언
+테스트(`test_strict_resolution.test_h4`)는 그 불변조건을 AST 로 더 좁게
+고정하는 쪽으로 옮겼다.
+
+**실측은 못 했다.** 이 세션은 피나클이 막혀 있고(§2-1), 260054 의 실제
+참가팀 표기는 로그에 남지 않았다. 테스트는 실측 가격과 보고된 표기로
+재현한다. 다음 실수집에서 `피나클 2차 탐색: … 추측 차단` 줄을 확인한다.
+
+남은 것: 같은 **1군** 두 팀이 다른 대회(컵)에서 또 만나면 2차 탐색이 그
+경기를 고를 수 있다 — 날짜 대조는 넣지 않았다(관측 사례 없음).
+
+회귀 테스트: `python tests/test_pinnacle_reserve_matching.py` (16개). 변경 전
+코드에 돌리면 10개가 깨진다(재현).
+
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
 260052 실행이 남긴 것은 후스코어드 `팀명 매칭 실패` 5건과 `강점 0개` 3팀이다.
@@ -7211,6 +7261,7 @@ python tests/test_b_score_prompt.py       # B 예상 스코어 출력 규칙 6-F
 python tests/test_panel_resume.py         # 체크포인트·재개·A/B/C provenance 6-F-12 §1-48 (63개)
 python tests/test_panel_apply.py          # A·B·C 보관본 → 최종 Panel Result ok 반영 6-F-14 §1-49 (38개)
 python tests/test_initial_score_fallback.py # 요약 카드 최초 스코어를 분석가 의견에서 읽기 §1-50 (15개)
+python tests/test_pinnacle_reserve_matching.py # 피나클 2차 탐색 2군·리저브 오매칭 차단 §1-51 (16개)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)

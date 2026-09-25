@@ -6479,6 +6479,61 @@ A·B·C 중 하나라도 없거나 깨졌으면 **만들지 않는다.**
 `['--paste-panel-result', '…/moderator_result.json']` 으로 깨지는 것이 이번에
 바꾼 것 그대로다(음성 대조).
 
+### 1-50. 요약 카드의 최초 스코어 — 분석가 의견에서 읽는다 (6-F-14 후속)
+
+260054 를 6-F-14 로 다시 반영하자 `Moderator 결과만 반영` 은 0건이 됐는데
+**요약 카드의 1·2단계 최초 스코어 줄도 0건**이었다. 데이터는 멀쩡했다 —
+Panel Result 에 두 분석가의 `PanelOpinion` 이 14/14 실려 있었고 상세 카드의
+스코어 흐름(A → B → C)은 14경기 전부 나왔다.
+
+**원인은 렌더 한 줄이었다.** `render._initial_pairs()` 가 `run.initial_scores`
+**만** 읽었다. 그 칸은 채팅 경로의 3단계가 적는 `initial_scores` 에서만
+채워지고(§1-21), 자동 경로의 C 출력 형식에도 6-F-14 조립에도 없다(§1-49 가
+"만들지 않는다" 로 정했다). 그래서 정상 결과에서도 늘 비어 있었다.
+
+**고친 것 — `initial_scores` 가 비어 있을 때만 의견에서 읽는다.**
+
+  · **새 값이 아니다.** `PanelOpinion.predicted_home`·`predicted_away` 가
+    바로 1·2단계가 처음 낸 스코어이고, 그것을 **옮긴다.** 표기는 같은
+    `InitialScore.label` 을 거친다 — `None` 이면 빈 문자열이라 줄에서
+    빠지고 0 으로 채우지 않는다 (§1-5).
+  · **역할로 찾는다.** 순서는 `panelimport.ANALYST_ROLES`(데이터 → 맞대결)
+    이고 의견 튜플의 순서에 기대지 않는다. 사회자는 들어오지 않는다 —
+    채택 스코어를 최초 스코어로 복제하지 않는다.
+  · **`initial_scores` 가 있으면 기존 동작 그대로**다. 사회자 결과만 들어온
+    경기는 의견이 없으므로 여전히 빈 줄이고 `Moderator 결과만 반영` 도
+    그대로다(상세 카드의 `:1537` 호출도 그 분기 안이라 바뀌지 않는다).
+  · **데이터를 고치지 않는다.** Panel Result·보관본·manifest 어느 것도 쓰지
+    않고 `PanelRun` 도 바꾸지 않는다 — `initial_scores` 는 여전히 `()` 다.
+    `analyst_*.json` 을 다시 읽지도 않는다. 렌더가 이미 받은 값을 보여 줄
+    뿐이다.
+
+**실측 (저장본 260052 사본 · 6-F-14 반영 후 상태 · 수집 0 · Claude 0).**
+
+| | 수정 전 | 수정 후 |
+|---|---|---|
+| 요약 카드 `<p class="init">` | 0 | **14** |
+| `Moderator 결과만 반영` | 0 | 0 |
+| 스코어 흐름 블록 | 14 | 14 (**블록 내용 동일**) |
+| A/B 줄 · 채택 스코어 ↔ 원본 불일치 | — | **0** |
+| 그 줄을 걷은 나머지 HTML | — | **수정 전과 동일** |
+| 바뀐 파일 | — | `reports/toto_260052.html` 하나 (데이터 9개 그대로) |
+
+`--demo` 675,280 · `--rerender-artifact 260052` 949,635 는 그대로다(패널이
+없어 이 줄이 생길 자리가 없다).
+
+**260054 는 사용자 PC 에서 다시 그린다** — Panel Result 를 **읽기만** 하는
+가져오기 경로를 쓰면 리포트 말고는 아무것도 쓰지 않는다.
+
+```
+python -m toto --round 260054 --import-panel-result panel_results\260054_panel_result.json --audit-panel-result panel_results\260054_panel_result.json
+```
+
+회귀 테스트: `python tests/test_initial_score_fallback.py` (15개). 변경 전
+트리에 돌리면 **6개가 깨진다**(새 동작) · 9개는 양쪽에서 통과한다(바뀌지
+않아야 할 것 — `initial_scores` 우선 · 사회자 전용 불변 · 데이터 불변 ·
+산술 없음).
+
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
 260052 실행이 남긴 것은 후스코어드 `팀명 매칭 실패` 5건과 `강점 0개` 3팀이다.
@@ -7155,6 +7210,7 @@ python tests/test_report_nav.py           # 리포트 내비게이션·앵커 6-
 python tests/test_b_score_prompt.py       # B 예상 스코어 출력 규칙 6-F-11 §1-47 (19개)
 python tests/test_panel_resume.py         # 체크포인트·재개·A/B/C provenance 6-F-12 §1-48 (63개)
 python tests/test_panel_apply.py          # A·B·C 보관본 → 최종 Panel Result ok 반영 6-F-14 §1-49 (38개)
+python tests/test_initial_score_fallback.py # 요약 카드 최초 스코어를 분석가 의견에서 읽기 §1-50 (15개)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)

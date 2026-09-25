@@ -12,7 +12,7 @@ import html
 from datetime import datetime
 
 from . import charts, relationships
-from .models import Match, Report
+from .models import InitialScore, Match, Report
 from .settings import Settings
 from .ticket import TICKET_CSS, render_ticket
 
@@ -1411,9 +1411,25 @@ def _initial_pairs(run) -> list[tuple[str, str]]:
     이 목록이 비어 있지 않다는 것은 **최초 스코어를 안다**는 뜻일 뿐이고
     분석가 원문이 있다는 뜻이 아니다 (§1-21) — 그래서 이 함수의 결과로
     패널 제목이나 `MODERATOR_ONLY` 판정이 달라지지 않는다.
+
+    **`initial_scores` 가 비어 있으면 분석가 의견에서 읽는다** (§1-50).
+    자동 경로(`--apply-panel-work`)의 결과에는 그 칸이 없고 대신 두
+    분석가의 `PanelOpinion` 이 통째로 실려 있다 — 그 `predicted_home`·
+    `predicted_away` 가 바로 1·2단계가 처음 낸 스코어다. 새로 계산하지
+    않고 **그 값을 옮긴다.** 표기는 같은 `InitialScore.label` 을 거쳐 한
+    곳에서 나오고(`None` 이면 빈 문자열 → 줄에서 빠진다), 순서는
+    `panelimport.ANALYST_ROLES` 이며 역할로 찾는다 — 의견 순서에 기대지
+    않고 사회자는 들어오지 않는다. `initial_scores` 가 있으면 그대로다.
     """
+    items = getattr(run, "initial_scores", ()) or ()
+    if not items:
+        from . import panelimport
+        by_role = {o.role: o for o in (getattr(run, "opinions", ()) or ())}
+        items = [InitialScore(role=role, home=by_role[role].predicted_home,
+                              away=by_role[role].predicted_away)
+                 for role in panelimport.ANALYST_ROLES if role in by_role]
     out = []
-    for item in getattr(run, "initial_scores", ()) or ():
+    for item in items:
         if item.label:
             out.append((_ROLE_KO.get(item.role, item.role), item.label))
     return out

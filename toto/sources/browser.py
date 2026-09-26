@@ -33,6 +33,21 @@ window.chrome = window.chrome || {runtime: {}};
 """
 
 
+def page_title(html: str) -> str:
+    """`<title>` 글자. 없으면 빈 문자열 (공백은 한 칸으로)."""
+    m = re.search(r"<title[^>]*>(.*?)</title>", html or "", re.S | re.I)
+    return re.sub(r"\s+", " ", _html.unescape(m.group(1))).strip() if m else ""
+
+
+def _status_of(resp) -> int | None:
+    """`page.goto()` 가 준 응답의 HTTP 상태. 응답이 없거나 못 읽으면 None."""
+    try:
+        status = resp.status if resp is not None else None
+    except Exception:
+        return None
+    return status if isinstance(status, int) and not isinstance(status, bool) else None
+
+
 def unwrap_json(text: str) -> str:
     """브라우저로 JSON URL 을 열면 <pre> 로 감싼 HTML 이 온다. 알맹이만 꺼낸다."""
     if not text:
@@ -49,6 +64,9 @@ class StealthBrowser:
     cfg 키: base / headless / delay_sec / timeout_ms / persistent_profile
     """
 
+    # 로그에 적는 소스 이름. 비면 `name` 을 쓴다.
+    source = ""
+
     def __init__(self, cfg: dict | None = None, cache=None,
                  name: str = "browser") -> None:
         self.cfg = cfg or {}
@@ -63,10 +81,23 @@ class StealthBrowser:
         self._page = None
         self.available = False
         self._last_load = 0.0
+        # 마지막 `get_html` 의 결과 — 호출부가 '왜 비었나' 를 적을 수 있게.
+        # 응답 상태를 모르면 None 이다(추정하지 않는다). 차단이 아니면 "".
+        self.last_status: int | None = None
+        self.last_block = ""
+        self.last_block_html = ""
 
     # ---- 소스별로 덮어쓰는 훅 -------------------------------------------
     def _is_blocked(self, html: str) -> bool:
         return False
+
+    def _block_reason(self, html: str, status: int | None) -> str:
+        """차단이면 유형 이름, 아니면 "".
+
+        기본은 예전 `_is_blocked(html)` 그대로다 — HTTP 상태를 보지 않는다.
+        상태를 판정에 쓸지는 소스가 정한다(지금은 후스코어드만 덮어쓴다).
+        """
+        return "blocked" if self._is_blocked(html) else ""
 
     # ---- 수명 주기 -------------------------------------------------------
     def __enter__(self):
@@ -124,11 +155,14 @@ class StealthBrowser:
 
     def get_html(self, url: str, wait_selector: str | None = None) -> str:
         """페이지를 열고 HTML 을 돌려준다. 실패하거나 차단이면 빈 문자열."""
+        self.last_status, self.last_block, self.last_block_html = None, "", ""
         if not self.available:
             return ""
         self._wait_turn()
         try:
-            self._page.goto(url, wait_until="domcontentloaded", timeout=self.timeout)
+            resp = self._page.goto(url, wait_until="domcontentloaded",
+                                   timeout=self.timeout)
+            self.last_status = _status_of(resp)
             if wait_selector:
                 try:
                     self._page.wait_for_selector(wait_selector, timeout=15000)
@@ -145,9 +179,17 @@ class StealthBrowser:
             self._page.wait_for_timeout(2000)
             html = self._page.content()
             self._last_load = time.time()
-            if self._is_blocked(html):
-                log.warning("봇 차단 화면으로 보입니다: %s (headless: false 로 한 번 "
-                            "실행하면 통과 쿠키가 저장됩니다)", url)
+            kind = self._block_reason(html, self.last_status)
+            if kind:
+                # 차단 화면을 정상 페이지로 넘기지 않는다. 대신 무엇에 막혔는지
+                # 한 줄로 남긴다 — 예전에는 URL 만 적거나(콘텐츠 표지) 아예
+                # 적지 못해(403 Cloudflare) 뒤에서 '경로가 틀렸다' 로 오진했다.
+                self.last_block, self.last_block_html = kind, html
+                # title 은 맨 끝에 둔다 — 제목 자체에 ' | ' 가 들어 있다.
+                log.warning("[%s] 차단 감지 | status=%s | type=%s | url=%s | title=%s",
+                            self.source or self.name,
+                            self.last_status if self.last_status is not None else "-",
+                            kind, url, page_title(html) or "(없음)")
                 return ""
             return html
         except Exception as exc:

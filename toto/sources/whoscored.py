@@ -23,7 +23,7 @@ from ..models import FormEntry, H2H, H2HEntry, TeamProfile, TeamRef, TeamStats
 from ..models import fill_stats
 from ..normalize import TeamResolver
 from ..settings import Settings
-from .browser import STEALTH_JS, UA, StealthBrowser  # noqa: F401  (하위호환 재수출)
+from .browser import STEALTH_JS, UA, StealthBrowser, page_title  # noqa: F401  (하위호환 재수출)
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +43,9 @@ def _num(text: str) -> float | None:
 # 브라우저 세션
 # --------------------------------------------------------------------------
 class WhoScoredBrowser(StealthBrowser):
-    """후스코어드용 세션. 공용 세션에 Incapsula 차단 판정만 얹는다."""
+    """후스코어드용 세션. 공용 세션에 차단 판정만 얹는다."""
+
+    source = "whoscored"
 
     def __init__(self, settings: Settings, cache=None) -> None:
         cfg = dict(settings.whoscored or {})
@@ -53,6 +55,9 @@ class WhoScoredBrowser(StealthBrowser):
 
     def _is_blocked(self, html: str) -> bool:
         return _looks_blocked(html)
+
+    def _block_reason(self, html: str, status: int | None) -> str:
+        return _block_kind(html, status)
 
 
 # /Regions/{지역}/Tournaments/{대회}/... 형태의 리그 링크
@@ -129,13 +134,49 @@ def discover_league_url(browser: "WhoScoredBrowser", settings: Settings,
     return href
 
 
-def _looks_blocked(html: str) -> bool:
+# (유형, 문서 앞 4000자에서 찾는 표지). 앞의 넷은 예전 표지 그대로다.
+#
+# **맨 문자열 "cloudflare" 는 본문에서 찾지 않는다.** Cloudflare 뒤에 있는
+# 정상 페이지도 cdnjs.cloudflare.com 스크립트나 /cdn-cgi/ 경로를 실을 수
+# 있어 오탐한다. Cloudflare 는 제목(`_block_kind`)과 오류·검사 화면에만 있는
+# 표지로 가린다.
+_BLOCK_SIGNS = (
+    ("incapsula", ("incapsula", "_incap_", "request unsuccessful")),
+    ("access_denied", ("access denied",)),
+    ("captcha", ("captcha-delivery",)),
+    ("cloudflare", ("just a moment", "cf-error-details",
+                    "cf-browser-verification")),
+)
+
+
+def _block_kind(html: str, status: int | None = None) -> str:
+    """차단 화면이면 유형 이름, 아니면 "".
+
+    순서: 제목 → 문서 표지 → HTTP 403 → 너무 짧은 문서. 표지가 있으면 그
+    이름이 403 보다 많이 말해 주므로 먼저 본다(상태는 로그에 따로 남는다).
+
+    · 정상 후스코어드 제목은 `Premier League Scores` ·
+      `AC Milan - Football Statistics | WhoScored.com` 꼴이다. Cloudflare
+      화면은 `Attention Required! | Cloudflare` · `Just a moment...` 다
+      (2026-09-25 Actions 실측: 403 · 4KB · 앞의 제목).
+    · `status` 가 None 이면(응답을 모르는 경우) 예전 판정과 같다.
+    """
+    title = page_title(html).lower() if html else ""
+    if "cloudflare" in title or title.startswith("just a moment"):
+        return "cloudflare"
+    lowered = (html or "")[:4000].lower()
+    for kind, signs in _BLOCK_SIGNS:
+        if any(sig in lowered for sig in signs):
+            return kind
+    if status == 403:
+        return "http_403"
     if not html or len(html) < 800:
-        return True
-    lowered = html[:4000].lower()
-    return any(sig in lowered for sig in
-               ("incapsula", "_incap_", "request unsuccessful", "access denied",
-                "captcha-delivery", "just a moment"))
+        return "short_page"
+    return ""
+
+
+def _looks_blocked(html: str, status: int | None = None) -> bool:
+    return bool(_block_kind(html, status))
 
 
 # --------------------------------------------------------------------------
@@ -297,7 +338,19 @@ def read_league(browser: WhoScoredBrowser, settings: Settings,
                       league_key, league_key)
 
     if not html:
-        log.error("리그 페이지 수집 실패: %s", league_key)
+        block = getattr(browser, "last_block", "")
+        if block:
+            # 차단 화면은 파싱하지 않는다. 경로·파서 탓으로 적지 않도록
+            # 차단이라는 사실을 그대로 남기고, 볼 수 있게 원본만 보관한다.
+            status = getattr(browser, "last_status", None)
+            log.error("리그 페이지 수집 실패: %s — 차단 (type=%s, status=%s). "
+                      "리그 경로나 파서 문제가 아닙니다.", league_key, block,
+                      status if status is not None else "-")
+            if cache is not None and getattr(browser, "last_block_html", ""):
+                cache.save_debug("whoscored", f"blocked_league_{league_key}",
+                                 browser.last_block_html, failed=False)
+        else:
+            log.error("리그 페이지 수집 실패: %s", league_key)
         return {}
 
     # 잘못된 리그 경로면 후스코어드가 홈으로 리다이렉트해 버린다.

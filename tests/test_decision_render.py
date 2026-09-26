@@ -1,0 +1,398 @@
+"""요약 · 직접 비교 · 패널 시각화 회귀 테스트 (Phase 4-D).
+
+4-D 는 **새 분석이 아니다.** 값은 전부 이미 계산돼 있었고, 문제는 그것이
+카드의 스무 번째 블록까지 내려가야 보인다는 것이었다. 그래서 위계를 바꾼다.
+
+    요약 → 비교 → 패널 → 세부
+
+고정하려는 것은 여섯 가지다.
+
+1. **새 값을 만들지 않는다.** 요약은 아래 블록의 끝값을 옮길 뿐이고,
+   직접 비교는 축이 담고 있는 수를 그대로 놓는다. 종합 점수가 없다.
+2. **승/무/패를 만들지 않는다.** 어느 블록도 두 수를 견주어 결과를 고르지
+   않는다.
+3. **없는 것은 없다고 적는다.** 0 으로 채우거나 줄을 지우지 않는다.
+4. **분포는 확률이 아니다.** 막대는 그리되 전체 시행 횟수로 나누지 않는다.
+5. **패널 판정을 두 벌 만들지 않는다.** 화면은 4-C 의 `PanelMatchAudit` 를
+   그대로 읽는다.
+6. **자체 완결형이다.** 외부 참조가 없고, 새 CSS 클래스를 만들지 않는다.
+
+pytest 없이도 돈다:  python tests/test_decision_render.py
+"""
+from __future__ import annotations
+
+import ast
+import inspect
+import re
+import sys
+from pathlib import Path
+from xml.etree import ElementTree
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from toto import charts, panelaudit, render                       # noqa: E402
+from toto.models import Odds, ScoreTally                          # noqa: E402
+from test_axes_render import RECENT, SEASON, _match               # noqa: E402
+from test_panel_render import DATA, MATCHUP, full_run, mod, op    # noqa: E402
+
+
+def _text(html: str) -> str:
+    """화면에 실제로 보이는 글자만 (SVG 속성값을 검사에서 뺀다)."""
+    return re.sub(r"<[^>]+>", " ", html)
+
+
+def _panelled(**kw):
+    """분석 축 + 패널이 둘 다 붙은 경기."""
+    m = _match()
+    m.panel = full_run(**kw)
+    return m
+
+
+# --------------------------------------------------------------------------
+# A. 요약 블록은 Phase 5-D 에서 빠졌다 — 원본은 제자리에 있다
+# --------------------------------------------------------------------------
+# 4-D 가 맨 위에 둔 `요약 — 이 경기에서 지금까지 나온 것` 은 아래 블록의
+# 끝값을 옮겨 적던 사본이었다. 실물 260052 에서 그 네 줄이 전부 같은 카드
+# 안에서 두 번째로 읽히는 수가 돼 5-D 에서 뺐다.
+#
+# **지운 것은 사본뿐이다.** 아래 테스트가 원본 네 자리를 그대로 확인한다.
+def test_a1_summary_block_is_gone():
+    from toto.settings import Settings
+
+    html = render._match_card(_panelled(), Settings(), None)
+    assert "요약 — 이 경기에서" not in html
+    assert not hasattr(render, "_decision_summary"), \
+        "사본을 지웠는데 함수가 남아 있다"
+
+
+def test_a2_market_probabilities_are_still_there():
+    """시장 확률은 `_odds_block` 에 그대로 있다."""
+    from toto.predict import additive_probabilities
+
+    m = _match()
+    m.odds = Odds(home=2.0, draw=3.5, away=4.0, source="arcadia-api")
+    m.probs = additive_probabilities(m.odds.home, m.odds.draw, m.odds.away)
+    html = render._odds_block(m)
+    ph, _pd, _pa = m.probs.pct()
+    assert "Pinnacle 시장 기준선" in html and f"{ph:.1f}%" in html
+
+
+def test_a3_panel_score_is_still_there():
+    """Panel 종합 예상 스코어는 `_panel_block` 에 그대로 있다."""
+    html = render._panel_block(_panelled())
+    assert "Panel 종합 예상 스코어" in html
+    assert "2 : 1" in html
+    assert "평균내지 않습니다" in html
+
+
+def test_a4_axes_and_evidence_are_still_there():
+    """축과 근거도 각자의 블록에 그대로 있다."""
+    from toto.settings import Settings
+
+    html = render._match_card(_match(), Settings(), None)
+    assert "경기력 분석" in html, "분석 축 블록이 사라졌다"
+    assert "리그 내 위치" in html
+
+
+def test_a5_removing_the_copy_did_not_touch_the_values():
+    """사본을 지운 것이 원본 수를 바꾸지 않았다."""
+    from toto.predict import additive_probabilities
+
+    m = _panelled()
+    m.odds = Odds(home=2.0, draw=3.5, away=4.0, source="arcadia-api")
+    m.probs = additive_probabilities(m.odds.home, m.odds.draw, m.odds.away)
+    assert m.probs.pct() == additive_probabilities(2.0, 3.5, 4.0).pct()
+    assert (m.panel.moderator.adopted_home,
+            m.panel.moderator.adopted_away) == (2, 1)
+
+
+# --------------------------------------------------------------------------
+# B. 홈 ↔ 원정 직접 비교
+# --------------------------------------------------------------------------
+def test_b1_no_analysis_no_block():
+    assert render._direct_compare_block(_match(analysis=False)) == ""
+
+
+def test_b2_only_rows_where_both_sides_have_a_value():
+    """한쪽만 그린 맞대결 막대는 없는 쪽을 0 처럼 보이게 한다 (§1-5)."""
+    m = _match()
+    # 원정에서 시즌 xG 를 지운다 — 그 줄은 통째로 빠져야 한다.
+    m.analysis.away.chance_quality.metrics.pop(f"{SEASON}.xg", None)
+    html = render._direct_compare_block(m)
+    season = html[:html.index("최근 6경기")]
+    assert "xG" not in _text(season), "한쪽만 있는 지표를 그렸다"
+    # 최근 구간에는 양쪽 다 있으므로 그대로 나온다.
+    assert "xG" in _text(html[html.index("최근 6경기"):])
+
+
+def test_b3_periods_are_not_mixed_into_one_picture():
+    """시즌과 최근은 다른 피드다. 한 그림에 넣으면 그 비교가 성립하지 않는다."""
+    html = render._direct_compare_block(_match())
+    assert "시즌" in html and "최근 6경기" in html
+    assert html.count("<figure") >= 2, "기간을 한 그림에 몰아넣었다"
+    assert html.index("시즌") < html.index("최근 6경기")
+
+
+def test_b4_lower_is_better_metrics_are_marked():
+    html = render._direct_compare_block(_match())
+    assert "실점 ↓" in html or "피슈팅 ↓" in html, html
+    # Phase 5-D 에서 ↓ 가 표시에 그치지 않게 됐다 — 그 줄은 축을 뒤집어
+    # 그리므로 어느 줄이든 오른쪽이 더 좋은 값이다. 예전 캡션의 "점의 위치가
+    # 우열을 뜻하지 않습니다" 는 더 이상 사실이 아니라 바뀌었다.
+    # 5-E2 에서 같은 축 설명이 그림마다 되풀이되던 figcaption 을 걷고
+    # **블록 맨 위 한 번**만 남겼다. 설명의 내용과 축 방향은 그대로다.
+    assert "축을 반대로" in html
+    assert "오른쪽이 더 좋은 값" in html
+    assert "점의 위치가 우열을 뜻하지 않습니다" not in html
+    assert html.count("축을 반대로") == 1, "축 설명이 되풀이된다"
+
+
+def test_b5_unequal_sample_sizes_are_reported_not_hidden():
+    m = _match()
+    m.analysis.away.chance_quality.metrics[f"{RECENT}.xg"].sample_count = 2
+    html = render._direct_compare_block(m)
+    assert "표본 크기가 다른 지표" in html
+    assert "홈 n=4" in html and "원정 n=2" in html, html
+
+
+def test_b5b_uniform_sample_mismatch_collapses_into_one_line():
+    """두 팀이 치른 경기 수가 다르면 그 기간의 지표가 통째로 어긋난다.
+
+    실물에서 같은 "(홈 n=28 / 원정 n=25)" 가 한 줄에 여섯 번 반복돼, 정작
+    표본이 진짜로 좁은 지표가 그 사이에 묻혔다. 같은 짝은 한 번만 적는다.
+    """
+    m = _match()
+    for team, count in ((m.analysis.home, 28), (m.analysis.away, 25)):
+        for attr in ("time_context", "chance_quality", "defensive_quality"):
+            for key, metric in getattr(team, attr).metrics.items():
+                if key.startswith(f"{SEASON}."):
+                    metric.sample_count = count
+    html = render._direct_compare_block(m)
+    assert html.count("홈 n=28 / 원정 n=25") == 1, "같은 짝을 여러 번 적었다"
+    assert "지표" in html and "개 전부" in html, html
+
+
+def test_b6_equal_samples_produce_no_warning():
+    assert "표본 크기가 다른 지표" not in render._direct_compare_block(_match())
+
+
+def test_b7_each_metric_is_named_once():
+    """같은 지표가 두 축에 다 있어도 화면에서 두 번 세면 안 된다."""
+    names = [name for _attr, name in render._DIRECT_ROWS]
+    assert len(names) == len(set(names)), names
+
+
+def test_b8_values_are_copied_from_the_axis_verbatim():
+    m = _match()
+    m.analysis.home.time_context.metrics[f"{SEASON}.points"].value = 1.77
+    html = render._direct_compare_block(m)
+    assert "1.77" in html, "축의 값이 그대로 나오지 않았다"
+
+
+def test_b9_direct_compare_never_recommends():
+    text = _text(render._direct_compare_block(_match()))
+    for banned in ("홈승", "원정승", "승리 예상", "유력"):
+        assert banned not in text, banned
+    # 5-E2 에서 부정문("종합 점수를 만들지 않고")을 걷었다 — 리포트 하단에
+    # §1-3 의 같은 문장이 이미 있어 되풀이였다. 부정문이 사라졌으므로
+    # **이제 낱말 자체를 금지할 수 있다** — 더 센 검사다.
+    for banned in ("종합 점수", "추천"):
+        assert banned not in text, banned
+
+
+# --------------------------------------------------------------------------
+# C. 패널 시각화
+# --------------------------------------------------------------------------
+def test_c1_score_flow_reads_the_audit_record_not_its_own_maths():
+    """§1-8 — 화면과 감사 보고서가 같은 함수를 쓴다."""
+    m = _panelled()
+    audit = panelaudit.match_audit(m, m.panel)
+    _no, da, mu, adopted = audit.row
+    html = render._score_flow(m)
+    for cell in (da, mu, adopted):
+        assert cell.replace("-", " : ") in html, cell
+    assert "데이터 분석가의 원안을 그대로 채택" in html
+    assert "다름" in html, "처음 의견의 관계가 안 보인다"
+
+
+def test_c2_score_flow_says_what_happened_not_who_was_right():
+    html = render._score_flow(_panelled())
+    assert "무엇을 했는지" in html
+    for banned in ("옳았", "정확", "신뢰할 만", "더 나은"):
+        assert banned not in _text(html), banned
+
+
+def test_c3_missing_analyst_is_a_dash_not_a_zero():
+    html = render._score_flow(_panelled(opinions=(op(DATA),)))
+    assert "맞대결·전술 분석가" in html
+    assert "0 : 0" not in html
+    assert "—" in html, "없는 의견을 빈칸으로 뒀다"
+
+
+def test_c4_compromise_shows_as_modified_not_as_an_analyst_win():
+    html = render._score_flow(_panelled(moderator=mod(
+        adopted_home=3, adopted_away=3, adopted_from=())))
+    assert "수정·절충" in html
+
+
+def test_c5_no_panel_no_flow():
+    assert render._score_flow(_match()) == ""
+
+
+def test_c6_distribution_labels_are_counts():
+    html = render._tally_table(mod())
+    text = _text(html)
+    assert "18회" in text and "9회" in text and "3회" in text
+    assert "%" not in text, "분포를 백분율로 적었다"
+    # 5-E2 에서 설명 문단을 걷었다. **확률이 되지 않게 막는 것은 원래
+    # 문구가 아니라 구조였다** — 길이 기준이 최댓값이고(`test_c7`)
+    # 라벨이 횟수다. 그 둘은 그대로다.
+    assert "확률" not in text
+
+
+def test_c7_distribution_bar_ignores_the_round_count():
+    """전체 횟수가 길이에 끼어들면 그 막대는 확률이다."""
+    a = charts.count_bars([{"label": "2 : 1", "count": 6},
+                           {"label": "1 : 1", "count": 3}])
+    b = charts.count_bars([{"label": "2 : 1", "count": 24},
+                           {"label": "1 : 1", "count": 12}])
+    paths = re.compile(r'<path d="([^"]+)"')
+    assert paths.findall(a) == paths.findall(b)
+
+
+def test_c8_empty_distribution_draws_nothing():
+    assert charts.count_bars([]) == ""
+    assert charts.count_bars([{"label": "2 : 1", "count": 0}]) == ""
+    assert render._tally_table(mod(distribution=())) == ""
+
+
+def test_c9_distribution_keeps_the_origin_visible():
+    html = render._tally_table(mod(distribution=(
+        ScoreTally(2, 1, 5, DATA), ScoreTally(1, 1, 4, "compromise"))))
+    assert "데이터 분석가" in html and "양쪽 절충" in html
+
+
+# --------------------------------------------------------------------------
+# D. 전체 규칙
+# --------------------------------------------------------------------------
+# `_decision_summary` 는 5-D 에서 빠졌다 (A 절).
+NEW_BLOCKS = ("_direct_compare_block", "_score_flow")
+
+
+def test_d1_new_blocks_do_not_compute():
+    """읽어서 놓기만 한다 — 나눗셈·평균·합산이 없다."""
+    for name in NEW_BLOCKS:
+        tree = ast.parse(inspect.getsource(getattr(render, name)))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.BinOp) and isinstance(
+                    node.op, (ast.Div, ast.FloorDiv, ast.Sub)):
+                raise AssertionError(f"{name}: 산술 연산이 있다")
+            if isinstance(node, ast.Call):
+                fn = getattr(node.func, "id", "") or getattr(
+                    node.func, "attr", "")
+                assert fn not in ("sum", "mean", "fmean", "median", "round",
+                                  "average"), f"{name}: {fn}()"
+
+
+def test_d2_new_blocks_never_compare_two_scores():
+    for name in NEW_BLOCKS:
+        tree = ast.parse(inspect.getsource(getattr(render, name)))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Compare):
+                continue
+            dump = ast.dump(node)
+            assert "predicted_" not in dump, f"{name}: 스코어를 견줬다"
+            if any(isinstance(o, (ast.Lt, ast.Gt, ast.LtE, ast.GtE))
+                   for o in node.ops):
+                assert "adopted" not in dump, f"{name}: 채택 스코어를 견줬다"
+
+
+def test_d3_no_wdl_helper_appears():
+    src = inspect.getsource(render)
+    for banned in ("def _wdl", "def _winner", "def _derive_pick",
+                   "def _consensus", "def _confidence"):
+        assert banned not in src, banned
+
+
+def test_d4_model_text_is_escaped():
+    evil = '<script>alert(1)</script>'
+    m = _panelled(moderator=mod(conclusion=evil))
+    for html in (render._panel_block(m),):
+        assert "<script>" not in html, "모델 문장이 그대로 새어 나갔다"
+
+
+def test_d5_no_external_reference():
+    m = _panelled()
+    for html in (render._direct_compare_block(m), render._score_flow(m)):
+        for bad in ("http://", "https://", "<script", "<iframe", "url("):
+            assert bad not in html, bad
+
+
+def test_d6_only_existing_css_classes():
+    """새 디자인 체계를 만들지 않는다 — 있는 클래스만 쓴다."""
+    allowed = {"block", "meta", "mini", "num", "nodata", "tossup", "chart",
+               "legend", "lg", "sw", "lbl", "vs", "tablewrap"}
+    m = _panelled()
+    for html in (render._direct_compare_block(m), render._score_flow(m)):
+        for group in re.findall(r'class="([^"]+)"', html):
+            for token in group.split():
+                assert token in allowed, f"새 CSS 클래스: {token}"
+
+
+def test_d7_blocks_are_well_formed():
+    m = _panelled()
+    for html in (render._direct_compare_block(m), render._score_flow(m)):
+        ElementTree.fromstring(f"<div>{html}</div>")
+
+
+def test_d8_card_hierarchy_is_summary_compare_panel_detail():
+    """4-E 에서 시즌 다이버징 바(`_compare_inner`)가 검증 계층으로 내려갔다
+    — 요약 계층에서 직접 비교와 같은 질문에 같은 수로 답하고 있었다.
+    자기 표(시즌) 바로 앞자리는 그대로다 (§1-1-15).
+
+    **소스 줄 순서가 아니라 화면에 나온 순서를 본다** — 4-F 에서 검증
+    계층이 지역변수로 먼저 조립되므로 소스 순서는 더 이상 화면 순서가
+    아니다(테스트가 실제로 재려던 것은 언제나 화면 순서였다).
+    """
+    from toto.settings import Settings
+
+    html = render._match_card(_panelled(), Settings(), None)
+    order = [html.index(x) for x in
+             ("Pinnacle 시장 기준선", "리그 내 위치",
+              "홈 ↔ 원정 직접 비교", "패널 분석",
+              "상세 경기력 지표", "시즌 지표 비교", "경기력 분석 · 시즌",
+              "경기력 분석 · 최근 경기")]
+    assert order == sorted(order), order
+    # 검증 계층은 **접혀서** 나온다 — 값은 그 안에 그대로 있다.
+    assert html.index("<details") < html.index("시즌 지표 비교")
+
+
+def test_d9_panel_visualisation_is_shared_with_the_audit():
+    """감사와 화면이 결정 유형을 따로 계산하면 둘이 갈라진다."""
+    src = inspect.getsource(render._score_flow)
+    assert "panelaudit.match_audit(" in src
+    for banned in ("ADOPTED_DATA =", "def decision_type", "== da", "== mu"):
+        assert banned not in src, banned
+
+
+# --------------------------------------------------------------------------
+def main() -> int:
+    tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
+    failed = 0
+    for fn in tests:
+        try:
+            fn()
+            print(f"  ok   {fn.__name__}")
+        except AssertionError as exc:
+            failed += 1
+            print(f"  FAIL {fn.__name__}: {exc}")
+        except Exception as exc:                       # noqa: BLE001
+            failed += 1
+            print(f"  ERR  {fn.__name__}: {type(exc).__name__}: {exc}")
+    print(f"\n{len(tests) - failed}/{len(tests)} 통과")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -159,6 +159,15 @@ def build_parser() -> argparse.ArgumentParser:
                    metavar="FILE",
                    help="저장된 회차 분석 결과(data/artifacts/<회차>.json)를 "
                         "지금 코드로 다시 렌더한다. 수집하지 않는다")
+    p.add_argument("--publish-round", dest="publish_round", default=None,
+                   metavar="ROUND",
+                   help="패널까지 끝난 그 회차의 최종 리포트(reports/toto_"
+                        "<회차>.html) 한 장을 gh-pages worktree 로 복사하고 "
+                        "index.html 을 다시 만든다. git add·commit·push 는 "
+                        "하지 않고 명령만 안내한다")
+    p.add_argument("--pages-dir", type=Path, default=None, metavar="DIR",
+                   help="--publish-round 의 게시 폴더 (기본: 저장소 옆 "
+                        "<저장소 이름>-pages)")
     p.add_argument("--market-eval", action="store_true",
                    help="쌓인 회차 기록으로 시장 기준선 캘리브레이션을 잰다 "
                         "(data/round_matches.csv 를 읽기만 한다. 수집하지 "
@@ -584,6 +593,21 @@ def _rerender(args, settings) -> int:
     return 0
 
 
+def _publish_round(args, settings) -> int:
+    """`--publish-round` — 패널이 끝난 최종 리포트 한 장을 게시 영역으로.
+
+    **수집하지 않고 렌더하지 않는다.** 이미 만들어진 파일을 검사해 복사할
+    뿐이다. 기존 `publish()`(클라우드 폴더 복사)와 이어지지 않는다 — 그쪽은
+    수집 직후 불려 패널 반영 전 판을 복사할 수 있다.
+    """
+    from . import pagespublish
+    result = pagespublish.publish_round(args.publish_round, settings,
+                                        args.pages_dir)
+    for line in pagespublish.report_lines(result):
+        print(line)
+    return 0 if result.ok else 1
+
+
 def _league_keys(rows: list[dict], settings, round_id: str) -> list[str]:
     """이 회차가 어느 리그 색인을 필요로 하나.
 
@@ -761,6 +785,12 @@ def main(argv: list[str] | None = None) -> int:
     # 여기서 돌려주면 `sources` 는 import 조차 되지 않는다.
     if args.rerender_artifact is not None:
         return _rerender(args, settings)
+
+    # ---- 0-a1. 최종 리포트 게시 (GitHub Pages) ---------------------------
+    # 여기도 **수집 구간 앞**이다. 파일 하나를 gh-pages worktree 로 복사하고
+    # index 를 다시 만들 뿐이며, git 쓰기 명령은 사람이 한다.
+    if args.publish_round is not None:
+        return _publish_round(args, settings)
 
     # ---- 0-a2. 1·2·3단계 결과 보관 · 자료 조립 (Phase 6-F-3 · 6-F-4) -----
     # 여기도 **수집 구간 앞**이다. 그리고 **클로드를 부르지 않는다** —

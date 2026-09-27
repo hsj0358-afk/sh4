@@ -6584,6 +6584,38 @@ Coruna 처럼 **다른 구단**으로 가기도 한다(해석기 실측).
 회귀 테스트: `python tests/test_pinnacle_reserve_matching.py` (16개). 변경 전
 코드에 돌리면 10개가 깨진다(재현).
 
+### 1-52. GitHub Pages 게시 — `--publish-round` · `toto/pagespublish.py`
+
+**분석용 `reports/` 와 공개용 `gh-pages` worktree 를 나눈다.** 개발 브랜치의
+`reports/` 는 계속 작업 영역이고(`.gitignore` 그대로), 공개 파일은 개발
+저장소 옆 `<저장소 이름>-pages` 폴더(gh-pages worktree)에만 둔다.
+
+```
+reports/toto_<회차>.html → <저장소>-pages/reports/toto_<회차>.html
+                         → <저장소>-pages/index.html (매번 다시 만든다) · .nojekyll
+```
+
+  · **게시 대상은 `^toto_\d+\.html$` 인 최종 리포트 한 장뿐**이다 —
+    `_write_report()` 의 기본 경로 그대로. `toto_DEMO.html`·`-o` 비교본·
+    `panel_*`·Markdown·JSON·로그·캐시는 복사하지도 목록에 싣지도 않는다.
+    `reports/` 를 통째로 복사하지 않는다.
+  · **패널 A·B·C 가 `--apply-panel-work` 로 반영된 최종판이어야 한다.**
+    `workflow().done` 만으로는 모자란다 — 사회자 결과만 붙인 회차도 '끝났다'
+    가 된다(실물 260052). 그래서 넷을 모두 본다: 다섯 단계 완료 · 반영 단계
+    체크포인트 `complete`(6-F-14 기록의 A·B·C 해시 일치) · HTML 에
+    `render.PANEL_CSS`(패널이 붙은 렌더) · HTML 이 Panel Result 보다 오래되지
+    않음. 하나라도 걸리면 아무것도 쓰지 않는다.
+  · **`git commit`·`git push` 를 자동으로 실행하지 않는다.** 복사와 index
+    재생성까지만 하고, 사람이 실행할 `git -C … add/commit/push` 를 출력한다.
+    쓰는 git 명령은 읽기 전용(`rev-parse`·`symbolic-ref`·`show-ref`)뿐이다.
+  · 공개 브랜치는 `gh-pages` 이고 **orphan** 으로 만든다 —
+    `git worktree add --orphan -b gh-pages <저장소>-pages` (Git 2.42+).
+    `-b gh-pages` 만 주면 개발 트리 전체가 공개 브랜치에 실린다.
+  · 기존 `publish.py`(클라우드 폴더 복사)와 이어지지 않는다 — 그쪽은 수집
+    직후 불려 패널 반영 전 판을 복사할 수 있다.
+
+회귀 테스트: `python tests/test_pages_publish.py` (33개).
+
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
 260052 실행이 남긴 것은 후스코어드 `팀명 매칭 실패` 5건과 `강점 0개` 3팀이다.
@@ -7198,6 +7230,7 @@ python -m toto --round R --panel-auto-check # 준비됐는지만 본다 · 모�
 python -m toto --round R --panel-auto      # 패널 자동 분석 A·B·C → [4] → HTML · claude -p · 구독 (6-F-6 §1-42)
 python -m toto --round R --panel-auto-rerun # 끝난 단계도 처음부터 · 세션 3회를 다시 쓴다 (기본은 재개 · 6-F-12 §1-48)
 python -m toto --round R --panel-auto --auto-model cli      # 모델 지정 없이 Claude Code 기본 모델로 (기본값은 sonnet · §1-43)
+python -m toto --publish-round R           # 패널 최종판 한 장 → gh-pages worktree · index 재생성 · git 은 사람이 (§1-52)
 #  보관본 반영은 --apply-panel-work 다 — --paste-panel-result 에 태우면 1·2단계 원문이 빠진다 (§1-49)
 #  메뉴 [6] 이 위 전부를 한다 — [3] 뒤, [4] 앞에 쓴다
 #  메뉴 [9] → [6] 이 같은 일을 한다. 오늘 캐시를 무시하려면 --no-cache 를 함께 준다
@@ -7262,6 +7295,7 @@ python tests/test_panel_resume.py         # 체크포인트·재개·A/B/C prove
 python tests/test_panel_apply.py          # A·B·C 보관본 → 최종 Panel Result ok 반영 6-F-14 §1-49 (38개)
 python tests/test_initial_score_fallback.py # 요약 카드 최초 스코어를 분석가 의견에서 읽기 §1-50 (15개)
 python tests/test_pinnacle_reserve_matching.py # 피나클 2차 탐색 2군·리저브 오매칭 차단 §1-51 (16개)
+python tests/test_pages_publish.py         # GitHub Pages 게시 계층 §1-52 (33개)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)

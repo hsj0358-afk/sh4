@@ -25,6 +25,7 @@
 from __future__ import annotations
 
 import ast
+import atexit
 import os
 import shutil
 import subprocess
@@ -48,8 +49,31 @@ HAS_GIT = shutil.which("git") is not None
 # ==========================================================================
 # 픽스처
 # ==========================================================================
+_CREATED: list[Path] = []          # 이 스위트가 만든 임시 폴더
+
+
 def tmpdir(prefix="toto_pages_test_") -> Path:
-    return Path(tempfile.mkdtemp(prefix=prefix))
+    path = Path(tempfile.mkdtemp(prefix=prefix))
+    _CREATED.append(path)
+    return path
+
+
+def cleanup_tmpdirs() -> None:
+    """만든 임시 폴더를 지운다 — 테스트가 통과했든 실패했든.
+
+    게시 영역 흉내(`make_pages`)는 `git init` 한 독립 저장소라 어느 저장소에도
+    worktree 로 등록되지 않는다. 폴더를 지우면 남는 것이 없다.
+    지우다 실패해도 테스트 결과를 바꾸지 않는다 (`ignore_errors`).
+    """
+    while _CREATED:
+        shutil.rmtree(_CREATED.pop(), ignore_errors=True)
+
+
+def teardown_function(function):   # pytest 가 테스트마다 부른다 (실패해도)
+    cleanup_tmpdirs()
+
+
+atexit.register(cleanup_tmpdirs)   # 중단(Ctrl+C 등)으로 teardown 을 건너뛴 경우
 
 
 def make_pages(branch=P.PAGES_BRANCH) -> Path:
@@ -536,6 +560,8 @@ def main() -> int:
         except Exception as exc:                       # noqa: BLE001
             failed += 1
             print(f"  ERR  {fn.__name__}: {type(exc).__name__}: {exc}")
+        finally:
+            cleanup_tmpdirs()
     print(f"\n{len(tests) - failed}/{len(tests)} 통과")
     return 1 if failed else 0
 

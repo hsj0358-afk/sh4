@@ -28,6 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import realdata                                               # noqa: E402
 from toto import artifact, marketeval, roundlog                # noqa: E402
 from toto.models import (KST, Match, MatchProb, Odds, Report,  # noqa: E402
                          RoundVerdict, SeasonMatch, TeamRef, find_season_match,
@@ -267,8 +268,7 @@ def test_c7_real_artifact_67_finished_matches_still_self_match():
     저장본을 만들 수 없다, §2-1).
     """
     path = ROOT / "data" / "artifacts" / "260052.json"
-    if not path.exists():
-        return
+    realdata.require(path)
     rep, why = artifact.load_path(path)
     assert rep is not None, why
     season = [sm for sm in rep.season_matches
@@ -668,18 +668,22 @@ def test_k4_bom_survives_the_atomic_write():
 # --------------------------------------------------------------------------
 def main() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
-    bad = 0
+    bad = skipped = 0
     for fn in tests:
         try:
             fn()
             print(f"  ok   {fn.__name__}")
+        except realdata.SkipTest as exc:
+            skipped += 1
+            print(f"  SKIP {fn.__name__}: {exc}")
         except AssertionError as exc:
             bad += 1
             print(f"  FAIL {fn.__name__}: {exc}")
         except Exception as exc:                        # noqa: BLE001
             bad += 1
             print(f"  ERR  {fn.__name__}: {type(exc).__name__}: {exc}")
-    print(f"\n{len(tests) - bad}/{len(tests)} 통과")
+    print(f"\n{len(tests) - bad - skipped}/{len(tests) - skipped} 통과"
+          + (f" · 건너뜀 {skipped}" if skipped else ""))
     return 1 if bad else 0
 
 

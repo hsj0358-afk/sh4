@@ -30,6 +30,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+import realdata                                                 # noqa: E402
 from toto import analyze, artifact                              # noqa: E402
 from toto.models import (CHAR_OBSERVED_EMPTY, CHAR_OK,          # noqa: E402
                          CHAR_PAGE_FAILED, CHAR_UNRECORDED,
@@ -46,11 +47,11 @@ OBSERVED_INTENSITIES = ("Strong", "Very Strong", "Weak", "Very Weak")
 
 
 def _artifact():
-    """실물 저장본. 없으면 `None` — 그 테스트는 조용히 지나간다."""
-    if not ARTIFACT.exists():
-        return None
-    report, _why = artifact.load_path(ARTIFACT)
-    return report
+    """실물 저장본. 없으면 SKIP, 못 읽으면 FAIL (tests/realdata.py).
+
+    예전에는 없으면 `None` 을 돌려주고 그 테스트가 조용히 통과했다.
+    """
+    return realdata.load_artifact(ARTIFACT)
 
 
 def _profiles(report):
@@ -243,8 +244,6 @@ def test_b3_only_empty_entries_drop_out():
 def test_b4_roundtrip_is_exact_on_the_real_round():
     """Test B (실물) — 260052 의 모든 항목이 글자까지 보존된다."""
     report = _artifact()
-    if report is None:
-        return
     total = 0
     for _match, _side, profile in _profiles(report):
         for slot in ("strengths", "weaknesses", "style_of_play"):
@@ -258,8 +257,6 @@ def test_b4_roundtrip_is_exact_on_the_real_round():
 def test_b5_real_round_parses_completely():
     """실물 212건이 전부 라벨 + 강도로 갈린다 (파싱 실패 0건)."""
     report = _artifact()
-    if report is None:
-        return
     seen_intensity = set()
     unparsed = []
     for _match, _side, profile in _profiles(report):
@@ -277,8 +274,6 @@ def test_b5_real_round_parses_completely():
 def test_b6_real_round_label_counts_are_unchanged():
     """6-E-1 이 실측한 어휘 규모가 그대로다 (강점 14종 · 약점 14종)."""
     report = _artifact()
-    if report is None:
-        return
     labels = {"strengths": set(), "weaknesses": set()}
     counts = {"strengths": 0, "weaknesses": 0}
     for _match, _side, profile in _profiles(report):
@@ -351,8 +346,6 @@ def test_c5_real_round_zero_strength_teams_are_observed_empty():
     아니다** — 기록이 없는 것과 실패는 다르다.
     """
     report = _artifact()
-    if report is None:
-        return
     empty = []
     for _match, _side, profile in _profiles(report):
         if not profile.strengths:
@@ -372,8 +365,6 @@ def test_c5_real_round_zero_strength_teams_are_observed_empty():
 def test_c6_real_round_coverage_is_unchanged():
     """6-E-1 실측 확보율이 그대로다 — 강점 25/28 · 약점 28/28 · 스타일 0/28."""
     report = _artifact()
-    if report is None:
-        return
     have = {"strengths": 0, "weaknesses": 0, "style_of_play": 0}
     total = 0
     for _match, _side, profile in _profiles(report):
@@ -549,8 +540,6 @@ def test_e3_asdict_roundtrip_preserves_everything():
 def test_e4_real_artifact_still_loads():
     """Test E (실물) — 260052 저장본이 그대로 읽힌다."""
     report = _artifact()
-    if report is None:
-        return
     assert len(report.matches) == 14, len(report.matches)
     assert report.round_id == "260052", report.round_id
     profiles = list(_profiles(report))
@@ -626,8 +615,6 @@ def test_f3_stored_artifact_keeps_the_notes_it_was_saved_with():
     `tests/test_relationship_engine.py` 의 G절이 대조한다.
     """
     report = _artifact()
-    if report is None:
-        return
     notes = [n for m in report.matches for n in (m.matchup_notes or [])]
     assert len(notes) == 18, len(notes)
     blob = json.dumps(notes, ensure_ascii=False, sort_keys=True)
@@ -638,8 +625,6 @@ def test_f3_stored_artifact_keeps_the_notes_it_was_saved_with():
 def test_f4_real_round_h2h_is_unchanged():
     """Test — H2H 는 6-E-2 범위 밖이다."""
     report = _artifact()
-    if report is None:
-        return
     total = sum(len(m.h2h.entries) for m in report.matches)
     assert total == 0, total
     assert all(m.h2h.home_wins == m.h2h.draws == m.h2h.away_wins == 0
@@ -649,8 +634,6 @@ def test_f4_real_round_h2h_is_unchanged():
 def test_f5_real_round_market_probabilities_are_unchanged():
     """시장 확률·배당이 그대로다 (`predict.py` 무변경)."""
     report = _artifact()
-    if report is None:
-        return
     rows = [[m.no,
              m.odds.home, m.odds.draw, m.odds.away,
              None if m.probs is None else m.probs.home,
@@ -665,8 +648,6 @@ def test_f5_real_round_market_probabilities_are_unchanged():
 def test_f6_real_round_six_axes_are_unchanged():
     """Test H — 저장본의 여섯 축이 한 칸도 바뀌지 않았다."""
     report = _artifact()
-    if report is None:
-        return
     from toto.models import TeamAnalysis
     dump = []
     for match in report.matches:
@@ -747,18 +728,22 @@ def test_g4_the_new_layer_has_no_relation_logic():
 # --------------------------------------------------------------------------
 def main() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
-    failed = 0
+    failed = skipped = 0
     for fn in tests:
         try:
             fn()
             print(f"  ok   {fn.__name__}")
+        except realdata.SkipTest as exc:
+            skipped += 1
+            print(f"  SKIP {fn.__name__}: {exc}")
         except AssertionError as exc:
             failed += 1
             print(f"  FAIL {fn.__name__}: {exc}")
         except Exception as exc:                       # noqa: BLE001
             failed += 1
             print(f"  ERR  {fn.__name__}: {type(exc).__name__}: {exc}")
-    print(f"\n{len(tests) - failed}/{len(tests)} 통과")
+    print(f"\n{len(tests) - failed - skipped}/{len(tests) - skipped} 통과"
+          + (f" · 건너뜀 {skipped}" if skipped else ""))
     return 1 if failed else 0
 
 

@@ -38,6 +38,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+import realdata                                               # noqa: E402
 from toto import analysis, models                              # noqa: E402
 from toto.models import (Match, SeasonMatch, TeamProfile,      # noqa: E402
                          TeamRef, competitions_in,
@@ -557,8 +558,7 @@ def test_i1_competition_is_optional_when_reviving():
 def test_i2_existing_artifact_still_reads():
     from toto import artifact
     path = ROOT / "data" / "artifacts" / "260052.json"
-    if not path.exists():
-        return                                   # 저장본이 없으면 건너뛴다
+    realdata.require(path)
     rep, why = artifact.load_path(str(path))
     assert not why, why
     assert len(rep.matches) == 14
@@ -568,8 +568,7 @@ def test_i2_existing_artifact_still_reads():
 def test_i3_domestic_artifact_has_no_continental_match():
     from toto import artifact
     path = ROOT / "data" / "artifacts" / "260052.json"
-    if not path.exists():
-        return
+    realdata.require(path)
     rep, _ = artifact.load_path(str(path))
     for key in COMPETITIONS:
         assert in_competition(rep.season_matches, key) == [], key
@@ -587,18 +586,22 @@ def test_i4_parsed_id_is_a_string_and_survives_a_round_trip():
 # --------------------------------------------------------------------------
 def main() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
-    failed = 0
+    failed = skipped = 0
     for fn in tests:
         try:
             fn()
             print(f"  ok   {fn.__name__}")
+        except realdata.SkipTest as exc:
+            skipped += 1
+            print(f"  SKIP {fn.__name__}: {exc}")
         except AssertionError as exc:
             failed += 1
             print(f"  FAIL {fn.__name__}: {exc}")
         except Exception as exc:                       # noqa: BLE001
             failed += 1
             print(f"  ERR  {fn.__name__}: {type(exc).__name__}: {exc}")
-    print(f"\n{len(tests) - failed}/{len(tests)} 통과")
+    print(f"\n{len(tests) - failed - skipped}/{len(tests) - skipped} 통과"
+          + (f" · 건너뜀 {skipped}" if skipped else ""))
     return 1 if failed else 0
 
 

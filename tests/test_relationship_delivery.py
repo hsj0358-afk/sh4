@@ -36,6 +36,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+import realdata                                              # noqa: E402
 from toto import (analyze, artifact, match_material, panel,  # noqa: E402
                   relationships, render)
 from toto.models import (Match, Report, TeamProfile,  # noqa: E402
@@ -71,15 +72,10 @@ _report_cache: list = []
 
 
 def _real_report():
-    if _report_cache:
-        return _report_cache[0]
-    if not ARTIFACT.exists():
-        _report_cache.append(None)
-        return None
-    rep, why = artifact.load_path(str(ARTIFACT))
-    assert rep is not None, why
-    _report_cache.append(rep)
-    return rep
+    """실물 저장본. 없으면 SKIP, 못 읽으면 FAIL (tests/realdata.py)."""
+    if not _report_cache:
+        _report_cache.append(realdata.load_artifact(ARTIFACT))
+    return _report_cache[0]
 
 
 def _code_only(path: Path) -> str:
@@ -154,8 +150,6 @@ def _symmetric_text(text: str, kind: str) -> str:
 # ==========================================================================
 def test_a1_payload_carries_every_relationship():
     rep = _real_report()
-    if rep is None:
-        return
     engine = {k: 0 for k in REAL_COUNTS}
     carried = {k: 0 for k in REAL_COUNTS}
     for m in rep.matches:
@@ -176,8 +170,6 @@ def test_a1_payload_carries_every_relationship():
 
 def test_a2_counter_and_direct_are_exactly_two_each():
     rep = _real_report()
-    if rep is None:
-        return
     found = []
     for m in rep.matches:
         q = panel.build_panel_payload(m).qualitative
@@ -199,8 +191,6 @@ def test_a2_counter_and_direct_are_exactly_two_each():
 def test_a3_mirror_counter_keeps_two_different_units():
     """사용자 §6-2 — 공격 단위와 수비 단위가 **그대로 따로** 나와야 한다."""
     rep = _real_report()
-    if rep is None:
-        return
     m = [x for x in rep.matches if x.no == 10][0]
     q = panel.build_panel_payload(m).qualitative
     rows = [i for g in q["relationships"]
@@ -215,8 +205,6 @@ def test_a3_mirror_counter_keeps_two_different_units():
 
 def test_a4_md_shows_both_symmetric_groups():
     rep = _real_report()
-    if rep is None:
-        return
     seen = set()
     for m in rep.matches:
         text = match_material._tactical(m)
@@ -228,8 +216,6 @@ def test_a4_md_shows_both_symmetric_groups():
 
 def test_a5_html_shows_both_symmetric_groups():
     rep = _real_report()
-    if rep is None:
-        return
     seen = set()
     for m in rep.matches:
         html = render._traits_block(m)
@@ -241,8 +227,6 @@ def test_a5_html_shows_both_symmetric_groups():
 
 def test_a6_symmetric_rows_appear_in_md_with_both_raw_strings():
     rep = _real_report()
-    if rep is None:
-        return
     by_no = {m.no: m for m in rep.matches}
     for kind, ht, hc, at, ac in REAL_SYMMETRIC:
         match = next(m for m in rep.matches
@@ -265,8 +249,6 @@ _INTERNAL = ("ADVANTAGE", "COUNTER", "DIRECT", "MIRROR", "CONTEST",
 
 def test_b1_payload_has_no_internal_identifier():
     rep = _real_report()
-    if rep is None:
-        return
     for m in rep.matches:
         text = panel.serialize_payload(panel.build_panel_payload(m))
         for word in _INTERNAL:
@@ -275,8 +257,6 @@ def test_b1_payload_has_no_internal_identifier():
 
 def test_b2_md_and_html_have_no_internal_identifier():
     rep = _real_report()
-    if rep is None:
-        return
     for m in rep.matches:
         for text in (match_material._tactical(m), render._traits_block(m)):
             for word in _INTERNAL:
@@ -365,8 +345,6 @@ def test_c6_left_is_always_home():
     """좌우를 `source` 가 아니라 **팀**으로 정한다 — 줄마다 뜻이 달라지면
     안 된다. 실물 경기 10 은 원정이 `source` 인데도 홈이 왼쪽이다."""
     rep = _real_report()
-    if rep is None:
-        return
     for m in rep.matches:
         hp = m.home_profile
         if hp is None:
@@ -401,8 +379,6 @@ def test_d2_counter_and_direct_never_enter_matchup_notes():
 
 def test_d3_real_matchup_notes_still_seventeen():
     rep = _real_report()
-    if rep is None:
-        return
     total = 0
     for m in rep.matches:
         hp, ap = m.home_profile, m.away_profile
@@ -443,8 +419,6 @@ def test_d5_symmetric_sections_do_not_use_the_note_columns():
 # ==========================================================================
 def test_e1_every_characteristic_reaches_the_payload_unchanged():
     rep = _real_report()
-    if rep is None:
-        return
     total = kept = 0
     for m in rep.matches:
         q = panel.build_panel_payload(m).qualitative
@@ -466,8 +440,6 @@ def test_e1_every_characteristic_reaches_the_payload_unchanged():
 
 def test_e2_every_characteristic_reaches_the_md_unchanged():
     rep = _real_report()
-    if rep is None:
-        return
     total = 0
     for m in rep.matches:
         text = match_material._tactical(m)
@@ -550,8 +522,6 @@ def test_f1_cache_and_artifact_versions_are_unchanged():
 
 def test_f2_artifact_stores_no_qualitative_block():
     rep = _real_report()
-    if rep is None:
-        return
     raw = json.loads(ARTIFACT.read_text(encoding="utf-8"))
     text = json.dumps(raw, ensure_ascii=False)
     assert '"qualitative"' not in text
@@ -561,8 +531,6 @@ def test_f2_artifact_stores_no_qualitative_block():
 def test_f3_reload_reproduces_the_same_relationships():
     """저장본을 다시 읽어도 같은 관계가 나온다 — 파생이라 늘 재생된다."""
     rep = _real_report()
-    if rep is None:
-        return
     again, why = artifact.load_path(str(ARTIFACT))
     assert again is not None, why
     a = [panel.build_panel_payload(m).qualitative.get("relationships")
@@ -574,8 +542,6 @@ def test_f3_reload_reproduces_the_same_relationships():
 
 def test_f4_both_roles_receive_the_same_payload():
     rep = _real_report()
-    if rep is None:
-        return
     m = rep.matches[0]
     one = panel.build_panel_payload(m)
     two = panel.build_panel_payload(m)
@@ -615,8 +581,6 @@ def test_f5_payload_is_deterministic_across_calls():
 def test_f6_moderator_input_does_not_grow():
     """사회자는 축 덤프도 정성 자료도 받지 않는다 (§1-10)."""
     rep = _real_report()
-    if rep is None:
-        return
     data = analyze and None
     from toto import moderator
     payload = panel.build_panel_payload(rep.matches[0])
@@ -759,17 +723,21 @@ def test_h8_symmetric_html_marks_both_sides():
 def main() -> int:
     tests = [(k, v) for k, v in sorted(globals().items())
              if k.startswith("test_") and callable(v)]
-    ok = 0
+    ok = skipped = 0
     for name, fn in tests:
         try:
             fn()
+        except realdata.SkipTest as exc:
+            skipped += 1
+            print(f"  SKIP {name}: {exc}")
         except Exception as exc:                       # noqa: BLE001
             print(f"  FAIL {name}: {exc}")
         else:
             ok += 1
             print(f"  ok   {name}")
-    print(f"\n{ok}/{len(tests)} 통과")
-    return 0 if ok == len(tests) else 1
+    print(f"\n{ok}/{len(tests) - skipped} 통과"
+          + (f" · 건너뜀 {skipped}" if skipped else ""))
+    return 0 if ok + skipped == len(tests) else 1
 
 
 if __name__ == "__main__":

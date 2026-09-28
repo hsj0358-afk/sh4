@@ -32,6 +32,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+import realdata                                                   # noqa: E402
 from toto import analyze, artifact, relationships                  # noqa: E402
 from toto.models import (Characteristic, TeamProfile, TeamRef,     # noqa: E402
                          characteristics, parse_characteristic)
@@ -63,10 +64,8 @@ REAL_INTENSITIES = ("Strong", "Very Strong", "Weak", "Very Weak")
 
 
 def _artifact():
-    if not ARTIFACT.exists():
-        return None
-    report, _why = artifact.load_path(ARTIFACT)
-    return report
+    """실물 저장본. 없으면 SKIP, 못 읽으면 FAIL (tests/realdata.py)."""
+    return realdata.load_artifact(ARTIFACT)
 
 
 def prof(team: str, strengths=(), weaknesses=()) -> TeamProfile:
@@ -532,8 +531,6 @@ def _new_notes(report):
 
 def test_g1_real_round_diff_is_exactly_as_recorded():
     report = _artifact()
-    if report is None:
-        return
     new = _new_notes(report)
     assert len(new) == 17, len(new)
     assert OLD_18 - new == REMOVED, sorted(OLD_18 - new)
@@ -545,8 +542,6 @@ def test_g1_real_round_diff_is_exactly_as_recorded():
 def test_g2_note_shape_is_unchanged():
     """다섯 칸과 그 뜻이 그대로다 — render·match_material 이 이 모양을 읽는다."""
     report = _artifact()
-    if report is None:
-        return
     analyze.build_matchup(report.matches)
     notes = [n for m in report.matches for n in (m.matchup_notes or [])]
     assert notes, "노트가 통째로 비었다"
@@ -579,8 +574,6 @@ def test_g3_only_advantage_reaches_the_notes():
 def test_g4_real_round_counter_and_direct_exist_in_the_engine():
     """노트에는 안 나가지만 엔진은 만들고 있다 (6-E-4 가 쓸 자리)."""
     report = _artifact()
-    if report is None:
-        return
     kinds = {relationships.ADVANTAGE: 0, relationships.COUNTER: 0,
              relationships.DIRECT: 0}
     for m in report.matches:
@@ -682,18 +675,22 @@ def test_h6_engine_makes_no_verdict():
 # --------------------------------------------------------------------------
 def main() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
-    failed = 0
+    failed = skipped = 0
     for fn in tests:
         try:
             fn()
             print(f"  ok   {fn.__name__}")
+        except realdata.SkipTest as exc:
+            skipped += 1
+            print(f"  SKIP {fn.__name__}: {exc}")
         except AssertionError as exc:
             failed += 1
             print(f"  FAIL {fn.__name__}: {exc}")
         except Exception as exc:                       # noqa: BLE001
             failed += 1
             print(f"  ERR  {fn.__name__}: {type(exc).__name__}: {exc}")
-    print(f"\n{len(tests) - failed}/{len(tests)} 통과")
+    print(f"\n{len(tests) - failed - skipped}/{len(tests) - skipped} 통과"
+          + (f" · 건너뜀 {skipped}" if skipped else ""))
     return 1 if failed else 0
 
 

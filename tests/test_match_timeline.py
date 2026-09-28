@@ -37,6 +37,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+import realdata                                               # noqa: E402
 from toto import analysis, analyze, models                    # noqa: E402
 from toto.models import (KST, REST_WINDOW_DAYS, Match,        # noqa: E402
                          SeasonMatch, TeamProfile, TeamRef,
@@ -482,8 +483,7 @@ def test_o8_density_survives_a_json_round_trip():
 def test_o9_real_artifact_still_reads_and_keeps_its_values():
     from toto import artifact
     path = ROOT / "data" / "artifacts" / "260052.json"
-    if not path.exists():
-        return
+    realdata.require(path)
     rep, why = artifact.load_path(str(path))
     assert not why, why
     filled = [p.rest_days for m in rep.matches
@@ -494,8 +494,7 @@ def test_o9_real_artifact_still_reads_and_keeps_its_values():
 def test_o10_real_index_builds_a_timeline():
     from toto import artifact
     path = ROOT / "data" / "artifacts" / "260052.json"
-    if not path.exists():
-        return
+    realdata.require(path)
     rep, _ = artifact.load_path(str(path))
     line = team_timeline(rep.season_matches, "Liverpool")
     assert line, "실물 색인에서 시간축이 서지 않았다"
@@ -542,18 +541,22 @@ def test_p4_timeline_does_not_collect_anything():
 # --------------------------------------------------------------------------
 def main() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
-    failed = 0
+    failed = skipped = 0
     for fn in tests:
         try:
             fn()
             print(f"  ok   {fn.__name__}")
+        except realdata.SkipTest as exc:
+            skipped += 1
+            print(f"  SKIP {fn.__name__}: {exc}")
         except AssertionError as exc:
             failed += 1
             print(f"  FAIL {fn.__name__}: {exc}")
         except Exception as exc:                       # noqa: BLE001
             failed += 1
             print(f"  ERR  {fn.__name__}: {type(exc).__name__}: {exc}")
-    print(f"\n{len(tests) - failed}/{len(tests)} 통과")
+    print(f"\n{len(tests) - failed - skipped}/{len(tests) - skipped} 통과"
+          + (f" · 건너뜀 {skipped}" if skipped else ""))
     return 1 if failed else 0
 
 

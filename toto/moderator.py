@@ -83,6 +83,8 @@ from dataclasses import asdict
 from . import llm
 from .panelcheck import RETRY_HINT, ValidationError, nonnegative_int
 from .panelcheck import strings as _strings
+from .models import DATA_ANALYST as DATA_ROLE
+from .models import MATCHUP_ANALYST as MATCHUP_ROLE
 from .models import (MarketReference, ModeratorResult, PanelOpinion,
                      ScoreTally)
 
@@ -111,10 +113,10 @@ MIN_SIMULATIONS = 5
 MODERATOR_CACHE_VERSION = 1
 CACHE_SOURCE = "moderator"
 
-# 역할 이름은 panel 에서 오지만, 여기서 panel 을 import 하면 순환이 된다
-# (panel → moderator). 두 곳이 어긋나지 않는지는 테스트가 대조한다.
-DATA_ROLE = "data_analyst"
-MATCHUP_ROLE = "matchup_tactical_analyst"
+# 역할 이름은 `panel.DATA_ANALYST` 와 같은 값이다. 여기서 panel 을 import
+# 하면 순환이 되므로(panel → moderator) 둘 다 부르는 `models` 에서 가져온다
+# — 위 import 의 `DATA_ROLE`·`MATCHUP_ROLE` (Phase 3-B M3).
+
 # 두 의견 어느 쪽도 처음에 내지 않았고 토론에서 나온 스코어.
 COMPROMISE = "compromise"
 

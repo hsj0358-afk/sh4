@@ -44,14 +44,14 @@ from dataclasses import asdict, dataclass, field
 from . import llm, moderator, relationships
 from .panelcheck import RETRY_HINT, ValidationError, nonnegative_int
 from .panelcheck import strings as _strings
-from .models import (Match, MarketReference, PanelOpinion, PanelRun,
-                     characteristic_status)
+from .models import (DATA_ANALYST, MATCHUP_ANALYST, Match, MarketReference,
+                     PanelOpinion, PanelRun, characteristic_status)
 
 log = logging.getLogger(__name__)
 
 # 역할 식별자. **Market Reference 는 여기 없다** (불변조건 1).
-DATA_ANALYST = "data_analyst"
-MATCHUP_ANALYST = "matchup_tactical_analyst"
+# 글자는 `models` 에서 정한다 — 사회자도 같은 값을 써야 하는데 순환 import
+# 때문에 여기서 가져갈 수 없다 (위 import).
 ROLES = (DATA_ANALYST, MATCHUP_ANALYST)
 ROLE_KO = {DATA_ANALYST: "데이터 분석가",
            MATCHUP_ANALYST: "맞대결·전술 분석가"}

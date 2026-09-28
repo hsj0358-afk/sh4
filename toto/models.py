@@ -965,6 +965,17 @@ def _revive_axis(d: Any) -> AnalysisAxis | None:
 #   4. 예상 스코어에서 승무패를 파생하지 않는다 — `winner`·`pick`·`lean`·
 #      `recommendation`·`confidence` 필드가 **없어야** 하고, 그것을 만드는
 #      property 도 없어야 한다.
+
+# 두 분석가의 역할 식별자. `PanelOpinion.role` · `InitialScore.role` ·
+# `ScoreTally.origin` · `ModeratorResult.adopted_from`·`panels_seen` 에 **글자
+# 그대로 저장되고** Panel Result 파일의 칸 이름이 된다. `panel`(DATA_ANALYST)
+# 과 `moderator`(DATA_ROLE)가 같은 값을 쓰는데, `panel` 이 `moderator` 를
+# 부르므로 `moderator` 는 `panel` 을 import 할 수 없다 — 그래서 둘 다 이미
+# 부르는 여기서 한 번 정한다 (Phase 3-B M3). 이름은 두 모듈에 그대로 있다.
+DATA_ANALYST = "data_analyst"
+MATCHUP_ANALYST = "matchup_tactical_analyst"
+
+
 @dataclass(frozen=True)
 class MarketReference:
     """시장이 제시하는 외부 기준값. **분석가가 아니다** (불변조건 1).

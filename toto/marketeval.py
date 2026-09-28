@@ -50,7 +50,6 @@ log = logging.getLogger("toto")
 # 결과 어휘는 `predict.HOME/DRAW/AWAY` 와 `SeasonMatch.result` 가 쓰는 것과
 # 같다. 여기서 새로 정하지 않고 같은 글자를 쓴다.
 OUTCOMES = ("H", "D", "A")
-OUTCOME_KO = {"H": "승", "D": "무", "A": "패"}
 
 # 로그 손실에서 0 을 만나면 무한대가 된다. 자르는 값을 **밝혀 둔다** —
 # 조용히 자르면 그 수가 어디서 왔는지 알 수 없다.

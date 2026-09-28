@@ -60,15 +60,6 @@ def american_to_decimal(price: float | int | None) -> float | None:
     return round(1.0 + 100.0 / abs(p), 4)
 
 
-def decimal_to_american(dec: float | None) -> float | None:
-    """소수 배당 → 아메리칸 배당 (왕복 검증용)."""
-    if not dec or dec <= 1.0:
-        return None
-    if dec >= 2.0:
-        return round((dec - 1.0) * 100.0, 2)
-    return round(-100.0 / (dec - 1.0), 2)
-
-
 # --------------------------------------------------------------------------
 # guest API
 # --------------------------------------------------------------------------

@@ -453,6 +453,11 @@ class Finding:
     where: str = ""
     original: str = ""
     web: str = ""
+    doc: str = ""             # 원본 자료 대조에서만 — 어느 HTML 인가
+    labels: tuple = ("PC 원본", "웹 리포트")
+
+
+SOURCE_LABELS = ("원본 자료", "HTML")
 
 
 def _snippet(toks: list[Tok], lo: int, hi: int, limit=24) -> str:
@@ -812,7 +817,7 @@ def source_stage(round_id: str, docs: list[Doc], *, base: Path | None = None
             report, why = None, str(exc)
         if report is None:
             findings.append(Finding(DATA, f"회차 저장본을 읽지 못했습니다: {why}",
-                                    cat="market"))
+                                    cat="market", labels=SOURCE_LABELS))
         else:
             checked.append(f"회차 저장본 ({art.name})")
             for match in report.matches:
@@ -825,46 +830,66 @@ def source_stage(round_id: str, docs: list[Doc], *, base: Path | None = None
     return {"status": status, "checked": checked, "findings": findings}
 
 
+def _cited_ids(card: Node) -> list:
+    """`인용한 근거 E001, E014` 줄의 ID 만 읽는다.
+
+    분석가 문장 안에도 `xG 2.56(E014)` 처럼 ID 가 나오는데 그것은 **문장 속
+    언급**이지 `evidence_ids` 가 아니다. 카드 전체에서 뽑으면 둘이 섞여 같은
+    자료를 다르다고 판정한다 (실물 260054 의 맞대결 분석가 카드가 그랬다).
+    """
+    line = next((n.text() for n in card.iter() if "vs" in n.classes
+                 and n.text().startswith("인용한 근거")), "")
+    return [t.value for t in tokenize(line) if t.kind == "t"
+            and EVIDENCE_ID.match(t.value)]
+
+
+def _src(kind, what, no, cat, where, doc, original="", web="") -> Finding:
+    return Finding(kind, what, no, cat, where, original, web, doc.name,
+                   SOURCE_LABELS)
+
+
 def _check_panel(doc: Doc, no: int, m: dict, role_ko: dict) -> list:
     out = []
     parts = _panel_parts(doc, no)
-    where = f"{doc.name} · 패널 블록"
+    where = "패널 블록"
     for role in ("data_analyst", "matchup_tactical_analyst"):
         op = m.get(role)
         if not isinstance(op, dict):
             continue
         card = parts["analysts"].get(role_ko.get(role, role))
         if card is None:
-            out.append(Finding(ANALYSIS, "원본 자료의 분석가 의견이 HTML 에 없음",
-                               no, "analyst", where, role, "(없음)"))
+            out.append(_src(ANALYSIS, "원본 자료의 분석가 의견이 HTML 에 없음",
+                            no, "analyst", where, doc, role, "(없음)"))
             continue
         text = card.text()
         want = _score_text(op.get("predicted_home"), op.get("predicted_away"))
         pscore = next((n.text() for n in card.iter() if "pscore" in n.classes), "")
         if not pscore.endswith(want):
-            out.append(Finding(DATA, "분석가 예상 스코어가 원본 자료와 다름", no,
-                               "score", where, want, pscore))
+            out.append(_src(DATA, "분석가 예상 스코어가 원본 자료와 다름", no,
+                            "score", where, doc, want, pscore))
         for piece in [op.get("summary", "")] + list(op.get("rationale") or []):
             if piece and norm_space(piece) not in text:
-                out.append(Finding(ANALYSIS, "분석가 문장이 원본 자료와 다름", no,
-                                   "analyst", where, norm_space(piece)[:80], ""))
-        ids = [t.value for t in tokenize(text) if t.kind == "t"
-               and EVIDENCE_ID.match(t.value)]
+                out.append(_src(ANALYSIS, "분석가 문장이 원본 자료와 다름", no,
+                                "analyst", where, doc, norm_space(piece)[:80],
+                                "(HTML 에서 찾지 못함)"))
+        ids = _cited_ids(card)
         if ids != list(op.get("evidence_ids") or []):
-            out.append(Finding(DATA, "분석가 Evidence ID 가 원본 자료와 다름", no,
-                               "evidence", where,
-                               " ".join(op.get("evidence_ids") or []), " ".join(ids)))
+            out.append(_src(DATA, "분석가 Evidence ID 가 원본 자료와 다름", no,
+                            "evidence", f"{where} · {role_ko.get(role, role)}",
+                            doc, " ".join(op.get("evidence_ids") or []) or "(없음)",
+                            " ".join(ids) or "(없음)"))
     mod = m.get("moderator")
     if isinstance(mod, dict):
         want = _score_text(mod.get("adopted_home"), mod.get("adopted_away"))
         got = parts["mscore"]
         if want != "없음" and got != want:
-            out.append(Finding(DATA, "사회자 채택 스코어가 원본 자료와 다름", no,
-                               "score", where, want, str(got)))
+            out.append(_src(DATA, "사회자 채택 스코어가 원본 자료와 다름", no,
+                            "score", where, doc, want, str(got)))
         conclusion = norm_space(mod.get("conclusion") or "")
         if conclusion and conclusion not in parts["moderator_text"]:
-            out.append(Finding(ANALYSIS, "사회자 결론 문장이 원본 자료와 다름", no,
-                               "moderator", where, conclusion[:80], ""))
+            out.append(_src(ANALYSIS, "사회자 결론 문장이 원본 자료와 다름", no,
+                            "moderator", where, doc, conclusion[:80],
+                            "(HTML 에서 찾지 못함)"))
     return out
 
 
@@ -875,12 +900,13 @@ def _check_market(doc: Doc, match) -> list:
     card = next((n for n in doc.root.iter() if n.tag == "article"
                  and n.attrs.get("id") == f"match-{match.no:02d}"), None)
     if card is None:
-        return [Finding(DATA, "경기 카드가 없음", match.no, "market", doc.name)]
+        return [_src(DATA, "경기 카드가 없음", match.no, "market", "경기 카드", doc)]
     block = next((n for n in card.iter() if n.tag == "div" and "block" in n.classes
                   and _first_child(n, "h4") is not None
                   and _first_child(n, "h4").text().startswith("Pinnacle")), None)
     if block is None:
-        return [Finding(DATA, "시장 기준선 블록이 없음", match.no, "market", doc.name)]
+        return [_src(DATA, "시장 기준선 블록이 없음", match.no, "market", "경기 카드",
+                     doc)]
     rows = {}
     for tr in (n for n in block.iter() if n.tag == "tr"):
         cells = [c.text() for c in tr.children if isinstance(c, Node) and c.tag == "td"]
@@ -893,16 +919,17 @@ def _check_market(doc: Doc, match) -> list:
     for label, (odd, prob) in want.items():
         got = rows.get(label)
         if got is None:
-            out.append(Finding(DATA, f"시장 표에 '{label}' 줄이 없음", match.no,
-                               "market", doc.name))
+            out.append(_src(DATA, f"시장 표에 '{label}' 줄이 없음", match.no,
+                            "market", "시장 기준선 블록", doc))
             continue
         go, gp = to_number(got[0]), to_number(got[1].rstrip("%"))
         if go is None or abs(float(go) - odd) > 0.005 + 1e-9:
-            out.append(Finding(DATA, f"배당({label})이 원본 자료와 다름", match.no,
-                               "market", doc.name, f"{odd}", got[0]))
+            out.append(_src(DATA, f"배당({label})이 원본 자료와 다름", match.no,
+                            "market", "시장 기준선 블록", doc, f"{odd}", got[0]))
         if gp is None or abs(float(gp) - prob * 100) > 0.05 + 1e-9:
-            out.append(Finding(DATA, f"내재확률({label})이 원본 자료와 다름", match.no,
-                               "market", doc.name, f"{prob * 100:.4f}%", got[1]))
+            out.append(_src(DATA, f"내재확률({label})이 원본 자료와 다름", match.no,
+                            "market", "시장 기준선 블록", doc, f"{prob * 100:.4f}%",
+                            got[1]))
     return out
 
 
@@ -943,6 +970,39 @@ def default_paths() -> tuple[Path, Path]:
 # ==========================================================================
 # 보고
 # ==========================================================================
+def _merge_docs(findings: list) -> list:
+    """두 HTML 에서 똑같이 나온 원본 자료 대조 차이를 한 건으로 합친다.
+
+    원본과 웹이 같으면 같은 차이가 두 번 나오는데, 두 번 적으면 건수가
+    부풀고 '웹이 따로 틀렸다' 처럼 읽힌다. 어느 문서에서 나왔는지는 남긴다.
+    """
+    merged: dict = {}
+    for f in findings:
+        key = (f.kind, f.what, f.match, f.cat, f.where, f.original, f.web)
+        if key in merged:
+            if f.doc and f.doc not in merged[key].doc:
+                merged[key].doc += f" · {f.doc}"
+        else:
+            merged[key] = Finding(f.kind, f.what, f.match, f.cat, f.where,
+                                  f.original, f.web, f.doc, f.labels)
+    return list(merged.values())
+
+
+def _print_findings(L, findings: list, limit: int) -> None:
+    for f in findings[:limit]:
+        L("")
+        L(f"경기: {f.match if f.match is not None else '-'}")
+        L(f"항목: {CAT_KO.get(f.cat, f.cat)} — {f.what}")
+        where = " · ".join(x for x in (f.doc, f.where) if x)
+        if where:
+            L(f"위치: {where}")
+        L(f"{f.labels[0]}: {f.original}")
+        L(f"{f.labels[1]}: {f.web}")
+        L(f"분류: {KIND_KO[f.kind]}")
+    if len(findings) > limit:
+        L(f"\n… 외 {len(findings) - limit}건 (--limit 으로 늘릴 수 있다)")
+
+
 def run(args) -> int:
     reports_dir = pages_dir = None
     if args.original is None or (args.web is None and args.web_ref is None):
@@ -1000,18 +1060,22 @@ def run(args) -> int:
     source = ({"status": "SKIP", "reason": "--no-source"} if args.no_source
               else source_stage(round_id, [do, dw]))
 
-    findings = list(content["findings"]) + list(browser.get("findings", [])) \
-        + list(source.get("findings", []))
+    # 원본 ↔ 웹 비교와 원본 자료 ↔ HTML 대조는 **묻는 것이 다르다.** 앞의 것은
+    # 웹이 원본을 훼손했나, 뒤의 것은 두 HTML 이 저장된 자료를 그대로 담았나다.
+    # 한 줄에 섞으면 원본과 웹이 같은데도 '웹이 다르다' 로 읽힌다.
+    findings = list(content["findings"]) + list(browser.get("findings", []))
     if not fs["identical"] and fs["same_after_newline"]:
         findings.append(Finding(DEPLOY, "줄바꿈(CRLF↔LF)·BOM 만 다름", cat="page",
                                 where="파일 전체",
                                 original=f"CRLF {fs['crlf'][0]}",
                                 web=f"CRLF {fs['crlf'][1]}"))
     blocking = [f for f in findings if f.kind in BLOCKING]
-    for f in source.get("findings", []) + browser.get("findings", []):
+    for f in browser.get("findings", []):
         if f.kind in BLOCKING and f.cat in content["cat_status"]:
             content["cat_status"][f.cat] = "FAIL"
-    verdict = "FAIL" if blocking else "PASS"
+    source_blocking = _merge_docs([f for f in source.get("findings", [])
+                                   if f.kind in BLOCKING])
+    verdict = "FAIL" if blocking or source_blocking else "PASS"
 
     L = print
     bar = "=" * 50
@@ -1040,7 +1104,7 @@ def run(args) -> int:
     L(f"파일 크기: {'일치' if fs['size'][0] == fs['size'][1] else '다름'}"
       f" ({fs['size'][0] - fs['size'][1]:+,} bytes)")
     L("")
-    L("[핵심 데이터 비교]")
+    L("[핵심 데이터 비교] PC 원본 ↔ 웹 리포트")
     for key, ko in CATEGORIES:
         L(f"{ko}: {content['cat_status'][key]}")
     L(f"숫자 표기만 다른 곳: {content['fmt_only']}개 (값은 같다)")
@@ -1051,7 +1115,10 @@ def run(args) -> int:
     for width, inf in browser.get("info", {}).items():
         L(f"  {width}px: 경기 카드 원본 {inf['cards'][0]} · 웹 {inf['cards'][1]}"
           f" · 가로 넘침 원본 {inf['overflow'][0]} · 웹 {inf['overflow'][1]}")
-    L(f"[원본 자료 대조] {source['status']}"
+    source_status = source["status"]
+    if source_status != "SKIP":
+        source_status = "FAIL" if source_blocking else "PASS"
+    L(f"[원본 자료 대조] {source_status}"
       + (f" — {source['reason']}" if source.get("reason") else "")
       + (f" ({' · '.join(source['checked'])})" if source.get("checked") else ""))
     L("")
@@ -1060,24 +1127,20 @@ def run(args) -> int:
     numbers = sorted(set(do.match_order) | set(dw.match_order)
                      | set(do.overview_order))
     for no in numbers:
-        bad = [f for f in blocking if f.match == no]
-        L(f"{no}경기: {'FAIL' if bad else 'PASS'}"
-          + (f" ({len(bad)}건)" if bad else ""))
+        web_bad = [f for f in blocking if f.match == no]
+        src_bad = [f for f in source_blocking if f.match == no]
+        parts = ([f"웹 {len(web_bad)}건"] if web_bad else []) \
+            + ([f"원본 자료 {len(src_bad)}건"] if src_bad else [])
+        L(f"{no}경기: " + (f"FAIL ({' · '.join(parts)})" if parts else "PASS"))
     L("")
-    L("[차이]")
+    L("[차이] PC 원본 ↔ 웹 리포트")
     if not blocking:
         L("없음")
-    for f in blocking[: args.limit]:
+    _print_findings(L, blocking, args.limit)
+    if source_blocking:
         L("")
-        L(f"경기: {f.match if f.match is not None else '-'}")
-        L(f"항목: {CAT_KO.get(f.cat, f.cat)} — {f.what}")
-        if f.where:
-            L(f"위치: {f.where}")
-        L(f"PC 원본: {f.original}")
-        L(f"웹 리포트: {f.web}")
-        L(f"분류: {KIND_KO[f.kind]}")
-    if len(blocking) > args.limit:
-        L(f"\n… 외 {len(blocking) - args.limit}건 (--limit 으로 늘릴 수 있다)")
+        L("[차이] 원본 자료(Panel Result·회차 저장본) ↔ HTML")
+        _print_findings(L, source_blocking, args.limit)
     soft = [f for f in findings if f.kind not in BLOCKING]
     if soft:
         L("")
@@ -1091,9 +1154,13 @@ def run(args) -> int:
     L(bar)
     L(f"최종 결과: {verdict}")
     L(bar)
-    if verdict == "FAIL":
+    if blocking:
         L("")
         L("판단: 웹 리포트가 PC 원본과 일치하지 않음 — push 하지 마십시오.")
+    elif source_blocking:
+        L("")
+        L("판단: 웹 리포트는 PC 원본과 같지만, HTML 이 원본 자료와 다릅니다 — "
+          "리포트를 다시 만든 뒤 게시하십시오.")
     return 0 if verdict == "PASS" else 1
 
 

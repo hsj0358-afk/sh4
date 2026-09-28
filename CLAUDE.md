@@ -6633,11 +6633,15 @@ reports/toto_<회차>.html → <저장소>-pages/reports/toto_<회차>.html
     있는가 (스코어·문장·근거 ID·배당·내재확률)
 
 차이는 A 표현 · B 배포 구조 · C 데이터 · D 분석 내용으로 나누고 **C·D 가 하나라도
-있으면 FAIL**(종료코드 1, 2 는 검증 불가)이다. 읽기만 하고 분석 모듈(`render`·
+있으면 FAIL**(종료코드 1, 2 는 검증 불가)이다. **원본 자료 대조(S)는 원본↔웹
+비교와 따로 적는다** — 두 HTML 이 같고 둘 다 자료와 다르면 '웹이 틀렸다' 가
+아니라 '리포트를 다시 만들어라' 다. 인용 ID 는 `인용한 근거` 줄에서만 읽는다 —
+분석가 문장 속 `(E014)` 까지 세던 첫 판이 실물 260054 에서 14경기 전부를 거짓
+FAIL 로 냈다. 읽기만 하고 분석 모듈(`render`·
 `analysis`·`predict` …)을 import 하지 않는다(AST 테스트). **게시 흐름에 아직
 묶지 않았다** — `--publish-round` 뒤, push 전에 사람이 돌린다.
 
-회귀 테스트: `python tests/test_verify_web_report.py` (23개).
+회귀 테스트: `python tests/test_verify_web_report.py` (25개).
 
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
@@ -7319,7 +7323,7 @@ python tests/test_panel_apply.py          # A·B·C 보관본 → 최종 Panel R
 python tests/test_initial_score_fallback.py # 요약 카드 최초 스코어를 분석가 의견에서 읽기 §1-50 (15개)
 python tests/test_pinnacle_reserve_matching.py # 피나클 2차 탐색 2군·리저브 오매칭 차단 §1-51 (16개)
 python tests/test_pages_publish.py         # GitHub Pages 게시 계층 §1-52 (33개)
-python tests/test_verify_web_report.py     # PC 원본 ↔ 웹 리포트 일치 검증 §1-53 (23개)
+python tests/test_verify_web_report.py     # PC 원본 ↔ 웹 리포트 일치 검증 §1-53 (25개)
 python tools/verify_web_report.py 260054 --web-ref origin/gh-pages   # push 된 판과 PC 원본 대조 · 읽기만 (§1-53)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개

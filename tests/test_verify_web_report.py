@@ -9,7 +9,8 @@
   5. 수·팀·스코어·분석가 문장·사회자 문장·Evidence ID·경기 수·순서가
      바뀌면 FAIL — 경기 번호와 원본/웹 값을 함께 적는다
   6. 접힌 영역(<details>) 안의 값도 비교한다
-  7. 원본 자료(Panel Result)와 HTML 이 어긋나면 FAIL
+  7. 원본 자료(Panel Result)와 HTML 이 어긋나면 FAIL — 원본↔웹 차이와 따로
+     보고하고, 분석가 문장 속 ID 언급을 인용으로 세지 않는다
   8. 입력 파일을 바꾸지 않고, 분석 모듈을 import 하지 않는다
 
 픽스처는 실제 렌더러로 만든 패널 리포트 한 장(`test_pages_publish.Round`)이다.
@@ -115,7 +116,7 @@ def test_1_identical_is_pass():
     rc, out = run_tool(html, html)
     assert rc == 0, out
     assert "SHA256: 일치" in out and "최종 결과: PASS" in out
-    assert "[차이]\n없음" in out
+    assert "[차이] PC 원본 ↔ 웹 리포트\n없음" in out
     for n in range(1, 15):
         assert f"{n}경기: PASS" in out
 
@@ -311,6 +312,53 @@ def test_7b_html_that_disagrees_with_panel_result_fails():
     res = _source(bad)
     assert res["status"] == "FAIL"
     assert any(f.what.startswith("분석가 예상 스코어") for f in res["findings"])
+
+
+def test_7d_ids_mentioned_in_rationale_are_not_citations():
+    """분석가 문장 속 `(E014)` 는 언급이지 `evidence_ids` 가 아니다.
+
+    실물 260054 의 맞대결 분석가 카드가 문장 안에 ID 를 적었고, 카드 전체에서
+    ID 를 뽑던 판이 14경기 전부를 거짓 FAIL 로 냈다.
+    """
+    html, _ = fixture()
+    m = re.search(r'<div class="traits"><div><h5>[^<]+</h5><p class="pscore">[^<]*</p>'
+                  r'<p class="ptext">([^<]{8,})</p>', html)
+    mentioned = once(html, m.group(0),
+                     m.group(0).replace(m.group(1), m.group(1) + " 참고(E999, E001)"))
+    res = _source(mentioned)
+    assert res["status"] == "PASS", [vars(f) for f in res["findings"]]
+
+
+def test_7e_source_only_mismatch_is_reported_apart_from_web():
+    """원본과 웹이 같고 둘 다 원본 자료와 다르면 — 웹 탓으로 적지 않는다."""
+    html, base = fixture()
+    m = re.search(r'<p class="pscore">예상 스코어 (\d+) : (\d+)</p>', html)
+    bad = once(html, m.group(0),
+               f'<p class="pscore">예상 스코어 {m.group(1)} : {int(m.group(2)) + 1}</p>')
+    d = tmpdir()
+    po, pw = d / f"toto_{ROUND}.html", d / "web.html"
+    po.write_text(bad, encoding="utf-8")
+    pw.write_text(bad, encoding="utf-8")
+    saved, V.REPO = V.REPO, base          # 원본 자료를 픽스처 자리에서 읽게 한다
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = V.run(V.build_parser().parse_args(
+                [ROUND, "--original", str(po), "--web", str(pw), "--no-browser"]))
+    finally:
+        V.REPO = saved
+    out = buf.getvalue()
+    assert rc == 1, out
+    assert line(out, "예측 스코어") == "예측 스코어: PASS", out   # 원본 ↔ 웹은 같다
+    assert "[차이] PC 원본 ↔ 웹 리포트\n없음" in out
+    assert "[차이] 원본 자료(Panel Result·회차 저장본) ↔ HTML" in out
+    assert out.count("분석가 예상 스코어가 원본 자료와 다름") == 1, out   # 한 번만
+    assert "위치: PC 원본 · 웹 리포트 · 패널 블록" in out
+    assert f"원본 자료: {m.group(1)} : {m.group(2)}" in out
+    assert f"HTML: 예상 스코어 {m.group(1)} : {int(m.group(2)) + 1}" in out
+    assert "원본 자료 1건" in out and "웹 " not in line(out, "1경기")
+    assert "리포트를 다시 만든 뒤 게시하십시오" in out
+    assert "웹 리포트가 PC 원본과 일치하지 않음" not in out
 
 
 def test_7c_no_source_files_is_skip_not_fail():

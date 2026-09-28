@@ -42,7 +42,7 @@ import logging
 from dataclasses import asdict, dataclass, field
 
 from . import llm, moderator, relationships
-from .panelcheck import RETRY_HINT, ValidationError
+from .panelcheck import RETRY_HINT, ValidationError, nonnegative_int
 from .panelcheck import strings as _strings
 from .models import (Match, MarketReference, PanelOpinion, PanelRun,
                      characteristic_status)
@@ -487,14 +487,13 @@ def _score(value, name: str) -> int | None:
 
     `True` 는 `int` 의 하위형이라 그냥 두면 1 로 통과한다. 실수 `1.5` 도
     반올림해 주지 않는다 — 스키마를 어긴 응답은 실패로 처리한다.
+
+    판정 규칙은 사회자와 같아 `panelcheck.nonnegative_int` 에 있고, 오류
+    문구는 분석가 것이라 여기 있다 (`panelimport` 오류 메시지로 나간다).
     """
-    if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ValidationError(f"{name}: 정수 또는 null 이어야 합니다")
-    if value < 0:
-        raise ValidationError(f"{name}: 음수는 허용하지 않습니다")
-    return value
+    return nonnegative_int(value, name,
+                           not_int="정수 또는 null 이어야 합니다",
+                           negative="음수는 허용하지 않습니다")
 
 
 def parse_opinion(text: str, role: str, allowed_ids, *, model: str = "",

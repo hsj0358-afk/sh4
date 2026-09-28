@@ -81,7 +81,7 @@ import logging
 from dataclasses import asdict
 
 from . import llm
-from .panelcheck import RETRY_HINT, ValidationError
+from .panelcheck import RETRY_HINT, ValidationError, nonnegative_int
 from .panelcheck import strings as _strings
 from .models import (MarketReference, ModeratorResult, PanelOpinion,
                      ScoreTally)
@@ -447,14 +447,14 @@ def _goals(value, name: str) -> int | None:
 
     `"2"` 를 2 로 읽거나 `1.5` 를 반올림하지 않는다. `True` 는 `int` 의
     하위형이라 그냥 두면 1 로 통과하므로 따로 막는다.
+
+    판정 규칙은 분석가와 같아 `panelcheck.nonnegative_int` 에 있고, 오류
+    문구는 사회자 것이라 여기 있다 — 재요청(`retry_hint`)으로 모델에게 가고
+    `panelimport` 오류 메시지로도 나간다.
     """
-    if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ValidationError(f"{name}: 0 이상의 정수 또는 null 이어야 합니다")
-    if value < 0:
-        raise ValidationError(f"{name}: 음수는 받지 않습니다")
-    return value
+    return nonnegative_int(value, name,
+                           not_int="0 이상의 정수 또는 null 이어야 합니다",
+                           negative="음수는 받지 않습니다")
 
 
 def proposed_scores(opinions) -> dict:

@@ -8,9 +8,13 @@
 부르므로 순환이 된다 (§1-10). 그래서 둘 다 부르는 제3의 자리에 두고, 이
 모듈은 아무것도 import 하지 않는다.
 
-여기 있는 것은 **규칙이 같은 것뿐이다.** 역할마다 다른 검증 — 스코어 칸 ·
-분포 · 채택 · 사유를 붙이는 사회자의 재요청(`moderator.retry_hint`) — 은 각
-모듈에 그대로 있다. 역할의 실행·프롬프트·입출력은 합치지 않는다.
+여기 있는 것은 **규칙이 같은 것뿐이다.** 역할마다 다른 검증 — 분포 · 채택 ·
+사유를 붙이는 사회자의 재요청(`moderator.retry_hint`) — 은 각 모듈에 그대로
+있다. 역할의 실행·프롬프트·입출력은 합치지 않는다.
+
+스코어 칸(`panel._score` · `moderator._goals`)은 **판정 규칙만** 여기 있고
+오류 문구는 각 모듈이 정한다 (Phase 3 M2). 두 문구가 서로 다르고 둘 다 이미
+밖으로 나가기 때문이다 — `panelimport` 오류 메시지와 사회자 재요청.
 """
 from __future__ import annotations
 
@@ -45,3 +49,23 @@ def strings(value, name: str) -> tuple[str, ...]:
         if text:
             out.append(text)
     return tuple(out)
+
+
+def nonnegative_int(value, name: str, *, not_int: str,
+                    negative: str) -> int | None:
+    """`None` 또는 0 이상 정수만. 받은 값을 **그대로** 돌려준다.
+
+    `"2"` 를 2 로 읽거나 `1.5`·`2.0` 을 정수로 바꾸지 않는다. `True` 는
+    `int` 의 하위형이라 그냥 두면 1 로 통과하므로 따로 막는다 (§1-12).
+
+    오류 문구(`not_int` · `negative`)는 **부르는 쪽이 정한다** — 이 함수는
+    `"{name}: {문구}"` 로 이어 붙일 뿐이다. `None` 이 무슨 뜻인지(스코어를
+    내지 않음 · 칸이 빠짐)도 부르는 쪽이 정한다.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValidationError(f"{name}: {not_int}")
+    if value < 0:
+        raise ValidationError(f"{name}: {negative}")
+    return value

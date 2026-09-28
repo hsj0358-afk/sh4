@@ -6690,6 +6690,51 @@ reports/toto_<회차>.html 작성 완료
 회귀 테스트: `python tests/test_pages_deploy.py` (25개). 원격은 전부 임시
 폴더의 bare 저장소다 — 실제 GitHub 에 닿지 않는다.
 
+### 1-55. 회귀 안전망 (리팩터링 Phase 1) — 골든 · 가시적 SKIP · 레이아웃
+
+리팩터링(죽은 코드 제거 · 중복 통합 · 책임 분리)의 전제는 **산출물이 한
+바이트도 바뀌지 않는다** 이다. 지금까지는 사람이 바이트 수(675,280 ·
+949,635 …)를 재서 확인했고, 이제 테스트가 한다. **제품 코드는 한 줄도
+바꾸지 않았다.**
+
+| 파일 | 무엇을 고정하나 |
+|---|---|
+| `tests/test_golden_regression.py` · `golden/expected.json` | 데모 14경기(CLI `--demo` HTML · 경기자료 MD · 저장본 · PanelPayload · 회차 원본 · 공통 packet · 채팅 내보내기) · 패널 fixture(A/B/C 반영 Panel Result · 사회자 시트·stdin·입력 · 감사 · 패널 HTML) · 프롬프트·판 번호 · Pages index — **68개** |
+| `tests/test_golden_real.py` · `golden/real.json` | 실물 260052 저장본·보관본으로 만든 같은 산출물 — **입력 파일 sha256 에 묶인다** |
+| `tests/test_mobile_layout.py` | 1200·768·400px × 접힘/펼침: 가로 넘침 0 · 카드 밖 요소 0 · JS 오류 0 · 외부 요청 0 |
+| `tests/realdata.py` | 실물 저장본이 없으면 **SKIP**, 있는데 못 읽으면 **FAIL** |
+| `tests/conftest.py` | pytest 한 번이 임시 폴더에 남기던 456개(34 MB)를 세션 끝에 지운다 |
+
+  · 산출물은 **깨끗한 자식 프로세스**가 만든다. 같은 pytest 세션의 다른
+    테스트가 모듈 전역을 바꿔 두어도 흔들리지 않게 하려는 것이다. 네트워크 0 ·
+    모델 호출 0 · 저장소 쓰기 0 이고 마지막 것을 테스트가 확인한다
+    (`git status --ignored` + 입력 mtime).
+  · 생성 시각만 고정한다(`cli.datetime`). 오늘 날짜·임시 경로가 산출물에
+    새면 그 자체로 실패다. `PYTHONHASHSEED` 0 과 1 이 같아야 한다.
+  · 데모의 클라우드 폴더 복사(`publish.publish`)와 Pages 자동 배포는 자식
+    안에서 끈다 — 사용자 PC 의 동기화 폴더에 데모가 복사되면 안 된다.
+  · **실물 골든은 입력이 다르면 SKIP 이다.** 다른 자료로 만든 산출물은 달라야
+    정상이다. 새 회차 기준은 그 PC 에서 `TOTO_GOLDEN_UPDATE=1` 로 남기고,
+    다른 회차의 기준은 지우지 않는다.
+  · 실물이 필요한 여섯 스위트는 예전에 `return` 으로 **통과로 세어졌다**
+    (저장본 없는 사본에서 34건). 이제 SKIP 34 로 보이고, 스크립트 실행도
+    `건너뜀 N` 을 적는다.
+
+```bash
+python tests/test_golden_regression.py                       # 비교
+TOTO_GOLDEN_UPDATE=1 python tests/test_golden_regression.py  # 의도한 변경 → 기대값 갱신 (git diff 로 확인)
+TOTO_GOLDEN_DUMP=<폴더> python tests/test_golden_regression.py  # 내용 보기 — 바꾸기 전 커밋에서도 돌려 두 폴더를 diff
+```
+
+**의도한 변경이면 기대값을 갱신해 같은 커밋에 넣는다.** 갱신한 이름 목록이
+곧 "무엇이 바뀌었나" 이고, 리팩터링 커밋에서 그 목록이 비어 있지 않으면
+동작이 바뀐 것이다.
+
+음성 대조(사본에서): 프롬프트 낱말 · CSS 한 글자 · 고정하지 않은 시계 ·
+Pages index 공백 · Panel Result 출처 표시 · 640px `.meta` · 720px 카드를
+전부 잡는다. 표의 가로 스크롤을 끄는 변형은 **잡지 않는 것이 맞다** — 400px
+에서 표 84개가 원래 다 들어간다(실측).
+
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
 260052 실행이 남긴 것은 후스코어드 `팀명 매칭 실패` 5건과 `강점 0개` 3팀이다.
@@ -7072,6 +7117,12 @@ ok (28/28팀, 강점/약점 28팀)                     특성까지 정상
   · 그때까지 리포트를 바이트로 대조할 일이 있으면 `PYTHONHASHSEED` 를
     고정해야 한다.
 
+**리팩터링 Phase 1 에서 다시 재 보니 지금은 달라지지 않는다.** 상성 노트는
+6-E-3 부터 `_topics_of()` 가 아니라 관계 엔진(`PAIRS` 등록 순서)에서 나온다
+(§1-37). 데모와 실물 260052 의 산출물 전부가 `PYTHONHASHSEED` 0 과 1 에서 같고,
+골든 테스트가 그것을 고정한다(§1-55). 다른 시드에서 달라지는 자리가 새로
+생기면 거기서 걸린다.
+
 ### 3-7. 리포트에 남아 있는 `xGOT−npxG` 행
 
 `config_toto.yaml` 의 `recent_metrics` 에 Phase 1-B 때 넣은
@@ -7374,6 +7425,10 @@ python tests/test_verify_web_report.py     # PC 원본 ↔ 웹 리포트 일치 
 python tools/verify_web_report.py 260054 --web-ref origin/gh-pages   # push 된 판과 PC 원본 대조 · 읽기만 (§1-53)
 python -m toto.pagesdeploy 260055          # 수동 (재)배포: 복사 → 그 회차 파일만 commit → push origin gh-pages (§1-54)
 python tests/test_pages_deploy.py          # GitHub Pages 자동 배포 · 로컬 bare 원격만 (§1-54) (25개)
+python tests/test_golden_regression.py     # 산출물 68개 골든 · TOTO_GOLDEN_UPDATE=1 갱신 · TOTO_GOLDEN_DUMP=<폴더> 내용 (§1-55) (9개)
+python tests/test_golden_real.py           # 실물 저장본 골든 · 입력 sha 가 같을 때만, 아니면 SKIP (§1-55) (4개)
+python tests/test_mobile_layout.py         # 1200·768·400px 레이아웃 스모크 · Chromium 없으면 SKIP (§1-55) (7개)
+python -m pytest -q -rs                    # 전체 — `pytest` 가 아니라 `python -m pytest` (PyYAML 있는 인터프리터)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)

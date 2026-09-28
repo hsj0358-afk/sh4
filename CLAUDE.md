@@ -1518,8 +1518,11 @@ Phase 2 가 만든 **사실**을 두 전문가가 **해석**한다. 분석이 �
 된다.
 
 `analysis`·`evidence`·`predict`·`xpts`·`shots`·`sources`·`render`·`menu` 를
-import 하지 않는다(AST 테스트). 순환을 피하려고 역할 이름을 따로 들고 있고,
-`panel` 과 어긋나지 않는지 테스트가 대조한다.
+import 하지 않는다(AST 테스트). `panel` 도 import 하지 않는다 — `panel` 이
+`moderator` 를 부르므로 거꾸로 부르면 순환이 된다. 그래서 역할 식별자는
+`models.DATA_ANALYST`·`MATCHUP_ANALYST` 에서 기존 이름(`DATA_ROLE`·
+`MATCHUP_ROLE`)으로 가져온다. 리팩터링 Phase 3 M3 이전에는 같은 문자열을
+따로 적고 `panel` 과 어긋나지 않는지 테스트로 대조했다 (§1-57).
 
 회귀 테스트: `python tests/test_moderator.py` (79개).
 
@@ -1566,7 +1569,8 @@ import 하지 않는다(AST 테스트). 순환을 피하려고 역할 이름을 
 같아야 한다(그것 때문에 ±1 byte 를 두 번 더 맞췄다).
 
 **모델 문장은 전부 escape 한다.** `render.esc()` 를 그대로 쓰고 새 helper 를
-만들지 않는다. `_ptext()` 는 escape 뒤 줄바꿈만 `<br>` 로 바꾼다 —
+만들지 않는다(정의는 `charts.esc` 한 곳이고 `render` 는 그것을 import 한다 —
+§1-57 M7). `_ptext()` 는 escape 뒤 줄바꿈만 `<br>` 로 바꾼다 —
 **markdown 을 해석하지 않는다.** `**굵게**` 는 그대로 보이고 `<script>` 는
 `&lt;script&gt;` 가 된다.
 
@@ -6612,6 +6616,10 @@ reports/toto_<회차>.html → <저장소>-pages/reports/toto_<회차>.html
     를 출력한다. 이 모듈이 쓰는 git 명령은 읽기 전용(`rev-parse`·
     `symbolic-ref`·`show-ref`)뿐이다. **자동 commit·push 는 사용자 요청으로
     §1-54 의 `pagesdeploy` 가 따로 한다** — 이 모듈은 그대로 읽기 전용이다.
+  · 게시 폴더는 `--pages-dir` → 저장소 옆 `<이름>-pages` 이고 **환경변수
+    `SH4_PAGES_DIR` 를 보지 않는다.** §1-54 의 자동 배포와 다르고, 그 차이는
+    리팩터링 Phase 3 M11 이 계약으로 고정했다 (§1-57 ·
+    `tests/test_pages_entrypoints.py`).
   · 공개 브랜치는 `gh-pages` 이고 **orphan** 으로 만든다 —
     `git worktree add --orphan -b gh-pages <저장소>-pages` (Git 2.42+).
     `-b gh-pages` 만 주면 개발 트리 전체가 공개 브랜치에 실린다.
@@ -6681,6 +6689,10 @@ reports/toto_<회차>.html 작성 완료
   · 게시 폴더: `--pages-dir` → 환경변수 `SH4_PAGES_DIR` → 저장소 옆
     `<이름>-pages`(이 PC 에서는 `C:\Users\hsj03\Documents\sh4-pages`).
     코드·설정에 경로를 박지 않았다. 없으면 건너뛰고 안내한다.
+    `--publish-round` 는 환경변수를 보지 않으므로(§1-52) `SH4_PAGES_DIR` 를
+    둔 PC 에서는 두 명령이 **다른 폴더**를 볼 수 있다 — 의도한 차이다(§1-57).
+    `cli` 의 `--pages-dir` 도움말은 `--publish-round` 만 적지만 같은 값이 자동
+    배포에도 넘어간다.
   · 끄기: `TOTO_PAGES_DEPLOY=0`. 수동 재배포: `python -m toto.pagesdeploy <회차>`.
     `--publish-round` 는 그대로(복사만 · 명령 안내)다.
   · **인증 정보를 다루지 않는다.** PC 의 git 인증을 그대로 쓰고,
@@ -6765,6 +6777,192 @@ Pages index 공백 · Panel Result 출처 표시 · 640px `.meta` · 720px 카�
     `panelauto.verify_match` · `panelpacket.audit_lines`·`LEGACY_PACKET_FILES`
     · `relationships.unit_of` · `shots.KNOWN_SITUATIONS` 등)는 조사 대상이다.
     `relationships.DEFERRED_PAIRS` 는 결정 기록이라 남긴다 (§1-37).
+
+### 1-57. 중복 정리 (리팩터링 Phase 3) — 같을 때만 합친다
+
+> 이 절의 "Phase 3" 은 **리팩터링 Phase 3** 이다. 패널을 만든 Phase 3-A~3-F
+> (§1-7-1·§1-9~§1-13)와 다른 것이다.
+
+**코드가 비슷하다는 이유만으로 공통화하지 않는다. 의미·책임·계약이 같을
+때만 공통화한다.** 후보 13개(M1~M13)를 하나씩 조사해 셋 중 하나로 판정했다.
+
+| 판정 | 뜻 |
+|---|---|
+| Commonize | 의미·책임·계약이 같은 것을 하나로 합친다 |
+| Partial commonize | 같은 핵심만 공유하고 역할별 계약(문구·이름·출력)은 그대로 둔다 |
+| Keep separate | 비슷해 보여도 책임·계약이 달라 나눠 둔다. 그 차이를 테스트로 고정한다 |
+
+**Keep separate 도 성공한 결과다.** 합치지 않은 판정도 근거를 테스트로 남겼다.
+
+| M | 대상 | 판정 | 바뀐 것 | 커밋 |
+|---|---|---|---|---|
+| M1 | 패널·사회자 응답 검증 조각 (`ValidationError`·`_strings`·`RETRY_HINT`) | Commonize | `toto/panelcheck.py` 신설 | `99dc686` |
+| M2 | 스코어 칸 검증 (`panel._score` ↔ `moderator._goals`) | Partial commonize | 판정 규칙만 공유 · 오류 문구는 각자 | `438e493` |
+| M3 | 역할 식별자·라벨 | Partial commonize | 식별자만 `models` 에서 정한다 · 라벨 사본은 그대로 | `7481437` |
+| M4 | 원자적 쓰기 (tmp + `os.replace`) | 미착수 | — | — |
+| M5 | sha256 계산 | 미착수 | — | — |
+| M6 | Pages git 실행 함수 둘 | Keep separate | 두 계약을 테스트로 고정 | `3be20a9` |
+| M7 | HTML escape (`render.esc` ↔ `charts.esc`) | Commonize | `charts.esc` 하나 | `04d3976` |
+| M8 | 원본 자/토큰 비 `2.088` | Commonize | `panelpacket.CHARS_PER_TOKEN` 하나 | `f06e0c6` |
+| M9 | 코드펜스 벗기기 | Keep separate | 경계 테스트 | `9aec0cc` |
+| M10 | §8 `sum_draw` | Commonize | `roundlog.sum_draw()` 하나 | `74d073b` |
+| M11 | Pages 수동 진입점 둘 | Keep separate | 게시 폴더 규칙을 테스트로 고정 | `6568756` |
+| M12 | 루트·경로 해석 | Keep separate | 없음 (조사만) | — |
+| M13 | 테스트 직접 실행 러너 | Partial commonize | `tests/_runner.py` · 52개 파일 | `b371638` |
+
+**산출물은 한 바이트도 바뀌지 않았다.** 커밋마다 골든 9 · 실물 골든 4 ·
+모바일 7 이 그대로 통과했고(§1-55), 프롬프트와 판 번호 — PANEL 5 ·
+MODERATOR 6 · 지침 지문 `4a54e7ad` · schema 1.1 · `PACKET_VERSION`
+`6-F-10-common-v2` — 도 그대로다. 프로젝트 지침을 다시 붙여넣을 필요가 없다.
+
+#### 합친 것
+
+  · **M1** — `toto/panelcheck.py` 는 **아무것도 import 하지 않는다**(테스트로
+    고정). `panel` 이 `moderator` 를 부르므로 `moderator` 는 `panel` 을
+    import 할 수 없고(§1-10), 그래서 둘 다 부를 수 있는 세 번째 자리에 뒀다.
+    `panel.ValidationError` 와 `moderator.ValidationError` 는 이제 **같은
+    클래스**다. 역할마다 다른 것 — 사회자의 사유를 붙인 재요청
+    (`moderator.retry_hint`) · 분포 · 채택 — 은 각 모듈에 그대로 있다.
+  · **M2** — 판정 규칙(`panelcheck.nonnegative_int`)만 공유한다. **오류 문구는
+    합치지 않았다** — 두 문구가 이미 밖으로 나간다(`panelimport` 오류 메시지는
+    사람이 읽고, 사회자 재요청은 모델이 읽는다). `panel._score`·
+    `moderator._goals` 라는 이름도 그대로라 §1-21 의 "`panel._score()` 를
+    그대로 부른다" 는 여전히 맞다.
+  · **M3** — `models.DATA_ANALYST`·`MATCHUP_ANALYST` 가 정본이다. `panel` 은
+    같은 이름으로, `moderator` 는 기존 이름(`DATA_ROLE`·`MATCHUP_ROLE`)으로
+    가져다 쓴다. 이 값은 Panel Result · 분포 `origin` · `adopted_from` ·
+    `panels_seen` · 보관본에 **글자 그대로 저장되는 식별자**다. **한국어 라벨은
+    합치지 않았다** — `panel.ROLE_KO`(메뉴·로그) · `render._ROLE_KO`(리포트) ·
+    `panelexport._ROLE_KO`(지문이 걸린 프로젝트 지침의 제목을 가리킨다) ·
+    `panelauto.STAGE_LABEL`(영어 단계 이름)은 가리키는 것이 다르다.
+  · **M7** — `render.esc` 는 `charts.esc` 를 import 한 **같은 함수**다.
+  · **M8** — `panelauto.EST_CHARS_PER_TOKEN = panelpacket.CHARS_PER_TOKEN`.
+    같은 점검 화면에 나란히 찍히는 두 "원본" 줄이 같은 비율로 계산된다.
+    **`1.819`(packet 비율)는 다른 글에서 잰 다른 값이라 따로 둔다** (§1-46).
+  · **M10** — `cli._log_line()`(화면의 회차로그 1줄)과 `roundlog._round_row()`
+    (`data/rounds.csv`)가 같은 `roundlog.sum_draw()` 를 부른다. 서식(`.2f`)은
+    각자 한다.
+
+#### M13 — 테스트 직접 실행 러너
+
+모든 테스트 파일은 `python -m pytest` 로도, `python tests/test_xxx.py` 로도
+돈다. 이 문서가 그 명령을 백 번 넘게 적고 있으니 **직접 실행의 출력이
+계약**이다.
+
+  · 조사 시점(`9aec0cc`)에 테스트 파일 77개가 전부 `main()` 을 갖고 있었고,
+    그중 19개는 `check()` 도 갖고 있었다. 러너는 22가지 모양(일곱 무리)이었다.
+  · **출력이 글자까지 같은 52개**(ok·FAIL·ERR 47개 + SKIP 을 아는 5개)만
+    `tests/_runner.py` 의 `run_tests(globals())` 로 옮겼다. 바뀐 것은 각 파일의
+    **`main()` 본문뿐**이다 — `main()` 과 `if __name__ == "__main__"` 은 남아
+    있고, 파일마다의 `sys.path` 줄과 테스트끼리의 import 도 그대로다.
+  · **25개는 옮기지 않았다.** `✓`/`✗` 형식 · 모든 예외를 `FAIL` 로 적는 형식 ·
+    머리글을 찍는 형식 · `check()` 기반 · Pages 러너(git 이 없으면 건너뛰고
+    테스트마다 임시 폴더를 지운다) · 골든·모바일·`panel_auto` 같은 전용
+    흐름이다. 출력이나 맡은 일이 다르다.
+  · `sys.path` 줄을 파일마다 남긴 이유는 직접 실행에서 무엇을 import 하기
+    **전에** 필요하기 때문이다. `conftest.py` 는 pytest 에서만 돈다. `main()` 이
+    `tests/` 를 경로에 넣으므로 `python -m tests.test_xxx` 도 그대로 돈다.
+  · **SkipTest 계약을 러너에 적어 두었다.** `unittest.SkipTest`
+    (= `realdata.SkipTest`)를 잡아 `SKIP` 으로 따로 세고, SKIP 만 있으면
+    종료코드는 0 이다(§1-55). 러너는 `realdata` 를 import 하지 않는다.
+  · **동작이 바뀐 자리가 하나 있다.** 47개 무리는 예전에 `SkipTest` 를 받으면
+    `ERR … SkipTest` 로 적고 종료코드 1 로 끝났는데, 이제는 `SKIP` 으로 적고
+    종료코드 0 으로 끝난다. pytest 와 realdata 의 계약(SKIP 은 FAIL 이 아니다)에
+    맞춘 것이다. **지금 그 47개 파일과 그것들이 import 하는 테스트 모듈은
+    SkipTest 를 낼 수 없다.** 그래서 현재 출력은 한 글자도 바뀌지 않았다 —
+    77개 파일을 저장소 루트에서, 그리고 저장소 밖에서 절대 경로로 직접 실행해
+    전후를 대조했다.
+  · `tests/test_runner_contract.py`(11개)가 이것들을 고정한다: 출력 글자와
+    종료코드, SKIP 집계, 세 가지 직접 실행 방식, 그리고 테스트 모듈을
+    import 만 해서는 아무것도 돌지 않는다는 것.
+
+#### 합치지 않은 것과 그 이유
+
+  · **M6 Pages git 실행** — `pagespublish._git` 과 `pagesdeploy.run_git` 은
+    명령 모양(`git -C …`)과 출력 해독만 같다. 나머지는 이렇게 다르다.
+    - `_git`: 읽기 전용 · 20초 · 표준입력 상속 · `(코드, 문자열)` 을 돌려준다.
+    - `run_git`: 쓰기 · 60초(push 300초) · 표준입력 DEVNULL ·
+      `GIT_TERMINAL_PROMPT=0` · `GitCall` 을 돌려준다 · `deploy_round(git=…)` 로
+      바꿔 끼울 수 있다.
+
+    합치면 이 차이가 전부 매개변수가 되고, `pagespublish` 의 **유일한 실행
+    자리**가 모듈 밖으로 나간다 — 읽기 전용 경계를 `test_pages_publish.test_g1`
+    이 바로 그 자리에서 지킨다. push 책임은 `pagesdeploy` 에만 있다.
+  · **M9 코드펜스** — 구현은 이미 `llm.strip_fence` **하나**다.
+    `panelpaste._strip_fence` 는 거기에 지연 위임하는 입구다. `panelwork` 는
+    API 클라이언트 모듈(`llm`)을 import 하지 않는다는 경계가 있고
+    (`test_panel_work.test_a1` · `test_panel_workflow.test_d1`), 그 경계를 이
+    입구가 지킨다. 합칠 두 번째 구현이 없다. `panelcheck` 로 옮기는 안은 "아무것도
+    import 하지 않는다" 테스트와 부딪혀 따로 설계해야 한다.
+  · **M11 Pages 수동 진입점** — `--publish-round`(검사·복사·index 까지, git
+    명령은 안내만 한다)와 `python -m toto.pagesdeploy`(commit·push 까지)는
+    **다른 사용자 작업**이다. 검사·복사·index 는 이미 같은
+    `pagespublish.publish_round()` 를 쓴다. 게시 폴더를 정하는 규칙이 다르고,
+    그 차이를 계약으로 고정했다.
+    - `--publish-round`: `--pages-dir` → 저장소 옆
+    - `pagesdeploy`: `--pages-dir` → `SH4_PAGES_DIR` → 저장소 옆
+
+    `SH4_PAGES_DIR` 를 둔 PC 에서는 두 명령이 다른 폴더를 볼 수 있다. 바꾸려면
+    `tests/test_pages_entrypoints.py` 를 의도적으로 고쳐야 한다.
+  · **M12 루트·경로** — 경로들이 가리키는 뿌리가 서로 다르다.
+    - 분석 저장소: `settings.ROOT`, 모듈 상수, `Settings.root`
+    - git 최상위: `pagespublish.repo_toplevel`
+    - 그 옆의 Pages 저장소
+    - CLI 인자: 작업 폴더 기준 상대 경로
+    - 테스트 임시 폴더
+
+    helper 하나로 모으면 이 차이가 사라진다.
+
+#### 지키는 계약
+
+리팩터링에서 아래를 바꿔야 한다면 따로 설계하고 먼저 말한다.
+
+  · 패널 — `PanelPayload` · 역할 식별자 · 사회자 입출력 · 프롬프트와 판 번호 ·
+    Evidence ID · 파서 검증 · 재요청·오류 문구
+  · 분석 — 분석 로직 · 확률 · 예측 · 사전 스냅샷 동결(§1-27) · 재현성
+    (`PYTHONHASHSEED` · §3-8)
+  · Pages — 판정·복사(`pagespublish`)와 git(`pagesdeploy`)의 분리 · 두 진입점의
+    폴더 규칙 차이(`SH4_PAGES_DIR`) · `--pages-dir` 최우선 · 게시 폴더에서
+    사용자가 바꿔 둔 파일은 건드리지 않음(§1-54) · staging 은 세 파일만 ·
+    강제 push 없음
+  · 테스트 — `python -m pytest` · 직접 실행 · `python -m tests.test_xxx` ·
+    realdata SKIP · 골든 · 실물 골든 · 모바일
+
+#### 남은 것
+
+  · M4(원자적 쓰기)·M5(sha256)는 조사하지 않았다.
+  · `panelaudit.COMPROMISE` 는 정의만 있고 쓰는 곳이 없다 (쓰이는 것은
+    `moderator.COMPROMISE`).
+  · `cli` 의 `--pages-dir` 도움말은 `--publish-round` 만 적는데, 같은 값이 자동
+    배포(`_pages_deploy`)에도 넘어간다 (§1-54).
+  · M13 에서 옮기지 않은 러너 25개는 출력 형식이 여러 가지다.
+  · `test_panel.test_22` 는 `toto/cli.py` 를 작업 폴더 기준 상대 경로로 읽는다.
+    그래서 저장소 밖에서 돌리면 pytest 로도 직접 실행으로도
+    `FileNotFoundError` 가 난다. M13 이전부터 그랬다.
+  · **Windows 에서는 돌려 보지 않았다.**
+
+#### 테스트 기준선 (`b371638` · 리눅스 컨테이너)
+
+| | 결과 |
+|---|---|
+| `python -m pytest -q -p no:cacheprovider -rs` | **2697 passed** · SKIP 0 (이 컨테이너에는 260052 저장본이 있다) |
+| `python tests/test_golden_regression.py` | 9/9 |
+| `python tests/test_golden_real.py` | 4/4 |
+| `python tests/test_mobile_layout.py` | 7/7 |
+
+**Windows 에서 돌린 기준선이 아니다.** 한국어 윈도우의 경로·인코딩·줄바꿈이
+닿는 자리는 사용자 PC 에서 따로 확인해야 한다(§1-7 · §1-43).
+
+**골든을 돌리는 동안 저장소를 고치지 않는다.** `test_b4` 가 실행 전후의
+`git status` 를 견주므로, 그 사이에 CLAUDE.md 를 고쳐도 `저장소에 생긴 것:
+[' M CLAUDE.md']` 로 실패한다. 테스트가 옳게 동작한 것이다.
+
+새 회귀 테스트 (모두 `python tests/<파일>` 로 직접 돈다):
+`test_response_validation.py` (16) · `test_score_validation.py` (18) ·
+`test_role_constants.py` (7) · `test_pages_git_wrappers.py` (11) ·
+`test_html_escape.py` (11) · `test_token_ratio.py` (6) ·
+`test_strip_fence.py` (6) · `test_sum_draw.py` (7) ·
+`test_pages_entrypoints.py` (4) · `test_runner_contract.py` (11).
 
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
@@ -7459,6 +7657,16 @@ python tests/test_pages_deploy.py          # GitHub Pages 자동 배포 · 로�
 python tests/test_golden_regression.py     # 산출물 68개 골든 · TOTO_GOLDEN_UPDATE=1 갱신 · TOTO_GOLDEN_DUMP=<폴더> 내용 (§1-55) (9개)
 python tests/test_golden_real.py           # 실물 저장본 골든 · 입력 sha 가 같을 때만, 아니면 SKIP (§1-55) (4개)
 python tests/test_mobile_layout.py         # 1200·768·400px 레이아웃 스모크 · Chromium 없으면 SKIP (§1-55) (7개)
+python tests/test_response_validation.py   # 패널·사회자 공통 검증 조각 panelcheck · 리팩터링 Phase 3 M1 §1-57 (16개)
+python tests/test_score_validation.py      # 스코어 칸 규칙 공유 · 문구는 각자 M2 §1-57 (18개)
+python tests/test_role_constants.py        # 역할 식별자는 models 한 곳 · 라벨 사본은 자기 계약 M3 §1-57 (7개)
+python tests/test_pages_git_wrappers.py    # Pages git 실행 두 계약 (합치지 않음) M6 §1-57 (11개)
+python tests/test_html_escape.py           # charts.esc 한 곳 M7 §1-57 (11개)
+python tests/test_token_ratio.py           # 원본 자/토큰 2.088 한 곳 · 1.819 는 따로 M8 §1-57 (6개)
+python tests/test_strip_fence.py           # 코드펜스 규칙 · 두 입구가 같은 글자 M9 §1-57 (6개)
+python tests/test_sum_draw.py              # §8 sum_draw 화면 줄 = rounds.csv M10 §1-57 (7개)
+python tests/test_pages_entrypoints.py     # --publish-round ↔ pagesdeploy 게시 폴더 규칙 M11 §1-57 (4개)
+python tests/test_runner_contract.py       # 직접 실행 러너 tests/_runner.py 출력·종료코드·SKIP M13 §1-57 (11개)
 python -m pytest -q -rs                    # 전체 — `pytest` 가 아니라 `python -m pytest` (PyYAML 있는 인터프리터)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개

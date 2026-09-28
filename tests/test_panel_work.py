@@ -688,13 +688,16 @@ def test_n3_the_two_roles_meet_only_in_collect_opinions():
     역할을 함께 읽는다 — C 가 끝난 **뒤**에 세 보관본을 Panel Result 로
     옮기는 자리라 A·B 가 서로를 보는 경로가 아니다. 지키려던 것은 그대로다:
     한 단계를 **저장·검증하는** 함수는 다른 역할을 읽지 않는다.
+
+    리팩터링 Phase 2 에서 부르는 곳이 없던 `opinion_count` 를 지우며 목록에서
+    뺐다 — 두 역할을 함께 읽는 자리가 하나 줄었을 뿐 불변조건은 그대로다.
     """
     tree = ast.parse(source_of(panelwork))
     users = [n.name for n in ast.walk(tree)
              if isinstance(n, ast.FunctionDef)
              and "panel.ROLES" in ast.unparse(n)]
-    assert sorted(users) == ["assemble_panel_result", "collect_opinions",
-                             "opinion_count"], users
+    assert sorted(users) == ["assemble_panel_result",
+                             "collect_opinions"], users
     for name in ("save_stage", "parse_stage", "load_stage", "_read_stage"):
         body = ast.unparse(fn_node(panelwork, name))
         assert "panel.ROLES" not in body, f"{name} 가 두 역할을 함께 본다"

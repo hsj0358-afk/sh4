@@ -502,15 +502,6 @@ def build_completed_sheet(report: Report, settings=None,
     return out
 
 
-def opinion_count(report: Report, base: Path | None = None) -> dict:
-    """어느 단계까지 보관돼 있나. 화면에 한 줄로 보여 주려고 쓴다."""
-    state = {}
-    for role in panel.ROLES:
-        path = path_for(report.round_id or "", role, base)
-        state[role] = path.is_file()
-    return state
-
-
 # ==========================================================================
 # 3단계 결과 보관 (Phase 6-F-4)
 # ==========================================================================
@@ -1381,7 +1372,7 @@ __all__ = [
     "MODERATOR_RESULT_FILE",
     "StageResult", "BuildResult", "work_dir", "path_for", "resolve_role",
     "moderator_result_path", "parse_stage", "save_stage", "load_stage",
-    "collect_opinions", "build_completed_sheet", "opinion_count",
+    "collect_opinions", "build_completed_sheet",
     "report_lines", "parse_moderator_result", "save_moderator_result",
     "Stage", "Workflow", "workflow", "workflow_lines", "export_files",
     # 6-F-12 — 체크포인트·출처·재개

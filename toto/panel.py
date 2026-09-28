@@ -642,14 +642,6 @@ def run_panel_role(role: str, payload: PanelPayload, payload_json: str, *,
     raise last if last is not None else ValidationError("응답 없음")
 
 
-def run_data_analyst(payload, payload_json, **kw) -> PanelOpinion:
-    return run_panel_role(DATA_ANALYST, payload, payload_json, **kw)
-
-
-def run_matchup_analyst(payload, payload_json, **kw) -> PanelOpinion:
-    return run_panel_role(MATCHUP_ANALYST, payload, payload_json, **kw)
-
-
 def run_match(match: Match, *, settings, cache=None, client=None) -> PanelRun:
     """한 경기의 패널. 역할 하나가 실패해도 나머지는 그대로 간다.
 

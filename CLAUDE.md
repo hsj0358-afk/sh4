@@ -4614,9 +4614,10 @@ False)는 **제자리인 6-E-2 suite** 가 잡는다(`test_c7`·`test_c8`).
 경로가 조용히 갈라진다 (§1-8).
 
 **A 와 B 는 조립 전까지 서로를 모른다.** `save_stage()`·`parse_stage()` 가
-다른 역할의 파일을 읽지 않고, `panel.ROLES` 를 도는 함수가
-`collect_opinions`·`opinion_count` 둘뿐이다(테스트로 고정). 읽는 경로가
-생기면 언젠가 B 의 입력에 A 가 섞인다.
+다른 역할의 파일을 읽지 않고, `panel.ROLES` 를 도는 함수가 조립 함수
+`collect_opinions`·`assemble_panel_result`(6-F-14) 둘뿐이다(테스트로 고정 —
+부르는 곳이 없던 `opinion_count` 는 리팩터링 Phase 2 에서 지웠다). 읽는
+경로가 생기면 언젠가 B 의 입력에 A 가 섞인다.
 
 **`match_no` 로 짝짓는다 — 배열 순서에 기대지 않는다.** 한쪽이 정렬돼 오는
 순간 순서 기반 결합은 조용히 어긋난다. B 를 거꾸로 넣어도 같은 결과가

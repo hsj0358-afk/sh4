@@ -561,20 +561,3 @@ def legend(items: list[tuple[str, str]]) -> str:
 
 def _empty_note(text: str) -> str:
     return f'<p class="nodata">{esc(text)}</p>'
-
-
-def mini_prob_bar(p_home: float, p_draw: float, p_away: float,
-                  width: int = 150, height: int = 12) -> str:
-    """요약 그리드용 초소형 확률 바 (라벨 없음 — 옆에 수치를 함께 적는다)."""
-    parts, x = [], 0.0
-    total = (p_home + p_draw + p_away) or 1.0
-    for idx, (prob, color) in enumerate(((p_home, C_HOME), (p_draw, C_DRAW),
-                                         (p_away, C_AWAY))):
-        raw_w = width * prob / total
-        w = max(0.0, raw_w - (GAP if idx < 2 else 0.0))
-        radius = 3 if idx in (0, 2) else 0
-        parts.append(f'<rect x="{x:.1f}" y="0" width="{w:.1f}" height="{height}" '
-                     f'rx="{radius}" fill="{color}"/>')
-        x += raw_w
-    return (f'<svg viewBox="0 0 {width} {height}" width="100%" height="{height}" '
-            f'preserveAspectRatio="none" aria-hidden="true">{"".join(parts)}</svg>')

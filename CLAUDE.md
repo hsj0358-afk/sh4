@@ -2713,9 +2713,10 @@ Phase 3 캐시도 그대로 유효하다.
 
 **계산을 지우지 않았다.** `predict.round_winnability()` · `probs.toss_up` ·
 `ticket.py` 는 한 줄도 바뀌지 않았고 CLI 로그도 그대로 회차 승산을 찍는다.
-`render._verdict_box`·`_tossup_list`·`render.VERDICT_CSS` 도 남아 있다 —
-되돌리려면 `render_report` 에서 부르기만 하면 된다. 바뀐 것은 **표현 계층
-하나뿐이다** (§27 과 같은 방식: 데이터·계산은 유지, HTML 만 변경).
+바뀐 것은 **표현 계층 하나뿐이다** (§27 과 같은 방식: 데이터·계산은 유지,
+HTML 만 변경). 되돌릴 때를 위해 남겨 두었던 `render._verdict_box`·
+`_tossup_list`·`render.VERDICT_CSS` 는 부르는 곳이 한 번도 생기지 않아
+리팩터링 Phase 2 에서 지웠다 — 커밋 `9f6140b` 까지의 이력에 있다.
 
 **시장 정보도 지우지 않았다. 위계를 내렸을 뿐이다.** 경기마다
 `Pinnacle 시장 기준선 · 보정 확률` 이 그대로 있고, 거기가 외부 참고값의

@@ -1820,85 +1820,14 @@ def _recent_block(match: Match, settings: Settings) -> str:
 # 아니라 **시장 기준선 + 데이터 + 비교 + 패널 해석 + 사용자의 최종 판단**
 # 이고, 세 블록이 맨 위를 차지하고 있으면 그 흐름의 출발점이 시장이 된다.
 #
-# **계산을 지우지 않았다.** `predict.round_verdict()` · `probs.toss_up` ·
+# **계산을 지우지 않았다.** `predict.round_winnability()` · `probs.toss_up` ·
 # `ticket.py` 는 한 줄도 바뀌지 않았고 CLI 로그도 그대로 회차 승산을 찍는다
-# (`cli.py`). 아래 두 함수도 남겨 둔다 — 되돌리려면 `render_report` 에서
-# 부르기만 하면 된다. 바뀐 것은 **HTML 표현 계층 하나뿐이다.**
+# (`cli.py`). 바뀐 것은 **HTML 표현 계층 하나뿐이다.** 되돌릴 때를 위해
+# 남겨 두었던 렌더러(`_verdict_box`·`_tossup_list`·`VERDICT_CSS`)는 부르는
+# 곳이 없어 리팩터링 Phase 2 에서 지웠다 — 커밋 9f6140b 까지의 이력에 있다.
 #
 # 시장 정보 자체는 사라지지 않았다. 경기마다 `Pinnacle 시장 기준선 · 보정
 # 확률`(`_odds_block`)이 그대로 있고, 거기가 외부 참고값의 제자리다.
-# 회차 승산 상자의 스타일. 상자를 리포트에서 내리면서 CSS 도 함께 내렸다 —
-# 쓰지 않는 규칙을 14경기마다 싣고 다닐 이유가 없다. 되돌릴 때는 이 상수를
-# `render_report` 의 `<style>` 에 다시 끼우면 된다.
-VERDICT_CSS = """
-.verdict{margin:16px 0 22px;padding:16px 18px;border-radius:12px;
-  background:var(--surface-1);border:1px solid var(--border);
-  border-left:4px solid var(--draw);box-shadow:var(--shadow)}
-.verdict.bet{border-left-color:var(--st-good)}
-.verdict.pass{border-left-color:var(--st-critical)}
-.vhead{font-size:14px;font-weight:700;display:flex;align-items:center;gap:10px}
-.vlab{font-size:12px;padding:2px 10px;border-radius:999px;
-  border:1px solid var(--border);background:var(--page)}
-.verdict.bet .vlab{color:var(--st-good)}
-.verdict.pass .vlab{color:var(--st-critical)}
-.vnums{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:10px;font-size:13px;
-  color:var(--text-secondary);font-variant-numeric:tabular-nums}
-.vnums b{color:var(--text-primary);font-size:15px}
-.vex{color:var(--text-muted);font-size:12px}
-.vnote{font-size:11.5px;color:var(--text-muted);margin:10px 0 0}
-.vwarn{font-size:12.5px;color:var(--text-secondary);margin:8px 0 0;
-  padding:8px 10px;border-radius:8px;background:var(--page)}
-"""
-
-
-def _verdict_box(report: Report) -> str:
-    """회차 승산 요약 (지침 §5-(f), §7). **지금은 리포트에 실리지 않는다.**"""
-    v = report.verdict
-    if v is None or not v.n:
-        return ('<div class="warnbox">배당률이 없어 회차 승산을 계산할 수 없습니다.'
-                '</div>')
-    cls = "bet" if v.bet else "pass"
-    label = "베팅" if v.bet else "패스"
-    warn = ""
-    if v.incomplete:
-        miss = ", ".join(f"{n}번" for n in v.missing) or "일부"
-        warn = (f'<p class="vwarn">⚠️ 배당을 가져오지 못한 경기({miss})가 있어 '
-                f'{v.n}경기만으로 계산했습니다. 14경기가 모두 채워지기 전까지 '
-                f'이 판정은 참고용입니다.</p>')
-    return (f'<div class="verdict {cls}">'
-            f'<div class="vhead">회차 승산 <span class="vlab">{label}</span></div>'
-            f'<div class="vnums">'
-            f'<span>E <b>{v.expected:.2f}</b></span>'
-            f'<span>σ <b>{v.sigma:.2f}</b></span>'
-            f'<span>z <b>{v.z:+.2f}</b></span>'
-            f'<span>P(≥11) <b>{v.p_ge11 * 100:.0f}%</b></span>'
-            f'<span class="vex">정확값 {v.p_ge11_exact * 100:.1f}%</span>'
-            f'</div>'
-            f'<p class="vnote">게이트: P(≥11) ≥ 15% 이면 베팅, 미만이면 패스. '
-            f'P(≥11)은 지침 §5-(d)의 정규근사 Φ(z)이며, 괄호의 정확값은 '
-            f'포아송 이항 분포로 직접 계산한 참고치입니다.</p>{warn}</div>')
-
-
-def _tossup_list(matches: list[Match]) -> str:
-    """직관 적용 후보 (지침 §7, §9-(1)). **지금은 리포트에 실리지 않는다.**"""
-    items = [m for m in matches if m.probs is not None and m.probs.toss_up]
-    if not items:
-        return ('<p class="sub" style="color:var(--text-muted);font-size:12.5px">'
-                '백중세 경기가 없습니다. 지침 §9 기준으로는 직관 개입의 근거가 '
-                '있는 경기가 없다는 뜻입니다.</p>')
-    lis = ""
-    for m in items:
-        p = m.probs
-        ph, pd, pa = p.pct()
-        lis += (f'<li><b>{m.no}. {esc(m.home.display)} vs {esc(m.away.display)}</b> '
-                f'— {ph:.1f}% / {pd:.1f}% / {pa:.1f}% '
-                f'(픽 {esc(p.pick_ko)}, 1·2순위 차 {p.gap * 100:.1f}%p)</li>')
-    return (f'<ul class="mnotes">{lis}</ul>'
-            f'<p class="sub" style="color:var(--text-muted);font-size:12.5px">'
-            f'상위 두 결과가 4%p 이내로 붙어 있어, 1순위를 2순위로 바꿔도 '
-            f'적중률 손실이 작습니다. 지침 §9 기준 직관을 넣어도 되는 유일한 '
-            f'자리입니다. 명확한 정배를 무승부로 바꾸면 P(≥11)이 오히려 '
-            f'낮아집니다(§9 함정).</p>')
 
 
 def _summary_panel(match: Match) -> str:

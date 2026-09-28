@@ -462,17 +462,25 @@ def test_d30_tossup_section_is_gone():
 
 
 def test_d31_the_calculations_are_untouched():
-    """§27·§29-30 — 표현만 내렸다. 계산과 그 렌더러는 그대로 있다."""
+    """§27·§29-30 — 표현만 내렸다. 계산은 그대로 있다.
+
+    처음에는 되돌릴 수 있도록 렌더러(`_verdict_box`·`_tossup_list`·
+    `VERDICT_CSS`)가 **남아 있는 것**도 여기서 고정했다. 부르는 곳이 한
+    번도 생기지 않아 리팩터링 Phase 2 에서 지웠고(git 이력에 있다), 이
+    테스트가 지키려던 것 — 회차 승산 계산이 그대로 돈다 — 은 존재 확인이
+    아니라 **실제로 계산해서** 본다.
+    """
     import inspect
 
     from toto import predict, ticket
+    from toto.analyze import evaluate_round
 
     report = _demo_report(True)
     assert report.matches[0].probs is not None
+    verdict = evaluate_round(report.matches, expected_total=14)
+    assert verdict is not None and verdict.n == 14, verdict
+    assert 0.0 <= verdict.p_ge11 <= 1.0
     assert hasattr(predict, "round_winnability")
-    # 되돌릴 수 있도록 렌더러와 스타일을 남겨 두었다.
-    for name in ("_verdict_box", "_tossup_list", "VERDICT_CSS"):
-        assert hasattr(render, name), name
     assert callable(ticket.render_ticket)
     assert "def render_ticket" in inspect.getsource(ticket)
 

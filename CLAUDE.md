@@ -6737,6 +6737,35 @@ Pages index 공백 · Panel Result 출처 표시 · 640px `.meta` · 720px 카�
 전부 잡는다. 표의 가로 스크롤을 끄는 변형은 **잡지 않는 것이 맞다** — 400px
 에서 표 84개가 원래 다 들어간다(실측).
 
+### 1-56. 죽은 코드 제거 (리팩터링 Phase 2)
+
+**부르는 곳이 없는 정의만** 지웠다. 삭제 조건은 넷 — 호출 0 · 대체가 있다 ·
+동적 참조(`getattr`·문자열·`__all__`·star import) 0 · 지운 뒤 전체 테스트와
+골든(§1-55)이 그대로. 산출물은 **바이트까지 같다** (골든 9/9 · 실물 4/4).
+
+| 커밋 | 지운 것 |
+|---|---|
+| `9f6140b` | `panel.run_data_analyst`·`run_matchup_analyst` · `panelwork.opinion_count` |
+| `7e8cf6e` | `render._verdict_box`·`_tossup_list`·`VERDICT_CSS` (§1-21) · `charts.mini_prob_bar` |
+| `3b7f02c` | `predict.brier`·`BRIER_BASELINE` (실제 Brier 는 `marketeval.brier_score`) |
+| `81717a1` | `pinnacle.decimal_to_american` · `marketeval.OUTCOME_KO` · `panelimport.NOT_RUN_STATUSES` |
+
+**존재만 확인하던 테스트는 행동 검사로 바꿨다.** `test_report_ia.test_d31`
+이 되돌리기용 렌더러를 `hasattr` 로 고정하고 있었는데, 지키려던 것(회차 승산
+계산이 그대로 돈다)은 이제 `evaluate_round` 를 실제로 돌려 본다.
+
+**일부러 남긴 것** — 단순 죽은 코드가 아니라 정책·호환 판단이 필요하다.
+
+  · `predict.apply_veto`·`VETO_MAX` — 지침 §3-(d) 항목. 호출 0 이지만 지침
+    해석이 필요하다 (§3-4).
+  · API 패널 실행기(`--panel`·`llm.py`) · `publish.py` 클라우드 복사 ·
+    `--export-match-material` · `panelexport` 의 `경기별/` 시트 ·
+    `analyze._TOPICS`·`_TOPIC_KO`·`_topics_of` — 레거시 판단 대상.
+  · 테스트에서만 쓰는 공개 정의(`analysis.gap_state` · `moderator.SYSTEM` ·
+    `panelauto.verify_match` · `panelpacket.audit_lines`·`LEGACY_PACKET_FILES`
+    · `relationships.unit_of` · `shots.KNOWN_SITUATIONS` 등)는 조사 대상이다.
+    `relationships.DEFERRED_PAIRS` 는 결정 기록이라 남긴다 (§1-37).
+
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
 260052 실행이 남긴 것은 후스코어드 `팀명 매칭 실패` 5건과 `강점 0개` 3팀이다.

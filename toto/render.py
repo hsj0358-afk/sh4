@@ -8,17 +8,13 @@
 """
 from __future__ import annotations
 
-import html
 from datetime import datetime
 
 from . import charts, relationships
+from .charts import esc      # HTML escape 는 한 곳에만 있다 (차트와 같은 규칙)
 from .models import InitialScore, Match, Report
 from .settings import Settings
 from .ticket import TICKET_CSS, render_ticket
-
-
-def esc(text) -> str:
-    return html.escape(str(text), quote=True)
 
 
 # --------------------------------------------------------------------------

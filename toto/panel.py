@@ -42,6 +42,8 @@ import logging
 from dataclasses import asdict, dataclass, field
 
 from . import llm, moderator, relationships
+from .panelcheck import RETRY_HINT, ValidationError
+from .panelcheck import strings as _strings
 from .models import (Match, MarketReference, PanelOpinion, PanelRun,
                      characteristic_status)
 
@@ -465,10 +467,6 @@ Market Reference 를 참고할 수는 있지만, 시장 확률을 해석하는 �
 """,
 }
 
-RETRY_HINT = ("\n\n앞선 응답이 형식에 맞지 않았습니다. 설명 없이 "
-              "JSON 객체 하나만 출력하십시오.")
-
-
 def build_prompt(role: str, payload_json: str) -> tuple[str, str]:
     """(system, user). **payload 는 두 역할에 같은 문자열로 들어간다.**"""
     system = SYSTEM_COMMON + "\n" + ROLE_PROMPTS[role]
@@ -480,11 +478,10 @@ def build_prompt(role: str, payload_json: str) -> tuple[str, str]:
 
 # ==========================================================================
 # 응답 검증 — 느슨하게 고쳐 주지 않는다
+#
+# `ValidationError`·`_strings`·`RETRY_HINT` 는 사회자와 같은 것이라
+# `panelcheck` 한 곳에 있다 (위 import). 여기는 분석가 고유의 검증만 둔다.
 # ==========================================================================
-class ValidationError(Exception):
-    pass
-
-
 def _score(value, name: str) -> int | None:
     """`None` 또는 0 이상 정수만. **임의 보정을 하지 않는다.**
 
@@ -498,19 +495,6 @@ def _score(value, name: str) -> int | None:
     if value < 0:
         raise ValidationError(f"{name}: 음수는 허용하지 않습니다")
     return value
-
-
-def _strings(value, name: str) -> tuple[str, ...]:
-    if not isinstance(value, (list, tuple)):
-        raise ValidationError(f"{name}: 문자열 목록이어야 합니다")
-    out = []
-    for item in value:
-        if not isinstance(item, str):
-            raise ValidationError(f"{name}: 문자열이 아닌 항목이 있습니다")
-        text = item.strip()
-        if text:
-            out.append(text)
-    return tuple(out)
 
 
 def parse_opinion(text: str, role: str, allowed_ids, *, model: str = "",

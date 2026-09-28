@@ -81,6 +81,8 @@ import logging
 from dataclasses import asdict
 
 from . import llm
+from .panelcheck import RETRY_HINT, ValidationError
+from .panelcheck import strings as _strings
 from .models import (MarketReference, ModeratorResult, PanelOpinion,
                      ScoreTally)
 
@@ -382,10 +384,6 @@ ONE_PANEL_NOTE = """\
 말고, 비교 대신 그 의견의 근거와 한계를 정리하십시오.
 """
 
-RETRY_HINT = ("\n\n앞선 응답이 형식에 맞지 않았습니다. 설명 없이 "
-              "JSON 객체 하나만 출력하십시오.")
-
-
 def retry_hint(reason: str) -> str:
     """재요청 문구. **무엇이 틀렸는지 함께 알려 준다.**
 
@@ -432,24 +430,10 @@ def build_prompt(input_json: str, panel_count: int,
 
 # ==========================================================================
 # 검증
+#
+# `ValidationError`·`_strings`·`RETRY_HINT` 는 분석가와 같은 것이라
+# `panelcheck` 한 곳에 있다 (위 import). 여기는 사회자 고유의 검증만 둔다.
 # ==========================================================================
-class ValidationError(Exception):
-    pass
-
-
-def _strings(value, name: str) -> tuple[str, ...]:
-    if not isinstance(value, (list, tuple)):
-        raise ValidationError(f"{name}: 문자열 목록이어야 합니다")
-    out = []
-    for item in value:
-        if not isinstance(item, str):
-            raise ValidationError(f"{name}: 문자열이 아닌 항목이 있습니다")
-        text = item.strip()
-        if text:
-            out.append(text)
-    return tuple(out)
-
-
 def _text(value, name: str) -> str:
     if value is None:
         return ""

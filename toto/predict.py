@@ -241,20 +241,3 @@ def round_winnability(p_picks: list[float], total_matches: int = 14,
     v.p_ge11_exact = poisson_binomial_ge(threshold, p_picks)
     v.bet = v.p_ge11 >= GATE_THRESHOLD
     return v
-
-
-# --------------------------------------------------------------------------
-# §6. 사후 정산 진단
-# --------------------------------------------------------------------------
-def brier(prob: MatchProb, actual: str) -> float:
-    """다항 Brier 점수 (지침 §6-(c)). 기준선 균등 1/3 = 0.667, 낮을수록 좋음."""
-    if actual not in (HOME, DRAW, AWAY):
-        raise ValueError(f"actual 은 H/D/A 중 하나여야 합니다: {actual!r}")
-    ind = {HOME: 0.0, DRAW: 0.0, AWAY: 0.0}
-    ind[actual] = 1.0
-    return ((prob.home - ind[HOME]) ** 2
-            + (prob.draw - ind[DRAW]) ** 2
-            + (prob.away - ind[AWAY]) ** 2)
-
-
-BRIER_BASELINE = 2.0 / 3.0      # 균등 1/3 예측의 Brier = 0.667

@@ -1072,14 +1072,18 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _log_line(report: Report) -> str:
-    """지침 §8 스키마의 회차로그 한 줄 (정산 전이라 결과 칸은 비운다)."""
+    """지침 §8 스키마의 회차로그 한 줄 (정산 전이라 결과 칸은 비운다).
+
+    `sum_draw` 는 `data/rounds.csv` 의 회차 행과 같은 칸이라 같은 계산을
+    쓴다 (`roundlog.sum_draw`).
+    """
+    from .roundlog import sum_draw
     v = report.verdict
-    sum_draw = sum(m.probs.draw for m in report.matches if m.probs is not None)
     return " | ".join([
         report.round_id or "", report.generated_at[:10],
         str(v.n), f"{v.expected:.2f}", f"{v.sigma:.2f}", f"{v.z:+.2f}",
         f"{v.p_ge11 * 100:.0f}%", v.verdict_ko,
-        "", "", f"{sum_draw:.2f}", "", "", "", "",
+        "", "", f"{sum_draw(report):.2f}", "", "", "", "",
         "정산 전",
     ])
 

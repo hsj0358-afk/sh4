@@ -242,11 +242,21 @@ def _match_rows(report: Report) -> list[dict]:
     return out
 
 
+def sum_draw(report: Report) -> float:
+    """지침 §8 의 `sum_draw` — 배당이 있는 경기의 시장 무승부 확률 합.
+
+    같은 칸이 두 곳으로 나간다: 이 파일의 회차 행과 실행 로그의 "회차로그
+    1줄"(`cli._log_line`). 사람이 로그에서 본 값과 파일에 쌓인 값이 같아야
+    하므로 계산은 여기 한 곳이다. 칸 서식은 각 출력이 정한다 (Phase 3 M10).
+    배당이 없는 경기(`probs is None`)는 더하지 않는다.
+    """
+    return sum(m.probs.draw for m in report.matches if m.probs is not None)
+
+
 def _round_row(report: Report) -> dict | None:
     v = report.verdict
     if v is None or not v.n:
         return None
-    sum_draw = sum(m.probs.draw for m in report.matches if m.probs is not None)
     return {
         "round": report.round_id or "",
         "recorded_at": report.generated_at,
@@ -254,7 +264,7 @@ def _round_row(report: Report) -> dict | None:
         "expected": f"{v.expected:.2f}", "sigma": f"{v.sigma:.2f}",
         "z": f"{v.z:+.2f}", "p_ge11": f"{v.p_ge11:.4f}",
         "verdict": v.verdict_ko,
-        "sum_draw": f"{sum_draw:.2f}",
+        "sum_draw": f"{sum_draw(report):.2f}",
         "incomplete": "1" if v.incomplete else "0",
         "settled_at": "", "hits": "", "settled_matches": "",
     }

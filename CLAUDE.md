@@ -6605,9 +6605,11 @@ reports/toto_<회차>.html → <저장소>-pages/reports/toto_<회차>.html
     체크포인트 `complete`(6-F-14 기록의 A·B·C 해시 일치) · HTML 에
     `render.PANEL_CSS`(패널이 붙은 렌더) · HTML 이 Panel Result 보다 오래되지
     않음. 하나라도 걸리면 아무것도 쓰지 않는다.
-  · **`git commit`·`git push` 를 자동으로 실행하지 않는다.** 복사와 index
-    재생성까지만 하고, 사람이 실행할 `git -C … add/commit/push` 를 출력한다.
-    쓰는 git 명령은 읽기 전용(`rev-parse`·`symbolic-ref`·`show-ref`)뿐이다.
+  · **`--publish-round` 는 `git commit`·`git push` 를 실행하지 않는다.**
+    복사와 index 재생성까지만 하고, 사람이 실행할 `git -C … add/commit/push`
+    를 출력한다. 이 모듈이 쓰는 git 명령은 읽기 전용(`rev-parse`·
+    `symbolic-ref`·`show-ref`)뿐이다. **자동 commit·push 는 사용자 요청으로
+    §1-54 의 `pagesdeploy` 가 따로 한다** — 이 모듈은 그대로 읽기 전용이다.
   · 공개 브랜치는 `gh-pages` 이고 **orphan** 으로 만든다 —
     `git worktree add --orphan -b gh-pages <저장소>-pages` (Git 2.42+).
     `-b gh-pages` 만 주면 개발 트리 전체가 공개 브랜치에 실린다.
@@ -6642,6 +6644,51 @@ FAIL 로 냈다. 읽기만 하고 분석 모듈(`render`·
 묶지 않았다** — `--publish-round` 뒤, push 전에 사람이 돌린다.
 
 회귀 테스트: `python tests/test_verify_web_report.py` (25개).
+
+### 1-54. GitHub Pages 자동 배포 — `toto/pagesdeploy.py`
+
+사용자 요청(2026-09-28)으로 **리포트를 쓴 직후** 게시까지 자동으로 한다.
+§1-52 의 "사람이 git 을 친다" 를 이 경로에서만 바꾼 것이다.
+
+```
+reports/toto_<회차>.html 작성 완료
+  → pagespublish.publish_round()   판정·복사·index (§1-52 그대로 — 새로 만들지 않는다)
+  → git status → add → commit "Publish toto <회차> report" → push origin gh-pages
+```
+
+  · **호출 자리는 cli 세 곳**이고 전부 `_write_report()` **뒤**다 —
+    `_panel_only`(`--apply-panel-work`·`--import-panel-result`·붙여넣기, 즉
+    `[2]`·`[4]`·`[6]-5`) · `_rerender`(`[3]`) · 수집 경로(`[1]`, 저장본·
+    회차 기록 **뒤**). `_write_report` 안에 넣지 않았다 — `-o` 비교본과
+    그것을 부르는 테스트까지 배포 대상이 된다.
+  · **패널이 반영된 최종판만** 배포한다 (§1-52 의 판정을 그대로 쓴다).
+    `[1]` 직후 리포트는 `패널 반영 전 리포트` 한 줄로 알리고 넘긴다 —
+    패널이 붙는 순간(`[2]`·`[4]`) 같은 파일이 다시 쓰이며 그때 배포된다.
+    DEMO·`-o` 출력은 조용히 넘긴다.
+  · **staging 대상은 셋뿐이다** — `reports/toto_<회차>.html` · `index.html` ·
+    `.nojekyll`, 그중 `git status` 가 바뀌었다고 말한 것만. `git add .`·`-A`·
+    `--force` 가 없다(AST 테스트). commit 에도 pathspec 을 붙여 게시 폴더에
+    사용자가 따로 staging 해 둔 파일이 딸려 가지 않는다. index 는 회차 목록이
+    달라질 때만 내용이 바뀌므로 같은 회차 재배포는 commit 되지 않는다.
+  · **바뀐 것이 없으면** `[Pages] 변경사항 없음 — push 생략`. 단 앞서 push 에
+    실패해 남은 커밋이 있으면(원격 추적 ref 기준) 그것만 push 한다.
+  · **push 실패**는 `[Pages] GitHub Pages 배포 실패 / 원인: …` 으로 크게 알리고
+    리포트·복사본·커밋을 지우지 않는다. 원격이 앞서 있으면 `pull --rebase`
+    를 안내하고 **강제 push 하지 않는다.** 분석 실행의 종료코드는 바꾸지
+    않는다 — 배포는 분석이 아니다(패널 자동 분석이 반영 실패로 오판하지 않게).
+  · 게시 폴더: `--pages-dir` → 환경변수 `SH4_PAGES_DIR` → 저장소 옆
+    `<이름>-pages`(이 PC 에서는 `C:\Users\hsj03\Documents\sh4-pages`).
+    코드·설정에 경로를 박지 않았다. 없으면 건너뛰고 안내한다.
+  · 끄기: `TOTO_PAGES_DEPLOY=0`. 수동 재배포: `python -m toto.pagesdeploy <회차>`.
+    `--publish-round` 는 그대로(복사만 · 명령 안내)다.
+  · **인증 정보를 다루지 않는다.** PC 의 git 인증을 그대로 쓰고,
+    `GIT_TERMINAL_PROMPT=0` 으로 보이지 않는 프롬프트에서 멈추지 않게 하며,
+    git 출력 속 `https://user:token@` 은 가린다. Pages 주소는 `origin` 에서
+    만든다(`https://<owner>.github.io/<repo>/reports/toto_<회차>.html`).
+  · 검증 도구(§1-53)는 **연결하지 않았다** (사용자 지시).
+
+회귀 테스트: `python tests/test_pages_deploy.py` (25개). 원격은 전부 임시
+폴더의 bare 저장소다 — 실제 GitHub 에 닿지 않는다.
 
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
@@ -7325,6 +7372,8 @@ python tests/test_pinnacle_reserve_matching.py # 피나클 2차 탐색 2군·리
 python tests/test_pages_publish.py         # GitHub Pages 게시 계층 §1-52 (33개)
 python tests/test_verify_web_report.py     # PC 원본 ↔ 웹 리포트 일치 검증 §1-53 (25개)
 python tools/verify_web_report.py 260054 --web-ref origin/gh-pages   # push 된 판과 PC 원본 대조 · 읽기만 (§1-53)
+python -m toto.pagesdeploy 260055          # 수동 (재)배포: 복사 → 그 회차 파일만 commit → push origin gh-pages (§1-54)
+python tests/test_pages_deploy.py          # GitHub Pages 자동 배포 · 로컬 bare 원격만 (§1-54) (25개)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)

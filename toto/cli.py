@@ -418,6 +418,22 @@ def _write_report(report: Report, args, settings, verb: str) -> Path:
     return out
 
 
+def _pages_deploy(out: Path, report: Report, args, settings) -> None:
+    """리포트를 다 쓴 **뒤** GitHub Pages 에 자동 배포한다 (§1-54).
+
+    배포는 분석의 일부가 아니다 — 실패해도 리포트와 종료코드는 그대로이고
+    사유만 크게 알린다. 패널이 반영된 최종판이 아니면(예: [1] 직후) 배포하지
+    않고 그렇다고 적는다. `-o` 비교본·DEMO 는 대상이 아니다.
+    """
+    try:
+        from . import pagesdeploy
+        pagesdeploy.auto_deploy(out, report.round_id, settings,
+                                getattr(args, "pages_dir", None))
+    except Exception as exc:                            # noqa: BLE001
+        print(f"[Pages] GitHub Pages 배포 실패\n원인: {exc}")
+        log.debug("GitHub Pages 배포 traceback", exc_info=True)
+
+
 def _panel_work(args, settings) -> int:
     """1·2단계 결과 보관과 3단계 자료 조립 (Phase 6-F-3).
 
@@ -588,6 +604,7 @@ def _rerender(args, settings) -> int:
     out = _write_report(report, args, settings, "갱신")
     for key, value in report.source_status.items():
         log.info("  · %s: %s", key, value)
+    _pages_deploy(out, report, args, settings)
     if args.open:
         webbrowser.open(out.resolve().as_uri())
     return 0
@@ -708,6 +725,7 @@ def _panel_only(report: Report, args, settings, panel_file) -> int:
         return 0                        # 검사·감사만 — 리포트를 다시 쓰지 않는다
 
     out = _write_report(report, args, settings, "갱신")
+    _pages_deploy(out, report, args, settings)
     if args.open:
         webbrowser.open(out.resolve().as_uri())
     return 0
@@ -1040,6 +1058,10 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:                            # noqa: BLE001
         log.warning("회차 기록 실패: %s", exc)
         log.debug("회차 기록 traceback", exc_info=True)
+
+    # GitHub Pages 자동 배포 (§1-54). 리포트·저장본·기록이 전부 끝난 뒤다 —
+    # 게시 판정이 방금 저장한 회차 분석을 읽는다.
+    _pages_deploy(out, report, args, settings)
 
     if args.open:
         webbrowser.open(out.resolve().as_uri())

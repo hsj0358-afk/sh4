@@ -1,0 +1,60 @@
+{
+ "_about": "tests/test_golden_real.py 의 기대값. 입력 파일 sha 로 묶여 있다. 손으로 고치지 말고 TOTO_GOLDEN_UPDATE=1 로 다시 쓴다.",
+ "rounds": {
+  "260052": {
+   "artifact": {
+    "inputs": {
+     "data/artifacts/260052.json": "92139c1eb98e60b1f54e61e6f1196de08dc41b4db01b1455ceb00b99c37f51fe"
+    },
+    "entries": {
+     "common_packet.txt": {
+      "sha256": "8e919c77693c5423835a89d27de7925ea218a6ea7f3c9a7c8bc5833a4cc4f5f2",
+      "bytes": 656723
+     },
+     "match_material.md": {
+      "sha256": "4efd91af545eb557b7f166aa2922d733e77883b08e1924fbf09af877502acfab",
+      "bytes": 1209043
+     },
+     "moderator_sheet.md": {
+      "sha256": "36e95d317630e6bdb190c2d5b314ad22aa0963b4a41b57b835dc20d82ce8aaa5",
+      "bytes": 112117
+     },
+     "panel_payloads.jsonl": {
+      "sha256": "25395fe67de63c05a5fa2e3099eeddb31b1bef63c561ba335c92b08e609b55cf",
+      "bytes": 1911588
+     },
+     "report.html": {
+      "sha256": "9a510be7bdf03ca85c82051d94fbb7911cf04e5b9b6f7cfd0b128bad3d1efdfe",
+      "bytes": 949635
+     },
+     "round_data.txt": {
+      "sha256": "125f6444a32ecf740d5f0eadffa4fc844de95c7d7253f47b9a1fd191a6ca8158",
+      "bytes": 1916824
+     }
+    }
+   },
+   "panel": {
+    "inputs": {
+     "data/artifacts/260052.json": "92139c1eb98e60b1f54e61e6f1196de08dc41b4db01b1455ceb00b99c37f51fe",
+     "panel_work/260052/analyst_a.json": "c735f6e870380cb0ade3839fc62296adca18409b62434eaad58a55cf0532e253",
+     "panel_work/260052/analyst_b.json": "a1dd0bbfffbea2c9e8541fe84db5e9c648f68242a5ef20c81e0abb624a4f770a",
+     "panel_work/260052/moderator_result.json": "a1e501b668d848c999a3fb118972d17e285439d47edb5d46eeff2bc2f1acb3d2"
+    },
+    "entries": {
+     "audit_lines.txt": {
+      "sha256": "888ba55a8e976dd6884d8a86ddf8e46be29f1fb0139d535d4444e2d9dfb71b6c",
+      "bytes": 1671
+     },
+     "panel_result.json": {
+      "sha256": "554d3c7701cf88c2fee25ba1a888d0f140663a6bc88751399b3d5c990bffde83",
+      "bytes": 47439
+     },
+     "report.html": {
+      "sha256": "26577e66f2becde37b0b32d7c1a29d9042c15654e85b463bf1c69b3c04056acf",
+      "bytes": 1038625
+     }
+    }
+   }
+  }
+ }
+}

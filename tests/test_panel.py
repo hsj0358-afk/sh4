@@ -946,21 +946,10 @@ def test_25h_panel_is_read_only_downstream():
 
 # --------------------------------------------------------------------------
 def main() -> int:
-    tests = [(n, f) for n, f in sorted(globals().items())
-             if n.startswith("test_") and callable(f)]
-    bad = 0
-    for name, fn in tests:
-        try:
-            fn()
-            print(f"  ok   {name}")
-        except AssertionError as exc:
-            bad += 1
-            print(f"  FAIL {name}: {exc}")
-        except Exception as exc:                            # noqa: BLE001
-            bad += 1
-            print(f"  ERR  {name}: {type(exc).__name__}: {exc}")
-    print(f"\n{len(tests) - bad}/{len(tests)} 통과")
-    return 1 if bad else 0
+    # 직접 실행 러너는 `tests/_runner.py` 한 곳에 있다 (Phase 3 M13).
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from _runner import run_tests
+    return run_tests(globals())
 
 
 if __name__ == "__main__":

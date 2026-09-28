@@ -667,24 +667,10 @@ def test_k4_bom_survives_the_atomic_write():
 
 # --------------------------------------------------------------------------
 def main() -> int:
-    tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
-    bad = skipped = 0
-    for fn in tests:
-        try:
-            fn()
-            print(f"  ok   {fn.__name__}")
-        except realdata.SkipTest as exc:
-            skipped += 1
-            print(f"  SKIP {fn.__name__}: {exc}")
-        except AssertionError as exc:
-            bad += 1
-            print(f"  FAIL {fn.__name__}: {exc}")
-        except Exception as exc:                        # noqa: BLE001
-            bad += 1
-            print(f"  ERR  {fn.__name__}: {type(exc).__name__}: {exc}")
-    print(f"\n{len(tests) - bad - skipped}/{len(tests) - skipped} 통과"
-          + (f" · 건너뜀 {skipped}" if skipped else ""))
-    return 1 if bad else 0
+    # 직접 실행 러너는 `tests/_runner.py` 한 곳에 있다 (Phase 3 M13).
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from _runner import run_tests
+    return run_tests(globals())
 
 
 if __name__ == "__main__":

@@ -6616,6 +6616,29 @@ reports/toto_<회차>.html → <저장소>-pages/reports/toto_<회차>.html
 
 회귀 테스트: `python tests/test_pages_publish.py` (33개).
 
+### 1-53. PC 원본 ↔ 웹 리포트 일치 검증 — `tools/verify_web_report.py`
+
+**게시한 판이 PC 원본과 같은지는 SHA 로 판정하지 않는다.** 윈도우에서
+`_write_report()` 의 `write_text` 는 CRLF 로 쓰고, gh-pages 에 커밋할 때 Git 의
+`autocrlf` 가 LF 로 바꿔 저장한다 — 실측 260054 에서 push 된 판은 LF 뿐이다
+(1,148,391 bytes · 줄 253개). 그래서 원본과 push 된 판은 **내용이 같아도 해시가
+다르다.** 도구는 넷을 본다.
+
+  · A 파일 — 크기·SHA, 그리고 **줄바꿈·BOM 을 걷은 SHA**
+  · B 내용 — 화면의 글자·수를 (경기, 블록 `h4`, 자리) 로 나눠 비교. 수는
+    **값으로**(`1.20`=`1.2`), `E001` 같은 식별자는 글자로. 접힌 `<details>`·
+    `aria-label`·`title` 까지 본다
+  · C 브라우저 — Playwright 로 렌더한 DOM 글자 (없으면 SKIP)
+  · S 원본 자료 — `panel_results/` · `data/artifacts/` 의 값이 두 HTML 에
+    있는가 (스코어·문장·근거 ID·배당·내재확률)
+
+차이는 A 표현 · B 배포 구조 · C 데이터 · D 분석 내용으로 나누고 **C·D 가 하나라도
+있으면 FAIL**(종료코드 1, 2 는 검증 불가)이다. 읽기만 하고 분석 모듈(`render`·
+`analysis`·`predict` …)을 import 하지 않는다(AST 테스트). **게시 흐름에 아직
+묶지 않았다** — `--publish-round` 뒤, push 전에 사람이 돌린다.
+
+회귀 테스트: `python tests/test_verify_web_report.py` (23개).
+
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
 260052 실행이 남긴 것은 후스코어드 `팀명 매칭 실패` 5건과 `강점 0개` 3팀이다.
@@ -7296,6 +7319,8 @@ python tests/test_panel_apply.py          # A·B·C 보관본 → 최종 Panel R
 python tests/test_initial_score_fallback.py # 요약 카드 최초 스코어를 분석가 의견에서 읽기 §1-50 (15개)
 python tests/test_pinnacle_reserve_matching.py # 피나클 2차 탐색 2군·리저브 오매칭 차단 §1-51 (16개)
 python tests/test_pages_publish.py         # GitHub Pages 게시 계층 §1-52 (33개)
+python tests/test_verify_web_report.py     # PC 원본 ↔ 웹 리포트 일치 검증 §1-53 (23개)
+python tools/verify_web_report.py 260054 --web-ref origin/gh-pages   # push 된 판과 PC 원본 대조 · 읽기만 (§1-53)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개
 python tools/probe_season_index.py         # 시즌 색인이 시즌 전체를 담는가 (2-F 착수 조건)

@@ -214,11 +214,11 @@ AGENT_FAILED = "failed"             # 그 밖의 실패
 # 워크플로 중단 사유. §26 이 이름을 정해 두었다.
 WORKFLOW_STOPPED_USAGE_LIMIT = "WORKFLOW_STOPPED_USAGE_LIMIT"
 
-# **한국어 JSON 의 실측 자/토큰 비** (6-F-8 분석: 세 tool_result 에서
-# 46,263자→22,347토큰 · 46,873→22,241 · 37,729→18,083, 평균 2.088).
-# 회차 자료가 문맥에 들어가는지 **시작 전에** 어림하는 데만 쓴다 — 이 값으로
-# 무엇을 자르거나 요약하지 않는다.
-EST_CHARS_PER_TOKEN = 2.088
+# **원본 한국어 JSON 의 실측 자/토큰 비.** 회차 자료가 문맥에 들어가는지
+# **시작 전에** 어림하는 데만 쓴다 — 이 값으로 무엇을 자르거나 요약하지
+# 않는다. 값과 실측 근거는 `panelpacket.CHARS_PER_TOKEN` 한 곳에 있다 — 같은
+# 점검 화면의 `[Retrieval] source` 줄도 그 값으로 원본을 어림한다 (Phase 3-B M8).
+EST_CHARS_PER_TOKEN = panelpacket.CHARS_PER_TOKEN
 
 # 문맥을 넘겼을 때의 표식. 한도·인증과 **다른 상태**다 — 같은 `failed` 로
 # 뭉뚱그리면 "자료가 너무 크다" 를 "왜인지 모르게 실패" 로 읽게 된다.

@@ -1,0 +1,277 @@
+{
+ "_about": "tests/test_golden_regression.py 의 기대값. 손으로 고치지 말고 TOTO_GOLDEN_UPDATE=1 로 다시 쓴다.",
+ "entries": {
+  "demo/artifact.json": {
+   "sha256": "8f4eeaa4ad8193a4ff2a62c755d74cefe5303e21f48ead5e90fe1e5d785be0d6",
+   "bytes": 855715
+  },
+  "demo/chat_export_all/00_프로젝트_지침.md": {
+   "sha256": "9d1fb7b8a9a25607b0a8e39a022e28aad65a119a6a06cb5138104daaccebbd68",
+   "bytes": 22596
+  },
+  "demo/chat_export_all/01_채팅에_적을_말.md": {
+   "sha256": "d24edc6557705991e3c9692a83b2b61c890593f021354355eafed202625a05d1",
+   "bytes": 10062
+  },
+  "demo/chat_export_all/02_경기자료_1of2.md": {
+   "sha256": "1df228753fe31973f5448e32b406df2b5f9a6ea6a111965ccb27cab24f978ae0",
+   "bytes": 185508
+  },
+  "demo/chat_export_all/02_경기자료_2of2.md": {
+   "sha256": "5bf2524411ef66e0c749390a16e4e98ec98728254cab32adb69a70ac5a1f7e17",
+   "bytes": 187114
+  },
+  "demo/chat_export_all/03_사회자자료.md": {
+   "sha256": "fbe7f6993f41c15f19312c12cac87bbab6fc6ba7af8e14759e2185f5defbd026",
+   "bytes": 6974
+  },
+  "demo/chat_export_all/04_PanelResult_JSON_규격.md": {
+   "sha256": "74037f0f3dc6bd889aa6fecf11e9014b9058c6f93916c585849ed2a09c8ed7e7",
+   "bytes": 19881
+  },
+  "demo/chat_export_all/경기별/01_맨체스터시티_vs_번리.md": {
+   "sha256": "56dec0944b6a53808e537b102b02327dfd28030fe2068d22518307d7ebe382b3",
+   "bytes": 27419
+  },
+  "demo/chat_export_all/경기별/02_아스날_vs_토트넘.md": {
+   "sha256": "613dbedc9483eba121ef7969c47755c69f5b88509adfed1c2c01f87a1d45b259",
+   "bytes": 27564
+  },
+  "demo/chat_export_all/경기별/03_리버풀_vs_에버튼.md": {
+   "sha256": "f168347beb25213ae8029cd761142663ccaa145ffb3b8bcdccf40dc907258541",
+   "bytes": 27206
+  },
+  "demo/chat_export_all/경기별/04_첼시_vs_브라이튼.md": {
+   "sha256": "e52f945582dfc1af7a5d2630a8bf21f075e10d756f7cfb8453722ae273a484ba",
+   "bytes": 27512
+  },
+  "demo/chat_export_all/경기별/05_레알마드리드_vs_헤타페.md": {
+   "sha256": "4310924c6e7609f835cfbef3bb2001fc5cc462891ed34387c092cf95005e0119",
+   "bytes": 27553
+  },
+  "demo/chat_export_all/경기별/06_바르셀로나_vs_세비야.md": {
+   "sha256": "5a0ba90c650e555e931c517abd4ce51753c9672494ac9531256de76653e07195",
+   "bytes": 27813
+  },
+  "demo/chat_export_all/경기별/07_아틀레티코마드리드_vs_발렌시아.md": {
+   "sha256": "50e7defb8b2df812940a83c2ae8931373c716ad2727b45d3aec7be2cb20f06e5",
+   "bytes": 26812
+  },
+  "demo/chat_export_all/경기별/08_바이에른뮌헨_vs_마인츠.md": {
+   "sha256": "77bf8e3ee308fbc0470dd7a9e468b4bc685a1876296249c5d61a7cac191117e2",
+   "bytes": 27933
+  },
+  "demo/chat_export_all/경기별/09_도르트문트_vs_프라이부르크.md": {
+   "sha256": "425c5035ea47c75b0bf8da18efef21bca595cd0e985261751fbf6895923ac44e",
+   "bytes": 27458
+  },
+  "demo/chat_export_all/경기별/10_인터밀란_vs_레체.md": {
+   "sha256": "26d7c283dc72bb22b58c5eb0e8bbf9e6aeb6b3e97e86e2a49f9ee7e62276af10",
+   "bytes": 27328
+  },
+  "demo/chat_export_all/경기별/11_유벤투스_vs_토리노.md": {
+   "sha256": "cd15faeb8dc3214a6213925272d576716d83f52f1e680951bbc311f55ce0e7b8",
+   "bytes": 27117
+  },
+  "demo/chat_export_all/경기별/12_파리생제르맹_vs_낭트.md": {
+   "sha256": "51e0e529da0b2dfa3d137d4bf9913f0a013cbc177f16d222a3413022c56c0a5e",
+   "bytes": 27978
+  },
+  "demo/chat_export_all/경기별/13_울산HD_vs_대구FC.md": {
+   "sha256": "f0203af9b121e8820a6766b9837a8e21c8f68a3962855cd7f88c501faa0ec437",
+   "bytes": 27991
+  },
+  "demo/chat_export_all/경기별/14_비셀고베_vs_쇼난벨마레.md": {
+   "sha256": "c797c288dac0ad35d7a047b78197b5e29dfc84dd85796134b229b6aa1f86643d",
+   "bytes": 27630
+  },
+  "demo/common_packet.txt": {
+   "sha256": "df10aa11bc3343067889515455704eba6689e2fdde9f834365cfe49f60012d28",
+   "bytes": 117560
+  },
+  "demo/match_material.md": {
+   "sha256": "e628feb943f73da856b53da3ddb6e62e595b77e12c421be5a04f7eca42666e03",
+   "bytes": 333102
+  },
+  "demo/panel_payloads.jsonl": {
+   "sha256": "1b35832a1e23c25a1f05a13109c2209941454159da7a85998255535271d5788d",
+   "bytes": 370520
+  },
+  "demo/report.html": {
+   "sha256": "5ed743f27dde4ce98ab1835538f205a4d946b36304ea9848c823231860e5384d",
+   "bytes": 675280
+  },
+  "demo/round_data.txt": {
+   "sha256": "8b1521141d46467ef2dc1834c1ee59370af0b0baf3c15e92a75f6935d69ea8fc",
+   "bytes": 372663
+  },
+  "pages/index.html": {
+   "sha256": "65dfb68c89850b21e6b7d84e25b01987e36305a9abd43335c4494319c2b28b90",
+   "bytes": 1822
+  },
+  "pages/index_empty.html": {
+   "sha256": "b1d4f54830c351f3ea7d89b575c9a3f09d982a6426fc7cef1274372bbe06b113",
+   "bytes": 1686
+  },
+  "panel/audit_lines.txt": {
+   "sha256": "975be9720ddf624ae6050bcc536a8be25f815d2e722f08f04e25df3ce4929346",
+   "bytes": 1709
+  },
+  "panel/chat_export/00_프로젝트_지침.md": {
+   "sha256": "9d1fb7b8a9a25607b0a8e39a022e28aad65a119a6a06cb5138104daaccebbd68",
+   "bytes": 22596
+  },
+  "panel/chat_export/01_채팅에_적을_말.md": {
+   "sha256": "b4a95cbdacd82132d3130ab6ef713e31b3fe5439dc73c67eefed22db9f9e2d17",
+   "bytes": 8882
+  },
+  "panel/chat_export/02_경기자료_1of2.md": {
+   "sha256": "68d168c528c4568fade65ba1bf392ba1dd51506f9ec9f7d8adb5dcf2935feabf",
+   "bytes": 190659
+  },
+  "panel/chat_export/02_경기자료_2of2.md": {
+   "sha256": "f490acda455ecbc8d18e075bb1c831251f3d61c9b680e8ca4c3ce6be6bbd2393",
+   "bytes": 192259
+  },
+  "panel/chat_export/03_사회자자료.md": {
+   "sha256": "d967b100f61ed18a214e21d9d26c3b9f6400b3a1d57f240fef72caf84a07adfa",
+   "bytes": 14959
+  },
+  "panel/chat_export/04_PanelResult_JSON_규격.md": {
+   "sha256": "74037f0f3dc6bd889aa6fecf11e9014b9058c6f93916c585849ed2a09c8ed7e7",
+   "bytes": 19881
+  },
+  "panel/chat_export/경기별/01_맨체스터시티_vs_번리.md": {
+   "sha256": "2347fc5c388b84304a9e6ea238f2624804d1179fa0b7ea4916e2663dde7d0177",
+   "bytes": 28737
+  },
+  "panel/chat_export/경기별/02_아스날_vs_토트넘.md": {
+   "sha256": "f7684bdd0abafdcdeaac963605e02c60c56e27748c668024d4f1018e132aee63",
+   "bytes": 28828
+  },
+  "panel/chat_export/경기별/03_리버풀_vs_에버튼.md": {
+   "sha256": "f24824918450c5be558762664638cb298d9565e019dd39620801eeb8977008ea",
+   "bytes": 28470
+  },
+  "panel/chat_export/경기별/04_첼시_vs_브라이튼.md": {
+   "sha256": "37e4ae3cd939a5925e88fb4c7cdc4940278f4ee2d1dcae3903b839a21f681adc",
+   "bytes": 28758
+  },
+  "panel/chat_export/경기별/05_레알마드리드_vs_헤타페.md": {
+   "sha256": "ad666fd7d56211985b7636784fc7c941605f3fcd8c36ecf3e010bdd357b87029",
+   "bytes": 28871
+  },
+  "panel/chat_export/경기별/06_바르셀로나_vs_세비야.md": {
+   "sha256": "c1005235a0ad5f37d4054cd19aceb3d904d13a3cd508d6f733376b01473475c5",
+   "bytes": 29113
+  },
+  "panel/chat_export/경기별/07_아틀레티코마드리드_vs_발렌시아.md": {
+   "sha256": "8231ca018084bc420e83707c8ca7653390830db2ba0ccd2c9f145b4a1413875b",
+   "bytes": 28184
+  },
+  "panel/chat_export/경기별/08_바이에른뮌헨_vs_마인츠.md": {
+   "sha256": "15fbbadfa91032fe983cef0da40f550ee1efa337422ad761b94555fe34f4a7c8",
+   "bytes": 29251
+  },
+  "panel/chat_export/경기별/09_도르트문트_vs_프라이부르크.md": {
+   "sha256": "7e5b6b2ac0b076c92438b24e6b6a367c608133d600d117e8e1a54baf0e30f5c5",
+   "bytes": 28758
+  },
+  "panel/chat_export/경기별/10_인터밀란_vs_레체.md": {
+   "sha256": "91892354cc821d500a61c101d31f648c3f2dbb1bc59e4250a232ec2e6467535c",
+   "bytes": 28616
+  },
+  "panel/chat_export/경기별/11_유벤투스_vs_토리노.md": {
+   "sha256": "7c87ddfc898904cdbc2098e69a485bd7bfe453f5f9331e701d8dc23dc6ba7476",
+   "bytes": 28405
+  },
+  "panel/chat_export/경기별/12_파리생제르맹_vs_낭트.md": {
+   "sha256": "4e932ca55bdbdd45ff6935c6cb85256a952a76be96dfc0127281f061157a09b1",
+   "bytes": 29302
+  },
+  "panel/chat_export/경기별/13_울산HD_vs_대구FC.md": {
+   "sha256": "ba6524b79a0ace1d868683b975907546381d5232e0ba9111383491933d60d0f6",
+   "bytes": 29255
+  },
+  "panel/chat_export/경기별/14_비셀고베_vs_쇼난벨마레.md": {
+   "sha256": "c0e9619057c3f9be52e60bcd8db4be90f389c9105da982b40c9fa310cdaf581f",
+   "bytes": 28918
+  },
+  "panel/common_packet.txt": {
+   "sha256": "4b84ceb18ea4fd0f3654a2f6daa26fa73db9869dbb3295fd8215636c9a27c233",
+   "bytes": 128093
+  },
+  "panel/import_lines.txt": {
+   "sha256": "3720f77885ff779f7c39b656a2eef8898766008377c7dc5c776cbe6578ad7aef",
+   "bytes": 229
+  },
+  "panel/moderator_inputs.jsonl": {
+   "sha256": "83679514562cb4fd5aeace23e669f9e1a10b5cff6871144445ab7cad71310adb",
+   "bytes": 19189
+  },
+  "panel/moderator_sheet_completed.md": {
+   "sha256": "71ad8fa026b1564d64f77bffbfdf0f1aafc622b617a274a0ef1f6f2624b6645d",
+   "bytes": 20444
+  },
+  "panel/moderator_stdin.txt": {
+   "sha256": "0cdcc30315f4f2bfdb6e00d5499a3a7456c330e0e499f30deae900afc6bf588c",
+   "bytes": 25329
+  },
+  "panel/panel_result.json": {
+   "sha256": "2d30dfb8bc3deba030e0a7a5c4307a4d5f6184fea662806e78e68490bba15287",
+   "bytes": 19048
+  },
+  "panel/report.html": {
+   "sha256": "e6e32e5bed28ef4f0aa229595396480aaebfbc7aa9669f57e6ac1151c2fa0880",
+   "bytes": 746128
+  },
+  "prompt/analyst_task.txt": {
+   "sha256": "119b54a0f3a58618118003485439266a9372a551fd6bc0c95b9a12ecdd4e15a1",
+   "bytes": 499
+  },
+  "prompt/data_analyst.md": {
+   "sha256": "b782b77b5b6ddef5662d6213f49083c9b64291ad4b873daf591a7a7a43fb6644",
+   "bytes": 667
+  },
+  "prompt/matchup_tactical_analyst.md": {
+   "sha256": "d974aa055a9184400ac058fef3f843a5ee003c0efd6bf5dcaad38f8f6fc4847e",
+   "bytes": 4744
+  },
+  "prompt/moderator.md": {
+   "sha256": "81f28ba7324eb033e6381ddd9536de539de236bc61bdcd68767fbd3ad0ba4cc5",
+   "bytes": 9278
+  },
+  "prompt/moderator_task.txt": {
+   "sha256": "7e1589757944c4711decc6bfec2e4b6862204d13ac56d7a728e992e53607c74a",
+   "bytes": 477
+  },
+  "prompt/project_instructions.md": {
+   "sha256": "9d1fb7b8a9a25607b0a8e39a022e28aad65a119a6a06cb5138104daaccebbd68",
+   "bytes": 22596
+  },
+  "prompt/schema_guide.md": {
+   "sha256": "74037f0f3dc6bd889aa6fecf11e9014b9058c6f93916c585849ed2a09c8ed7e7",
+   "bytes": 19881
+  },
+  "prompt/stage_system/c.md": {
+   "sha256": "81f28ba7324eb033e6381ddd9536de539de236bc61bdcd68767fbd3ad0ba4cc5",
+   "bytes": 9278
+  },
+  "prompt/stage_system/data_analyst.md": {
+   "sha256": "a073c815d0bd700927ecf2a1032bb2f7e221de2936601d7fb13e28213c2418a6",
+   "bytes": 2699
+  },
+  "prompt/stage_system/matchup_tactical_analyst.md": {
+   "sha256": "0114fab99505c9a4365162700c504cce88b53a871ee7da2ca6e2cfacb070a4b7",
+   "bytes": 6776
+  },
+  "prompt/system_common.md": {
+   "sha256": "79caf43a26b5b30baddf14aeb0bb75073bb30a5f689e7d56b33e6da2b66ff535",
+   "bytes": 2030
+  },
+  "prompt/versions.json": {
+   "sha256": "00e13d2e063e7236ad4956eaae33ee95635e2b69c59a11d7afd748f124a244aa",
+   "bytes": 205
+  }
+ }
+}

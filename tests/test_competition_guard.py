@@ -361,7 +361,7 @@ def test_j4_only_one_ownership_write_path_exists():
         for node in ast.walk(tree):
             if (isinstance(node, ast.Call)
                     and getattr(node.func, "attr", "") == "set_league"):
-                hits.append(f"{path.relative_to(ROOT)}:{node.lineno}")
+                hits.append(f"{path.relative_to(ROOT).as_posix()}:{node.lineno}")
     assert len(hits) == 1, hits
     assert hits[0].startswith("toto/sources/fotmob.py:"), hits
 

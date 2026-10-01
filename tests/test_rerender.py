@@ -164,8 +164,9 @@ def test_b1_no_collector_module_is_imported():
         "loaded = sorted(m for m in sys.modules if m.startswith('toto.sources'))\n"
         "print(json.dumps({'rc': rc, 'loaded': loaded}))\n"
     )
+    # 자식은 `cli.safe_console()` 이 출력을 UTF-8 로 맞춘다 — 그 글자로 읽는다.
     proc = subprocess.run([sys.executable, "-c", code], capture_output=True,
-                          text=True, timeout=300)
+                          text=True, encoding="utf-8", timeout=300)
     assert proc.returncode == 0, proc.stderr[-800:]
     got = json.loads(proc.stdout.strip().splitlines()[-1])
     assert got["rc"] == 0, got

@@ -538,8 +538,10 @@ def test_c1_cli_args_and_branch_before_collection():
             "rc = cli.main(['--publish-round', '999999', '--pages-dir', "
             f"{str(tmpdir())!r}]);"
             "print(rc, sorted(m for m in sys.modules if m.startswith('toto.sources')))")
+    # 자식은 `cli.safe_console()` 이 출력을 UTF-8 로 맞춘다 — 그 글자로 읽는다.
     proc = subprocess.run([sys.executable, "-c", code], capture_output=True,
-                          text=True, env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+                          text=True, encoding="utf-8",
+                          env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
     assert proc.stdout.strip().splitlines()[-1] == "1 []", proc.stdout + proc.stderr
 
 

@@ -745,8 +745,10 @@ def test_j4_missing_artifact_does_not_fall_back_to_collection():
             "'--apply-panel-work']); "
             "print(rc, any(k.startswith('toto.sources') for k in sys.modules),"
             " 'anthropic' in sys.modules)")
+    # 자식은 `cli.safe_console()` 이 출력을 UTF-8 로 맞춘다 — 그 글자로 읽는다.
     proc = subprocess.run([sys.executable, "-c", code], cwd=str(REPO),
-                          capture_output=True, text=True, timeout=120)
+                          capture_output=True, text=True, encoding="utf-8",
+                          timeout=120)
     assert proc.stdout.split()[-3:] == ["1", "False", "False"], (
         proc.stdout, proc.stderr[-800:])
 

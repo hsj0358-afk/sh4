@@ -976,10 +976,62 @@ def test_g6_no_new_third_party_dependency():
 # 것인지, 그리고 OS 와 무관한 부분(인증·모델·인코딩·파일 읽기)이 실제로
 # 도는지를 본다. 실물 검증 여부는 보고서 §22 에 그대로 적었다.
 # ==========================================================================
-def fake_cli(dir_: Path, body: str, name: str = "claude") -> Path:
-    """가짜 `claude` 실행 파일. **모델을 부르지 않는다.**"""
+_FAKE_CLI_BODY = '''\
+import subprocess, sys, time
+if SPEC["version"] is not None and sys.argv[1:2] == ["--version"]:
+    sys.stdout.buffer.write(SPEC["version"].encode("utf-8"))
+    sys.stdout.flush()
+    sys.exit(0)
+if SPEC["grandchild_pidfile"]:
+    child = subprocess.Popen([sys.executable, "-c",
+                              "import time; time.sleep(300)"])
+    with open(SPEC["grandchild_pidfile"], "w", encoding="utf-8") as fh:
+        fh.write(str(child.pid))
+sys.stdout.buffer.write(SPEC["out"].encode("utf-8"))
+sys.stdout.flush()
+sys.stderr.buffer.write(SPEC["err"].encode("utf-8"))
+sys.stderr.flush()
+if SPEC["sleep"]:
+    time.sleep(SPEC["sleep"])
+sys.exit(SPEC["code"])
+'''
+
+
+def fake_cli(dir_: Path, *, out: str = "", err: str = "", code: int = 0,
+             version: str | None = None, sleep: float = 0,
+             grandchild_pidfile: Path | None = None,
+             name: str = "claude") -> Path:
+    """가짜 `claude` 실행 파일. **모델을 부르지 않는다.**
+
+    본체는 파이썬 스크립트(`<name>.py`)이고, 그것을 띄우는 런처를 OS 에
+    맞게 둔다 — POSIX 는 셸 스크립트, 윈도우는 `<name>.cmd`. 예전 가짜는
+    `#!/bin/sh` 파일이라 윈도우에서 실행되지 않았다(WinError 193). 실제
+    `claude` 도 윈도우에서는 `claude.cmd` 셸 심이므로 그 모양을 따른다.
+
+      · `version` 이 있으면 `--version` 에만 그것을 낸다.
+      · 그 밖에는 `out`·`err` 를 **바이트 그대로**(UTF-8) 내고 `code` 로
+        끝난다. `sleep` 이 있으면 그만큼 머문다.
+      · `grandchild_pidfile` 이 있으면 손자 프로세스를 하나 띄우고 그 pid 를
+        적는다 — 트리 종료 시험용이다.
+      · 표준입력은 읽지 않는다 (예전 셸 가짜와 같다).
+    """
+    spec = {"out": out, "err": err, "code": code, "version": version,
+            "sleep": sleep,
+            "grandchild_pidfile": (str(grandchild_pidfile)
+                                   if grandchild_pidfile else "")}
+    dir_.joinpath(f"{name}.py").write_text(
+        f"SPEC = {spec!r}\n" + _FAKE_CLI_BODY, encoding="utf-8")
+    if os.name == "nt":
+        path = dir_ / f"{name}.cmd"
+        path.write_text(f'@"{sys.executable}" "%~dpn0.py" %*\r\n'
+                        "@exit /b %ERRORLEVEL%\r\n",
+                        encoding="oem", newline="")
+        return path
+    import shlex
     path = dir_ / name
-    path.write_text("#!/bin/sh\n" + body, encoding="utf-8")
+    path.write_text("#!/bin/sh\n"
+                    f'exec {shlex.quote(sys.executable)} "$0.py" "$@"\n',
+                    encoding="utf-8")
     path.chmod(0o755)
     return path
 
@@ -1019,10 +1071,10 @@ def test_h3_broken_cli_is_caught_before_the_round_starts():
     돌지 않는다.** 14경기를 시작한 뒤에 알면 안 된다.
     """
     tmp = scratch()
-    broken = fake_cli(tmp, "echo 'not installed' >&2\nexit 1\n")
+    broken = fake_cli(tmp, err="not installed\n", code=1)
     ok, version, why = panelauto.cli_probe(str(broken))
     assert not ok and why, (ok, why)
-    good = fake_cli(tmp, "echo '2.1.277 (Claude Code)'\n", name="claude2")
+    good = fake_cli(tmp, out="2.1.277 (Claude Code)\n", name="claude2")
     ok, version, why = panelauto.cli_probe(str(good))
     assert ok and version.startswith("2.1.277"), (ok, version, why)
     # 없는 파일도 조용히 통과하지 않는다.
@@ -1040,7 +1092,7 @@ def test_h4_auth_status_reads_the_local_check():
         'not json at all': panelauto.AUTH_UNKNOWN,
     }
     for i, (payload, want) in enumerate(cases.items()):
-        cli = fake_cli(tmp, f"cat <<'EOF'\n{payload}\nEOF\n", name=f"c{i}")
+        cli = fake_cli(tmp, out=payload + "\n", name=f"c{i}")
         got = panelauto.auth_status(str(cli))
         assert got.state == want, (payload, got.state, want)
         assert got.message, "사유를 적지 않았다"
@@ -1054,7 +1106,7 @@ def test_h4_auth_status_reads_the_local_check():
 
     panelauto._probe = spy
     try:
-        panelauto.auth_status(str(fake_cli(tmp, "echo '{}'\n", name="spy")))
+        panelauto.auth_status(str(fake_cli(tmp, out="{}\n", name="spy")))
     finally:
         panelauto._probe = real
     assert seen["argv"][1:] == ["auth", "status", "--json"], seen["argv"]
@@ -1067,8 +1119,7 @@ def test_h5_missing_login_stops_but_unknown_does_not():
     rep = FakeReport()
 
     def run_with(payload):
-        cli = fake_cli(tmp, f"case \"$1\" in --version) echo 9.9.9 ;; *) "
-                            f"cat <<'EOF'\n{payload}\nEOF\n;; esac\n",
+        cli = fake_cli(tmp, version="9.9.9\n", out=payload + "\n",
                        name=f"claude_{abs(hash(payload)) % 10000}")
         had = os.environ.get(panelauto.CLI_ENV)
         os.environ[panelauto.CLI_ENV] = str(cli)
@@ -1159,7 +1210,7 @@ def test_h10_timeout_really_kills_the_whole_tree():
         return
     tmp = scratch()
     pidfile = tmp / "grandchild.pid"
-    cli = fake_cli(tmp, f"sleep 300 & echo $! > '{pidfile}'\nsleep 300\n")
+    cli = fake_cli(tmp, grandchild_pidfile=pidfile, sleep=300)
     run = panelauto.run_agent("p", "s", tmp, timeout=2, cli=str(cli))
     assert run.status == panelauto.AGENT_TIMEOUT, run.status
     assert pidfile.is_file(), "손자를 만들지 못했다 — 시험이 성립하지 않는다"
@@ -1187,7 +1238,7 @@ def test_h11_interrupt_kills_the_child_and_propagates():
         return
     import subprocess as sp
     tmp = scratch()
-    cli = fake_cli(tmp, "sleep 300\n")
+    cli = fake_cli(tmp, sleep=300)
     seen = {}
     real = sp.Popen
 
@@ -1249,7 +1300,7 @@ def test_h13_korean_and_spaced_paths_work():
     assert "축구토토 분석" in str(ws) and ws.is_dir()
     argv = panelauto.agent_argv("claude", "프롬프트", "시스템", ws, "sid")
     assert str(ws) in argv, "작업 폴더가 인자에 통째로 들어가지 않았다"
-    cli = fake_cli(scratch(), "printf '{\"result\":\"DONE\"}'\n")
+    cli = fake_cli(scratch(), out='{"result":"DONE"}')
     run = panelauto.run_agent("프롬프트", "시스템", ws, timeout=60, cli=str(cli))
     assert run.ok, (run.status, run.message)
     assert (ws / panelauto.AGENT_ENVELOPE).is_file(), "봉투를 남기지 않았다"
@@ -1288,10 +1339,9 @@ def test_h14_console_encoding_is_fixed_where_it_is_broken():
 def test_h15_preflight_reports_what_it_checked():
     """무엇을 보고 통과시켰는지 남긴다 (§1-6-1)."""
     tmp = scratch()
-    cli = fake_cli(tmp, "case \"$1\" in --version) echo 9.9.9 ;; *) "
-                        "printf '{\"loggedIn\":true,\"authMethod\":"
-                        "\"oauth_token\",\"apiProvider\":\"firstParty\"}' "
-                        ";; esac\n")
+    cli = fake_cli(tmp, version="9.9.9\n",
+                   out='{"loggedIn":true,"authMethod":"oauth_token",'
+                       '"apiProvider":"firstParty"}')
     had = os.environ.get(panelauto.CLI_ENV)
     os.environ[panelauto.CLI_ENV] = str(cli)
     try:
@@ -1428,13 +1478,21 @@ def test_i6_preflight_failure_surfaces_the_diagnosis():
     자리인지 가릴 수 없었다. 그 상태를 재현해 고정한다.
     """
     tmp = scratch()
+    # 알려진 설치 폴더도 빈 자리로 돌린다. PATH 만 비우면 실제로 설치된
+    # PC 에서는 `%APPDATA%\npm\claude.cmd` 를 거기서 찾아 '못 찾음' 이
+    # 재현되지 않는다. 바꾸는 것은 **시험 환경**이고 탐색·진단 코드는
+    # 그대로 돈다 — 사용자의 설치도 시스템 PATH 도 건드리지 않는다.
+    sandbox = [tmp / "npm", tmp / "Programs" / "claude"]
+    real_dirs = panelauto.cli_search_dirs
     saved_path = os.environ.get("PATH")
     saved_env = os.environ.get(panelauto.CLI_ENV)
     os.environ["PATH"] = str(tmp)          # claude 가 없는 PATH
     os.environ.pop(panelauto.CLI_ENV, None)
+    panelauto.cli_search_dirs = lambda: list(sandbox)
     try:
         pre = panelauto.preflight(FakeReport(), "TEST", scratch())
     finally:
+        panelauto.cli_search_dirs = real_dirs
         if saved_path is not None:
             os.environ["PATH"] = saved_path
         if saved_env is not None:
@@ -1444,6 +1502,9 @@ def test_i6_preflight_failure_surfaces_the_diagnosis():
     assert "찾지 못했습니다" in problems
     notes = " ".join(pre.notes)
     assert "찾아본 자리" in notes, notes
+    # 적힌 자리가 실제로 찾아본 그 폴더들이다.
+    for folder in sandbox:
+        assert str(folder) in notes, (folder, notes)
     assert panelauto.CLI_ENV in notes, notes
     # 실행 경로를 지어내지 않는다 — 없으면 '없음' 이라고 적는다 (§1-5).
     assert "없음" in notes or "미설정" in notes, notes
@@ -1488,9 +1549,8 @@ def test_j2_check_reuses_the_same_preflight():
 def test_j3_check_passes_when_the_cli_is_ready():
     """CLI 가 돌고 로그인돼 있으면 통과한다."""
     tmp = scratch()
-    cli = fake_cli(tmp, "case \"$1\" in --version) echo 9.9.9 ;; *) "
-                        "printf '{\"loggedIn\":true,\"authMethod\":"
-                        "\"oauth_token\"}' ;; esac\n")
+    cli = fake_cli(tmp, version="9.9.9\n",
+                   out='{"loggedIn":true,"authMethod":"oauth_token"}')
     lines = []
     had = os.environ.get(panelauto.CLI_ENV)
     os.environ[panelauto.CLI_ENV] = str(cli)
@@ -1513,8 +1573,7 @@ def test_j3_check_passes_when_the_cli_is_ready():
 def test_j4_check_fails_and_says_why():
     """막히면 사유를 적고 `False` 다 — 조용히 통과시키지 않는다."""
     tmp = scratch()
-    cli = fake_cli(tmp, "case \"$1\" in --version) echo 9.9.9 ;; *) "
-                        "printf '{\"loggedIn\":false}' ;; esac\n")
+    cli = fake_cli(tmp, version="9.9.9\n", out='{"loggedIn":false}')
     lines = []
     had = os.environ.get(panelauto.CLI_ENV)
     os.environ[panelauto.CLI_ENV] = str(cli)
@@ -1626,7 +1685,7 @@ def test_k5_the_system_text_itself_is_unchanged():
     ws.mkdir(parents=True)
     system = panel.SYSTEM_COMMON + "\n\n" \
         + panel.ROLE_PROMPTS[panel.MATCHUP_ANALYST]
-    cli = fake_cli(scratch(), "printf '{\"result\":\"DONE\"}'\n")
+    cli = fake_cli(scratch(), out='{"result":"DONE"}')
     run = panelauto.run_agent("지시", system, ws, timeout=60, cli=str(cli))
     assert run.ok, (run.status, run.message)
     got = (ws / panelauto.AGENT_SYSTEM).read_text(encoding="utf-8")
@@ -1644,8 +1703,7 @@ def test_k6_non_json_stdout_is_not_swallowed():
     """
     ws = scratch() / "a" / "01"
     ws.mkdir(parents=True)
-    cli = fake_cli(scratch(),
-                   "printf \"error: unknown option '--zzz'\\n\"; exit 1\n")
+    cli = fake_cli(scratch(), out="error: unknown option '--zzz'\n", code=1)
     run = panelauto.run_agent("지시", "시스템", ws, timeout=60, cli=str(cli))
     assert not run.ok
     assert "unknown option" in run.message, run.message
@@ -1657,7 +1715,7 @@ def test_k7_empty_output_says_so_and_points_at_the_envelope():
     """정말 아무 출력도 없으면 **그렇다고 적고** 봉투 자리를 알려 준다."""
     ws = scratch() / "a" / "01"
     ws.mkdir(parents=True)
-    cli = fake_cli(scratch(), "exit 1\n")
+    cli = fake_cli(scratch(), code=1)
     run = panelauto.run_agent("지시", "시스템", ws, timeout=60, cli=str(cli))
     assert not run.ok
     assert "종료코드 1" in run.message
@@ -1834,11 +1892,14 @@ def test_l11_workspace_lives_outside_the_repository():
     got = panelauto.auto_dir("260052")
     assert ROOT not in got.parents and got != ROOT, got
     assert str(got).startswith(tempfile.gettempdir()), got
-    # 탈출구가 있다.
+    # 탈출구가 있다. 그 OS 의 절대 경로로 준다 (윈도우에서 `/elsewhere` 는
+    # `\elsewhere` 로 읽힌다).
+    elsewhere = scratch() / "elsewhere"
     had = os.environ.get(panelauto.AUTO_ENV)
-    os.environ[panelauto.AUTO_ENV] = "/elsewhere"
+    os.environ[panelauto.AUTO_ENV] = str(elsewhere)
     try:
-        assert str(panelauto.auto_dir("R")).startswith("/elsewhere")
+        assert panelauto.auto_dir("R") == elsewhere / "R", \
+            panelauto.auto_dir("R")
     finally:
         os.environ.pop(panelauto.AUTO_ENV, None)
         if had is not None:

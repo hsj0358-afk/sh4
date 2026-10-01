@@ -201,7 +201,7 @@ def test_a11_parsing_lives_in_one_place():
     """
     literal, holder = [], []
     for path in sorted((ROOT / "toto").rglob("*.py")):
-        rel = str(path.relative_to(ROOT))
+        rel = path.relative_to(ROOT).as_posix()
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             # `x.split(" · ")` / `x.rsplit(" · ", 1)` 처럼 리터럴로 쪼개는 곳
             if (isinstance(node, ast.Call)

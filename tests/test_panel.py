@@ -743,10 +743,11 @@ def test_21f_source_cache_version_is_untouched():
 # 22. 기본 실행에서 호출 0회
 # --------------------------------------------------------------------------
 def test_22_no_api_call_without_the_flag():
-    from toto.cli import build_parser
-    args = build_parser().parse_args(["--demo"])
+    from toto import cli
+    args = cli.build_parser().parse_args(["--demo"])
     assert args.panel is False, "--panel 이 기본으로 켜져 있다"
-    tree = ast.parse(Path("toto/cli.py").read_text(encoding="utf-8"))
+    # 작업 폴더가 아니라 import 한 모듈의 소스를 읽는다 (저장소 밖에서도 같다).
+    tree = ast.parse(inspect.getsource(cli))
     guarded = False
     for node in ast.walk(tree):
         if isinstance(node, ast.If) and isinstance(node.test, ast.Attribute) \

@@ -1818,8 +1818,9 @@ def test_l10_role_files_are_generated_not_copied():
     assert "moderator.system_prompt" in names
     body = code_of(node)
     assert "panel.SYSTEM_COMMON" in body and "panel.ROLE_PROMPTS" in body
-    # 저장소에 사본 파일이 생기지 않는다.
-    assert not Path("toto/../.claude/panel").exists()
+    # 저장소에 사본 파일이 생기지 않는다. 기준은 작업 폴더가 아니라 저장소다.
+    repo = Path(__file__).resolve().parent.parent
+    assert not repo.joinpath(".claude", "panel").exists()
     src = source_of(panelauto)
     for line in panel.SYSTEM_COMMON.splitlines():
         line = line.strip()

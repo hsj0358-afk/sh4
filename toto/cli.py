@@ -166,8 +166,10 @@ def build_parser() -> argparse.ArgumentParser:
                         "index.html 을 다시 만든다. git add·commit·push 는 "
                         "하지 않고 명령만 안내한다")
     p.add_argument("--pages-dir", type=Path, default=None, metavar="DIR",
-                   help="--publish-round 의 게시 폴더 (기본: 저장소 옆 "
-                        "<저장소 이름>-pages)")
+                   help="게시 폴더(gh-pages worktree). --publish-round 와 "
+                        "리포트를 쓴 뒤의 자동 배포가 함께 쓴다. 주지 않으면 "
+                        "--publish-round 는 저장소 옆 <저장소 이름>-pages, "
+                        "자동 배포는 SH4_PAGES_DIR → 저장소 옆 순으로 찾는다")
     p.add_argument("--market-eval", action="store_true",
                    help="쌓인 회차 기록으로 시장 기준선 캘리브레이션을 잰다 "
                         "(data/round_matches.csv 를 읽기만 한다. 수집하지 "

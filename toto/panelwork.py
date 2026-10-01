@@ -100,7 +100,6 @@
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import os
@@ -108,7 +107,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import moderator, panel, panelexport, panelimport, panelpaste
+from . import (moderator, panel, panelexport, panelimport, panelpacket,
+               panelpaste)
 from .models import PanelOpinion, Report
 
 log = logging.getLogger(__name__)
@@ -766,8 +766,12 @@ REUSE = "reuse"
 RERUN = "rerun"
 
 
-def _sha(text: str) -> str:
-    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+# 글자의 sha256 — `panelpacket.packet_digest` 와 **같은 함수**다 (리팩터링
+# Phase 4 M14). 매니페스트는 packet 해시(`packet_sha256`)와 보관본 해시
+# (`sha256`·`depends`)를 같은 파일에 적고, 재개 판정은 둘 다 '그때 잰 값 ↔
+# 지금 잰 값' 으로 견준다. 같은 규칙이 두 벌이면 한쪽만 바뀌어도 조용히
+# 어긋난다.
+_sha = panelpacket.packet_digest
 
 
 def _file_sha(path: Path) -> str:

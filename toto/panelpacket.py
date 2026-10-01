@@ -379,6 +379,10 @@ def packet_digest(text: str) -> str:
 
     비교는 이 값이 아니라 문자열 자체로도 할 수 있지만, 실행 로그에
     650KB 를 적을 수는 없다. 자르지 않은 sha256 을 쓴다.
+
+    `panelwork._sha` 가 **이 함수다** (리팩터링 Phase 4 M14) — 보관본과
+    매니페스트의 해시도 이것으로 잰다. 자르거나 바꾸면 이미 적힌 기록과
+    견줄 수 없게 된다.
     """
     return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
 

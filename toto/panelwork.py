@@ -156,10 +156,15 @@ def _atomic_write(path: Path, payload: str) -> None:
 
     1·2·3단계 보관본과 매니페스트가 **같은 함수**를 쓴다 — 세 곳에 따로
     적어 두면 한 곳만 고쳐진다 (§1-8). `fsync` 는 되는 자리에서만 한다.
+
+    줄바꿈은 **넘겨받은 글자 그대로**다(`newline="\\n"` — 바꾸지 않는다).
+    기본값은 윈도우에서 `\\n` 을 `\\r\\n` 으로 바꿔 써서, 파일 바이트가
+    `payload` 와 달라지고 매니페스트의 sha256(`payload` 로 잰 값)과도
+    어긋났다. 리눅스에서는 예전과 한 바이트도 다르지 않다.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
-    with open(tmp, "w", encoding="utf-8") as fh:
+    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(payload)
         fh.flush()
         try:

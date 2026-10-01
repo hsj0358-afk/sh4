@@ -225,12 +225,17 @@ def write_canonical(data: dict, round_id: str,
 
     옆에 다 쓰고 바꿔 끼운다 — 쓰다 만 파일이 자리에 남으면 다음 실행이
     그것을 집어 든다. 쓰는 바이트는 예전과 같다.
+
+    줄바꿈은 **LF 로 고정한다.** 텍스트 모드 기본값은 윈도우에서 `\\r\\n`
+    으로 바꿔 써서, 같은 자료가 OS 마다 다른 바이트가 됐다 — 매니페스트의
+    sha256 은 LF 글자로 잰 값이라 윈도우 파일과 어긋났다. 리눅스에서는
+    예전과 한 바이트도 다르지 않다.
     """
     path = canonical_path(round_id or "unknown", base)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1),
-                   encoding="utf-8")
+                   encoding="utf-8", newline="\n")
     os.replace(tmp, path)
     return path
 

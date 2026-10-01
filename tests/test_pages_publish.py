@@ -31,6 +31,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import types
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -121,9 +122,23 @@ class Round:
         return render.render_report(self.with_panel, TA.settings())
 
     def write(self, dev: Path, text: str | None = None) -> Path:
+        """`reports/toto_<회차>.html` — 운영과 같은 바이트로 쓴다.
+
+        렌더한 리포트는 **운영 writer(`cli._write_report`)를 그대로 지난다.**
+        fixture 가 writer 를 흉내 내면 둘이 갈라진다 — 윈도우에서 실제로
+        fixture 는 CRLF 를 쓰고 `check_final_html` 은 LF 를 찾았다. 직접 넣는
+        글자(다시 렌더한 판 · 패널 없는 판 · 깨진 HTML)도 같은 LF 계약으로
+        쓴다.
+        """
         path = dev.joinpath("reports", f"toto_{self.rid}.html")
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(self.html() if text is None else text, encoding="utf-8")
+        if text is None:
+            out = cli._write_report(self.with_panel,
+                                    types.SimpleNamespace(output=path),
+                                    TA.settings(), "fixture")
+            assert out == path, out
+        else:
+            path.write_text(text, encoding="utf-8", newline="\n")
         return path
 
     def publish(self, dev: Path, pages: Path, settings=None):

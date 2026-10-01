@@ -406,6 +406,13 @@ def _write_report(report: Report, args, settings, verb: str) -> Path:
     곳에 복사돼 있었고, 세 번째 사본을 만들면 어느 하나만 고쳐져 세 경로가
     조용히 갈라진다. **동작은 그대로다** — 경로 규칙도 로그도 전과 같고
     `verb` 만 호출부가 정한다.
+
+    줄바꿈은 **LF 로 고정한다.** 이 파일이 GitHub Pages 에 올라가는 최종
+    HTML 이고(`pagespublish.copy_final` 은 바이트를 그대로 복사한다),
+    `check_final_html` 은 바이트 그대로 패널 CSS(LF)를 찾는다. 텍스트 모드
+    기본값은 윈도우에서 `\\r\\n` 을 써서 패널이 붙은 리포트를 '패널이 붙지
+    않은 리포트' 로 오판하게 했다. 리눅스에서는 예전과 한 바이트도 다르지
+    않다.
     """
     html = render_report(report, settings)
     out = args.output
@@ -414,7 +421,7 @@ def _write_report(report: Report, args, settings, verb: str) -> Path:
             round=report.round_id or "latest")
         out = settings.output_dir / name
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(html, encoding="utf-8")
+    out.write_text(html, encoding="utf-8", newline="\n")
     log.info("리포트 %s → %s (%.1f KB)", verb, out,
              len(html.encode("utf-8")) / 1024)
     return out

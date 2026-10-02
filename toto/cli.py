@@ -986,6 +986,17 @@ def main(argv: list[str] | None = None) -> int:
         resolver.save_learned()
         resolver.save_leagues()
 
+        # ---- 4-B. 준비 상태 (Phase 6-C) ------------------------------------
+        # 단계별로 적기만 한다. 막는 것은 위의 14경기 계약 하나뿐이고, 대회·
+        # 소스 결손은 예전처럼 경고하고 진행한다(§1-6) — 저장본도 만든다
+        # (§1-16). 그 정책을 바꿀지는 정해지지 않았다 (`readiness` 참고).
+        from . import readiness
+        ready = readiness.assess(matches, report.source_status, settings,
+                                 expected=expected)
+        say = log.info if ready.analysis == readiness.READY else log.warning
+        for line in ready.lines():
+            say(line)
+
     # ---- 5. 분석 ----------------------------------------------------------
     report.matches = matches
     run_all(matches, settings, season_matches=report.season_matches)

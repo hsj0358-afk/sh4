@@ -486,6 +486,123 @@ def test_d5_whoscored_returns_before_strict_for_unregistered_keys():
     assert got == {} and asked == []
 
 
+# ==========================================================================
+# E. 준비 상태 — 단계별로 적고, 막는 정책은 바꾸지 않는다
+# ==========================================================================
+def _ready_round(pairs=DOMESTIC, odds: int = 14, profiles: bool = True):
+    from toto.models import Odds, TeamProfile
+    matches, _ = _resolved(pairs)
+    for i, m in enumerate(matches):
+        if i < odds:
+            m.odds = Odds(home=2.0, draw=3.2, away=3.8)
+        for side in ("home", "away"):
+            ref = getattr(m, side)
+            setattr(m, f"{side}_profile",
+                    TeamProfile(team=ref, league=m.league, source_ok=profiles))
+    status = {"경기목록": "ok (베트맨 14경기)",
+              "순위·폼": "ok (28/28팀 지표, 28팀 폼, 0경기 상대전적)",
+              "배당률": f"ok ({odds}/14경기)" if odds else "실패",
+              "상세데이터": "ok (28/28팀, 강점/약점 28팀)"}
+    return matches, status
+
+
+def test_e1_word_state_reads_the_four_words_and_nothing_else():
+    from toto import readiness as R
+    assert R.word_state("ok (베트맨 14경기)") == R.PASS
+    assert R.word_state("부분 (21/28팀 지표)") == R.PARTIAL
+    assert R.word_state("실패 (브라우저 기동 불가)") == R.FAIL
+    assert R.word_state("실패") == R.FAIL
+    assert R.word_state("생략 (리그 미상)") == R.SKIP
+    assert R.word_state("연결됨 · 경기 매칭 실패") == R.FAIL   # 피나클의 다섯째 형식
+    assert R.word_state("") == R.UNKNOWN
+    assert R.word_state(None) == R.UNKNOWN
+    assert R.word_state("무언가 이상한 문자열") == R.UNKNOWN
+
+
+def test_e2_complete_domestic_round_is_ready():
+    from toto import readiness as R
+    matches, status = _ready_round()
+    got = R.assess(matches, status, _settings())
+    assert [c.name for c in got.checks] == [
+        "Betman", "경기 파싱", "대회 식별", "FotMob", "Pinnacle", "WhoScored"]
+    assert all(c.state == R.PASS for c in got.checks), got.lines()
+    assert (got.analysis, got.artifact) == (R.READY, R.READY)
+    assert got.reasons == []
+
+
+def test_e3_one_failed_source_degrades_but_does_not_block():
+    from toto import readiness as R
+    matches, status = _ready_round(odds=0)
+    got = R.assess(matches, status, _settings())
+    assert got.get("Pinnacle").state == R.FAIL
+    assert got.get("FotMob").state == R.PASS
+    assert got.analysis == R.DEGRADED and got.artifact == R.DEGRADED
+    assert "Pinnacle FAIL" in got.reasons
+    assert got.artifact_policy == "record_only"
+
+
+def test_e4_ok_word_with_missing_rows_is_partial():
+    """소스가 `ok (13/14경기)` 라고 적어도 실제로 빈 경기가 있으면 PARTIAL."""
+    from toto import readiness as R
+    matches, status = _ready_round(odds=13)
+    got = R.assess(matches, status, _settings())
+    assert got.get("Pinnacle").state == R.PARTIAL
+    assert "[채움 13/14]" in got.get("Pinnacle").detail
+
+
+def test_e5_unidentified_competitions_are_not_ready():
+    from toto import readiness as R
+    matches, status = _ready_round(NATIONAL, odds=0, profiles=False)
+    status["순위·폼"] = "생략 (리그 미상)"
+    got = R.assess(matches, status, _settings())
+    comp = got.get("대회 식별")
+    assert comp.state == R.FAIL
+    assert "supported 0/14" in comp.detail and "unknown 14" in comp.detail
+    assert "근거 none 14" in comp.detail
+    assert got.analysis == R.NOT_READY
+
+
+def test_e6_wrong_match_count_is_not_ready():
+    from toto import readiness as R
+    matches, status = _ready_round()
+    got = R.assess(matches[:13], status, _settings())
+    assert got.get("경기 파싱").state == R.FAIL
+    assert got.analysis == R.NOT_READY
+
+
+def test_e7_assess_changes_nothing():
+    import copy
+    from toto import readiness as R
+    matches, status = _ready_round(odds=10)
+    before = (copy.deepcopy(matches), dict(status))
+    R.assess(matches, status, _settings())
+    assert (matches, status) == before
+
+
+def test_e8_lines_name_every_stage():
+    from toto import readiness as R
+    matches, status = _ready_round(odds=0)
+    text = "\n".join(R.assess(matches, status, _settings()).lines())
+    for word in ("Betman", "경기 파싱", "대회 식별", "FotMob", "Pinnacle",
+                 "WhoScored", "분석", "저장본", "record_only"):
+        assert word in text, word
+
+
+def test_e9_cli_records_readiness_but_does_not_gate_the_artifact():
+    """준비 상태는 수집 갈래 끝에서 적고, 저장본 저장 앞에 문을 두지 않는다."""
+    from toto import cli
+    body = ast.unparse(next(
+        n for n in ast.walk(ast.parse(inspect.getsource(cli)))
+        if isinstance(n, ast.FunctionDef) and n.name == "main"))
+    i_assess = body.index("readiness.assess(")
+    assert body.index("resolver.save_leagues()") < i_assess
+    assert i_assess < body.index("run_all(matches")
+    assert body.index("build_demo_matches()") < i_assess   # 데모 갈래 밖
+    save_at = body.index("artifact.save(report)")
+    window = body[body.rfind("\n", 0, save_at - 200):save_at]
+    assert "ready." not in window and "readiness." not in window
+
+
 def main() -> int:
     # 직접 실행 러너는 `tests/_runner.py` 한 곳에 있다 (Phase 3 M13).
     sys.path.insert(0, str(Path(__file__).resolve().parent))

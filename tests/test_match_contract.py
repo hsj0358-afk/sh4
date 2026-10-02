@@ -412,6 +412,80 @@ def test_c4_enrich_relabels_only_through_the_competition_module():
     assert "match.league =" not in body
 
 
+# ==========================================================================
+# D. 등록·종류 정합성 — 빈 키·미등록 키는 국내리그가 아니다
+# ==========================================================================
+def test_d1_league_type_distinguishes_registration():
+    from toto.settings import CONTINENTAL, LEAGUE
+    s = _settings()
+    assert s.league_type("epl") == LEAGUE            # 등록 · type 미지정
+    assert s.league_type("ucl") == CONTINENTAL       # 등록 · type 지정
+    assert s.league_type("월드컵예선") == ""          # 미등록
+    assert s.league_type("") == ""                   # 대회 모름
+
+
+def test_d2_competition_states():
+    s = _settings()
+    assert competition.state("epl", s) == competition.SUPPORTED
+    assert competition.state("laliga", s) == competition.SUPPORTED
+    assert competition.state("ucl", s) == competition.UNSUPPORTED
+    assert competition.state("월드컵예선", s) == competition.UNREGISTERED
+    assert competition.state("", s) == competition.UNKNOWN
+
+
+def test_d3_unregistered_key_gets_no_league_authority():
+    s = _settings()
+    assert s.owns_team_league("월드컵예선") is False
+    assert s.owns_team_league("") is False
+    assert s.strict_team_match("월드컵예선") is True
+    # 국내리그는 그대로다
+    for key in ("epl", "laliga", "seriea", "kleague1"):
+        assert s.owns_team_league(key) is True, key
+        assert s.strict_team_match(key) is False, key
+
+
+def test_d4_fotmob_never_asks_about_unregistered_keys():
+    """미등록 대회는 `enrich` 가 받기 전에 걸러진다 — 판정 변경이 실행에
+    닿지 않는다."""
+    from toto.settings import Settings
+    asked: list[str] = []
+    real = Settings.owns_team_league
+
+    def spy(self, key):
+        asked.append(key)
+        return real(self, key)
+
+    Settings.owns_team_league = spy
+    try:
+        m = _m(1, "월드컵예선", competition.MATCHES_FILE, home="")
+        m.home.canonical = m.away.canonical = ""
+        from toto.sources import fotmob
+        status = fotmob.enrich([m], _settings(), _resolver(), cache=None)
+    finally:
+        Settings.owns_team_league = real
+    assert status == "생략 (리그 미상)", status
+    assert asked == []
+
+
+def test_d5_whoscored_returns_before_strict_for_unregistered_keys():
+    from toto.settings import Settings
+    from toto.sources import whoscored
+    asked: list[str] = []
+    real = Settings.strict_team_match
+
+    def spy(self, key):
+        asked.append(key)
+        return real(self, key)
+
+    Settings.strict_team_match = spy
+    try:
+        got = whoscored.read_league(None, _settings(), "월드컵예선",
+                                    _resolver(), cache=None)
+    finally:
+        Settings.strict_team_match = real
+    assert got == {} and asked == []
+
+
 def main() -> int:
     # 직접 실행 러너는 `tests/_runner.py` 한 곳에 있다 (Phase 3 M13).
     sys.path.insert(0, str(Path(__file__).resolve().parent))

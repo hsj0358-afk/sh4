@@ -190,10 +190,20 @@ def test_d3_type_is_case_and_space_insensitive():
         assert s.owns_team_league("x") is True, raw
 
 
-def test_d4_unknown_key_is_treated_as_league():
-    """설정에 아예 없는 키는 기존과 같이 취급한다 (동작 변화 없음)."""
+def test_d4_unknown_key_is_not_a_league():
+    """설정에 아예 없는 키는 국내리그로 읽지 않는다 (Phase 6-C).
+
+    6-D-3 에서는 '동작 변화 없음' 을 지키려고 이것을 `True` 로 고정했다.
+    6-C 가 바로 그 동작을 바로잡는 Phase 다 — 대회를 모르는 경기나 등록되지
+    않은 대회가 국내리그 권위를 얻으면 안 된다. production 호출부는 전부
+    등록 키로 거르거나 판정 전에 돌아가므로 실행 결과는 바뀌지 않는다
+    (`tests/test_match_contract.py` 의 D절).
+    """
     s = _settings(epl=LEAGUE)
-    assert s.owns_team_league("없는키") is True
+    assert s.league_type("없는키") == ""
+    assert s.owns_team_league("없는키") is False
+    assert s.league_type("") == "" and s.owns_team_league("") is False
+    assert s.strict_team_match("없는키") is True
 
 
 # ==========================================================================

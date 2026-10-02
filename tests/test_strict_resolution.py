@@ -134,10 +134,16 @@ def test_a5_unknown_type_is_strict():
     assert _settings(x="knockout-ish").strict_team_match("x") is True
 
 
-def test_a6_unknown_key_is_not_strict():
-    """설정에 없는 키는 `league_type` 이 기본값을 주므로 비-strict 다.
-    (없는 리그를 수집하는 경로가 애초에 없다 — 동작을 바꾸지 않는다.)"""
-    assert _settings(epl=None).strict_team_match("없는키") is False
+def test_a6_unknown_key_is_strict():
+    """설정에 없는 키는 종류가 없으므로 **strict** 다 (Phase 6-C).
+
+    6-D-4 때는 `league_type` 이 미등록 키에도 `league` 를 줘서 비-strict
+    였다. 6-C 가 그 기본값을 바로잡았다 — '모르는 종류는 strict' 라는 이
+    함수의 원래 규칙과 같다. 없는 리그를 수집하는 경로가 애초에 없다는
+    사실은 그대로라 실행 결과는 바뀌지 않는다 (`test_match_contract` D절).
+    """
+    assert _settings(epl=None).strict_team_match("없는키") is True
+    assert _settings(epl=None).strict_team_match("epl") is False
 
 
 DOMESTIC_KEYS = {"epl", "laliga", "bundesliga", "seriea",

@@ -265,8 +265,16 @@ class Settings:
 
         값이 적혀 있으면 **그대로** 돌려준다 — 모르는 값을 조용히 `league` 로
         바꾸지 않는다. 판정은 `owns_team_league()` 가 한다.
+
+        **설정에 없는 키·빈 키는 종류가 없다 — 빈 문자열이다** (Phase 6-C).
+        예전에는 이것도 `league` 로 읽혀, 대회를 모르는 경기나 등록되지 않은
+        대회가 국내리그처럼 취급될 수 있었다. '미지정 = league' 는 **등록된
+        대회의 칸이 비었을 때**의 규칙이지 등록되지 않은 대회의 규칙이 아니다.
         """
-        raw = (self.leagues.get(key) or {}).get("type")
+        cfg = self.leagues.get(key) if key else None
+        if cfg is None:
+            return ""
+        raw = (cfg or {}).get("type")
         text = str(raw).strip().lower() if raw is not None else ""
         return text or LEAGUE
 
@@ -284,6 +292,11 @@ class Settings:
         kind = self.league_type(key)
         if kind == LEAGUE:
             return True
+        if not kind:
+            # 등록되지 않은 대회의 표로 소속을 고치지 않는다 (Phase 6-C).
+            log.warning("등록되지 않은 대회입니다: %r — 팀 소속 정정에서 "
+                        "제외합니다.", key)
+            return False
         if kind not in COMPETITION_TYPES:
             log.warning("대회 종류를 알 수 없습니다: %s (type=%r). 팀 소속 "
                         "정정에서 제외합니다 — config_toto.yaml 의 "

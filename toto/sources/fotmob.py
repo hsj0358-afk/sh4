@@ -45,7 +45,7 @@ from ..models import FormEntry, H2H, H2HEntry, SeasonMatch
 from ..models import TeamProfile, TeamRef, TeamStats
 from ..models import fill_stats
 from ..normalize import TeamResolver
-from .. import shots
+from .. import competition, shots
 from ..settings import Settings
 from .browser import StealthBrowser
 
@@ -1696,9 +1696,9 @@ def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None,
         for match in matches:
             own = (resolver.league_of(match.home.canonical)
                    if match.home.canonical else None)
-            if own and own != match.league:
-                match.league = own
-                match.league_ko = settings.league_ko(own)
+            # 팀 추론으로 정한 대회만 고친다. matches.yaml 에 적힌 대회는
+            # 사람이 확정한 것이라 덮지 않는다 (Phase 6-C).
+            competition.adopt_team_league(match, own, settings)
             # 승강 반영 전에 붙은 '컵대회로 보인다' 경고는 근거가 사라졌다.
             # (부천 vs 전북은 둘 다 K리그1 이라 컵대회가 아니었다.)
             match.notes = [n for n in match.notes

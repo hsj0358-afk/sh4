@@ -323,6 +323,95 @@ def test_b8_competition_module_does_not_read_row_text():
     assert calls and set(calls) == {"resolver"}, calls
 
 
+# ==========================================================================
+# C. FotMob 소속 정정이 확정된 대회를 덮지 않는다
+# ==========================================================================
+class _FakeBrowser:
+    """`FotMobBrowser` 자리. 네트워크를 쓰지 않는다."""
+    available = True
+
+    def __init__(self, *a, **k) -> None:
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a) -> bool:
+        return False
+
+
+def _enrich(matches, feeds: dict[str, list[str]]):
+    """**실제 `fotmob.enrich()`** 를 태운다. 브라우저와 리그 읽기만 가짜다."""
+    from toto.models import TeamStats
+    from toto.sources import fotmob
+
+    def feed(browser, st, key, res, cache=None):
+        return {"teams": {t: {"stats": TeamStats(), "form": [], "fotmob_id": "",
+                              "page_url": ""} for t in feeds.get(key, [])},
+                "matches": []}
+
+    real = fotmob.FotMobBrowser, fotmob.read_league
+    fotmob.FotMobBrowser, fotmob.read_league = _FakeBrowser, feed
+    try:
+        fotmob.enrich(matches, _settings(), _resolver(), cache=None)
+    finally:
+        fotmob.FotMobBrowser, fotmob.read_league = real
+
+
+def _m(no: int, league: str, basis: str, home: str = "Arsenal"):
+    from toto.models import Match, TeamRef
+    return Match(no=no, league=league, league_ko=league, league_basis=basis,
+                 home=TeamRef(name_ko=home, canonical=home),
+                 away=TeamRef(name_ko="첼시", canonical="Chelsea"))
+
+
+def test_c1_confirmed_competition_survives_team_relabel():
+    """아스널의 소속이 순위표로 정정돼도 사람이 적은 대회는 그대로다."""
+    confirmed = _m(1, "kleague1", competition.MATCHES_FILE)
+    inferred = _m(2, "epl", competition.TEAM_LEAGUE)
+    unrecorded = _m(3, "epl", competition.UNRECORDED)
+    # 라리가 경기가 있어야 라리가 피드를 받는다. 그 피드에 아스널이 있으면
+    # 소속 정정(moved>0)이 일어난다.
+    laliga = _m(4, "laliga", competition.TEAM_LEAGUE, home="Real Madrid")
+    _enrich([confirmed, inferred, unrecorded, laliga],
+            {"laliga": ["Arsenal", "Real Madrid"]})
+    assert (confirmed.league, confirmed.league_basis) == \
+        ("kleague1", competition.MATCHES_FILE)
+    assert (inferred.league, inferred.league_basis) == \
+        ("laliga", competition.TEAM_LEAGUE)
+    # 근거 기록이 없던 경기는 예전처럼 고치되 근거를 지어내지 않는다
+    assert (unrecorded.league, unrecorded.league_basis) == ("laliga", "")
+    assert inferred.league_ko == "라리가"
+
+
+def test_c2_no_relabel_when_nothing_moved():
+    inferred = _m(1, "epl", competition.TEAM_LEAGUE)
+    _enrich([inferred], {"epl": ["Arsenal", "Chelsea"]})
+    assert (inferred.league, inferred.league_basis) == \
+        ("epl", competition.TEAM_LEAGUE)
+
+
+def test_c3_adopt_team_league_rules():
+    s = _settings()
+    m = _m(1, "", competition.NONE)
+    assert competition.adopt_team_league(m, "epl", s) is True
+    assert (m.league, m.league_basis) == ("epl", competition.TEAM_LEAGUE)
+    m = _m(1, "kleague1", competition.MATCHES_FILE)
+    assert competition.adopt_team_league(m, "epl", s) is False
+    assert m.league == "kleague1"
+    assert competition.adopt_team_league(_m(1, "epl", "x"), None, s) is False
+    assert competition.adopt_team_league(_m(1, "epl", "x"), "epl", s) is False
+
+
+def test_c4_enrich_relabels_only_through_the_competition_module():
+    from toto.sources import fotmob
+    body = ast.unparse(next(
+        n for n in ast.walk(ast.parse(inspect.getsource(fotmob)))
+        if isinstance(n, ast.FunctionDef) and n.name == "enrich"))
+    assert "competition.adopt_team_league(" in body
+    assert "match.league =" not in body
+
+
 def main() -> int:
     # 직접 실행 러너는 `tests/_runner.py` 한 곳에 있다 (Phase 3 M13).
     sys.path.insert(0, str(Path(__file__).resolve().parent))

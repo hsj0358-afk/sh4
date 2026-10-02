@@ -891,8 +891,16 @@ def main(argv: list[str] | None = None) -> int:
             report.source_status["경기목록"] = (
                 f"ok (수동 {len(matches)}경기)" if matches else "실패 (파일 읽기)")
         else:
-            matches, detected = betman.fetch_matches(
-                settings, round_id=args.round_id, cache=cache)
+            try:
+                matches, detected = betman.fetch_matches(
+                    settings, round_id=args.round_id, cache=cache)
+            except betman.MatchListError as exc:
+                # 14경기 계약 위반 (Phase 6-C). 앞 14개만 잘라 쓰지 않고, 모자란
+                # 회차로 수집·분석·저장본을 만들지도 않는다.
+                log.error("경기 목록을 쓸 수 없습니다 (%s회차): %s — "
+                          "--matches-file 로 직접 입력할 수 있습니다.",
+                          exc.round_id or "?", exc)
+                return 1
             report.round_id = detected or (args.round_id or "")
             report.source_status["경기목록"] = (
                 f"ok (베트맨 {len(matches)}경기)" if matches else "실패")

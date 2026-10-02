@@ -16,11 +16,13 @@ from __future__ import annotations
 import ast
 import inspect
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from toto import competition                                     # noqa: E402
 from toto.sources import betman                                  # noqa: E402
 
 EXPECTED = 14
@@ -169,6 +171,156 @@ def test_a12_parser_source_has_no_league_lookup_or_truncation():
 def test_a13_match_list_error_message_lists_every_problem():
     exc = betman.MatchListError("260055", ["없는 번호: 3번", "넘는 번호: 15번"])
     assert str(exc) == "없는 번호: 3번; 넘는 번호: 15번"
+
+
+# ==========================================================================
+# B. 대회 식별 — 파서와 분리 · 근거를 남긴다
+# ==========================================================================
+def _tmp() -> Path:
+    return Path(tempfile.mkdtemp(prefix="toto_6c_"))
+
+
+def _resolver():
+    """실제 `data/teams.yaml` 은 읽되 학습·승강 파일은 임시 폴더다.
+
+    PC 의 `data/teams.learned.yaml`·`teams.league.yaml` 을 읽지도 쓰지도
+    않는다 — 그 파일은 보호 대상이고, 거기 든 학습 별칭에 결과가 흔들리면
+    안 된다.
+    """
+    from toto.normalize import TeamResolver
+    tmp = _tmp()
+    return TeamResolver(learned_file=tmp / "teams.learned.yaml",
+                        league_file=tmp / "teams.league.yaml")
+
+
+def _settings():
+    from toto.settings import load_settings
+    return load_settings()
+
+
+def _resolved(pairs):
+    """파서 → 팀명 해석 → 대회 식별 (cli 의 순서 그대로)."""
+    from toto import cli
+    from toto.models import Report
+    matches = betman.match_list(rows_for(pairs), EXPECTED)
+    report = Report(round_id="T", matches=matches)
+    cli._resolve_teams(matches, _resolver(), report, _settings())
+    return matches, report
+
+
+def test_b1_national_teams_are_not_domestic_leagues():
+    """260055 실측 세 경기가 국내리그로 오인되지 않는다."""
+    matches, report = _resolved(NATIONAL)
+    by_title = {(m.home.name_ko, m.away.name_ko): m for m in matches}
+    for pair, wrong in ((("이탈리아", "벨기에"), "seriea"),
+                        (("튀르키예", "프랑스"), "ligue1"),
+                        (("잉글랜드", "스페인"), "epl")):
+        m = by_title[pair]
+        assert m.league != wrong, (pair, m.league)
+        assert m.league == "" and m.league_basis == competition.NONE, \
+            (pair, m.league, m.league_basis)
+        assert competition.state(m.league, _settings()) == competition.UNKNOWN
+    assert all(m.league == "" for m in matches), \
+        [(m.no, m.league) for m in matches]
+    unknown = [w for w in report.warnings if "리그를 알 수 없어" in w]
+    assert len(unknown) == 14, report.warnings
+
+
+def test_b2_domestic_rows_still_resolve_by_team_league():
+    matches, report = _resolved(DOMESTIC)
+    leagues = [m.league for m in matches]
+    assert leagues == ["epl"] * 9 + ["laliga"] * 5, leagues
+    assert all(m.league_basis == competition.TEAM_LEAGUE for m in matches)
+    assert all(m.league_ko for m in matches)
+    assert not [w for w in report.warnings if "리그" in w], report.warnings
+
+
+def test_b3_real_260052_names_keep_the_saved_competitions():
+    """실물 저장본(EPL·라리가 14경기)의 팀명으로 행을 만들어 새 경로에
+    태우면, 저장본에 적힌 대회가 그대로 나온다. 없으면 SKIP."""
+    import realdata
+    saved = realdata.load_artifact()
+    pairs = [(m.home.name_ko, m.away.name_ko) for m in saved.matches]
+    matches, _ = _resolved(pairs)
+    assert [m.league for m in matches] == [m.league for m in saved.matches]
+    assert {m.league for m in matches} <= {"epl", "laliga"}
+
+
+def test_b4_matches_file_league_is_confirmed():
+    from toto.normalize import TeamResolver  # noqa: F401
+    path = Path(__file__).resolve().parent.parent / "examples" / "matches.yaml"
+    matches = betman.load_matches_file(path, _settings())
+    assert len(matches) == 14
+    assert all(m.league_basis == competition.MATCHES_FILE for m in matches)
+    assert all(competition.is_confirmed(m) for m in matches)
+    before = [m.league for m in matches]
+    from toto import cli
+    from toto.models import Report
+    cli._resolve_teams(matches, _resolver(), Report(matches=matches),
+                       _settings())
+    assert [m.league for m in matches] == before
+
+
+def test_b5_matches_file_unregistered_league_is_identified_not_supported():
+    tmp = _tmp()
+    path = tmp / "m.yaml"
+    path.write_text("matches:\n"
+                    "  - {no: 1, league: 월드컵예선, home: 이탈리아, away: 벨기에}\n"
+                    "  - {no: 2, league: 챔피언스리그, home: 아스널, away: 첼시}\n",
+                    encoding="utf-8")
+    from toto import cli
+    from toto.models import Report
+    matches = betman.load_matches_file(path, _settings())
+    report = Report(matches=matches)
+    cli._resolve_teams(matches, _resolver(), report, _settings())
+    a, b = matches
+    assert (a.league, a.league_basis) == ("월드컵예선", competition.MATCHES_FILE)
+    assert competition.state(a.league, _settings()) == competition.UNREGISTERED
+    assert (b.league, b.league_basis) == ("ucl", competition.MATCHES_FILE)
+    assert competition.state(b.league, _settings()) == competition.UNSUPPORTED
+    notes = [w for w in report.warnings if "지원하는 국내리그가 아닙니다" in w]
+    assert len(notes) == 2, report.warnings
+
+
+def test_b6_preset_league_without_basis_is_left_alone():
+    """근거 기록 없이 대회가 들어온 경기(예전 호출부)는 예전처럼 그대로다."""
+    from toto.models import Match, TeamRef
+    m = Match(no=1, league="kleague1", home=TeamRef(canonical="Arsenal"))
+    assert competition.resolve(m, _resolver(), _settings()) == ""
+    assert m.league == "kleague1" and m.league_basis == ""
+
+
+def test_b7_basis_is_not_saved_in_the_artifact():
+    """저장 형식은 그대로다 — 근거 칸은 저장본에 싣지 않는다."""
+    import json
+    from toto import artifact
+    from toto.models import Report
+    matches = betman.match_list(rows_for(DOMESTIC), EXPECTED)
+    for m in matches:
+        m.league_basis = competition.TEAM_LEAGUE
+    text = json.dumps(artifact.to_dict(Report(round_id="1", matches=matches)),
+                      ensure_ascii=False)
+    assert "league_basis" not in text
+    back, why = artifact.load_path(_write(text))
+    assert back is not None, why
+    assert all(m.league_basis == competition.UNRECORDED for m in back.matches)
+
+
+def _write(text: str) -> Path:
+    path = _tmp() / "a.json"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def test_b8_competition_module_does_not_read_row_text():
+    """대회 식별이 문자열에서 대회를 찾지 않는다 — 행 전체 추정 금지."""
+    calls = []
+    for node in ast.walk(ast.parse(inspect.getsource(competition))):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "league_of"):
+            calls.append(ast.unparse(node.func.value))
+    # 팀 정규명 → 소속 리그(`TeamResolver.league_of`) 만 쓴다.
+    assert calls and set(calls) == {"resolver"}, calls
 
 
 def main() -> int:

@@ -301,10 +301,16 @@ def test_d4_the_flag_stands_alone():
 
 
 def test_d5_artifact_schema_is_untouched():
-    """저장 형식을 건드리지 않았다 — 판도 버리는 칸도 그대로다."""
+    """저장 형식을 건드리지 않았다 — 판도 버리는 칸도 그대로다.
+
+    Phase 6-C 가 `league_basis` 를 버리는 칸에 더했다. 그 칸은 6-C 가
+    `Match` 에 새로 만든 것이라, 버리는 것이 곧 **저장본에 새 칸을 싣지
+    않는** 방법이다 — 저장 형식이 그대로라는 이 테스트의 불변조건을 지킨다.
+    """
     assert artifact.ARTIFACT_VERSION == 1
-    assert artifact.DROPPED == ("shot_aggregates", "shot_matches",
-                                "opponent_matches")
+    assert artifact.DROPPED[:3] == ("shot_aggregates", "shot_matches",
+                                    "opponent_matches")
+    assert set(artifact.DROPPED[3:]) == {"league_basis"}, artifact.DROPPED
     assert artifact.FILENAME == "{round}.json"
 
 

@@ -53,8 +53,11 @@ FILENAME = "{round}.json"
 # 것이 나오는 편보다 못 읽는 편이 낫다.
 ARTIFACT_VERSION = 1
 
-# 분석의 **입력**이라 저장하지 않는 칸 (위 설명 참고).
-DROPPED = ("shot_aggregates", "shot_matches", "opponent_matches")
+# 저장하지 않는 칸. 슛 계층 셋은 분석의 **입력**이다 (위 설명 참고).
+# `league_basis` 는 수집 실행 안에서만 쓰는 대회 식별 근거다 (Phase 6-C) —
+# 저장 형식을 바꾸지 않으려고 싣지 않는다. 되살리면 빈칸('기록 없음')이다.
+DROPPED = ("shot_aggregates", "shot_matches", "opponent_matches",
+           "league_basis")
 
 
 def path_for(round_id: str, outdir: Path | None = None) -> Path:
@@ -93,7 +96,7 @@ def is_prematch(report: Report, now: datetime | None = None) -> bool:
 
 
 def _prune(node):
-    """저장 전에 슛 계층을 걷어낸다. **값을 바꾸지 않는다** — 빼기만 한다."""
+    """저장 전에 `DROPPED` 칸을 걷어낸다. **값을 바꾸지 않는다** — 빼기만 한다."""
     if isinstance(node, dict):
         return {k: _prune(v) for k, v in node.items() if k not in DROPPED}
     if isinstance(node, list):

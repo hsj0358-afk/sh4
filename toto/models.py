@@ -1270,6 +1270,12 @@ class Match:
     # 이쪽은 그 사실에 대한 해석이라 층이 다르다. 섞으면 패널이 분석 결과인
     # 것처럼 읽히고, 패널이 새 근거를 만드는 구조로 미끄러진다.
     panel: PanelRun | None = None
+    # `league` 를 **무엇으로 정했나** (Phase 6-C). 어휘는 `toto.competition`
+    # 에 있다 — matches_file · team_league · none. 빈 문자열은 '기록 없음'
+    # (옛 저장본·데모·직접 만든 Match). 수집 실행 안에서 FotMob 덮어쓰기
+    # 보호와 준비 상태 판정에만 쓰고 **저장본에는 싣지 않는다**
+    # (`artifact.DROPPED` — 저장 형식을 바꾸지 않는다).
+    league_basis: str = ""
 
     @property
     def title(self) -> str:

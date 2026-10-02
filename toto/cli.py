@@ -18,7 +18,7 @@ import webbrowser
 from datetime import datetime
 from pathlib import Path
 
-from . import __version__
+from . import __version__, competition
 from .analyze import evaluate_round, run_all
 from .cache import Cache
 from .models import Report, TeamProfile
@@ -215,17 +215,22 @@ def _resolve_teams(matches, resolver: TeamResolver, report: Report,
 
         # 베트맨 경기표에는 리그명 컬럼이 없다. 리그를 모르면 배당률 조회가
         # 통째로 불가능하므로 팀 소속 리그로 역추론한다(홈팀 우선).
-        if not match.league:
-            for ref in (match.home, match.away):
-                league = resolver.league_of(ref.canonical) if ref.canonical else None
-                if league:
-                    match.league = league
-                    match.league_ko = settings.league_ko(league)
-                    break
-            else:
+        # 판정은 `competition` 한 곳에 있다 (Phase 6-C) — 파서는 대회를
+        # 정하지 않고, matches.yaml 에 적힌 대회는 그대로 둔다.
+        basis = competition.resolve(match, resolver, settings)
+        if basis == competition.NONE:
+            report.warnings.append(
+                f"{match.no}번 경기({match.title}): 리그를 알 수 없어 "
+                f"배당률을 조회하지 못합니다.")
+        else:
+            kind = competition.state(match.league, settings)
+            if kind in (competition.UNSUPPORTED, competition.UNREGISTERED):
+                # 식별은 했지만 회차 분석이 지원하는 국내리그가 아니다.
+                # 국내리그처럼 조용히 흘러가지 않게 알린다.
                 report.warnings.append(
-                    f"{match.no}번 경기({match.title}): 리그를 알 수 없어 "
-                    f"배당률을 조회하지 못합니다.")
+                    f"{match.no}번 경기({match.title}): 대회 "
+                    f"'{match.league_ko or match.league}' 는 지원하는 국내리그가 "
+                    f"아닙니다 — 배당·순위 자료가 없거나 불완전할 수 있습니다.")
 
         # 컵대회 등으로 두 팀의 리그가 다르면 표시에 남긴다
         lh = resolver.league_of(match.home.canonical) if match.home.canonical else None

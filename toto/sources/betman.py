@@ -32,6 +32,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .. import competition
 from ..models import Match, TeamRef
 from ..settings import ROOT, Settings, load_yaml
 
@@ -73,6 +74,8 @@ def load_matches_file(path: Path, settings: Settings) -> list[Match]:
     rows = data.get("matches") or []
     matches: list[Match] = []
     for i, row in enumerate(rows, start=1):
+        # 여기의 `league_of` 는 사람이 적은 **리그 표기**를 읽는다 — 그 함수가
+        # 원래 하는 일이다. 베트맨 행 전체에 걸던 것과 다르다 (Phase 6-C).
         league_raw = str(row.get("league", ""))
         key = settings.league_of(league_raw) or league_raw
         matches.append(Match(
@@ -82,6 +85,8 @@ def load_matches_file(path: Path, settings: Settings) -> list[Match]:
             home=TeamRef(name_ko=str(row.get("home", ""))),
             away=TeamRef(name_ko=str(row.get("away", ""))),
             kickoff_kst=str(row.get("kickoff", "")),
+            # 적혀 있으면 확정된 대회다 — 팀 추론·FotMob 정정이 덮지 않는다.
+            league_basis=competition.MATCHES_FILE if key else "",
         ))
     log.info("수동 경기 목록 %d경기 로드 (%s)", len(matches), path)
     return matches

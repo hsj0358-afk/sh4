@@ -3376,6 +3376,7 @@ _parse_standings  정규명 Angers 에 Rangers 의 fotmob_id 8548
 **판정은 `settings.strict_team_match(키)` 하나다** — `league_type()` 에서
 파생하고, **미지정·`league` = 비-strict**, `continental`·`cup`·**모르는 값**
 = strict. 키 이름이나 대회명 문자열로 분기하지 않는다(테스트로 고정).
+6-C 부터 **설정에 없는 키·빈 키도 strict** 다 (§1-58).
 
 `owns_team_league()`(6-D-3)와 지금은 같은 답을 주지만 **묻는 것이 다르다** —
 저쪽은 "이 표로 소속을 고쳐도 되나", 이쪽은 "이 표의 이름을 추측해도 되나"다.
@@ -6964,6 +6965,103 @@ MODERATOR 6 · 지침 지문 `4a54e7ad` · schema 1.1 · `PACKET_VERSION`
 `test_strip_fence.py` (6) · `test_sum_draw.py` (7) ·
 `test_pages_entrypoints.py` (4) · `test_runner_contract.py` (11).
 
+### 1-58. 경기 파싱·대회 식별·준비 상태 계약 (Phase 6-C)
+
+PC 실측(260054·260055 betman cells)에서 경기 행은 이런 모양이다.
+
+    "1경기" · "26.09.19 (토) 23:00 …" · "브라이턴\t\nvs\n아스널" · 투표율 … ·
+    "1경기 브라이턴 : 아스널 상세정보 열기"
+
+**대회 칸이 없다.** 그리고 14경기 뒤에 `전체조합수`·`전체선택` 같은 UI 행이
+붙는다. 고치기 전의 파서는 셋을 틀렸다 (옛 코드에 같은 픽스처를 태워 확인).
+
+| 증상 | 원인 |
+|---|---|
+| 국내 14행 + UI 행 → **17경기**, 앞 14개만 씀 | '팀처럼 보이는 셀 2개' 대체 경로가 UI 행을 가짜 경기로 만들고 `matches[:14]` 가 조용히 잘랐다 |
+| 13행 → 가짜 경기가 **14번 자리를 채움** | 같은 대체 경로 + 자르기 |
+| `이탈리아 vs 벨기에` → seriea · `튀르키예 vs 프랑스` → ligue1 · `잉글랜드 vs 스페인` → epl | 행 전체 문자열에 `settings.league_of()` — 국가명이 국내리그 별칭에 걸렸다 |
+
+#### 경기 행 계약 — `betman.read_match_rows()` · `match_list()`
+
+  · 경기 행 = **번호 셀(`N경기`, 셀 전체) + vs 셀**이 함께 있는 행뿐이다.
+    UI 행의 실제 셀 내용은 확인하지 못했으므로 그 내용에 기대지 않는다 —
+    번호 셀이 없으면 경기가 아니다. 대체 경로는 걷어냈다(§1-4 '구조를
+    추측하지 않는다').
+  · 번호는 **행이 적은 번호**다. 파싱 순서로 다시 매기지 않는다.
+  · 회차는 번호 1~14 가 **정확히 한 번씩**이어야 통과한다 (`round_problems`).
+    모자람·넘침·번호 겹침·vs 셀 없는 경기 행은 `MatchListError` 이고, 사유를
+    전부 적는다. 내용까지 같은 행(프레임 중복)만 하나로 센다.
+  · 위반이면 **잘라 쓰지 않고 멈춘다** — 원본은 cache 에 남고, cli 는 사유를
+    적고 종료코드 1 이다. 수집·분석·저장본을 만들지 않는다. 그때는
+    `--matches-file` 로 직접 넣는다.
+  · `--matches-file` 과 `_detect_round` 의 동작은 그대로다.
+
+#### 대회 식별 — `toto/competition.py`
+
+파서는 대회를 정하지 않는다(`league` 는 언제나 빈칸). 대회는 여기서 정하고
+**무엇으로 정했는지**를 `Match.league_basis` 에 남긴다.
+
+| 근거 | 뜻 | 확정 |
+|---|---|---|
+| `matches_file` | matches.yaml 에 적힌 대회 | 예 |
+| `team_league` | 팀 소속 리그 (홈 → 원정) | 아니오 |
+| `none` | 정하지 못함 | — |
+| `""` | 기록 없음 (옛 저장본·데모·직접 만든 Match) | 아니오 |
+
+  · **행 문자열로 대회를 찾지 않는다** (AST 테스트). `row_text` 근거는 만들지
+    않았다 — 베트맨 행에 대회 칸이 없기 때문이다.
+  · **국가 별칭(잉글랜드·이탈리아…)은 지우지 않았다.** matches.yaml 의 리그
+    표기를 읽는 데 그대로 쓰인다 — 쓰는 자리를 고쳤다.
+  · 국가대표 경기는 팀 정규명이 없어 `none` 이 되고, 기존 경고
+    `리그를 알 수 없어 배당률을 조회하지 못합니다` 가 그대로 뜬다.
+  · `state()` 가 넷을 가른다 — `supported`(등록 · 국내리그) · `unsupported`
+    (등록 · 대륙대회·컵) · `unregistered`(설정에 없음) · `unknown`(모름).
+    `unsupported`·`unregistered` 는 새 경고 `지원하는 국내리그가 아닙니다`.
+  · **근거 칸은 저장본에 싣지 않는다** (`artifact.DROPPED`). 수집 실행 안에서만
+    쓰고, 저장 형식·골든 바이트가 그대로다. 되살리면 `""` 이다.
+
+**FotMob 소속 정정이 확정된 대회를 덮지 않는다.** `fotmob.enrich()` 는 소속을
+하나라도 정정하면 모든 경기를 홈팀 소속으로 다시 맞췄고, matches.yaml 의
+대회까지 덮었다(옛 코드 음성 대조: `kleague1` → `laliga`). 판정은
+`competition.adopt_team_league()` 한 곳이다 — 팀 추론·근거 없음 경기만 고친다.
+
+#### 등록·종류 — `league_type()`
+
+빈 키·미등록 키도 `"league"` 로 읽혔다. '미지정 = league' 는 **등록된 대회의
+type 칸이 비었을 때**의 규칙이다. 이제 빈 키·미등록 키는 `""`(종류 없음)이고
+`owns_team_league` 는 False, `strict_team_match` 는 True 다 (§1-29 의 '모르는
+값 = strict' 와 같다). **production 호출부는 전부 등록 키로 거르거나 판정
+전에 돌아가므로 실행 결과는 바뀌지 않는다** (spy 테스트). 6-D-3/6-D-4 가
+'동작 변화 없음' 으로 고정했던 두 테스트는 범위를 옮겼다.
+
+#### 준비 상태 — `toto/readiness.py`
+
+수집 갈래 끝(소속 저장 뒤 · 분석 앞)에서 단계별로 로그에 적는다.
+
+    Betman 수집 · 경기 파싱 · 대회 식별 · FotMob · Pinnacle · WhoScored
+        → 분석 READY/DEGRADED/NOT_READY · 저장본 (같은 판정)
+
+  · 소스 상태는 각 소스가 적은 문자열의 첫 낱말(§1-6)을 읽는다. 모르는 낱말은
+    통과로 치지 않는다 — 피나클의 `연결됨 · 경기 매칭 실패` 는 FAIL.
+  · `ok` 여도 실제로 빈 경기가 있으면 PARTIAL 이다 (`[채움 13/14]`).
+  · 데모 갈래는 지나지 않는다. 리포트에도 저장본에도 싣지 않는다.
+
+**막는 것은 경기 행 계약 하나뿐이다.** 대회·소스 결손은 §1-6(경고하고 진행)·
+§1-16(매 실행 저장) 그대로이고 `ARTIFACT_POLICY = "record_only"` 가 그 사실을
+코드에 남긴다. 차단 정책 — 전체 중단 / 분석은 하되 저장본 차단 / 분석축별
+차단 — 은 **결정이 필요해 고르지 않았다.** 지금 열린 틈은 국가대표 회차처럼
+대회를 하나도 정하지 못한 회차도 저장본이 생기고, 패널 자동 실행의 preflight
+가 그것을 막지 않는다는 것이다.
+
+#### 확인하지 못한 것
+
+  · PC 의 `betman_cells_260054/260055.json` 은 이 세션에 없다. 픽스처는 위
+    구조를 옮겨 적은 것이고 원본 JSON 을 저장소에 넣지 않았다.
+  · 260054 실물로는 돌리지 못했다. 국내리그 회귀는 실물 260052 저장본의
+    팀명 14쌍으로 확인했다 (저장된 대회와 같다).
+
+회귀 테스트: `python tests/test_match_contract.py` (39개).
+
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
 260052 실행이 남긴 것은 후스코어드 `팀명 매칭 실패` 5건과 `강점 0개` 3팀이다.
@@ -7667,6 +7765,7 @@ python tests/test_strip_fence.py           # 코드펜스 규칙 · 두 입구�
 python tests/test_sum_draw.py              # §8 sum_draw 화면 줄 = rounds.csv M10 §1-57 (7개)
 python tests/test_pages_entrypoints.py     # --publish-round ↔ pagesdeploy 게시 폴더 규칙 M11 §1-57 (4개)
 python tests/test_runner_contract.py       # 직접 실행 러너 tests/_runner.py 출력·종료코드·SKIP M13 §1-57 (11개)
+python tests/test_match_contract.py        # 베트맨 14경기 계약·대회 식별·FotMob 덮어쓰기·league_type·준비 상태 6-C §1-58 (39개)
 python -m pytest -q -rs                    # 전체 — `pytest` 가 아니라 `python -m pytest` (PyYAML 있는 인터프리터)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개

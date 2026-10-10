@@ -46,8 +46,11 @@ DEFAULT_GAME_ID = "G011"
 
 # "2026-08-09 20:00" / "08.09 20:00" / "8/9 20:00" 등을 잡는다
 _TIME_RE = re.compile(r"(\d{1,4}[./-]\d{1,2}(?:[./-]\d{1,2})?)?\s*(\d{1,2}:\d{2})")
-# "맨체스터시티 vs 리버풀" / "맨체스터시티 - 리버풀"
-_VS_RE = re.compile(r"(.+?)\s*(?:vs\.?|VS\.?|[-–:])\s*(.+)")
+# "맨체스터시티 vs 리버풀" / "맨체스터시티 : 리버풀" /
+# "맨체스터시티 - 리버풀". 대시는 양쪽 공백이 있는 구분자만 인정해
+# Wolverhampton-Wanderers 같은 팀명 안의 하이픈을 보존한다.
+_VS_RE = re.compile(
+    r"(.+?)\s*(?:vs\.?|:)\s*(.+)|(.+?)\s+[-–]\s+(.+)", re.IGNORECASE)
 
 # 게임슬립 표의 머리글 행에 나타나는 문구. 이 중 하나라도 들어 있으면
 # 경기 행이 아니다.
@@ -140,13 +143,16 @@ def _match_no(cells: list[str]) -> int | None:
 
 
 def _teams(cells: list[str]) -> tuple[str, str]:
-    """`홈 vs 원정` 이 한 셀에 든 vs 셀에서 두 팀을 꺼낸다. 없으면 ("", "")."""
-    for cell in cells:
-        m = _VS_RE.match(cell)
-        if m and not _TIME_RE.search(cell):
-            home, away = m.group(1).strip(), m.group(2).strip()
-            if home and away:
-                return home, away
+    """세 번째 표 셀(전용 팀 대결 셀)에서만 두 팀을 꺼낸다."""
+    if len(cells) < 3:
+        return "", ""
+    cell = cells[2]
+    m = _VS_RE.fullmatch(cell)
+    if m and not _TIME_RE.search(cell):
+        home, away = (m.group(1), m.group(2)) if m.group(1) else (m.group(3), m.group(4))
+        home, away = home.strip(), away.strip()
+        if home and away:
+            return home, away
     return "", ""
 
 

@@ -173,6 +173,35 @@ def test_a13_match_list_error_message_lists_every_problem():
     assert str(exc) == "없는 번호: 3번; 넘는 번호: 15번"
 
 
+def test_a14_detail_action_cell_is_not_used_when_vs_cell_is_missing():
+    """상세정보 셀의 콜론을 홈/원정 구분자로 오인하지 않는다."""
+    row = {"cells": ["1경기", "26.09.19 (토) 23:00", "투표율 41.2%",
+                     "1경기 브라이턴 : 아스널 상세정보 열기"]}
+    parsed = betman.read_match_rows([row])
+    assert parsed.matches == []
+    assert parsed.unreadable == [1]
+
+
+def test_a15_match_list_rejects_detail_action_cell_as_team_names():
+    """vs 셀 누락 시 상세정보 UI만으로는 회차 검증을 통과할 수 없다."""
+    rows = rows_for(DOMESTIC)
+    rows[1] = {"cells": ["1경기", "26.09.19 (토) 23:00", "투표율 41.2%",
+                         "1경기 브라이턴 : 아스널 상세정보 열기"]}
+    try:
+        betman.match_list(rows, EXPECTED, "260054")
+    except betman.MatchListError as exc:
+        assert any("팀명(vs 셀)을 읽지 못한 행: 1번" in p
+                   for p in exc.problems), exc.problems
+    else:
+        raise AssertionError("상세정보 UI 셀을 팀명으로 써서 회차가 통과했다")
+
+
+def test_a16_hyphens_inside_team_names_are_preserved():
+    assert betman._teams(["1경기", "26.09.19 (토) 23:00",
+                         "Wolverhampton-Wanderers - A-B United"]
+                        ) == ("Wolverhampton-Wanderers", "A-B United")
+
+
 # ==========================================================================
 # B. 대회 식별 — 파서와 분리 · 근거를 남긴다
 # ==========================================================================

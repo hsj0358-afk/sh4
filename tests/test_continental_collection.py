@@ -38,6 +38,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+import prodfiles                                              # noqa: E402
 import realdata                                               # noqa: E402
 from toto import analysis, models                              # noqa: E402
 from toto.models import (Match, SeasonMatch, TeamProfile,      # noqa: E402
@@ -478,8 +479,13 @@ def test_g1_continental_collection_never_rewrites_team_league():
 
 
 def test_g2_no_learned_files_are_created():
-    for name in ("teams.learned.yaml", "teams.league.yaml"):
-        assert not (ROOT / "data" / name).exists(), name
+    """테스트 실행 중에 운영 학습 파일이 생기거나 바뀌지 않았다.
+
+    PC 의 원본 저장소에는 실제 수집이 쌓은 학습 파일이 있다. 있는지만
+    보면 그 정상 상태에서 FAIL 이 되므로 실행 전후를 견준다
+    (`tests/prodfiles.py`).
+    """
+    assert prodfiles.changed() == [], prodfiles.changed()
 
 
 def test_g3_set_league_is_still_called_from_one_place():
@@ -556,9 +562,10 @@ def test_i1_competition_is_optional_when_reviving():
 
 
 def test_i2_existing_artifact_still_reads():
+    """경기 수 상수는 그 수를 잰 저장본에서만 견준다 (`realdata.require_sha256`)."""
     from toto import artifact
     path = ROOT / "data" / "artifacts" / "260052.json"
-    realdata.require(path)
+    realdata.require_sha256(path, realdata.ARTIFACT_260052_SHA256)
     rep, why = artifact.load_path(str(path))
     assert not why, why
     assert len(rep.matches) == 14

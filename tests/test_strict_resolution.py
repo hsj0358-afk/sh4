@@ -42,6 +42,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # prodfiles (python -m tests.… 실행에서도)
+import prodfiles                                              # noqa: E402
 from toto.normalize import TeamResolver, normalize_name      # noqa: E402
 from toto.settings import CONTINENTAL, CUP, LEAGUE, Settings  # noqa: E402
 from toto.settings import load_settings, load_yaml           # noqa: E402
@@ -462,9 +464,13 @@ def test_f2_no_files_are_created():
 
 
 def test_f3_production_learned_files_absent():
-    """저장소의 실제 자리에 학습 파일이 생기지 않았다."""
-    for name in ("teams.learned.yaml", "teams.league.yaml"):
-        assert not (ROOT / "data" / name).exists(), f"data/{name} 이 생겼다"
+    """저장소의 실제 자리에서 테스트 실행 중에 학습 파일이 생기거나 바뀌지 않았다.
+
+    PC 의 원본 저장소에는 실제 수집이 쌓은 학습 파일이 있다. 있는지만
+    보면 그 정상 상태에서 FAIL 이 되므로 실행 전후를 견준다
+    (`tests/prodfiles.py`).
+    """
+    assert prodfiles.changed() == [], prodfiles.changed()
 
 
 # ==========================================================================

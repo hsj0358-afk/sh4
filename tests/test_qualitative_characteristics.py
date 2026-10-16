@@ -54,6 +54,16 @@ def _artifact():
     return realdata.load_artifact(ARTIFACT)
 
 
+def _measured_artifact():
+    """다이제스트 상수를 잰 **그** 저장본. 내용이 다르면 SKIP 이다.
+
+    상수는 특정 수집본의 값이라, 다시 수집한 같은 이름의 저장본에서는
+    회귀가 아니어도 어긋난다 (`realdata.require_sha256`).
+    """
+    return realdata.load_artifact(ARTIFACT,
+                                  sha256=realdata.ARTIFACT_260052_SHA256)
+
+
 def _profiles(report):
     for match in report.matches:
         for side in ("home", "away"):
@@ -614,7 +624,7 @@ def test_f3_stored_artifact_keeps_the_notes_it_was_saved_with():
     이 테스트가 지키는 것이다. 재계산 결과는
     `tests/test_relationship_engine.py` 의 G절이 대조한다.
     """
-    report = _artifact()
+    report = _measured_artifact()
     notes = [n for m in report.matches for n in (m.matchup_notes or [])]
     assert len(notes) == 18, len(notes)
     blob = json.dumps(notes, ensure_ascii=False, sort_keys=True)
@@ -647,7 +657,7 @@ def test_f5_real_round_market_probabilities_are_unchanged():
 
 def test_f6_real_round_six_axes_are_unchanged():
     """Test H — 저장본의 여섯 축이 한 칸도 바뀌지 않았다."""
-    report = _artifact()
+    report = _measured_artifact()
     from toto.models import TeamAnalysis
     dump = []
     for match in report.matches:

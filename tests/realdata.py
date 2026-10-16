@@ -16,11 +16,20 @@ pytest 는 `unittest.SkipTest` 를 skip 으로 센다(`-rs` 로 사유가 보인
 """
 from __future__ import annotations
 
+import hashlib
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 ARTIFACT_260052 = ROOT / "data" / "artifacts" / "260052.json"
+
+# 실물 내용을 상수로 고정한 테스트들(경기 수·다이제스트)이 기대값을 잰
+# 260052 저장본. `tests/golden/real.json` 의 260052 입력 sha 와 같은 파일이다.
+# 라싱 산탄데르 등록 **전** 수집본이라 라리가가 342경기다(§1-26). 그 뒤
+# 다시 수집한 저장본(라리가 380경기, §3-10)은 다른 자료이므로 그 값과
+# 견주지 않고 SKIP 한다 — 옛 자료로 되돌려 맞추는 것이 답이 아니다.
+ARTIFACT_260052_SHA256 = (
+    "92139c1eb98e60b1f54e61e6f1196de08dc41b4db01b1455ceb00b99c37f51fe")
 
 SkipTest = unittest.SkipTest
 
@@ -41,10 +50,30 @@ def require(path: Path = ARTIFACT_260052) -> Path:
     return path
 
 
-def load_artifact(path: Path = ARTIFACT_260052):
-    """없으면 SKIP, 못 읽으면 FAIL, 읽히면 Report."""
+def require_sha256(path: Path, expected: str) -> Path:
+    """없거나 **내용이 기준과 다르면** SKIP. 같으면 경로를 돌려준다.
+
+    실물 내용을 상수로 고정한 테스트는 그 상수를 잰 파일에서만 의미가 있다.
+    `require()` 는 있는지만 보므로, 다른 PC 에서 다시 수집한 같은 이름의
+    저장본에서 그런 테스트가 FAIL 이 됐다(회귀가 아니라 입력이 다른 것).
+    `tests/test_golden_real.py` 가 입력 sha 로 가르는 것과 같은 규칙이다.
+    """
+    path = require(path)
+    actual = hashlib.sha256(path.read_bytes()).hexdigest()
+    if actual != expected:
+        raise SkipTest(f"입력 내용이 기준과 다르다 — {_shown(path)} "
+                       f"sha256 {actual[:12]} (기준 {expected[:12]})")
+    return path
+
+
+def load_artifact(path: Path = ARTIFACT_260052, sha256: str | None = None):
+    """없으면 SKIP, 못 읽으면 FAIL, 읽히면 Report.
+
+    `sha256` 을 주면 내용이 그 파일과 다를 때도 SKIP 이다.
+    """
     from toto import artifact
-    report, why = artifact.load_path(require(path))
+    path = require_sha256(path, sha256) if sha256 else require(path)
+    report, why = artifact.load_path(path)
     assert report is not None, (f"실물 저장본을 읽지 못했습니다 — "
                                 f"{_shown(Path(path))}: {why}")
     return report

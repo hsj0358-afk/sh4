@@ -6996,6 +6996,26 @@ PC 실측(260054·260055 betman cells)에서 경기 행은 이런 모양이다.
     `--matches-file` 로 직접 넣는다.
   · `--matches-file` 과 `_detect_round` 의 동작은 그대로다.
 
+**팀명은 맞대결 셀 하나에서만 읽는다** (`_teams()`, 커밋 `62eed5f`). 처음
+6-C 판은 행의 셀을 앞에서부터 훑어 `vs`·`-`·`:` 가 처음 맞는 셀을 팀명으로
+썼다. 실제 행에서는 vs 셀이 상세정보 셀보다 앞이라 드러나지 않았지만,
+**vs 셀이 빠지면** 반복이 `1경기 브라이턴 : 아스널 상세정보 열기` 까지 가서
+콜론으로 쪼갰다 — 결과는 (`1경기 브라이턴`, `아스널 상세정보 열기`) 이고,
+"vs 셀 없는 경기 행 → `MatchListError`" 라는 위 계약을 **조용히 지나갔다.**
+같은 정규식은 이름 안의 하이픈에서도 잘랐다 (`A-리그 vs B` → `A`, `리그`).
+
+  · 읽는 자리는 **세 번째 셀**(빈 칸을 걷은 뒤 `cells[2]`)뿐이다. 관측한 행
+    구조가 `번호 · 일시 · 맞대결 · …` 이기 때문이다. 상세정보·투표율·UI 셀은
+    팀명이 될 수 없다.
+  · 그 셀을 `fullmatch` 한다. 구분자는 `vs`(대소문자 무관)·`:` 그리고
+    **양쪽에 공백이 있는** `-`·`–` 뿐이다 — `Wolverhampton-Wanderers` 의
+    하이픈은 구분자가 아니다.
+  · 베트맨이 열을 하나 더하거나 빼면 세 번째 셀에 맞대결이 없어 **그 행이
+    `unreadable` 이 되고 회차가 `MatchListError` 로 멈춘다.** 틀린 팀명으로
+    가지 않는다 — 그때는 `--matches-file` 로 넘어가고 셀 구조를 다시 본다(§1-4).
+  · 회귀 테스트: `test_a14`(상세정보 셀만 있는 행은 경기가 아니다) ·
+    `test_a15`(그 행이 있는 회차는 통과하지 못한다) · `test_a16`(하이픈 보존).
+
 #### 대회 식별 — `toto/competition.py`
 
 파서는 대회를 정하지 않는다(`league` 는 언제나 빈칸). 대회는 여기서 정하고
@@ -7053,12 +7073,75 @@ type 칸이 비었을 때**의 규칙이다. 이제 빈 키·미등록 키는 `"
 대회를 하나도 정하지 못한 회차도 저장본이 생기고, 패널 자동 실행의 preflight
 가 그것을 막지 않는다는 것이다.
 
-#### 확인하지 못한 것
+#### 실물로 확인한 것과 못 한 것
 
-  · PC 의 `betman_cells_260054/260055.json` 은 이 세션에 없다. 픽스처는 위
-    구조를 옮겨 적은 것이고 원본 JSON 을 저장소에 넣지 않았다.
-  · 260054 실물로는 돌리지 못했다. 국내리그 회귀는 실물 260052 저장본의
-    팀명 14쌍으로 확인했다 (저장된 대회와 같다).
+  · **PC 실물 확인**: 저장된 `betman_cells_260054/260055.json` 을
+    `match_list()` 에 태우면 두 회차 모두 **14경기 · 번호 1~14 · 대회 `''`**
+    다. 260055 의 `이탈리아 vs 벨기에` 같은 국가명이 국내리그로 빠지지 않는다.
+    원본 JSON 은 저장소에 넣지 않았다 — 픽스처는 그 구조를 옮겨 적은 것이다.
+  · 그 뒤 단계(국가대표 경기가 `none` 이 되고 경고가 뜨는지)는 실물 수집으로
+    확인하지 않았다. 국내리그 회귀는 실물 260052 저장본의 팀명 14쌍으로
+    확인했다 (저장된 대회와 같다).
+  · PC 원본 저장소 전체 실행(`62eed5f`): **새 실패 0건** — 남은 6건은
+    입력·환경을 가리지 않은 테스트였고 §1-59 에서 고쳤다.
+
+### 1-59. 환경에 따라 FAIL 하던 테스트 여섯 (Phase 6-C 후속)
+
+PC 원본 저장소의 전체 실행이 줄곧 **6건 FAIL** 이었다. 기준(`e0380fc`)과
+현재(`62eed5f`)를 깨끗한 작업 트리 둘에 같은 파이썬·같은 저장본으로 돌리니
+실물 저장본 셋은 **같은 값으로** 실패했고 학습 파일 셋은 둘 다 **통과**했다.
+코드 회귀가 아니라 테스트가 입력과 환경을 가리지 않은 것이다.
+
+#### 실물 저장본 셋 — 입력 sha 가 다르면 SKIP
+
+`test_continental_collection::test_i2` · `test_qualitative_characteristics::
+test_f3_stored_artifact…` · `…::test_f6_real_round_six_axes…` 는 경기 수
+`{"epl":380,"laliga":342}` 와 다이제스트 둘을 상수로 고정했는데, 그 상수는
+**특정 수집본**(sha `92139c1e…`)에서 잰 값이다. `realdata.require()` 는 파일이
+**있는지만** 봐서, 같은 이름으로 다시 수집한 PC 저장본(sha `00A261D6…`)에서
+FAIL 이 됐다.
+
+**380경기가 맞는 자료다.** 342 는 라싱 산탄데르가 `teams.yaml` 에 없어 38경기가
+빠져 있던 수집본이고(§1-26), 380 은 등록 뒤 다시 받은 것이다(§3-10). 그래서
+옛 수집본을 다시 받아 맞추는 것은 답이 아니다 — 결함 있는 자료로 되돌아간다.
+
+  · `realdata.require_sha256(path, sha)` 가 내용이 다르면 SKIP 한다
+    (`입력 내용이 기준과 다르다 — … sha256 … (기준 …)`). `test_golden_real.py`
+    가 입력 sha 로 가르는 것과 같은 규칙이다.
+  · 기준 sha 는 `realdata.ARTIFACT_260052_SHA256` 한 곳이고, `tests/golden/
+    real.json` 의 260052 입력 sha 와 같은지 테스트가 대조한다 — 기준이 둘이
+    되지 않는다.
+  · **sha 를 묶은 것은 이 셋뿐이다.** 같은 저장본을 읽는 다른 테스트는 PC
+    저장본에서도 통과하므로 그대로 두었다 — 묶으면 확인하던 것이 SKIP 으로
+    사라진다.
+  · 다른 입력이면 **읽기 전에** SKIP 한다. 깨진 JSON 이어도 FAIL 이 아니다.
+    sha 를 주지 않은 `load_artifact()` 는 예전 그대로(있는데 못 읽으면 FAIL)다.
+
+#### 학습 파일 셋 — 있는지가 아니라 실행 중에 바뀌었는지
+
+`test_continental_collection::test_g2` · `test_index_isolation::test_j3` ·
+`test_strict_resolution::test_f3_production_learned_files_absent` 는
+"테스트가 운영 학습 파일을 만들지 않는다" 를 지키려 했는데 파일이 **있는지**를
+봤다. `data/teams.learned.yaml`·`teams.league.yaml` 은 실제 수집이 쌓는 운영
+자료라(§1-6-1 · §3-5) PC 원본에는 정상적으로 있다.
+
+  · `tests/prodfiles.py` 가 **처음 import 될 때** 두 파일의 (sha256, 수정 시각)을
+    기록하고 `changed()` 가 그 뒤 생김·바뀜·사라짐을 돌려준다. pytest 는 테스트를
+    돌리기 전에 모든 모듈을 import 하고 직접 실행도 `main()` 앞에서 import
+    하므로, 기록 시점은 어느 테스트보다 앞선다.
+  · 없던 파일은 끝까지 없어야 한다(예전 검사와 같다). 있던 파일은 **같은 내용을
+    다시 써도** 잡는다 — 운영 파일을 건드린 것이다.
+  · 기록은 읽기만 한다(테스트로 고정). 운영 파일을 지우지 않는다.
+  · `test_index_isolation`·`test_strict_resolution` 은 `tests/` 를 경로에 넣는
+    줄을 하나 더했다 — 그래야 `python -m tests.…` 실행이 예전처럼 돈다.
+    `realdata` 를 맨 위에서 import 하는 다른 파일들은 그 실행 방식이 원래부터
+    안 됐고(§1-57 M13 의 서술과 다르다), 이번 범위가 아니라 그대로다.
+
+**음성 대조** — 운영 학습 파일과 다시 수집한 260052 를 둔 PC 상태를 사본
+둘에 재현했다. 옛 테스트는 **6 failed**(PC 와 같다), 새 테스트는 **3 passed ·
+3 skipped**(사유 `입력 내용이 기준과 다르다`)다.
+
+회귀 테스트: `python tests/test_test_input_gates.py` (15개).
 
 회귀 테스트: `python tests/test_match_contract.py` (39개).
 
@@ -7765,7 +7848,8 @@ python tests/test_strip_fence.py           # 코드펜스 규칙 · 두 입구�
 python tests/test_sum_draw.py              # §8 sum_draw 화면 줄 = rounds.csv M10 §1-57 (7개)
 python tests/test_pages_entrypoints.py     # --publish-round ↔ pagesdeploy 게시 폴더 규칙 M11 §1-57 (4개)
 python tests/test_runner_contract.py       # 직접 실행 러너 tests/_runner.py 출력·종료코드·SKIP M13 §1-57 (11개)
-python tests/test_match_contract.py        # 베트맨 14경기 계약·대회 식별·FotMob 덮어쓰기·league_type·준비 상태 6-C §1-58 (39개)
+python tests/test_match_contract.py        # 베트맨 14경기 계약·맞대결 셀·대회 식별·FotMob 덮어쓰기·league_type·준비 상태 6-C §1-58 (42개)
+python tests/test_test_input_gates.py      # 실물 저장본 sha 문 · 학습 파일 전후 비교 §1-59 (15개)
 python -m pytest -q -rs                    # 전체 — `pytest` 가 아니라 `python -m pytest` (PyYAML 있는 인터프리터)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개

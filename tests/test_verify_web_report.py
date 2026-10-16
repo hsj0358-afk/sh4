@@ -460,6 +460,8 @@ def test_9_browser_stage_sees_collapsed_change():
 
 # --------------------------------------------------------------------------
 def main() -> int:
+    from toto.cli import safe_console   # cp949 파이프에서도 죽지 않는다 (§1-60)
+    safe_console()
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0
     try:

@@ -908,6 +908,8 @@ def test_f3_reason_is_always_given():
 
 
 def main() -> int:
+    from toto.cli import safe_console   # cp949 파이프에서도 죽지 않는다 (§1-60)
+    safe_console()
     print("Phase 6-F-4 — 3단계 결과 보관 · [4] 연결 · 워크플로 상태")
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

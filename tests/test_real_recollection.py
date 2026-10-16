@@ -344,6 +344,8 @@ def test_f3_no_new_semantic_unit_for_the_placeholder():
 
 
 def main() -> int:
+    from toto.cli import safe_console   # cp949 파이프에서도 죽지 않는다 (§1-60)
+    safe_console()
     tests = [(k, v) for k, v in sorted(globals().items())
              if k.startswith("test_") and callable(v)]
     ok = 0

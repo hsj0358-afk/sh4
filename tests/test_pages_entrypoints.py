@@ -152,6 +152,8 @@ def test_c1_publish_round_cli_passes_only_the_argument():
 
 
 def main() -> int:
+    from toto.cli import safe_console   # cp949 파이프에서도 죽지 않는다 (§1-60)
+    safe_console()
     if not HAS_GIT:
         print("git 이 없어 건너뜁니다.")
         return 0

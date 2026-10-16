@@ -807,6 +807,8 @@ def test_q2_real_artifact_round_has_numbered_matches():
 
 
 def main() -> int:
+    from toto.cli import safe_console   # cp949 파이프에서도 죽지 않는다 (§1-60)
+    safe_console()
     print("Phase 6-F-3 — 1·2단계 보관 + 3단계 조립")
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

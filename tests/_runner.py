@@ -28,8 +28,20 @@ from __future__ import annotations
 import unittest
 
 
+def _safe_console() -> None:
+    """출력이 cp949 처럼 우리 글자(`—`)를 담지 못하면 UTF-8 로 바꾼다 (§1-60).
+
+    `toto.cli.safe_console()` 을 그대로 쓴다 — 건강한 스트림은 건드리지 않으므로
+    리눅스·윈도우 콘솔에서는 출력이 한 글자도 바뀌지 않는다. 지연 import 라서
+    테스트 모듈을 import 만 할 때(pytest)는 불리지 않는다.
+    """
+    from toto.cli import safe_console
+    safe_console()
+
+
 def run_tests(namespace: dict) -> int:
     """`namespace`(보통 `globals()`)의 `test_*` 함수를 이름순으로 돌린다."""
+    _safe_console()
     tests = [(n, f) for n, f in sorted(namespace.items())
              if n.startswith("test_") and callable(f)]
     failed = skipped = 0

@@ -367,6 +367,8 @@ def test_d4_footer_still_says_no_recommendation():
 
 
 def main() -> int:
+    from toto.cli import safe_console   # cp949 파이프에서도 죽지 않는다 (§1-60)
+    safe_console()
     print("Phase 6-F-7 — 리포트 내비게이션")
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

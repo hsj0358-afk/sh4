@@ -316,6 +316,8 @@ def test_score_block_sits_at_the_end():
 
 
 def main() -> int:
+    from toto.cli import safe_console   # cp949 파이프에서도 죽지 않는다 (§1-60)
+    safe_console()
     print("Phase 6-F-11 — B 예상 스코어 출력")
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

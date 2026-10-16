@@ -6940,13 +6940,14 @@ MODERATOR 6 · 지침 지문 `4a54e7ad` · schema 1.1 · `PACKET_VERSION`
 처리했다 — §1-60.
 
   · ~~M4(원자적 쓰기)·M5(sha256)는 조사하지 않았다.~~ → 일부 처리 (§1-60 M14·M17).
-    원자적 쓰기의 나머지 자리는 아직 보지 않았다.
-  · `panelaudit.COMPROMISE` 는 정의만 있고 쓰는 곳이 없다 (쓰이는 것은
-    `moderator.COMPROMISE`). **아직 그대로다.**
+    나머지 원자적 쓰기 자리도 조사했다 — 전부 Keep separate (§1-60 '후속 정리').
+  · ~~`panelaudit.COMPROMISE` 는 정의만 있고 쓰는 곳이 없다 (쓰이는 것은
+    `moderator.COMPROMISE`).~~ → 지웠다 (§1-60 '후속 정리').
   · ~~`cli` 의 `--pages-dir` 도움말은 `--publish-round` 만 적는데, 같은 값이 자동
     배포(`_pages_deploy`)에도 넘어간다 (§1-54).~~ → 고쳤다 (§1-60 M18).
-  · M13 에서 옮기지 않은 러너 25개는 출력 형식이 여러 가지다. **아직 그대로다**
-    (테스트 파일 83개 중 58개가 `run_tests` 를 쓴다).
+  · M13 에서 옮기지 않은 러너 25개는 출력 형식이 여러 가지다. **옮기지 않기로
+    했다** (테스트 파일 83개 중 58개가 `run_tests` 를 쓴다) — 이유는 §1-60
+    '후속 정리'. cp949 대응만 25개에 함께 넣었다.
   · ~~`test_panel.test_22` 는 `toto/cli.py` 를 작업 폴더 기준 상대 경로로 읽는다.~~
     → 고쳤다 (§1-60 M15).
   · ~~**Windows 에서는 돌려 보지 않았다.**~~ → 사용자 PC 에서 돌렸다. 실패가
@@ -7256,11 +7257,12 @@ newline 으로 읽는다) · `pagespublish.sha256_of`(원바이트) ·
 | **사용자 PC (윈도우) · 원본 저장소** | `62eed5f` | 2760 passed · **6 failed** · 4 skipped — 6건은 전부 §1-59 의 테스트 입력 문제 |
 | 리눅스 컨테이너 · 저장본 **없음** | `1b7aec9` | 2744 passed · 40 skipped · **1 failed** |
 | **사용자 PC (윈도우) · 원본 저장소** | `0173b4b` | **2778 passed · 0 failed · 7 skipped** (462초) |
+| 리눅스 컨테이너 · 저장본 **없음** | 후속 정리 | **2745 passed · 40 skipped · 0 failed** |
 
   · 리눅스 저장본 없음 줄의 1건은 `test_panel_auto.test_m14_audit_reports_what_was_left_out`
     이다. 실물 저장본이 없으면 근거가 없는 데모 색인으로 대체되어 실패하고,
-    `1b7aec9` 이전에도 같았다 — Phase 4 회귀가 아니다. **아직 고치지 않았다.**
-    저장본이 있는 PC 에서는 통과한다.
+    `1b7aec9` 이전에도 같았다 — Phase 4 회귀가 아니다. 저장본이 있는 PC 에서는
+    통과한다. **후속 정리에서 고쳤다** (아래).
   · PC 의 SKIP 7건은 둘로 갈린다. §1-59 의 실물 저장본 테스트 셋이
     `입력 내용이 기준과 다르다 — … sha256 00a261d6f6fb (기준 92139c1eb98e)` 로
     3건이고, `test_golden_real` 이 4건이다(260052 입력 불일치 · 다른 회차는
@@ -7273,9 +7275,51 @@ newline 으로 읽는다) · `pagespublish.sha256_of`(원바이트) ·
   · **직접 실행 스크립트는 cp949 파이프에서 죽을 수 있다.** git-bash 를 거쳐
     `python tests/test_golden_real.py` 를 돌리면 SKIP 사유의 `—` 를 출력하다가
     `UnicodeEncodeError: 'cp949'` 가 났다(PowerShell 콘솔에서는 정상). 제품 CLI 는
-    `cli.safe_console()` 로 막았지만(§1-43 D) 테스트 러너에는 그 장치가 없다.
-    **아직 고치지 않았다.** 윈도우에서는 PowerShell 에서 돌리거나
-    `PYTHONIOENCODING=utf-8` 을 준다.
+    `cli.safe_console()` 로 막았지만(§1-43 D) 테스트 러너에는 그 장치가 없었다.
+    **후속 정리에서 고쳤다** (아래).
+
+#### 후속 정리 — Phase 4 뒤에 남은 작은 것들
+
+**산출물은 바뀌지 않았다** — 골든 9/9 · 모바일 7/7 · 리눅스 저장본 없음 전체
+2745 passed · 0 failed.
+
+  · **`panelaudit.COMPROMISE` 를 지웠다.** 정의만 있고 동적 참조도 없었다.
+    쓰이는 것은 `moderator.COMPROMISE` 하나이고 그대로다.
+  · **테스트 직접 실행이 cp949 파이프에서 죽지 않는다.** `tests/_runner.run_tests`
+    와 옮기지 않은 러너 25개의 `main()` 이 맨 앞에서 `toto.cli.safe_console()` 을
+    부른다. 새 장치를 만들지 않고 제품 CLI 의 것을 그대로 쓴다(§1-8).
+    - 건강한 스트림은 건드리지 않으므로 리눅스·윈도우 콘솔·pytest 의 출력은
+      한 글자도 바뀌지 않는다(`test_runner_contract` 11/11).
+    - 지연 import 라서 테스트 모듈을 import 만 할 때(pytest)는 불리지 않는다.
+    - 골든 두 파일은 `EMIT_FLAG` 자식 갈래 **뒤**에서 부른다. 자식의 출력 방식을
+      바꾸지 않기 위해서다.
+    - 확인: `PYTHONIOENCODING=cp949` 로 `test_golden_real.py` 를 돌리면 SKIP
+      사유의 `—` 까지 찍히고 종료코드 0 이다. `python -m tests.…` 과 저장소 밖
+      절대 경로 실행도 그대로다.
+  · **`test_m14` 가 저장본이 없어도 통과한다.** 데모 색인에는 근거가 0건이라
+    빈 `evidence` 가 packet 에 실리지 않고, 감사가 그것을 omitted 로 센다 — 잃은
+    것이 없다. 그래서 `evidence` 는 **근거가 있을 때만** '빠지지 않았다' 를
+    묻는다. 나머지 셋(`data_quality`·`home`·`qualitative`)은 데모에서도 묻는다.
+    SKIP 으로 돌리지 않은 이유는 그 셋을 데모에서도 확인할 수 있어서다.
+    `panelpacket.audit()` 은 바꾸지 않았다.
+  · **원자적 쓰기 여섯 자리는 합치지 않는다 (M4 Keep separate).** 계약이 전부
+    다르다.
+
+    | 자리 | 무엇이 다른가 |
+    |---|---|
+    | `panelwork._atomic_write` | fsync · `newline="\n"` (체크포인트) |
+    | `panelpaste.write_canonical` | fsync 없음 · `panelwork` 를 참조하면 안 된다 (§1-41) |
+    | `roundlog._write` | CSV · UTF-8 BOM · `newline=""` · 실패하면 경고하고 `False` (§1-6-2) |
+    | `pagespublish._atomic_write` | index.html · LF · fsync 없음 |
+    | `pagespublish.copy_final` | 텍스트가 아니라 `shutil.copy2` 바이너리 복사 · `finally` 로 tmp 정리 |
+    | `panelpacket.write_cache` | 파생 캐시 · compact JSON 이라 줄바꿈 바이트가 없다 |
+
+    공통 헬퍼를 만들면 이 차이가 전부 매개변수가 된다 — M6 과 같은 판단이다.
+  · **러너 25개는 옮기지 않는다 (M13 결정 유지).** 출력이 `run_tests` 와 글자가
+    다르다 — `✓`/`✗` 형식, 머리글 줄, 모든 예외를 `FAIL` 로 적는 형식, git 이
+    없으면 건너뛰는 Pages 러너, 골든의 `EMIT_FLAG` 자식 갈래. 직접 실행의 출력이
+    계약이므로(§1-57 M13) 옮기면 그 계약이 바뀐다. 바꿀 이유(사람이나 도구가
+    그 출력을 읽다가 문제가 난 일)가 생기기 전에는 옮기지 않는다.
 
 새 회귀 테스트: `test_canonical_bytes.py` (12 · 리눅스에서 윈도우 텍스트 모드를
 흉내 내 바이트와 기록 sha 를 본다) · `test_text_digest.py` (11) ·

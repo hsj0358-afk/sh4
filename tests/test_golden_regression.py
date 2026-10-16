@@ -510,6 +510,8 @@ def test_b4_emit_writes_nothing_in_repo():
 def main() -> int:
     if sys.argv[1:2] == [EMIT_FLAG]:
         return _emit_main(Path(sys.argv[2]))
+    from toto.cli import safe_console   # cp949 파이프에서도 죽지 않는다 (§1-60)
+    safe_console()
     tests = [(n, f) for n, f in sorted(globals().items())
              if n.startswith("test_") and callable(f)]
     for name, fn in tests:

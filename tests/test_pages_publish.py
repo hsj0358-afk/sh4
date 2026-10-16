@@ -562,6 +562,8 @@ def test_c1_cli_args_and_branch_before_collection():
 
 # --------------------------------------------------------------------------
 def main() -> int:
+    from toto.cli import safe_console   # cp949 파이프에서도 죽지 않는다 (§1-60)
+    safe_console()
     if not HAS_GIT:
         print("git 이 없어 건너뜁니다.")
         return 0

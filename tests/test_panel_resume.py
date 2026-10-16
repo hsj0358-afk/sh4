@@ -1030,6 +1030,8 @@ def test_h5_the_menu_asks_and_defaults_to_no():
 
 
 def main() -> int:
+    from toto.cli import safe_console   # cp949 파이프에서도 죽지 않는다 (§1-60)
+    safe_console()
     print("Phase 6-F-12 — stage resume · 체크포인트 · A/B/C provenance")
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

@@ -2363,7 +2363,12 @@ def test_m14_audit_reports_what_was_left_out():
     """
     idx = real_index() or demo_index(3)
     rep = panelpacket.audit(idx)
-    for key in ("data_quality", "home", "evidence", "qualitative"):
+    kept = ["data_quality", "home", "qualitative"]
+    # 데모 픽스처에는 근거가 0건이라 빈 칸이 packet 에 실리지 않는다 — 잃은 것이
+    # 없으므로 그때는 묻지 않는다. 근거가 있는 실물에서만 '빠지지 않았다' 를 본다.
+    if any(e.evidence_ids for e in idx.entries):
+        kept.append("evidence")
+    for key in kept:
         assert key not in rep["omitted_kinds"], rep["omitted_kinds"]
     lines = panelpacket.audit_lines(rep)
     assert any("evidence" in ln for ln in lines)
@@ -2467,6 +2472,8 @@ def test_m20_no_read_write_or_bash_is_needed():
 
 
 def main() -> int:
+    from toto.cli import safe_console   # cp949 파이프에서도 죽지 않는다 (§1-60)
+    safe_console()
     print("Phase 6-F-6~10 — 패널 자동 실행 (3세션 · 공통 packet)")
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

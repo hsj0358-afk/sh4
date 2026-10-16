@@ -247,6 +247,8 @@ def test_f4_no_arithmetic_in_the_fallback():
 
 
 def main() -> int:
+    from toto.cli import safe_console   # cp949 파이프에서도 죽지 않는다 (§1-60)
+    safe_console()
     tests = [(n, f) for n, f in sorted(globals().items())
              if n.startswith("test_") and callable(f)]
     for name, fn in tests:

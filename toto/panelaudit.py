@@ -47,7 +47,6 @@ log = logging.getLogger("toto")
 
 DA = panelimport.DATA_ROLE
 MU = panelimport.MATCHUP_ROLE
-COMPROMISE = "compromise"
 
 # 회차 감사 상태.
 PASS, CONDITIONAL, FAIL = "PASS", "CONDITIONAL", "FAIL"

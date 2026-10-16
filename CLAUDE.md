@@ -6637,6 +6637,11 @@ reports/toto_<회차>.html → <저장소>-pages/reports/toto_<회차>.html
 (1,148,391 bytes · 줄 253개). 그래서 원본과 push 된 판은 **내용이 같아도 해시가
 다르다.** 도구는 넷을 본다.
 
+> `dfdd3f9` 부터 `_write_report()` 는 어느 OS 에서든 LF 로 쓴다 (§1-60).
+> 그 전에 만든 리포트는 여전히 CRLF 일 수 있고 사용자 설정에 따라 다른
+> 도구가 줄바꿈을 바꿀 수 있으므로, 이 도구가 줄바꿈을 걷고 비교하는 규칙은
+> 그대로 둔다.
+
   · A 파일 — 크기·SHA, 그리고 **줄바꿈·BOM 을 걷은 SHA**
   · B 내용 — 화면의 글자·수를 (경기, 블록 `h4`, 자리) 로 나눠 비교. 수는
     **값으로**(`1.20`=`1.2`), `E001` 같은 식별자는 글자로. 접힌 `<details>`·
@@ -6800,8 +6805,8 @@ Pages index 공백 · Panel Result 출처 표시 · 640px `.meta` · 720px 카�
 | M1 | 패널·사회자 응답 검증 조각 (`ValidationError`·`_strings`·`RETRY_HINT`) | Commonize | `toto/panelcheck.py` 신설 | `99dc686` |
 | M2 | 스코어 칸 검증 (`panel._score` ↔ `moderator._goals`) | Partial commonize | 판정 규칙만 공유 · 오류 문구는 각자 | `438e493` |
 | M3 | 역할 식별자·라벨 | Partial commonize | 식별자만 `models` 에서 정한다 · 라벨 사본은 그대로 | `7481437` |
-| M4 | 원자적 쓰기 (tmp + `os.replace`) | 미착수 | — | — |
-| M5 | sha256 계산 | 미착수 | — | — |
+| M4 | 원자적 쓰기 (tmp + `os.replace`) | 일부만 판정 — 두 writer 는 Keep separate (§1-60 M17) | 줄바꿈만 `"\n"` 로 맞췄다 | `e9e65ba` |
+| M5 | sha256 계산 | Partial commonize (§1-60 M14) | 텍스트 sha 두 벌만 하나로 · 계약이 다른 넷은 그대로 | `b3f55a7` |
 | M6 | Pages git 실행 함수 둘 | Keep separate | 두 계약을 테스트로 고정 | `3be20a9` |
 | M7 | HTML escape (`render.esc` ↔ `charts.esc`) | Commonize | `charts.esc` 하나 | `04d3976` |
 | M8 | 원본 자/토큰 비 `2.088` | Commonize | `panelpacket.CHARS_PER_TOKEN` 하나 | `f06e0c6` |
@@ -6931,16 +6936,21 @@ MODERATOR 6 · 지침 지문 `4a54e7ad` · schema 1.1 · `PACKET_VERSION`
 
 #### 남은 것
 
-  · M4(원자적 쓰기)·M5(sha256)는 조사하지 않았다.
+이 목록은 Phase 3 을 끝낸 시점의 것이다. 줄을 그은 셋은 리팩터링 Phase 4 가
+처리했다 — §1-60.
+
+  · ~~M4(원자적 쓰기)·M5(sha256)는 조사하지 않았다.~~ → 일부 처리 (§1-60 M14·M17).
+    원자적 쓰기의 나머지 자리는 아직 보지 않았다.
   · `panelaudit.COMPROMISE` 는 정의만 있고 쓰는 곳이 없다 (쓰이는 것은
-    `moderator.COMPROMISE`).
-  · `cli` 의 `--pages-dir` 도움말은 `--publish-round` 만 적는데, 같은 값이 자동
-    배포(`_pages_deploy`)에도 넘어간다 (§1-54).
-  · M13 에서 옮기지 않은 러너 25개는 출력 형식이 여러 가지다.
-  · `test_panel.test_22` 는 `toto/cli.py` 를 작업 폴더 기준 상대 경로로 읽는다.
-    그래서 저장소 밖에서 돌리면 pytest 로도 직접 실행으로도
-    `FileNotFoundError` 가 난다. M13 이전부터 그랬다.
-  · **Windows 에서는 돌려 보지 않았다.**
+    `moderator.COMPROMISE`). **아직 그대로다.**
+  · ~~`cli` 의 `--pages-dir` 도움말은 `--publish-round` 만 적는데, 같은 값이 자동
+    배포(`_pages_deploy`)에도 넘어간다 (§1-54).~~ → 고쳤다 (§1-60 M18).
+  · M13 에서 옮기지 않은 러너 25개는 출력 형식이 여러 가지다. **아직 그대로다**
+    (테스트 파일 83개 중 58개가 `run_tests` 를 쓴다).
+  · ~~`test_panel.test_22` 는 `toto/cli.py` 를 작업 폴더 기준 상대 경로로 읽는다.~~
+    → 고쳤다 (§1-60 M15).
+  · ~~**Windows 에서는 돌려 보지 않았다.**~~ → 사용자 PC 에서 돌렸다. 실패가
+    나온 자리를 Phase 4 와 §1-59 가 고쳤다 (§1-60 의 기준선 표).
 
 #### 테스트 기준선 (`b371638` · 리눅스 컨테이너)
 
@@ -6952,7 +6962,8 @@ MODERATOR 6 · 지침 지문 `4a54e7ad` · schema 1.1 · `PACKET_VERSION`
 | `python tests/test_mobile_layout.py` | 7/7 |
 
 **Windows 에서 돌린 기준선이 아니다.** 한국어 윈도우의 경로·인코딩·줄바꿈이
-닿는 자리는 사용자 PC 에서 따로 확인해야 한다(§1-7 · §1-43).
+닿는 자리는 사용자 PC 에서 따로 확인해야 한다(§1-7 · §1-43). 그 확인과 이후
+기준선은 §1-60 에 있다.
 
 **골든을 돌리는 동안 저장소를 고치지 않는다.** `test_b4` 가 실행 전후의
 `git status` 를 견주므로, 그 사이에 CLAUDE.md 를 고쳐도 `저장소에 생긴 것:
@@ -7085,6 +7096,8 @@ type 칸이 비었을 때**의 규칙이다. 이제 빈 키·미등록 키는 `"
   · PC 원본 저장소 전체 실행(`62eed5f`): **새 실패 0건** — 남은 6건은
     입력·환경을 가리지 않은 테스트였고 §1-59 에서 고쳤다.
 
+회귀 테스트: `python tests/test_match_contract.py` (42개).
+
 ### 1-59. 환경에 따라 FAIL 하던 테스트 여섯 (Phase 6-C 후속)
 
 PC 원본 저장소의 전체 실행이 줄곧 **6건 FAIL** 이었다. 기준(`e0380fc`)과
@@ -7143,7 +7156,118 @@ FAIL 이 됐다.
 
 회귀 테스트: `python tests/test_test_input_gates.py` (15개).
 
-회귀 테스트: `python tests/test_match_contract.py` (39개).
+### 1-60. 플랫폼 이식성 (리팩터링 Phase 4) — 윈도우에서도 같은 바이트
+
+> 이 절의 "Phase 4" 는 **리팩터링 Phase 4** 다. 경기자료 MD·패널 결과를 만든
+> Phase 4-A~4-G(§1-14~§1-21)와 다른 것이다.
+
+§1-57 이 남긴 항목 가운데 **사용자 PC(한국어 윈도우)에서 실제로 실패한
+자리**를 고쳤다. 대부분 테스트만 바꿨고, 제품 코드는 쓰기 줄바꿈 두 곳과
+도움말 하나 · 함수 하나를 합친 것뿐이다.
+
+| M | 대상 | 바뀐 것 | 커밋 |
+|---|---|---|---|
+| M15 | 실행 위치에 기대던 테스트 둘 | 테스트만 | `633bc6f` |
+| M16 | 리눅스 환경을 전제한 테스트 픽스처 | 테스트만 | `b693157` |
+| M17 | 정본 JSON 쓰기의 줄바꿈 (M4 일부) | `panelpaste.write_canonical` · `panelwork._atomic_write` | `e9e65ba` |
+| M14 | packet·체크포인트 텍스트 sha (M5 일부) | `panelwork._sha` 를 `panelpacket.packet_digest` 로 | `b3f55a7` |
+| M18 | `--pages-dir` 도움말 | `cli.py` 도움말 문구만 | `f527c91` |
+| — | 최종 리포트 HTML 쓰기의 줄바꿈 | `cli._write_report` | `dfdd3f9` |
+
+**리눅스 산출물은 한 바이트도 바뀌지 않았다** — 커밋마다 골든 9 · 실물 골든 4 ·
+모바일 7 이 그대로 통과했다(§1-55). 프롬프트와 판 번호(PANEL 5 · MODERATOR 6 ·
+지침 지문 `4a54e7ad` · schema 1.1 · `PACKET_VERSION` `6-F-10-common-v2`)도
+그대로다.
+
+#### 테스트만 바꾼 것 — M15 · M16
+
+  · **M15 실행 위치.** `test_panel.test_22` 는 `Path("toto/cli.py")` 를 읽어
+    저장소 밖에서 돌리면 `FileNotFoundError` 가 났다. 이제 import 한 모듈의
+    `inspect.getsource(cli)` 를 읽는다(파일과 글자가 같다).
+    `test_panel_auto.test_l10` 은 `Path("toto/../.claude/panel")` 을 봤는데,
+    저장소 밖에서는 그 경로가 엉뚱한 곳이라 **아무것도 확인하지 않고 통과**했다.
+    이제 `<저장소>/.claude/panel` 을 본다.
+  · **M16 윈도우 픽스처.** 다섯 갈래였고 전부 테스트가 리눅스를 전제한 것이다.
+    - 경로 구분자 — `str(relative_to(ROOT))` 를 `"toto/…"` 와 견줬다 → `.as_posix()`
+    - 절대 경로 — `"/elsewhere"` 는 윈도우에서 `\elsewhere` 로 읽힌다 → 실제 임시 경로
+    - 자식 프로세스 해독 — 자식은 `safe_console()` 로 UTF-8 을 쓰는데 부모가
+      cp949 로 읽었다 → UTF-8 로 엄격하게 읽는다
+    - 가짜 claude CLI — `#!/bin/sh` 스크립트는 윈도우에서 실행되지 않는다
+      (WinError 193) → 동작을 파이썬 스크립트에 두고, 윈도우는 `.cmd` 런처
+      (실제 npm `claude.cmd` 와 같은 모양), POSIX 는 셸 런처로 띄운다.
+      출력 바이트·종료코드·손자 프로세스는 그대로다
+    - CLI 탐색 — `test_i6` 이 PATH 만 비웠는데 `cli_search_dirs()` 가 설치
+      폴더도 훑어 `%APPDATA%\npm\claude.cmd` 가 있는 PC 에서는 '못 찾음' 이
+      재현되지 않았다 → 그 폴더들을 빈 샌드박스로 돌린다. 사용자 설치·PATH 는
+      건드리지 않는다
+
+#### 제품 코드 — 줄바꿈은 언제나 `"\n"`
+
+**텍스트 모드의 기본값(`newline=None`)은 윈도우에서 `\n` 을 `\r\n` 으로 바꾼다.**
+세 자리가 그 영향을 받았고 셋 다 같은 방법으로 고쳤다 — `newline="\n"`. 이미
+`pagespublish._atomic_write` 가 index.html 에 쓰던 선택이다.
+
+| 자리 | 윈도우에서 일어난 일 |
+|---|---|
+| `panelpaste.write_canonical` (Panel Result) | 파일은 CRLF 인데 매니페스트의 sha 는 LF 텍스트로 잰 값이라, 기록된 출처가 실제 파일 바이트를 가리키지 않았다 |
+| `panelwork._atomic_write` (A·B·C 체크포인트) | 〃 |
+| `cli._write_report` (최종 리포트 HTML) | `pagespublish.check_final_html` 이 원바이트에서 `render.PANEL_CSS`(LF 6개)를 찾는데 CRLF 라 못 찾아, 패널이 붙은 리포트를 **"패널이 붙지 않은 리포트"** 로 거부했다 |
+
+  · 리눅스에서는 `os.linesep` 이 `"\n"` 이라 바이트가 전과 같다.
+  · **기록된 sha 값은 바뀌지 않는다.** 바뀐 것은 파일 쪽이다 — 이제 파일 바이트가
+    해시한 문자열의 UTF-8 과 같다. 옛 CRLF 파일도 `_file_sha` 가 universal
+    newline 으로 읽으므로 같은 값이 나온다.
+  · `check_final_html` 은 **그대로**다. 여전히 원바이트를 읽고 CRLF 사본을
+    거부한다 — 고친 것은 쓰는 쪽이지 검사가 아니다.
+  · **두 writer(M17)는 합치지 않았다.** `_atomic_write` 는 fsync 를 하고
+    `write_canonical` 은 하지 않으며, `panelpaste` 는 `panelwork` 를 참조하면
+    안 된다(§1-41). 공통 헬퍼를 만들면 한쪽 계약이 바뀐다. M4 의 나머지 쓰기
+    자리는 아직 보지 않았다.
+  · `panelpacket.write_cache` 는 손대지 않았다 — compact `json.dumps` 라
+    줄바꿈이 전부 이스케이프되어 파일에 `\n`·`\r` 바이트가 없다.
+  · §1-53 이 적은 "윈도우에서 `_write_report()` 는 CRLF 로 쓴다" 는 `dfdd3f9`
+    이후 맞지 않는다. 검증 도구는 그대로 줄바꿈을 걷고 비교한다.
+
+#### M14 — 텍스트 sha 하나로
+
+`panelpacket.packet_digest` 와 `panelwork._sha` 는 본문이 한 줄로 같았다
+(UTF-8 텍스트의 sha256 전체 소문자 hex, `None` 은 빈 문자열). 두 값이 모두
+`workflow_manifest.json` 에 들어가고 재개가 새로 잰 값과 견주므로(§1-48), 규칙이
+두 벌이면 오류 없이 갈라질 수 있었다. 이제 `panelwork._sha` 가
+`panelpacket.packet_digest` 와 **같은 함수 객체**다. 의존 방향은
+`panelwork → panelpacket` 이고 순환이 생기지 않는다.
+
+**계약이 다른 넷은 그대로 둔다** — `panelwork._file_sha`(BOM 없이 · universal
+newline 으로 읽는다) · `pagespublish.sha256_of`(원바이트) ·
+`instructions_fingerprint`(8자) · payload/입력 해시와 `verify_web_report` 의 sha.
+
+#### M18 — `--pages-dir` 도움말
+
+도움말이 `--publish-round` 만 적었는데 같은 값이 자동 배포에도 넘어간다. 이제
+둘 다 적고, **생략했을 때 두 경로의 폴더 규칙이 다르다**는 것도 적는다(§1-57 M11).
+동작은 바뀌지 않았다.
+
+#### 테스트 기준선
+
+| 환경 | 커밋 | 결과 |
+|---|---|---|
+| 리눅스 컨테이너 · 260052 저장본 있음 | `f527c91` | **2720 passed** · 저장소 안·밖 둘 다 |
+| 리눅스 컨테이너 · 260052 저장본 있음 | `dfdd3f9` | 2728 passed |
+| **사용자 PC (윈도우) · 원본 저장소** | `62eed5f` | 2760 passed · **6 failed** · 4 skipped — 6건은 전부 §1-59 의 테스트 입력 문제 |
+| 리눅스 컨테이너 · 저장본 **없음** | `1b7aec9` | 2744 passed · 40 skipped · **1 failed** |
+
+  · 마지막 줄의 1건은 `test_panel_auto.test_m14_audit_reports_what_was_left_out`
+    이다. 실물 저장본이 없으면 근거가 없는 데모 색인으로 대체되어 실패하고,
+    `1b7aec9` 이전에도 같았다 — Phase 4 회귀가 아니다. **아직 고치지 않았다.**
+  · **`1b7aec9` 를 PC 에서는 아직 돌리지 않았다.** 예상은 실패 0 이다 —
+    실물 저장본 테스트 셋은 SKIP(PC 저장본은 다시 수집한 판이다), 학습 파일
+    테스트 셋은 통과.
+  · M16 의 `.cmd` 런처는 컨테이너에서 실행해 보지 못했다(읽어서 확인했다).
+    PC 실행이 그 확인이다.
+
+새 회귀 테스트: `test_canonical_bytes.py` (12 · 리눅스에서 윈도우 텍스트 모드를
+흉내 내 바이트와 기록 sha 를 본다) · `test_text_digest.py` (11) ·
+`test_pages_html_newline.py` (8 · 실제 `_write_report` 를 부른다).
 
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
@@ -7850,6 +7974,9 @@ python tests/test_pages_entrypoints.py     # --publish-round ↔ pagesdeploy 게
 python tests/test_runner_contract.py       # 직접 실행 러너 tests/_runner.py 출력·종료코드·SKIP M13 §1-57 (11개)
 python tests/test_match_contract.py        # 베트맨 14경기 계약·맞대결 셀·대회 식별·FotMob 덮어쓰기·league_type·준비 상태 6-C §1-58 (42개)
 python tests/test_test_input_gates.py      # 실물 저장본 sha 문 · 학습 파일 전후 비교 §1-59 (15개)
+python tests/test_canonical_bytes.py       # 정본 JSON·체크포인트 LF 바이트 · 기록 sha = 파일 바이트 · 리팩터링 Phase 4 M17 §1-60 (12개)
+python tests/test_text_digest.py           # packet·체크포인트 텍스트 sha 한 곳 · 계약 다른 해시는 따로 M14 §1-60 (11개)
+python tests/test_pages_html_newline.py    # 최종 리포트 HTML LF · check_final_html 통과 §1-60 (8개)
 python -m pytest -q -rs                    # 전체 — `pytest` 가 아니라 `python -m pytest` (PyYAML 있는 인터프리터)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개

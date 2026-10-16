@@ -7255,15 +7255,27 @@ newline 으로 읽는다) · `pagespublish.sha256_of`(원바이트) ·
 | 리눅스 컨테이너 · 260052 저장본 있음 | `dfdd3f9` | 2728 passed |
 | **사용자 PC (윈도우) · 원본 저장소** | `62eed5f` | 2760 passed · **6 failed** · 4 skipped — 6건은 전부 §1-59 의 테스트 입력 문제 |
 | 리눅스 컨테이너 · 저장본 **없음** | `1b7aec9` | 2744 passed · 40 skipped · **1 failed** |
+| **사용자 PC (윈도우) · 원본 저장소** | `0173b4b` | **2778 passed · 0 failed · 7 skipped** (462초) |
 
-  · 마지막 줄의 1건은 `test_panel_auto.test_m14_audit_reports_what_was_left_out`
+  · 리눅스 저장본 없음 줄의 1건은 `test_panel_auto.test_m14_audit_reports_what_was_left_out`
     이다. 실물 저장본이 없으면 근거가 없는 데모 색인으로 대체되어 실패하고,
     `1b7aec9` 이전에도 같았다 — Phase 4 회귀가 아니다. **아직 고치지 않았다.**
-  · **`1b7aec9` 를 PC 에서는 아직 돌리지 않았다.** 예상은 실패 0 이다 —
-    실물 저장본 테스트 셋은 SKIP(PC 저장본은 다시 수집한 판이다), 학습 파일
-    테스트 셋은 통과.
-  · M16 의 `.cmd` 런처는 컨테이너에서 실행해 보지 못했다(읽어서 확인했다).
-    PC 실행이 그 확인이다.
+    저장본이 있는 PC 에서는 통과한다.
+  · PC 의 SKIP 7건은 둘로 갈린다. §1-59 의 실물 저장본 테스트 셋이
+    `입력 내용이 기준과 다르다 — … sha256 00a261d6f6fb (기준 92139c1eb98e)` 로
+    3건이고, `test_golden_real` 이 4건이다(260052 입력 불일치 · 다른 회차는
+    기준 없음). §1-59 의 학습 파일 테스트 셋은 통과했고, 실행 전후로
+    `data/teams.learned.yaml`·`teams.league.yaml` 의 수정 시각이 같았다.
+  · `test_panel_auto` 가 PC 에서 통과했으므로 M16 의 가짜 claude CLI `.cmd`
+    런처가 윈도우에서 실제로 돌았다.
+  · 골든 9/9 · 모바일 7/7 · `test_canonical_bytes` 12/12 ·
+    `test_pages_html_newline` 8/8 이 PC 에서도 그대로다.
+  · **직접 실행 스크립트는 cp949 파이프에서 죽을 수 있다.** git-bash 를 거쳐
+    `python tests/test_golden_real.py` 를 돌리면 SKIP 사유의 `—` 를 출력하다가
+    `UnicodeEncodeError: 'cp949'` 가 났다(PowerShell 콘솔에서는 정상). 제품 CLI 는
+    `cli.safe_console()` 로 막았지만(§1-43 D) 테스트 러너에는 그 장치가 없다.
+    **아직 고치지 않았다.** 윈도우에서는 PowerShell 에서 돌리거나
+    `PYTHONIOENCODING=utf-8` 을 준다.
 
 새 회귀 테스트: `test_canonical_bytes.py` (12 · 리눅스에서 윈도우 텍스트 모드를
 흉내 내 바이트와 기록 sha 를 본다) · `test_text_digest.py` (11) ·

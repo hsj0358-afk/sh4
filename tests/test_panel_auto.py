@@ -2360,14 +2360,31 @@ def test_m14_audit_reports_what_was_left_out():
 
     접힌 것을 빠진 것으로 세면 보고서가 거짓이 된다 — 첫 판에서 실제로
     `data_quality` 가 통째로 빠졌다고 나왔다.
+
+    데모 경기에는 근거가 없어(`evidence: []`) packet 이 빈 칸을 싣지 않으므로
+    `evidence` 가 빠진 것으로 세어진다. 그래서 실물이 없어도 돌도록 **근거가
+    있는 경기**(`test_time_safety.build_match`)로 늘 확인하고, 실물이 있으면
+    실물로도 확인한다.
     """
-    idx = real_index() or demo_index(3)
-    rep = panelpacket.audit(idx)
-    for key in ("data_quality", "home", "evidence", "qualitative"):
-        assert key not in rep["omitted_kinds"], rep["omitted_kinds"]
-    lines = panelpacket.audit_lines(rep)
-    assert any("evidence" in ln for ln in lines)
-    assert any("공통" in ln for ln in lines), lines
+    import test_time_safety as ts
+    m = ts.build_match(ts.PAST + [ts.TARGET] + ts.FUTURE)
+    fixture = FakeReport(0)
+    fixture.matches = [m]
+    indexes = [panelpacket.build_panel_index(fixture)]
+    real = real_index()
+    if real is not None:
+        indexes.append(real)
+    for idx in indexes:
+        rep = panelpacket.audit(idx)
+        for key in ("data_quality", "home", "evidence", "qualitative"):
+            # 원본에 없는 칸은 접혔는지 확인할 수 없다 — 빈 확인을 통과로
+            # 세지 않는다.
+            assert any(e.body.get(key) for e in idx.entries), f"{key} 가 없다"
+            assert key not in rep["omitted_kinds"], rep["omitted_kinds"]
+        assert rep["evidence_source"] and not rep["evidence_missing"], rep
+        lines = panelpacket.audit_lines(rep)
+        assert any("evidence" in ln for ln in lines)
+        assert any("공통" in ln for ln in lines), lines
 
 
 def test_m15_no_presentation_markup_in_the_packet():

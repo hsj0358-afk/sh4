@@ -1647,8 +1647,11 @@ API 판과 채팅 판이 조용히 갈라지고, 그 뒤로는 "왜 결과가 �
 02_경기자료.md                 1단계·2단계에 **같은 파일**을 첨부한다
 03_사회자자료.md               3단계 첨부. 축 지표는 빠져 있다
 04_PanelResult_JSON_규격.md    3단계 함께 첨부. JSON 계약 (§1-11-2)
-경기별/…                       한 번에 넣기 너무 클 때의 대체 경로
 ```
+
+예전에는 `경기별/` 폴더(경기 하나짜리 시트)도 냈다. 한 대화에 다 안
+들어갈 때의 대체 경로였는데, 여러 파일을 한 대화에 함께 첨부하면 된다는
+것이 운영에서 확인돼(§1-20) 리팩터링 Phase 4 후속에서 지웠다 (§1-56).
 
 **자료 파일에는 지시문을 넣지 않는다.** 예전에는 단계별 시트 맨 위에
 `채팅에 적을 말` 블록이 함께 들어 있었다. 그런데 사용자가 실제로 하는 일은
@@ -6719,7 +6722,7 @@ reports/toto_<회차>.html 작성 완료
 
 | 파일 | 무엇을 고정하나 |
 |---|---|
-| `tests/test_golden_regression.py` · `golden/expected.json` | 데모 14경기(CLI `--demo` HTML · 경기자료 MD · 저장본 · PanelPayload · 회차 원본 · 공통 packet · 채팅 내보내기) · 패널 fixture(A/B/C 반영 Panel Result · 사회자 시트·stdin·입력 · 감사 · 패널 HTML) · 프롬프트·판 번호 · Pages index — **68개** |
+| `tests/test_golden_regression.py` · `golden/expected.json` | 데모 14경기(CLI `--demo` HTML · 경기자료 MD · 저장본 · PanelPayload · 회차 원본 · 공통 packet · 채팅 내보내기) · 패널 fixture(A/B/C 반영 Panel Result · 사회자 시트·stdin·입력 · 감사 · 패널 HTML) · 프롬프트·판 번호 · Pages index — **40개** (처음 68개 · `경기별/` 시트 28개를 지워 줄었다, §1-56) |
 | `tests/test_golden_real.py` · `golden/real.json` | 실물 260052 저장본·보관본으로 만든 같은 산출물 — **입력 파일 sha256 에 묶인다** |
 | `tests/test_mobile_layout.py` | 1200·768·400px × 접힘/펼침: 가로 넘침 0 · 카드 밖 요소 0 · JS 오류 0 · 외부 요청 0 |
 | `tests/realdata.py` | 실물 저장본이 없으면 **SKIP**, 있는데 못 읽으면 **FAIL** |
@@ -6791,6 +6794,7 @@ Pages index 공백 · Panel Result 출처 표시 · 640px `.meta` · 720px 카�
 | 항목 | 판정 | 이유 |
 |---|---|---|
 | `analyze._TOPICS`·`_TOPIC_KO`·`_topics_of` | **삭제** | 6-E-3 부터 상성 판정에 쓰이지 않았다(§1-37). 남은 파서 회귀는 `parse_characteristic` → `relationships.unit_of` 로 옮겼다. 골든 무변화 |
+| `panelexport` 의 `경기별/` 시트 | **삭제** | 회차 시트가 크면 이미 `_1of2` 처럼 부로 나뉘고, 여러 파일을 한 대화에 함께 첨부하면 된다(§1-20). 자동 경로는 쓰지 않았다. `match_sheet`·`_moderator_block`·`OPINIONS_SLOT`·`_slug` 를 함께 지웠다. **지침 지문이 `4a54e7ad` → `71163a6f`** — 지침이 그 폴더를 안내하던 두 줄이 빠졌다. 프롬프트 판(PANEL 5 · MODERATOR 6)은 그대로라 패널 캐시는 유효하지만, **채팅 프로젝트 지침은 다시 붙여넣어야 한다** (§1-11-1). 골든 68 → 40개 |
 | API 패널 `--panel`·`llm.py` | 남김 | `[9]→[7]` 로 격리돼 있다. `panel.py` 가 `llm` 을 맨 위에서 import 하고, 코드펜스 규칙(§1-57 M9)과 검증기가 얽혀 지우는 비용이 크다 |
 | `--export-match-material` | 남김 | 지표·메타데이터를 전부 싣는 유일한 산출물이고 골든이 고정한다 (§1-14) |
 | `predict.apply_veto`·`VETO_MAX` | 남김 | 지침 §3-(d) 항목. 지우는 것은 지침 해석이다 (§3-4) |
@@ -8027,7 +8031,7 @@ python tests/test_verify_web_report.py     # PC 원본 ↔ 웹 리포트 일치 
 python tools/verify_web_report.py 260054 --web-ref origin/gh-pages   # push 된 판과 PC 원본 대조 · 읽기만 (§1-53)
 python -m toto.pagesdeploy 260055          # 수동 (재)배포: 복사 → 그 회차 파일만 commit → push origin gh-pages (§1-54)
 python tests/test_pages_deploy.py          # GitHub Pages 자동 배포 · 로컬 bare 원격만 (§1-54) (25개)
-python tests/test_golden_regression.py     # 산출물 68개 골든 · TOTO_GOLDEN_UPDATE=1 갱신 · TOTO_GOLDEN_DUMP=<폴더> 내용 (§1-55) (9개)
+python tests/test_golden_regression.py     # 산출물 40개 골든 · TOTO_GOLDEN_UPDATE=1 갱신 · TOTO_GOLDEN_DUMP=<폴더> 내용 (§1-55) (9개)
 python tests/test_golden_real.py           # 실물 저장본 골든 · 입력 sha 가 같을 때만, 아니면 SKIP (§1-55) (4개)
 python tests/test_mobile_layout.py         # 1200·768·400px 레이아웃 스모크 · Chromium 없으면 SKIP (§1-55) (7개)
 python tests/test_response_validation.py   # 패널·사회자 공통 검증 조각 panelcheck · 리팩터링 Phase 3 M1 §1-57 (16개)

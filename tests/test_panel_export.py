@@ -89,10 +89,12 @@ def _run(matches=None, **kw):
 
 
 def _sheet(out: Path) -> str:
-    """경기별 시트 하나 (대체 경로). 회차 시트는 `_round()` 로 본다."""
-    files = sorted((out / "경기별").glob("*.md"))
-    assert files, list(out.rglob("*"))
-    return files[0].read_text(encoding="utf-8")
+    """회차 자료 시트 둘(`02_경기자료*` + `03_사회자자료`)을 이은 것.
+
+    예전에는 `경기별/` 폴더의 경기 하나짜리 시트를 봤다. 그 대체 경로는
+    리팩터링 Phase 4 후속에서 지웠다 (§1-56) — 같은 자료가 회차 시트에 있다.
+    """
+    return _round(out, "02_") + "\n" + _round(out, "03_")
 
 
 def _round(out: Path, prefix: str) -> str:
@@ -177,7 +179,7 @@ def test_b1_both_analysts_get_the_same_payload_string():
 def test_b2_moderator_does_not_get_the_axis_dump():
     """§1-10 — 사회자는 원지표를 다시 받지 않는다."""
     sheet = _sheet(_run()[1])
-    mod = re.search(r"<moderator_input>\n(.*?)\n</moderator_input>",
+    mod = re.search(r"<moderator_input[^>]*>\n(.*?)\n</moderator_input>",
                     sheet, re.S).group(1)
     for key in ('"home":{', '"away":{', '"data_quality"'):
         assert key not in mod, key
@@ -185,7 +187,7 @@ def test_b2_moderator_does_not_get_the_axis_dump():
 
 def test_b3_moderator_keeps_conflicts_and_basis():
     """빼면 사회자가 할 일을 못 하는 둘은 남는다 (§1-10)."""
-    mod = re.search(r"<moderator_input>\n(.*?)\n</moderator_input>",
+    mod = re.search(r"<moderator_input[^>]*>\n(.*?)\n</moderator_input>",
                     _sheet(_run()[1]), re.S).group(1)
     assert '"conflicts"' in mod
     assert '"measurement_basis"' in mod
@@ -223,7 +225,9 @@ def test_c3_mixed_round_skips_only_the_empty_ones():
     status, out = _run([_match(no=1), _match(no=2, evidence=False)])
     assert status.startswith("ok"), status
     assert "건너뜀 1경기" in status, status
-    assert len(list((out / "경기별").glob("*.md"))) == 1
+    data = _data(out)
+    assert '<panel_payload no="1">' in data, data[:400]
+    assert '<panel_payload no="2">' not in data
 
 
 # ------------------------------------------------ 근거 0건을 열어 주는 경로
@@ -334,18 +338,19 @@ def test_d1_sheet_names_the_evidence_ids():
     assert "E001" in _sheet(_run()[1])
 
 
-def test_d2_sheet_carries_the_payload_hash():
-    m = _match()
-    digest = panel.payload_hash(panel.build_panel_payload(m))
-    assert digest in _sheet(_run([m])[1])
+def test_d2_per_match_fallback_is_gone():
+    """`경기별/` 대체 경로를 지웠다 (§1-56) — 폴더도, 그 경로를 가리키는 말도.
 
-
-def test_d3_opinion_slot_has_no_extra_brackets():
-    """`"opinions":[...]` 안에 들어가므로 자리표시자에 대괄호를 넣지 않는다."""
-    assert "[" not in panelexport.OPINIONS_SLOT
-    assert "]" not in panelexport.OPINIONS_SLOT
-    mod = re.search(r'"opinions":\[([^\]]*)\]', _sheet(_run()[1]))
-    assert mod and panelexport.OPINIONS_SLOT in mod.group(1), mod
+    한 대화에 여러 파일을 함께 첨부하면 그대로 처리된다는 것이 운영에서
+    확인됐다(§1-20). 경기 하나짜리 시트와 그 안의 payload 지문·의견
+    자리표시자는 그 경로에만 있던 것이라 함께 사라졌다.
+    """
+    _st, out = _run(_round_matches(3))
+    assert not (out / "경기별").exists()
+    assert "경기별/" not in panelexport.project_instructions()
+    assert "경기별/" not in _says(out)
+    for name in ("match_sheet", "OPINIONS_SLOT", "_moderator_block", "_slug"):
+        assert not hasattr(panelexport, name), name
 
 
 def test_d4_file_name_is_windows_safe():
@@ -459,11 +464,12 @@ def test_r7_small_round_is_not_split():
         ["02_경기자료.md"], sorted(f.name for f in out.glob("*.md"))
 
 
-def test_r8_per_match_sheets_remain_as_the_fallback():
-    """회차 파일이 너무 크면 경기별로 나눠 쓸 수 있어야 한다."""
-    _st, out = _run(_round_matches(3))
-    assert len(list((out / "경기별").glob("*.md"))) == 3
-    assert "경기별" in panelexport.project_instructions()
+def test_r8_large_round_is_split_into_parts_not_per_match():
+    """회차가 크면 `_1of2` 처럼 **부**로 나눈다 — 경기 하나씩 내지 않는다."""
+    _st, out = _run(_round_matches(3), max_bytes=1)
+    parts = sorted(f.name for f in out.glob("02_*.md"))
+    assert len(parts) > 1 and all("of" in n for n in parts), parts
+    assert not (out / "경기별").exists()
 
 
 # --------------------------------------------- 첨부할 때 채팅에 적을 말
@@ -737,11 +743,14 @@ def test_t10_guide_does_not_change_the_instructions_fingerprint():
     `null` 을 냈고, 그 역할 프롬프트에 예상 스코어를 언급하는 줄이 한 줄도
     없었기 때문이다. **다시 붙여넣어야 한다.**
 
+    리팩터링 Phase 4 후속에서 또 바뀌었다 (`4a54e7ad` → `71163a6f`). 지침이
+    가리키던 `경기별/` 대체 경로를 지웠다 (§1-56). 프롬프트 판은 그대로다.
+
     Phase 6-E-6 에서 바뀌었다 (`b389d4f0` → `fe098456`). 맞대결 분석가에
     `style_of_play` 조건과 정량/정성 분리·일치 여부가, 사회자에 '정성 원문을
     받지 않았다' 는 규칙이 들어갔다. **다시 붙여넣어야 한다.**
     """
-    assert panelexport.instructions_fingerprint() == "4a54e7ad"
+    assert panelexport.instructions_fingerprint() == "71163a6f"
 
 
 def test_s3_conclusion_is_the_first_field_in_the_schema():

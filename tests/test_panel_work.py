@@ -537,7 +537,6 @@ def test_k6_completed_sheet_has_no_manual_slot():
                                           outdir=base / "sheet")
     text = out.path.read_text(encoding="utf-8")
     assert "◀" not in text and "▶" not in text
-    assert panelexport.OPINIONS_SLOT not in text
     assert '"opinions":[]' not in text
 
 

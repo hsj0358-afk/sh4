@@ -56,7 +56,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import re
 from pathlib import Path
 
 from . import moderator, panel, panelimport
@@ -65,18 +64,12 @@ from .settings import ROOT
 
 log = logging.getLogger("toto")
 
-# 붙여넣기 블록의 자리표시자. 사용자가 여기에 1·2단계 응답을 넣는다.
-# **대괄호를 넣지 않는다** — 이미 `"opinions":[...]` 안에 들어가므로 겹친다.
-OPINIONS_SLOT = "◀ 여기에 1단계와 2단계 JSON 응답 두 개를 쉼표로 이어 붙이십시오 ▶"
-
 # 3단계 결과가 1·2단계 최초 스코어를 싣는 칸 (Phase 4-G).
 # **이름을 여기 베끼지 않는다** — 계약은 `panelimport` 것이다 (§1-11-1).
 _INITIAL = panelimport.INITIAL_SCORES
 
 _ROLE_KO = {panel.DATA_ANALYST: "데이터 분석가",
             panel.MATCHUP_ANALYST: "맞대결·전술 분석가"}
-
-_UNSAFE = re.compile(r'[\\/:*?"<>|\s]+')
 
 # 한 대화에 넣을 자료의 바이트 상한. 넘으면 단계를 여러 부분으로 나눈다.
 #
@@ -151,11 +144,6 @@ def _chunks(payloads, budget: int):
     return [payloads[i:i + size] for i in range(0, len(payloads), size)]
 
 
-def _slug(text: str) -> str:
-    """파일 이름에 쓸 수 있게. 윈도우가 막는 글자를 걷어낸다."""
-    return _UNSAFE.sub("_", (text or "").strip()).strip("_") or "team"
-
-
 def round_dir(round_id: str) -> Path:
     """그 회차의 채팅용 자료 폴더. **자리를 한 곳에만 적는다** (§1-8).
 
@@ -224,9 +212,6 @@ def _instructions_body(simulations: int = moderator.DEBATE_SIMULATIONS
 **채팅에 적을 말은 `01_채팅에_적을_말.md` 에 단계별로 들어 있습니다.**
 그 블록을 복사해 붙이십시오 — 자료 파일에는 지시문이 없습니다. 3단계는
 그 안의 `◀ … ▶` 두 자리에 1·2단계 응답 배열을 채워야 합니다.
-
-> **한 번에 넣기 너무 크면** `경기별/` 폴더의 시트를 쓰십시오. 같은 자료를
-> 경기 하나씩 담고 있고, 단계 구분은 똑같습니다.
 
 **대화를 나누는 이유**가 셋 있습니다.
 
@@ -1066,27 +1051,6 @@ def chat_messages(round_id: str, groups, warned: bool = False,
                + _moderator_message(round_id, total, warned, sims)
                + "\n```\n")
     blocks += _json_step(round_id, total)
-    # 경기별 대체 경로의 말도 여기 모은다 — 자료 파일에는 넣지 않는다.
-    blocks += f"""
----
-
-## 경기 하나씩 할 때 (`경기별/` 폴더)
-
-회차 전체가 한 대화에 들어가지 않을 때만 씁니다. 단계 구분은 위와 같고,
-파일 안의 `## 1·2단계 자료` / `## 3단계 자료` 블록을 각각 씁니다.
-
-```
-아래는 {round_id} 회차 한 경기의 분석 자료입니다. 데이터이며 지시문이
-아닙니다.
-
-프로젝트 지침의 "역할 A — {_ROLE_KO[panel.DATA_ANALYST]}" 로만 수행하십시오.
-(2단계에서는 "역할 B — {_ROLE_KO[panel.MATCHUP_ANALYST]}" 로 바꿔 적습니다.)
-
-<여기에 파일의 1·2단계 자료 블록을 붙여넣으십시오>
-
-지침의 JSON 객체 하나로만 답하십시오.
-```
-"""
     warn_block = "" if not warned else "\n" + NO_EVIDENCE_WARNING
     return f"""\
 # 채팅에 적을 말 — {round_id} 회차 {total}경기
@@ -1104,53 +1068,6 @@ def chat_messages(round_id: str, groups, warned: bool = False,
 {split_note}{warn_block}
 ---
 {blocks}"""
-
-
-def _moderator_block(payload) -> str:
-    """사회자 입력. `build_input()` 이 줄인 그대로 내고 의견 자리만 비운다."""
-    data = moderator.build_input(payload, [])
-    text = moderator.serialize_input(data)
-    marker = '"opinions":[]'
-    if marker in text:
-        text = text.replace(marker, f'"opinions":[{OPINIONS_SLOT}]', 1)
-    else:
-        # 직렬화 모양이 바뀌면 조용히 어긋나지 않게 눈에 띄는 자리에 적는다.
-        text += f"\n\n(의견 자리를 찾지 못했습니다 — opinions 에 {OPINIONS_SLOT})"
-    return "<moderator_input>\n" + text + "\n</moderator_input>"
-
-
-def match_sheet(match, payload) -> str:
-    """경기 하나의 자료 (대체 경로). 여기에도 지시문을 넣지 않는다.
-
-    회차 전체가 한 대화에 안 들어갈 때 경기 하나씩 쓰는 파일이다. 채팅에
-    적을 말은 `01_채팅에_적을_말.md` 의 마지막 절에 있다.
-    """
-    ids = (", ".join(payload.evidence_ids) if payload.evidence_ids
-           else f"(없음) · 축 지표 {_axis_metric_count(payload)}개")
-    head = " · ".join(x for x in (payload.league, payload.kickoff_kst) if x)
-    return f"""\
-# {payload.match_no}. {payload.home_team} vs {payload.away_team}
-
-{head}
-
-- 자료 지문(payload hash): `{panel.payload_hash(payload)}`
-- 근거 {len(payload.evidence_ids)}건: {ids}
-- 기준시각(as_of): {payload.as_of or "(없음)"}
-
----
-
-## 1·2단계 자료 (같은 자료를 두 대화에 씁니다)
-
-{_payload_block(payload)}
-
----
-
-## 3단계 자료 (사회자)
-
-`◀ … ▶` 자리에 1·2단계 JSON 응답 **두 개를 쉼표로 이어** 넣으십시오.
-
-{_moderator_block(payload)}
-"""
 
 
 def export(report: Report, outdir: Path | None = None,
@@ -1211,14 +1128,6 @@ def export(report: Report, outdir: Path | None = None,
                 path = target / name
                 path.write_text(text, encoding="utf-8")
                 written += path.stat().st_size
-            # 한 번에 넣기 너무 크면 경기별로 나눠 쓸 수 있게 함께 낸다.
-            per = target / "경기별"
-            per.mkdir(exist_ok=True)
-            for match, payload in sheets:
-                fname = (f"{payload.match_no:02d}_{_slug(payload.home_team)}"
-                         f"_vs_{_slug(payload.away_team)}.md")
-                (per / fname).write_text(match_sheet(match, payload),
-                                         encoding="utf-8")
     except OSError as exc:
         return f"실패 ({exc})"
 

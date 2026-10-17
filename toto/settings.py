@@ -388,8 +388,5 @@ def load_settings(config_path: Path | None = None, env_path: Path | None = None)
     s.panel = cfg.get("panel") or {}
     s.output = cfg.get("output") or {
         "dir": "reports", "filename": "toto_{round}.html",
-        "copy_to": [], "copy_to_exclude": ["OneDrive"],
-        "cloud_folder": "축구토토",
-        "latest_name": "최신리포트.html",
     }
     return s

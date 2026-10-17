@@ -6627,8 +6627,9 @@ reports/toto_<회차>.html → <저장소>-pages/reports/toto_<회차>.html
   · 공개 브랜치는 `gh-pages` 이고 **orphan** 으로 만든다 —
     `git worktree add --orphan -b gh-pages <저장소>-pages` (Git 2.42+).
     `-b gh-pages` 만 주면 개발 트리 전체가 공개 브랜치에 실린다.
-  · 기존 `publish.py`(클라우드 폴더 복사)와 이어지지 않는다 — 그쪽은 수집
-    직후 불려 패널 반영 전 판을 복사할 수 있다.
+  · 예전의 `publish.py` 클라우드 폴더 복사와 이어지지 않았다 — 그쪽은 수집
+    직후 불려 패널 반영 전 판을 복사할 수 있었다. 그 복사는 지웠다 (§1-56).
+    `publish.py` 에는 같은 와이파이 공개(`serve`)만 남아 있다.
 
 회귀 테스트: `python tests/test_pages_publish.py` (33개).
 
@@ -6734,8 +6735,9 @@ reports/toto_<회차>.html 작성 완료
     (`git status --ignored` + 입력 mtime).
   · 생성 시각만 고정한다(`cli.datetime`). 오늘 날짜·임시 경로가 산출물에
     새면 그 자체로 실패다. `PYTHONHASHSEED` 0 과 1 이 같아야 한다.
-  · 데모의 클라우드 폴더 복사(`publish.publish`)와 Pages 자동 배포는 자식
-    안에서 끈다 — 사용자 PC 의 동기화 폴더에 데모가 복사되면 안 된다.
+  · Pages 자동 배포는 자식 안에서 끈다 — 사용자 PC 의 게시 폴더에 데모가
+    들어가면 안 된다. (예전에는 클라우드 폴더 복사도 껐다 — 그 기능은 지웠다,
+    §1-56.)
   · **실물 골든은 입력이 다르면 SKIP 이다.** 다른 자료로 만든 산출물은 달라야
     정상이다. 새 회차 기준은 그 PC 에서 `TOTO_GOLDEN_UPDATE=1` 로 남기고,
     다른 회차의 기준은 지우지 않는다.
@@ -6795,6 +6797,7 @@ Pages index 공백 · Panel Result 출처 표시 · 640px `.meta` · 720px 카�
 |---|---|---|
 | `analyze._TOPICS`·`_TOPIC_KO`·`_topics_of` | **삭제** | 6-E-3 부터 상성 판정에 쓰이지 않았다(§1-37). 남은 파서 회귀는 `parse_characteristic` → `relationships.unit_of` 로 옮겼다. 골든 무변화 |
 | `panelexport` 의 `경기별/` 시트 | **삭제** | 회차 시트가 크면 이미 `_1of2` 처럼 부로 나뉘고, 여러 파일을 한 대화에 함께 첨부하면 된다(§1-20). 자동 경로는 쓰지 않았다. `match_sheet`·`_moderator_block`·`OPINIONS_SLOT`·`_slug` 를 함께 지웠다. **지침 지문이 `4a54e7ad` → `71163a6f`** — 지침이 그 폴더를 안내하던 두 줄이 빠졌다. 프롬프트 판(PANEL 5 · MODERATOR 6)은 그대로라 패널 캐시는 유효하지만, **채팅 프로젝트 지침은 다시 붙여넣어야 한다** (§1-11-1). 골든 68 → 40개 |
+| `publish.py` 클라우드 폴더 복사 | **삭제** | 수집 직후(`[1]`) 불려 **패널 반영 전 판**을 OneDrive 등에 복사할 수 있었다. 폰에서 보기는 Pages 자동 배포(§1-54)와 같은 와이파이 공개(`serve` · 메뉴 [5])가 맡는다. `publish()`·`find_cloud_roots`·`_targets` 와 `output.copy_to`·`copy_to_exclude`·`cloud_folder`·`latest_name` 설정을 지웠다. `serve`·`lan_addresses` 는 그대로다. 옛 설정이 남아 있어도 읽지 않을 뿐 오류가 아니다. 골든 무변화 |
 | API 패널 `--panel`·`llm.py` | 남김 | `[9]→[7]` 로 격리돼 있다. `panel.py` 가 `llm` 을 맨 위에서 import 하고, 코드펜스 규칙(§1-57 M9)과 검증기가 얽혀 지우는 비용이 크다 |
 | `--export-match-material` | 남김 | 지표·메타데이터를 전부 싣는 유일한 산출물이고 골든이 고정한다 (§1-14) |
 | `predict.apply_veto`·`VETO_MAX` | 남김 | 지침 §3-(d) 항목. 지우는 것은 지침 해석이다 (§3-4) |

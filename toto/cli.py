@@ -628,8 +628,8 @@ def _publish_round(args, settings) -> int:
     """`--publish-round` — 패널이 끝난 최종 리포트 한 장을 게시 영역으로.
 
     **수집하지 않고 렌더하지 않는다.** 이미 만들어진 파일을 검사해 복사할
-    뿐이다. 기존 `publish()`(클라우드 폴더 복사)와 이어지지 않는다 — 그쪽은
-    수집 직후 불려 패널 반영 전 판을 복사할 수 있다.
+    뿐이다. (예전의 클라우드 폴더 복사는 수집 직후 불려 패널 반영 전 판을
+    복사할 수 있었고, 지웠다 — §1-56.)
     """
     from . import pagespublish
     result = pagespublish.publish_round(args.publish_round, settings,
@@ -1031,10 +1031,6 @@ def main(argv: list[str] | None = None) -> int:
     # ---- 6. 렌더링 --------------------------------------------------------
     out = _write_report(report, args, settings, "생성 완료")
 
-    # 폰에서 보기 — 동기화 폴더에도 복사한다 (실패해도 실행은 성공으로 끝난다)
-    from .publish import publish
-    for dest in publish(out, settings):
-        log.info("폰에서 보기용 사본 → %s", dest)
     for key, value in report.source_status.items():
         log.info("  · %s: %s", key, value)
     if report.warnings:

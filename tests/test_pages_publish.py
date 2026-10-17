@@ -13,7 +13,7 @@
   5. 없는 회차는 안전하게 실패한다 (아무것도 쓰지 않는다)
   6. 패널이 끝나지 않았으면 막는다 — **기존 판정**(`panelwork.workflow` ·
      반영 단계 `complete`)을 그대로 쓴다
-  7. 기존 `publish()`(클라우드 복사)는 그대로다
+  7. 예전 `publish()`(클라우드 복사)는 지웠다 — `serve` 만 남는다 (§1-56)
 
 그리고 경로 안전성 · 기본 경로 규칙 · git 쓰기 금지 · 수집 구간 앞 분기.
 
@@ -393,25 +393,25 @@ def test_6g_missing_artifact_blocks_through_real_loader():
 
 
 # ==========================================================================
-# 7. 기존 publish() 는 그대로
+# 7. 클라우드 폴더 복사는 지웠다 — 폰에서 보기는 Pages 와 [5] 가 맡는다
 # ==========================================================================
-def test_7_existing_cloud_publish_unchanged():
-    dev, target = tmpdir(), tmpdir()
-    src = dev.joinpath("toto_260052.html")
-    src.write_text("<!doctype html><html></html>", encoding="utf-8")
+def test_7_cloud_copy_is_gone():
+    """예전 `publish()` 는 수집 직후 불려 패널 반영 전 판을 클라우드 폴더에
+    복사할 수 있었다. 리팩터링 Phase 4 후속에서 지웠다 (§1-56).
+    `serve`(같은 와이파이 공개)는 그대로 남는다."""
+    for name in ("publish", "find_cloud_roots", "_targets"):
+        assert not hasattr(publish, name), name
+    assert callable(publish.serve) and callable(publish.lan_addresses)
     s = settings_mod.load_settings()
-    s.output = dict(s.output, copy_to=[str(target)], latest_name="최신.html")
-    done = publish.publish(src, s)
-    assert done == [target / "toto_260052.html"]
-    assert sorted(p.name for p in target.iterdir()) == ["toto_260052.html",
-                                                        "최신.html"]
+    for key in ("copy_to", "copy_to_exclude", "cloud_folder", "latest_name"):
+        assert key not in (s.output or {}), key
 
 
-def test_7b_cloud_publish_still_called_only_after_collection():
+def test_7b_cli_does_not_copy_after_collection():
     tree_ = ast.parse(REPO.joinpath("toto/cli.py").read_text(encoding="utf-8"))
     calls = [n for n in ast.walk(tree_) if isinstance(n, ast.Call)
              and isinstance(n.func, ast.Name) and n.func.id == "publish"]
-    assert len(calls) == 1
+    assert calls == []
     fn = next(n for n in tree_.body if isinstance(n, ast.FunctionDef)
               and n.name == "_publish_round")
     imported = {a.name for n in ast.walk(fn)

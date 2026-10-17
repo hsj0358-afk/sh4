@@ -117,16 +117,14 @@ def _read_tree(root: Path, prefix: str, out: dict) -> None:
 
 def _run_cli(argv: list, out: Path) -> str:
     """`python -m toto …` 를 그대로 부르고 쓴 리포트를 읽는다. 생성 시각을
-    고정하고 클라우드 폴더 복사만 막는다 (사용자 PC 의 동기화 폴더에 데모가
-    복사되면 안 된다)."""
-    from toto import cli, publish
-    saved = (cli.datetime, publish.publish)
+    고정한다 (예전에는 클라우드 폴더 복사도 막았다 — 그 기능은 지웠다, §1-56)."""
+    from toto import cli
+    saved = cli.datetime
     cli.datetime = _FixedDatetime
-    publish.publish = lambda *a, **k: []
     try:
         code = cli.main([*argv, "-o", str(out)])
     finally:
-        cli.datetime, publish.publish = saved
+        cli.datetime = saved
     if code != 0:
         raise RuntimeError(f"{argv} 종료코드 {code}")
     return out.read_text(encoding="utf-8")

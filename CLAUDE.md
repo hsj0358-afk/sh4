@@ -7278,6 +7278,7 @@ newline 으로 읽는다) · `pagespublish.sha256_of`(원바이트) ·
 | 리눅스 컨테이너 · 저장본 **없음** | `1b7aec9` | 2744 passed · 40 skipped · **1 failed** |
 | **사용자 PC (윈도우) · 원본 저장소** | `0173b4b` | **2778 passed · 0 failed · 7 skipped** (462초) |
 | 리눅스 컨테이너 · 저장본 **없음** | 후속 정리 | **2745 passed · 40 skipped · 0 failed** |
+| **사용자 PC (윈도우) · 원본 저장소** | `69588bf` | 2775 passed · **2 failed** · 7 skipped — 둘 다 아래 '후속 정리' 의 테스트 쪽 해독 문제 |
 
   · 리눅스 저장본 없음 줄의 1건은 `test_panel_auto.test_m14_audit_reports_what_was_left_out`
     이다. 실물 저장본이 없으면 근거가 없는 데모 색인으로 대체되어 실패하고,
@@ -7315,7 +7316,14 @@ newline 으로 읽는다) · `pagespublish.sha256_of`(원바이트) ·
       바꾸지 않기 위해서다.
     - 확인: `PYTHONIOENCODING=cp949` 로 `test_golden_real.py` 를 돌리면 SKIP
       사유의 `—` 까지 찍히고 종료코드 0 이다. `python -m tests.…` 과 저장소 밖
-      절대 경로 실행도 그대로다.
+      절대 경로 실행도 그대로다. PC 의 git-bash 에서도 rc 0 이었다(`69588bf`).
+    - **PC 에서 테스트 쪽이 깨졌다** (`69588bf` · 2 failed). 자식이 UTF-8 로
+      쓰는데 `test_runner_contract._direct()` 가 인코딩 없이 `text=True` 로
+      읽어 **로캘(cp949)로 해독**했다 — 해독 실패로 stdout 이 `None` 이 되어
+      c1·c3 이 깨졌고, **c2 는 `None == None` 으로 헛통과**했다. M16 의
+      '자식 프로세스 해독' 과 같은 실수다. `_direct()` 가 이제 UTF-8 을
+      엄격하게 읽고 출력이 `None` 이면 실패한다. `test_c4` 가 cp949 파이프를
+      `PYTHONIOENCODING` 으로 흉내 내 윈도우 조건을 리눅스에서 재현한다.
   · **`test_m14` 가 저장본이 없어도 통과한다.** 데모 색인에는 근거가 0건이라
     빈 `evidence` 가 packet 에 실리지 않고, 감사가 그것을 omitted 로 센다 — 잃은
     것이 없다. 그래서 `evidence` 는 **근거가 있을 때만** '빠지지 않았다' 를
@@ -8058,7 +8066,7 @@ python tests/test_token_ratio.py           # 원본 자/토큰 2.088 한 곳 · 
 python tests/test_strip_fence.py           # 코드펜스 규칙 · 두 입구가 같은 글자 M9 §1-57 (6개)
 python tests/test_sum_draw.py              # §8 sum_draw 화면 줄 = rounds.csv M10 §1-57 (7개)
 python tests/test_pages_entrypoints.py     # --publish-round ↔ pagesdeploy 게시 폴더 규칙 M11 §1-57 (4개)
-python tests/test_runner_contract.py       # 직접 실행 러너 tests/_runner.py 출력·종료코드·SKIP M13 §1-57 (11개)
+python tests/test_runner_contract.py       # 직접 실행 러너 tests/_runner.py 출력·종료코드·SKIP·cp949 M13 §1-57 §1-60 (12개)
 python tests/test_match_contract.py        # 베트맨 14경기 계약·맞대결 셀·대회 식별·FotMob 덮어쓰기·league_type·준비 상태 6-C §1-58 (42개)
 python tests/test_test_input_gates.py      # 실물 저장본 sha 문 · 학습 파일 전후 비교 §1-59 (15개)
 python tests/test_canonical_bytes.py       # 정본 JSON·체크포인트 LF 바이트 · 기록 sha = 파일 바이트 · 리팩터링 Phase 4 M17 §1-60 (12개)

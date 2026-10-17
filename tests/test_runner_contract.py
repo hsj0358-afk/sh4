@@ -59,10 +59,20 @@ def _run(**kinds) -> tuple[int, str]:
     return rc, buf.getvalue()
 
 
-def _direct(argv: list, cwd: Path) -> subprocess.CompletedProcess:
-    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
-    return subprocess.run([sys.executable, *argv], cwd=cwd, capture_output=True,
-                          text=True, env=env, timeout=300)
+def _direct(argv: list, cwd: Path, **env_extra) -> subprocess.CompletedProcess:
+    """자식을 직접 실행하고 출력을 **UTF-8 로 엄격하게** 읽는다.
+
+    러너는 출력이 우리 글자를 담지 못하면(cp949 파이프) `safe_console()` 로
+    UTF-8 로 바꾼다 (§1-60 후속 정리). 그래서 부모가 로캘 인코딩으로 읽으면
+    한국어 윈도우에서 해독이 실패하고 stdout 이 `None` 이 된다 — 실제로 PC 에서
+    c1·c3 이 그렇게 깨졌고 c2 는 `None == None` 으로 **헛통과**했다.
+    """
+    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", **env_extra)
+    r = subprocess.run([sys.executable, *argv], cwd=cwd, capture_output=True,
+                       text=True, encoding="utf-8", errors="strict", env=env,
+                       timeout=300)
+    assert r.stdout is not None and r.stderr is not None, "자식 출력을 읽지 못했다"
+    return r
 
 
 # --------------------------------------------------------------------------
@@ -130,6 +140,20 @@ def test_c3_module_mode_still_runs():
     r = _direct(["-m", f"tests.{SAMPLE.stem}"], REPO)
     assert r.returncode == 0, r.stdout + r.stderr
     assert _SUMMARY.match(r.stdout.splitlines()[-1]), r.stdout[-200:]
+
+
+def test_c4_cp949_pipe_is_switched_to_utf8():
+    """한국어 윈도우의 파이프(cp949)를 흉내 낸다 — 죽지 않고 UTF-8 로 쓴다.
+
+    `PYTHONIOENCODING=cp949` 면 자식의 stdout 이 cp949 스트림이 되고,
+    러너가 `safe_console()` 로 UTF-8 로 바꾼다. 리눅스에서도 윈도우의
+    조건이 그대로 재현된다 — 부모가 로캘로 읽던 버그를 여기서 잡는다.
+    """
+    plain = _direct([str(SAMPLE)], REPO)
+    r = _direct([str(SAMPLE)], REPO, PYTHONIOENCODING="cp949")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "통과" in r.stdout, r.stdout[-200:]
+    assert r.stdout == plain.stdout
 
 
 # --------------------------------------------------------------------------

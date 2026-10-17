@@ -1,0 +1,165 @@
+{
+ "_about": "tests/test_golden_regression.py 의 기대값. 손으로 고치지 말고 TOTO_GOLDEN_UPDATE=1 로 다시 쓴다.",
+ "entries": {
+  "demo/artifact.json": {
+   "sha256": "8f4eeaa4ad8193a4ff2a62c755d74cefe5303e21f48ead5e90fe1e5d785be0d6",
+   "bytes": 855715
+  },
+  "demo/chat_export_all/00_프로젝트_지침.md": {
+   "sha256": "29eea0e8ebaaaeb7ec67e7ae2edfdc36d112561809d6920f23889bc6117ec4ec",
+   "bytes": 22425
+  },
+  "demo/chat_export_all/01_채팅에_적을_말.md": {
+   "sha256": "e3af6b61fe67f370c28eebc24ae9670ee8c99529c31ec1437df034f2fe3c0b0b",
+   "bytes": 9406
+  },
+  "demo/chat_export_all/02_경기자료_1of2.md": {
+   "sha256": "1df228753fe31973f5448e32b406df2b5f9a6ea6a111965ccb27cab24f978ae0",
+   "bytes": 185508
+  },
+  "demo/chat_export_all/02_경기자료_2of2.md": {
+   "sha256": "5bf2524411ef66e0c749390a16e4e98ec98728254cab32adb69a70ac5a1f7e17",
+   "bytes": 187114
+  },
+  "demo/chat_export_all/03_사회자자료.md": {
+   "sha256": "fbe7f6993f41c15f19312c12cac87bbab6fc6ba7af8e14759e2185f5defbd026",
+   "bytes": 6974
+  },
+  "demo/chat_export_all/04_PanelResult_JSON_규격.md": {
+   "sha256": "74037f0f3dc6bd889aa6fecf11e9014b9058c6f93916c585849ed2a09c8ed7e7",
+   "bytes": 19881
+  },
+  "demo/common_packet.txt": {
+   "sha256": "df10aa11bc3343067889515455704eba6689e2fdde9f834365cfe49f60012d28",
+   "bytes": 117560
+  },
+  "demo/match_material.md": {
+   "sha256": "e628feb943f73da856b53da3ddb6e62e595b77e12c421be5a04f7eca42666e03",
+   "bytes": 333102
+  },
+  "demo/panel_payloads.jsonl": {
+   "sha256": "1b35832a1e23c25a1f05a13109c2209941454159da7a85998255535271d5788d",
+   "bytes": 370520
+  },
+  "demo/report.html": {
+   "sha256": "9b330509a322be220a377943992fd49626c709a16a8ef658ee9a1dd1d2baf712",
+   "bytes": 664752
+  },
+  "demo/round_data.txt": {
+   "sha256": "8b1521141d46467ef2dc1834c1ee59370af0b0baf3c15e92a75f6935d69ea8fc",
+   "bytes": 372663
+  },
+  "pages/index.html": {
+   "sha256": "65dfb68c89850b21e6b7d84e25b01987e36305a9abd43335c4494319c2b28b90",
+   "bytes": 1822
+  },
+  "pages/index_empty.html": {
+   "sha256": "b1d4f54830c351f3ea7d89b575c9a3f09d982a6426fc7cef1274372bbe06b113",
+   "bytes": 1686
+  },
+  "panel/audit_lines.txt": {
+   "sha256": "975be9720ddf624ae6050bcc536a8be25f815d2e722f08f04e25df3ce4929346",
+   "bytes": 1709
+  },
+  "panel/chat_export/00_프로젝트_지침.md": {
+   "sha256": "29eea0e8ebaaaeb7ec67e7ae2edfdc36d112561809d6920f23889bc6117ec4ec",
+   "bytes": 22425
+  },
+  "panel/chat_export/01_채팅에_적을_말.md": {
+   "sha256": "e06e5ceaadeeee5c1520a2ae10f1c8d0b6c11539f460e5ece657a991f8e7656c",
+   "bytes": 8225
+  },
+  "panel/chat_export/02_경기자료_1of2.md": {
+   "sha256": "68d168c528c4568fade65ba1bf392ba1dd51506f9ec9f7d8adb5dcf2935feabf",
+   "bytes": 190659
+  },
+  "panel/chat_export/02_경기자료_2of2.md": {
+   "sha256": "f490acda455ecbc8d18e075bb1c831251f3d61c9b680e8ca4c3ce6be6bbd2393",
+   "bytes": 192259
+  },
+  "panel/chat_export/03_사회자자료.md": {
+   "sha256": "d967b100f61ed18a214e21d9d26c3b9f6400b3a1d57f240fef72caf84a07adfa",
+   "bytes": 14959
+  },
+  "panel/chat_export/04_PanelResult_JSON_규격.md": {
+   "sha256": "74037f0f3dc6bd889aa6fecf11e9014b9058c6f93916c585849ed2a09c8ed7e7",
+   "bytes": 19881
+  },
+  "panel/common_packet.txt": {
+   "sha256": "4b84ceb18ea4fd0f3654a2f6daa26fa73db9869dbb3295fd8215636c9a27c233",
+   "bytes": 128093
+  },
+  "panel/import_lines.txt": {
+   "sha256": "3720f77885ff779f7c39b656a2eef8898766008377c7dc5c776cbe6578ad7aef",
+   "bytes": 229
+  },
+  "panel/moderator_inputs.jsonl": {
+   "sha256": "83679514562cb4fd5aeace23e669f9e1a10b5cff6871144445ab7cad71310adb",
+   "bytes": 19189
+  },
+  "panel/moderator_sheet_completed.md": {
+   "sha256": "71ad8fa026b1564d64f77bffbfdf0f1aafc622b617a274a0ef1f6f2624b6645d",
+   "bytes": 20444
+  },
+  "panel/moderator_stdin.txt": {
+   "sha256": "0cdcc30315f4f2bfdb6e00d5499a3a7456c330e0e499f30deae900afc6bf588c",
+   "bytes": 25329
+  },
+  "panel/panel_result.json": {
+   "sha256": "2d30dfb8bc3deba030e0a7a5c4307a4d5f6184fea662806e78e68490bba15287",
+   "bytes": 19048
+  },
+  "panel/report.html": {
+   "sha256": "00d430cab3427e5e6cd7d92a572e6554c443e0f1b570d2978b8cb94a73ee982d",
+   "bytes": 735600
+  },
+  "prompt/analyst_task.txt": {
+   "sha256": "119b54a0f3a58618118003485439266a9372a551fd6bc0c95b9a12ecdd4e15a1",
+   "bytes": 499
+  },
+  "prompt/data_analyst.md": {
+   "sha256": "b782b77b5b6ddef5662d6213f49083c9b64291ad4b873daf591a7a7a43fb6644",
+   "bytes": 667
+  },
+  "prompt/matchup_tactical_analyst.md": {
+   "sha256": "d974aa055a9184400ac058fef3f843a5ee003c0efd6bf5dcaad38f8f6fc4847e",
+   "bytes": 4744
+  },
+  "prompt/moderator.md": {
+   "sha256": "81f28ba7324eb033e6381ddd9536de539de236bc61bdcd68767fbd3ad0ba4cc5",
+   "bytes": 9278
+  },
+  "prompt/moderator_task.txt": {
+   "sha256": "7e1589757944c4711decc6bfec2e4b6862204d13ac56d7a728e992e53607c74a",
+   "bytes": 477
+  },
+  "prompt/project_instructions.md": {
+   "sha256": "29eea0e8ebaaaeb7ec67e7ae2edfdc36d112561809d6920f23889bc6117ec4ec",
+   "bytes": 22425
+  },
+  "prompt/schema_guide.md": {
+   "sha256": "74037f0f3dc6bd889aa6fecf11e9014b9058c6f93916c585849ed2a09c8ed7e7",
+   "bytes": 19881
+  },
+  "prompt/stage_system/c.md": {
+   "sha256": "81f28ba7324eb033e6381ddd9536de539de236bc61bdcd68767fbd3ad0ba4cc5",
+   "bytes": 9278
+  },
+  "prompt/stage_system/data_analyst.md": {
+   "sha256": "a073c815d0bd700927ecf2a1032bb2f7e221de2936601d7fb13e28213c2418a6",
+   "bytes": 2699
+  },
+  "prompt/stage_system/matchup_tactical_analyst.md": {
+   "sha256": "0114fab99505c9a4365162700c504cce88b53a871ee7da2ca6e2cfacb070a4b7",
+   "bytes": 6776
+  },
+  "prompt/system_common.md": {
+   "sha256": "79caf43a26b5b30baddf14aeb0bb75073bb30a5f689e7d56b33e6da2b66ff535",
+   "bytes": 2030
+  },
+  "prompt/versions.json": {
+   "sha256": "fcef835e8d4f7ff2fcdb9016ad20e70d99c1cb9e53de83401d13ac0d0c97b794",
+   "bytes": 205
+  }
+ }
+}

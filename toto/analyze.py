@@ -139,57 +139,9 @@ def build_radar(matches: list[Match], settings: Settings) -> None:
 # --------------------------------------------------------------------------
 # 전략적 상성
 # --------------------------------------------------------------------------
-# 후스코어드 특성 문구를 주제어로 묶는다. 홈팀의 강점 주제가 원정팀의 약점
-# 주제와 겹치면 "노려볼 지점"으로 표시한다.
-#
-# **이 표는 Phase 6-E-3 부터 상성 판정에 쓰이지 않는다.** 키워드 부분일치라
-# `set piece` 가 공격·수비 라벨에 동시에 걸리고 `scoring` 이 창출·마무리에
-# 동시에 걸려, 실물에서 수비↔수비·창출↔마무리를 관계로 만들었다. 판정은
-# `toto/relationships.py` 의 **라벨 단위** 표가 한다 (§1-37).
-#
-# 지우지 않은 이유는 `_topics_of` 가 `tests/test_whoscored_characteristics.py`
-# 의 파서 회귀(강도 꼬리표가 붙어도 주제가 잡히나)에서 아직 쓰이기 때문이다.
-# 제거는 그 테스트를 함께 옮겨야 하는 별도 정리다 — 6-E-4 로 미룬다.
-_TOPICS = {
-    "set_piece": ["set piece", "corner", "free kick", "free-kick", "dead ball"],
-    "aerial": ["aerial", "header", "high ball", "tall"],
-    "counter": ["counter", "break", "transition", "fast"],
-    "possession": ["possession", "keeping the ball", "short pass", "build"],
-    "wing": ["wing", "crossing", "cross", "flank", "wide"],
-    "through_ball": ["through ball", "threaded", "defence-splitting"],
-    "long_ball": ["long ball", "direct", "route one"],
-    "dribbling": ["dribbl", "individual skill", "solo run"],
-    "shooting_long": ["long shot", "outside the box", "distance"],
-    "defending_box": ["defending the box", "clearance", "blocking", "concede"],
-    "pressing": ["press", "high line", "win the ball high"],
-    "discipline": ["foul", "card", "discipline", "aggressive"],
-    "finishing": ["finish", "conversion", "clinical", "scoring"],
-    "goalkeeping": ["keeper", "goalkeep", "save"],
-}
-
-_TOPIC_KO = {
-    "set_piece": "세트피스", "aerial": "공중볼", "counter": "역습",
-    "possession": "점유·빌드업", "wing": "측면·크로스", "through_ball": "스루패스",
-    "long_ball": "롱볼·direct", "dribbling": "드리블 돌파",
-    "shooting_long": "중거리 슛", "defending_box": "박스 수비",
-    "pressing": "전방 압박", "discipline": "파울·카드", "finishing": "결정력",
-    "goalkeeping": "골키핑",
-}
-
-
-def _topics_of(phrases: list[str]) -> dict[str, str]:
-    """문구 목록 → {주제: 원문} (첫 매칭만)."""
-    found: dict[str, str] = {}
-    for phrase in phrases or []:
-        low = phrase.lower()
-        for topic, keys in _TOPICS.items():
-            if topic in found:
-                continue
-            if any(k in low for k in keys):
-                found[topic] = phrase
-    return found
-
-
+# 판정은 `toto/relationships.py` 의 **라벨 단위** 표가 한다 (§1-37). 예전의
+# 키워드 주제표(`_TOPICS`·`_TOPIC_KO`·`_topics_of`)는 부분일치라 공격·수비
+# 라벨을 한 주제에 묶었고, 6-E-3 부터 쓰이지 않다가 지웠다 (§1-56).
 def build_matchup(matches: list[Match]) -> None:
     """홈 강점 ↔ 원정 약점 (및 그 반대) 교차 대조.
 

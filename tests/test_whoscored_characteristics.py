@@ -29,7 +29,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from bs4 import BeautifulSoup                                   # noqa: E402
 
-from toto.analyze import _topics_of                             # noqa: E402
+from toto.models import parse_characteristic                    # noqa: E402
+from toto import relationships                                  # noqa: E402
 from toto.sources.whoscored import (                            # noqa: E402
     _TEAM_CACHE_VERSION, _extract_characteristics, _heading_label,
     _soup as _prod_soup, status_line)
@@ -306,18 +307,26 @@ def test_f6_every_state_uses_the_four_words():
 
 
 # ---------------------------------------------------------------- 하류 연결
-def test_d1_topics_still_match_with_level_suffix():
-    """강도 꼬리표가 붙어도 교차 대조(_topics_of)가 주제를 알아봐야 한다."""
+def test_d1_level_suffix_reaches_the_relationship_engine():
+    """강도 꼬리표가 붙어도 **라벨이 그대로** 관계 엔진에 닿아야 한다.
+
+    예전에는 키워드 주제표(`analyze._topics_of`)로 확인했는데, 상성 판정은
+    6-E-3 부터 라벨 단위(`relationships`)가 하고 그 표는 지웠다 (§1-56).
+    """
     got = _extract_characteristics(_soup(REAL))
-    topics = _topics_of(got["strengths"])
-    assert "set_piece" in topics, topics
-    assert "aerial" in topics, topics
-    assert "counter" in topics, topics
+    parsed = [parse_characteristic(x) for x in got["strengths"]]
+    assert [c.label for c in parsed] == ["Set pieces", "Aerial duels",
+                                         "Counter attacks"], parsed
+    assert all(c.intensity for c in parsed), parsed
+    # 실측 어휘(§1-37)에 있는 라벨은 의미 단위로 이어진다.
+    assert relationships.unit_of("Aerial duels") is not None
+    assert relationships.unit_of("Counter attacks") is not None
 
 
-def test_d2_weakness_topic_matches_for_crossmatch():
+def test_d2_weakness_label_survives_the_suffix():
     got = _extract_characteristics(_soup(REAL))
-    assert "counter" in _topics_of(got["weaknesses"])
+    c = parse_characteristic(got["weaknesses"][0])
+    assert (c.label, c.intensity) == ("Defending fast breaks", "Weak"), c
 
 
 # ------------------------------------------------- 강점 0개의 두 가지 뜻 (5-E2)

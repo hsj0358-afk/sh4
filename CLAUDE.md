@@ -4255,10 +4255,10 @@ against skillful players` 가 어떤 주제에도 매핑되지 않았다.
 Phase 소관**이다. 노트의 다섯 칸과 문장 형식은 그대로라 `render._traits_block`
 과 `match_material._tactical` 이 **한 줄도 바뀌지 않았다.**
 
-**`_TOPICS`·`_TOPIC_KO`·`_topics_of` 는 지우지 않았다** — `_topics_of` 가
-`tests/test_whoscored_characteristics.py` 의 파서 회귀에서 아직 쓰인다.
-상성 판정에서는 빠졌고(테스트로 고정) 제거는 그 테스트를 함께 옮겨야 하는
-별도 정리다.
+**`_TOPICS`·`_TOPIC_KO`·`_topics_of` 는 그때 지우지 않았다** — `_topics_of` 가
+`tests/test_whoscored_characteristics.py` 의 파서 회귀에서 아직 쓰였다.
+**리팩터링 Phase 4 후속에서 지웠다** (§1-56) — 그 회귀는 같은 원문을
+`parse_characteristic` → `relationships.unit_of` 로 확인하도록 옮겼다.
 
 **실물 260052 old/new.**
 
@@ -6776,13 +6776,24 @@ Pages index 공백 · Panel Result 출처 표시 · 640px `.meta` · 720px 카�
 
   · `predict.apply_veto`·`VETO_MAX` — 지침 §3-(d) 항목. 호출 0 이지만 지침
     해석이 필요하다 (§3-4).
-  · API 패널 실행기(`--panel`·`llm.py`) · `publish.py` 클라우드 복사 ·
-    `--export-match-material` · `panelexport` 의 `경기별/` 시트 ·
-    `analyze._TOPICS`·`_TOPIC_KO`·`_topics_of` — 레거시 판단 대상.
+  · API 패널 실행기(`--panel`·`llm.py`) · `--export-match-material` — 레거시
+    판단을 거쳐 **남기기로 했다** (아래 '레거시 정리').
+  · `predict.apply_veto` 처럼 지침 원문이 필요한 것은 위와 같다.
   · 테스트에서만 쓰는 공개 정의(`analysis.gap_state` · `moderator.SYSTEM` ·
     `panelauto.verify_match` · `panelpacket.audit_lines`·`LEGACY_PACKET_FILES`
     · `relationships.unit_of` · `shots.KNOWN_SITUATIONS` 등)는 조사 대상이다.
     `relationships.DEFERRED_PAIRS` 는 결정 기록이라 남긴다 (§1-37).
+
+#### 레거시 정리 (리팩터링 Phase 4 후속)
+
+항목마다 남길지 지울지 정했다. 지운 것은 항목마다 커밋을 나눴다.
+
+| 항목 | 판정 | 이유 |
+|---|---|---|
+| `analyze._TOPICS`·`_TOPIC_KO`·`_topics_of` | **삭제** | 6-E-3 부터 상성 판정에 쓰이지 않았다(§1-37). 남은 파서 회귀는 `parse_characteristic` → `relationships.unit_of` 로 옮겼다. 골든 무변화 |
+| API 패널 `--panel`·`llm.py` | 남김 | `[9]→[7]` 로 격리돼 있다. `panel.py` 가 `llm` 을 맨 위에서 import 하고, 코드펜스 규칙(§1-57 M9)과 검증기가 얽혀 지우는 비용이 크다 |
+| `--export-match-material` | 남김 | 지표·메타데이터를 전부 싣는 유일한 산출물이고 골든이 고정한다 (§1-14) |
+| `predict.apply_veto`·`VETO_MAX` | 남김 | 지침 §3-(d) 항목. 지우는 것은 지침 해석이다 (§3-4) |
 
 ### 1-57. 중복 정리 (리팩터링 Phase 3) — 같을 때만 합친다
 
@@ -7526,8 +7537,9 @@ span/td/p 만 읽으면 실물에서 `['', 'Very Strong', '']` 이 나온다 —
   · **강도 어휘를 코드에 두지 않는다.** `"Very Strong"` 목록을 만들어
     자르는 대신 구조로만 가른다 — 어휘는 리그·언어에 따라 바뀐다.
     AST 로 문자열 상수를 검사해 하드코딩을 막는다.
-  · 꼬리표가 붙어도 `analyze._topics_of()` 의 주제 매칭은 그대로 된다
-    (`set_piece`·`aerial`·`counter` 확인).
+  · 꼬리표가 붙어도 라벨이 그대로 남는다 — 지금은 `parse_characteristic` 이
+    떼어 내고 `relationships.unit_of` 가 잇는 것으로 확인한다 (예전 확인 도구
+    `analyze._topics_of()` 는 지웠다, §1-56).
   · **팀 페이지 캐시에 판 번호를 뒀다** — `_TEAM_CACHE_VERSION = 1`.
     없으면 같은 날 재실행이 '강점 0개' 였던 옛 결과를 되돌려 준다(§1-4).
 

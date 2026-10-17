@@ -599,12 +599,10 @@ def test_h1_engine_does_not_use_the_old_topic_table():
         assert word not in code, f"build_matchup: {word}"
 
 
-def test_h2_old_topic_tables_are_untouched():
-    """표 자체는 한 글자도 바뀌지 않았다 — 제거는 별도 정리다."""
-    blob = json.dumps([analyze._TOPICS, analyze._TOPIC_KO],
-                      ensure_ascii=False, sort_keys=True)
-    import hashlib
-    assert hashlib.sha256(blob.encode()).hexdigest()[:16] == "e4e6ea5e47c647ef"
+def test_h2_old_topic_tables_are_gone():
+    """6-E-3 이 '제거는 별도 정리' 로 남긴 표를 지웠다 (§1-56)."""
+    for name in ("_TOPICS", "_TOPIC_KO", "_topics_of"):
+        assert not hasattr(analyze, name), name
 
 
 def test_h3_forbidden_modules_do_not_reference_the_engine():

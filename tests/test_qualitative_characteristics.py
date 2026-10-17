@@ -606,13 +606,15 @@ def test_f1_matchup_reads_the_layer_but_does_not_reimplement_it():
         assert word not in src, f"6-E-2 계층을 베꼈다: {word}"
 
 
-def test_f2_topic_tables_are_pinned():
-    """`_TOPICS`·`_TOPIC_KO` 가 한 글자도 바뀌지 않았다."""
-    blob = json.dumps([analyze._TOPICS, analyze._TOPIC_KO],
-                      ensure_ascii=False, sort_keys=True)
-    digest = hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
-    assert digest == "e4e6ea5e47c647ef", digest
-    assert len(analyze._TOPICS) == 14, len(analyze._TOPICS)
+def test_f2_old_topic_tables_are_gone():
+    """옛 키워드 주제표는 지웠다 (§1-56).
+
+    6-E-2 때 이 테스트는 표를 해시로 고정해 '관계 판정을 건드리지 않았다'
+    를 말했다. 판정은 6-E-3 부터 관계 엔진이 하고, 표는 쓰는 곳이 없어
+    지웠다 — 이제 그것이 다시 생기지 않는지 본다.
+    """
+    for name in ("_TOPICS", "_TOPIC_KO", "_topics_of"):
+        assert not hasattr(analyze, name), name
 
 
 def test_f3_stored_artifact_keeps_the_notes_it_was_saved_with():

@@ -129,7 +129,6 @@ DEFAULT_RECENT_METRICS = [
     {"key": "npxga_recent_pg", "label": "피npxG", "fmt": "{:.2f}"},
     {"key": "xgot_recent_pg", "label": "xGOT", "fmt": "{:.2f}"},
     {"key": "xgot_against_recent_pg", "label": "피xGOT", "fmt": "{:.2f}"},
-    {"key": "xgot_delta_recent", "label": "xGOT−npxG(합계)", "fmt": "{:+.2f}"},
     {"key": "xg_open_play_recent_pg", "label": "오픈플레이 xG", "fmt": "{:.2f}"},
     {"key": "xg_set_play_recent_pg", "label": "세트피스 xG", "fmt": "{:.2f}"},
     {"key": "shots_recent_pg", "label": "슈팅", "fmt": "{:.1f}"},

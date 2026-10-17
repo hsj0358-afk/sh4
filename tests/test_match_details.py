@@ -470,16 +470,16 @@ def test_recent_counts_survives_cache_roundtrip():
     assert TeamStats(**old).npxg_recent_pg == 0.5
 
 
-def test_inside_box_share_and_xgot_delta():
+def test_inside_box_share_and_no_xgot_delta():
     s = TeamStats(recent_matches=5, shots_inside_box_recent=45.0,
                   shots_outside_box_recent=15.0,
                   xgot_recent=7.5, npxg_recent=6.0)
     assert s.inside_box_shot_share == 75.0
-    assert s.xgot_delta_recent == 1.5
+    # xGOT − npxG 는 기준이 달라(PK 포함 ↔ 제외) 만들지 않는다 — §3-7.
+    assert not hasattr(s, "xgot_delta_recent")
 
     half = TeamStats(recent_matches=5, shots_inside_box_recent=45.0)
     assert half.inside_box_shot_share is None, "반쪽 재료로 비율을 만들면 안 된다"
-    assert TeamStats(recent_matches=5, xgot_recent=7.5).xgot_delta_recent is None
 
 
 def test_all_recent_derived_properties_exist_and_are_none_by_default():
@@ -489,7 +489,7 @@ def test_all_recent_derived_properties_exist_and_are_none_by_default():
              "xg_set_play_recent_pg", "shots_recent_pg", "shots_against_recent_pg",
              "shots_on_target_recent_pg", "shots_on_target_against_recent_pg",
              "shots_inside_box_recent_pg", "shots_outside_box_recent_pg",
-             "inside_box_shot_share", "xgot_delta_recent"]
+             "inside_box_shot_share"]
     for name in names:
         assert getattr(s, name) is None, f"{name} 이 빈 상태에서 값을 냈다"
 

@@ -1337,9 +1337,8 @@ def build_time_context(profile: TeamProfile | None, team: str,
 # **`xGOT − npxG` 를 만들지 않는다.** xGOT 은 PK 를 포함하고 npxG 는
 # 제외하므로 기준이 다르다. 이 차이를 "결정력"·"슈팅 효율" 로 부르면 PK 를
 # 많이 얻은 팀이 자동으로 좋아 보인다. xG·npxG·xGOT 세 원값을 따로 둔다.
-# (리포트의 `recent_metrics` 에 Phase 1-B 때 넣은 `xgot_delta_recent` 행이
-#  아직 남아 있다 — 이번 단계는 UI 를 건드리지 않으므로 그대로 두고
-#  Known Limitations 에 적는다.)
+# (Phase 1-B 때 리포트 `recent_metrics` 에 넣은 `xgot_delta_recent` 행과
+#  그 속성은 리팩터링 Phase 4 후속에서 지웠다 — §3-7.)
 #
 # 득점−xG 계열을 "결정력"·"finishing" 으로 부르지 않고 방향도 정하지 않는다.
 

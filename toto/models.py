@@ -336,13 +336,6 @@ class TeamStats:
         total = inside + outside
         return None if total <= 0 else inside / total * 100.0
 
-    @property
-    def xgot_delta_recent(self) -> float | None:
-        """xGOT − npxG. 양수면 기대보다 좋은 코스로 때리고 있다는 뜻."""
-        if self.xgot_recent is None or self.npxg_recent is None:
-            return None
-        return self.xgot_recent - self.npxg_recent
-
     # ---- 시즌 누계를 경기당으로 -------------------------------------------
     # 피드가 누계로 주는 항목들. 리그 안에서도 팀마다 소화 경기수가 달라서
     # (연기·스플릿) 누계를 그대로 나란히 두면 경기를 더 치른 팀이 부풀려진다.

@@ -42,8 +42,8 @@
    "bytes": 370520
   },
   "demo/report.html": {
-   "sha256": "5ed743f27dde4ce98ab1835538f205a4d946b36304ea9848c823231860e5384d",
-   "bytes": 675280
+   "sha256": "9b330509a322be220a377943992fd49626c709a16a8ef658ee9a1dd1d2baf712",
+   "bytes": 664752
   },
   "demo/round_data.txt": {
    "sha256": "8b1521141d46467ef2dc1834c1ee59370af0b0baf3c15e92a75f6935d69ea8fc",
@@ -110,8 +110,8 @@
    "bytes": 19048
   },
   "panel/report.html": {
-   "sha256": "e6e32e5bed28ef4f0aa229595396480aaebfbc7aa9669f57e6ac1151c2fa0880",
-   "bytes": 746128
+   "sha256": "00d430cab3427e5e6cd7d92a572e6554c443e0f1b570d2978b8cb94a73ee982d",
+   "bytes": 735600
   },
   "prompt/analyst_task.txt": {
    "sha256": "119b54a0f3a58618118003485439266a9372a551fd6bc0c95b9a12ecdd4e15a1",

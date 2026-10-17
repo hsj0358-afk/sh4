@@ -387,8 +387,9 @@ observed)이고 이쪽은 경기내용에서 만든 모델값이다. 두 확률�
 **`xGOT − npxG` 를 만들지 않는다.** xGOT 은 PK 를 포함하고 npxG 는
 제외하므로 기준이 다르다. 이 차이를 "결정력"·"슈팅 효율" 로 부르면 PK 를
 많이 얻은 팀이 자동으로 좋아 보인다. xG·npxG·xGOT 세 원값을 따로 둔다.
-(리포트의 `recent_metrics` 에 Phase 1-B 때 넣은 `xgot_delta_recent` 행이
-아직 남아 있다 — 2-B 는 UI 를 건드리지 않아 그대로 뒀다. §3-7 참고.)
+(Phase 1-B 때 리포트 `recent_metrics` 에 넣은 `xgot_delta_recent` 행은
+2-B 가 UI 를 건드리지 않아 남아 있다가 리팩터링 Phase 4 후속에서 지웠다 —
+§3-7.)
 
 **득점−xG 계열을 "결정력" 이라 부르지 않는다.** `goals_minus_xg` ·
 `goals_minus_npxg` · `goals_minus_xgot` 세 개를 각각 따로 두고 **방향을
@@ -922,7 +923,7 @@ anchor, drivers)` 를 `CATALOG` 에 선언해 두고 값은 축의 `Metric` 에�
 
 예전에는 차트 둘이 먼저 나오고 대응하는 표가 한참 뒤에 따로 있어, **같은
 지표를 두 곳에서 따로 읽어야 했다** (`compare_metrics` 10종 중 8종이 시즌
-표와 겹치고, `recent_metrics` 12종은 최근 표와 거의 겹친다). 차트와 표가
+표와 겹치고, `recent_metrics` 12종(지금은 11종 · §3-7)은 최근 표와 거의 겹친다). 차트와 표가
 같은 값을 두 형식으로 보이는 것은 정상이고 권장되지만, **떨어져 있으면
 대조가 안 된다.** 표를 나눈 덕에 붙일 수 있었다.
 
@@ -6798,6 +6799,7 @@ Pages index 공백 · Panel Result 출처 표시 · 640px `.meta` · 720px 카�
 | `analyze._TOPICS`·`_TOPIC_KO`·`_topics_of` | **삭제** | 6-E-3 부터 상성 판정에 쓰이지 않았다(§1-37). 남은 파서 회귀는 `parse_characteristic` → `relationships.unit_of` 로 옮겼다. 골든 무변화 |
 | `panelexport` 의 `경기별/` 시트 | **삭제** | 회차 시트가 크면 이미 `_1of2` 처럼 부로 나뉘고, 여러 파일을 한 대화에 함께 첨부하면 된다(§1-20). 자동 경로는 쓰지 않았다. `match_sheet`·`_moderator_block`·`OPINIONS_SLOT`·`_slug` 를 함께 지웠다. **지침 지문이 `4a54e7ad` → `71163a6f`** — 지침이 그 폴더를 안내하던 두 줄이 빠졌다. 프롬프트 판(PANEL 5 · MODERATOR 6)은 그대로라 패널 캐시는 유효하지만, **채팅 프로젝트 지침은 다시 붙여넣어야 한다** (§1-11-1). 골든 68 → 40개 |
 | `publish.py` 클라우드 폴더 복사 | **삭제** | 수집 직후(`[1]`) 불려 **패널 반영 전 판**을 OneDrive 등에 복사할 수 있었다. 폰에서 보기는 Pages 자동 배포(§1-54)와 같은 와이파이 공개(`serve` · 메뉴 [5])가 맡는다. `publish()`·`find_cloud_roots`·`_targets` 와 `output.copy_to`·`copy_to_exclude`·`cloud_folder`·`latest_name` 설정을 지웠다. `serve`·`lan_addresses` 는 그대로다. 옛 설정이 남아 있어도 읽지 않을 뿐 오류가 아니다. 골든 무변화 |
+| 리포트 `xGOT−npxG(합계)` 행 | **삭제** | 기준이 다른 두 값(PK 포함 ↔ 제외)의 차이라 2-B 가 분석에서 뺐다(§1-1-8). 행·속성을 지웠고 리포트가 10,528 bytes 줄었다 — 자세한 것은 §3-7 |
 | API 패널 `--panel`·`llm.py` | 남김 | `[9]→[7]` 로 격리돼 있다. `panel.py` 가 `llm` 을 맨 위에서 import 하고, 코드펜스 규칙(§1-57 M9)과 검증기가 얽혀 지우는 비용이 크다 |
 | `--export-match-material` | 남김 | 지표·메타데이터를 전부 싣는 유일한 산출물이고 골든이 고정한다 (§1-14) |
 | `predict.apply_veto`·`VETO_MAX` | 남김 | 지침 §3-(d) 항목. 지우는 것은 지침 해석이다 (§3-4) |
@@ -7732,19 +7734,29 @@ ok (28/28팀, 강점/약점 28팀)                     특성까지 정상
 골든 테스트가 그것을 고정한다(§1-55). 다른 시드에서 달라지는 자리가 새로
 생기면 거기서 걸린다.
 
-### 3-7. 리포트에 남아 있는 `xGOT−npxG` 행
+### 3-7. 리포트의 `xGOT−npxG` 행 — 지웠다 (리팩터링 Phase 4 후속)
 
 `config_toto.yaml` 의 `recent_metrics` 에 Phase 1-B 때 넣은
-`xgot_delta_recent`("xGOT−npxG(합계)") 행이 있고,
-`TeamStats.xgot_delta_recent` 가 그 값을 만든다.
+`xgot_delta_recent`("xGOT−npxG(합계)") 행이 있었고,
+`TeamStats.xgot_delta_recent` 가 그 값을 만들었다.
 
 Phase 2-B 에서 **이 지표를 분석에 쓰지 않기로 정했다** — xGOT 은 PK 를
 포함하고 npxG 는 제외해 기준이 다르므로, 둘의 차이를 "결정력"·"슈팅 효율"
 로 읽으면 PK 를 많이 얻은 팀이 자동으로 좋아 보인다(§1-1-3, §1-1-8).
 
-리포트 UI 는 2-B 범위가 아니라 그대로 뒀다. **행을 지울지, 남기되 설명을
-붙일지는 사용자 판단이 필요하다.** 분석 축(`chance_quality`)에는 들어가지
-않는다는 것만 코드로 고정돼 있다.
+리포트 UI 는 2-B 범위가 아니라 그대로 뒀었다. **사용자가 지우기로 정했다**
+(2026-10) — 행(`config_toto.yaml`·`settings` 기본값)과 속성(`TeamStats.
+xgot_delta_recent`)을 함께 지웠다. xGOT·npxG 원값 행은 그대로다.
+
+  · 데모·패널 리포트는 각각 **10,528 bytes 줄었다** (`--demo` 675,280 →
+    664,752). 바뀐 것은 최근 경기 차트에서 그 줄이 빠지고 아래 줄의 좌표가
+    올라간 것뿐이다 — 빠진 글자 조각 70개(14경기 × 라벨·값 둘·툴팁 둘),
+    새로 생긴 글자 0, 표 칸 1,188개 동일. 골든을 의도적으로 갱신했다.
+  · **실물 골든(260052)의 `report.html` 두 항목은 낡았다.** 그 기준은 입력
+    sha `92139c1e…` 저장본에서만 다시 만들 수 있는데 지금 어느 환경에도 그
+    저장본이 없다(PC 의 260052 는 다시 수집한 것이라 SKIP 이다, §1-59).
+    그 저장본이 있는 곳에서 돌리면 FAIL 이 나고, 그때
+    `TOTO_GOLDEN_UPDATE=1 python tests/test_golden_real.py` 로 갱신한다.
 
 ### 3-9. 시즌 슈팅이 28/28 비었다 (5-E1) — 원인 확정·수정 완료, 실물 재실행 확인 대기
 

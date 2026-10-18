@@ -43,6 +43,11 @@ import tests.test_league_stat_table as LS                       # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 
+# 차단 재시도(260059 후속)는 실제로 기다리지 않게 한다. 재시도 자체는
+# tests/test_whoscored_block_retry.py 가 본다.
+W._sleep = lambda _seconds: None
+RETRIES = W._retry_policy(load_settings())[0]
+
 # --------------------------------------------------------------------------
 # 픽스처
 # --------------------------------------------------------------------------
@@ -371,8 +376,10 @@ def test_d1_blocked_league_is_not_parsed():
     for wrong in ("팀을 하나도 파싱하지 못함", "팀 링크가 없습니다", "JS 렌더링",
                   "팀 통계 탭 링크가"):
         assert not any(wrong in ln for ln in lines), (wrong, lines)
-    # 팀 통계 탭을 찾으러 가지 않는다 — 요청은 리그 페이지 한 번뿐이다
-    assert len(b._page.gotos) == 1, b._page.gotos
+    # 팀 통계 탭을 찾으러 가지 않는다 — 요청은 리그 페이지뿐이다. 차단이면
+    # 같은 주소를 정해진 횟수만큼 다시 시도한다 (260059 후속).
+    assert len(b._page.gotos) == 1 + RETRIES, b._page.gotos
+    assert {url for url, _ in b._page.gotos} == {b._page.gotos[0][0]}
 
 
 def test_d2_blocked_league_error_names_the_block():
@@ -437,7 +444,13 @@ def test_d6_team_page_block_returns_empty():
 # E. 우회를 만들지 않았다
 # ==========================================================================
 def test_e1_no_bypass_code():
-    """차단을 알아보기만 한다 — 재시도·대기·다른 전송 방식이 늘지 않았다."""
+    """다른 전송 방식·우회 도구를 들이지 않았다.
+
+    260059 후속으로 **같은 세션에서 기다렸다 같은 주소를 다시 받는 재시도**는
+    들어왔다(횟수 상한 · 한 번 다 실패하면 그 실행에서 멈춤 —
+    `test_whoscored_block_retry.py`). 그것은 우회가 아니다 — 요청 방식·신원·
+    도구가 그대로이고, 아래 목록은 여전히 하나도 없다.
+    """
     for rel in ("toto/sources/browser.py", "toto/sources/whoscored.py"):
         tree = ast.parse((ROOT / rel).read_text(encoding="utf-8"))
         mods = {a.name for n in ast.walk(tree) if isinstance(n, ast.Import)

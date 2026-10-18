@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 
 from ..models import FormEntry, H2H, H2HEntry, TeamProfile, TeamRef, TeamStats
 from ..models import fill_stats
@@ -180,6 +181,76 @@ def _looks_blocked(html: str, status: int | None = None) -> bool:
 
 
 # --------------------------------------------------------------------------
+# 차단되면 잠시 기다렸다 다시 받는다
+# --------------------------------------------------------------------------
+# 260059 실측(2026-10-10): 라리가 리그 페이지가 차단돼 그 리그 12팀의 지표와
+# 팀 페이지가 통째로 빠졌고, EPL 팀 페이지 셋도 받지 못했다. 그 자리에서 빈
+# 결과로 넘어갔고 다시 시도하지 않았다. 차단은 대개 일시적이므로 **차단으로
+# 판정된 경우에만** 기다렸다 다시 받는다 — 경로가 틀렸거나 페이지 로드가
+# 예외로 끝난 것은 기다린다고 낫지 않으므로 재시도하지 않는다.
+_DEFAULT_BLOCK_RETRIES = 2
+_DEFAULT_BLOCK_RETRY_WAIT = 30.0
+_sleep = time.sleep                 # 테스트가 바꿔 끼운다 — 실제로 기다리지 않게
+
+
+def _retry_policy(settings: Settings) -> tuple[int, float]:
+    """`config_toto.yaml` 의 `whoscored.block_retries`·`block_retry_wait_sec`.
+
+    값이 없거나 읽을 수 없으면 기본값이다. 음수는 0 으로 둔다(재시도 끔).
+    """
+    cfg = getattr(settings, "whoscored", None) or {}
+    try:
+        retries = int(cfg.get("block_retries", _DEFAULT_BLOCK_RETRIES))
+    except (TypeError, ValueError):
+        retries = _DEFAULT_BLOCK_RETRIES
+    try:
+        wait = float(cfg.get("block_retry_wait_sec", _DEFAULT_BLOCK_RETRY_WAIT))
+    except (TypeError, ValueError):
+        wait = _DEFAULT_BLOCK_RETRY_WAIT
+    return max(0, retries), max(0.0, wait)
+
+
+def _get_page(browser, settings: Settings, url: str,
+              wait_selector: str | None = None, what: str = "") -> str:
+    """`browser.get_html()` 에 차단 재시도를 더한다.
+
+    다 실패하면 빈 문자열이고 `browser.last_block` 은 **마지막 시도**의
+    판정이 남는다 — 부르는 쪽의 차단 처리(원본 보관·로그)가 그대로 돈다.
+    """
+    html = browser.get_html(url, wait_selector=wait_selector)
+    if html:
+        return html
+    # **한 번 끝까지 실패하면 그 실행에서는 더 재시도하지 않는다.** 사이트
+    # 전체가 막힌 경우(2026-09-25 GitHub Actions 실측 — 첫 요청부터 403)에
+    # 페이지마다 기다리면 팀 페이지 28개에 30분 가까이를 버린다. 이 표지는
+    # 세션(브라우저) 하나에만 붙는다.
+    if getattr(browser, "_block_retry_spent", False):
+        return html
+    retries, wait = _retry_policy(settings)
+    attempted = False
+    for attempt in range(1, retries + 1):
+        block = getattr(browser, "last_block", "")
+        if not block:
+            break
+        attempted = True
+        log.warning("[%s] 차단 (type=%s) — %.0f초 기다렸다 다시 시도합니다 "
+                    "(%d/%d)", what or url, block, wait, attempt, retries)
+        _sleep(wait)
+        html = browser.get_html(url, wait_selector=wait_selector)
+        if html:
+            log.info("[%s] 재시도 %d회째에 받았습니다", what or url, attempt)
+            return html
+    if attempted:
+        log.warning("[%s] 재시도 %d회 모두 차단 — 이번 실행에서는 더 "
+                    "재시도하지 않습니다", what or url, retries)
+        try:
+            browser._block_retry_spent = True
+        except AttributeError:
+            pass
+    return html
+
+
+# --------------------------------------------------------------------------
 # HTML 파싱 유틸
 # --------------------------------------------------------------------------
 def _soup(html: str):
@@ -312,7 +383,8 @@ def read_league(browser: WhoScoredBrowser, settings: Settings,
         return {}
 
     url = browser.abs_url(path)
-    html = browser.get_html(url, wait_selector="table")
+    html = _get_page(browser, settings, url, wait_selector="table",
+                     what=f"{league_key} 리그 페이지")
 
     # 설정된 ID 가 틀리면 후스코어드가 조용히 홈으로 보낸다.
     # 그때는 사이트 메뉴에서 주소를 직접 찾아 한 번 더 시도한다.
@@ -435,8 +507,9 @@ def read_league(browser: WhoScoredBrowser, settings: Settings,
     # 시즌·stage 번호가 해마다 바뀌므로 설정에 박으면 다음 시즌에 썩는다.
     stat_soup, stat_path = soup, _stat_page_path(html)
     if stat_path:
-        stat_html = browser.get_html(browser.abs_url(stat_path),
-                                     wait_selector="table")
+        stat_html = _get_page(browser, settings, browser.abs_url(stat_path),
+                              wait_selector="table",
+                              what=f"{league_key} 팀 통계 탭")
         if stat_html:
             stat_soup = _soup(stat_html)
             if cache is not None:
@@ -869,8 +942,19 @@ def read_team(browser: WhoScoredBrowser, settings: Settings, team_url: str,
 
     if not team_url:
         return {}
-    html = browser.get_html(browser.abs_url(team_url), wait_selector="table, ul")
+    html = _get_page(browser, settings, browser.abs_url(team_url),
+                     wait_selector="table, ul", what=f"{canonical} 팀 페이지")
     if not html:
+        # 차단이면 그 사실과 원본을 남긴다 — 리그 페이지와 같은 방식이다.
+        # 예전에는 아무것도 남지 않아 260059 의 EPL 세 팀이 왜 빠졌는지
+        # 가릴 수 없었다 (§1-6-1).
+        block = getattr(browser, "last_block", "")
+        if block:
+            log.error("%s: 팀 페이지 수집 실패 — 차단 (type=%s). 강점/약점·"
+                      "스타일을 받지 못했습니다.", canonical, block)
+            if cache is not None and getattr(browser, "last_block_html", ""):
+                cache.save_debug("whoscored", f"blocked_team_{canonical}",
+                                 browser.last_block_html, failed=False)
         return {}
 
     soup = _soup(html)

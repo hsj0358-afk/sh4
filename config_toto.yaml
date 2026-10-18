@@ -33,6 +33,11 @@ whoscored:
   # 요청 간 대기(초). 너무 짧으면 차단당한다.
   delay_sec: 4.0
   timeout_ms: 45000
+  # 차단 판정을 받은 페이지(리그·팀 통계 탭·팀 페이지)를 기다렸다 다시 받는다.
+  # 260059 에서 라리가 리그 페이지 차단 한 번에 12팀의 정성 자료가 통째로
+  # 빠졌다. 차단이 아닌 실패는 재시도하지 않는다. 0 이면 재시도 끔.
+  block_retries: 2
+  block_retry_wait_sec: 30
   # 브라우저 프로필을 유지해 통과 쿠키를 재사용 (권장)
   persistent_profile: true
   recent_form_count: 6      # 제안서의 '최근 6경기 기세'

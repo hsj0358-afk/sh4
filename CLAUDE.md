@@ -7279,6 +7279,7 @@ newline 으로 읽는다) · `pagespublish.sha256_of`(원바이트) ·
 | **사용자 PC (윈도우) · 원본 저장소** | `0173b4b` | **2778 passed · 0 failed · 7 skipped** (462초) |
 | 리눅스 컨테이너 · 저장본 **없음** | 후속 정리 | **2745 passed · 40 skipped · 0 failed** |
 | **사용자 PC (윈도우) · 원본 저장소** | `69588bf` | 2775 passed · **2 failed** · 7 skipped — 둘 다 아래 '후속 정리' 의 테스트 쪽 해독 문제 |
+| **사용자 PC (윈도우) · 원본 저장소** | `6e6a558` | **2778 passed · 0 failed · 7 skipped** — 위 2건 수정 확인 · runner_contract 12/12 · cp949 파이프(git-bash 포함) rc 0 |
 
   · 리눅스 저장본 없음 줄의 1건은 `test_panel_auto.test_m14_audit_reports_what_was_left_out`
     이다. 실물 저장본이 없으면 근거가 없는 데모 색인으로 대체되어 실패하고,

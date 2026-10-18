@@ -523,6 +523,27 @@ def characteristic_status(items: Any, page_ok: bool | None) -> str:
     return CHAR_OBSERVED_EMPTY if page_ok else CHAR_PAGE_FAILED
 
 
+def qualitative_coverage(report: Any) -> dict:
+    """회차에서 팀 페이지를 받은 팀 수. `team_page_ok` 를 **그대로** 센다.
+
+    `True` 는 받았다 · `False` 는 받지 못했다 · `None`(또는 프로필 없음)은
+    기록 없음이고 셋을 섞지 않는다 — `characteristic_status()` 와 같은 구분이다.
+    패널 자동 분석이 시작 전에 정성 자료 공백을 알리는 데 쓴다 (260059 후속).
+    """
+    out = {"total": 0, "ok": 0, "failed": 0, "unrecorded": 0}
+    profiles = [p for m in report.matches for p in (m.home_profile, m.away_profile)]
+    for profile in profiles:
+        out["total"] += 1
+        page_ok = getattr(profile, "team_page_ok", None)
+        if page_ok is True:
+            out["ok"] += 1
+        elif page_ok is False:
+            out["failed"] += 1
+        else:
+            out["unrecorded"] += 1
+    return out
+
+
 @dataclass
 class TeamProfile:
     """한 팀에 대해 수집한 모든 것."""

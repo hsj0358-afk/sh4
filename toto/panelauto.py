@@ -108,7 +108,8 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import moderator, panel, panelexport, panelpacket, panelwork
+from . import (artifact, models, moderator, panel, panelexport, panelpacket,
+               panelwork)
 from .models import Report
 
 # ==========================================================================
@@ -345,6 +346,10 @@ class Preflight:
     plan: "panelwork.ResumePlan | None" = None
     problems: list = field(default_factory=list)
     notes: list = field(default_factory=list)
+    # 막지는 않지만 **정상 실행 화면에도** 보여야 하는 것. notes 는 점검·
+    # 실패 화면에만 나간다 — 정성 자료 공백을 거기에만 두면 [2] 로 바로
+    # 돌린 사람은 모른다 (260059).
+    warnings: list = field(default_factory=list)
     auth: "AuthStatus | None" = None
 
 
@@ -643,6 +648,43 @@ def _classify(text: str) -> str:
 # ==========================================================================
 # Preflight
 # ==========================================================================
+# 정성 자료(후스코어드 팀 페이지)가 빠진 채로 패널이 도는 것을 **시작 전에**
+# 알린다. 260059 는 28팀 중 15팀이 빠진 채로 돌았는데 그 사실이 상태 문자열
+# 한 줄에만 있었다. 맞대결 분석가는 이 자료를 쓰는 유일한 역할이라 빠지면
+# 그 경기에서는 데이터 분석가와 같은 자료만 보게 된다.
+#
+# **막지 않는다** — 알리기만 한다. 정성 자료가 없어도 정량 분석은 성립하고,
+# 경기가 시작된 뒤에는 저장본이 고정돼(§1-27) 다시 받을 방법이 없다.
+_DETAIL_STATUS_KEY = "상세데이터"           # cli 가 후스코어드 상태를 적는 칸
+
+
+qualitative_coverage = models.qualitative_coverage    # 세는 규칙은 models 한 곳
+
+
+def qualitative_note(report: Report, now=None) -> str:
+    """정성 자료가 모자라면 한 줄로 알린다. 다 받았으면 빈 문자열."""
+    cov = qualitative_coverage(report)
+    if not cov["total"] or cov["ok"] == cov["total"]:
+        return ""
+    parts = [f"정성 자료(후스코어드 팀 페이지) {cov['ok']}/{cov['total']}팀"]
+    if cov["failed"]:
+        parts.append(f"받지 못한 팀 {cov['failed']}")
+    if cov["unrecorded"]:
+        parts.append(f"기록 없음 {cov['unrecorded']}")
+    line = " · ".join(parts)
+    status = (report.source_status or {}).get(_DETAIL_STATUS_KEY, "")
+    if status:
+        line += f" (상세데이터: {status})"
+    if cov["failed"]:
+        if artifact.is_prematch(report, now):
+            line += (" — 킥오프 전이면 [1] 회차 분석을 다시 돌려 빠진 팀을 "
+                     "받을 수 있습니다 (같은 날이면 받은 부분은 캐시에서 읽습니다)")
+        else:
+            line += (" — 경기가 시작돼 저장본은 바뀌지 않습니다. 그 팀들은 "
+                     "정성 자료 없이 분석합니다")
+    return line
+
+
 def preflight(report: Report | None, round_id: str,
               base: Path | None = None, index=None) -> Preflight:
     """시작해도 되는지 본다. **API 키가 있으면 시작하지 않는다.**
@@ -733,6 +775,9 @@ def preflight(report: Report | None, round_id: str,
                 f"근거 0건인 경기 {len(without)}개 "
                 f"({', '.join(str(n) for n in without)}번) — 축 지표만으로 "
                 f"분석합니다")
+        qual = qualitative_note(report)
+        if qual:
+            out.warnings.append(qual)
         # **회차 전체를 한 번에 보내므로 크기를 먼저 적는다** (6-F-9).
         # 6-F-10 부터는 원본이 아니라 **공통 packet** 이 나가므로 둘을
         # 함께 잰다 — 줄어든 것이 실측이라는 것을 시작 전에 보여 준다.
@@ -1502,6 +1547,8 @@ def check(round_id: str, report: Report | None = None, *,
     echo(_BAR)
     for note in pre.notes:
         echo(f"  · {note}")
+    for warning in pre.warnings:
+        echo(f"  ⚠ {warning}")
     echo(f"  · 모델 {resolve_model(model) or 'Claude Code 기본'}")
     echo(f"  · 작업 폴더 {auto_dir(pre.round_id, base)}")
     if pre.problems:
@@ -1563,7 +1610,7 @@ def run(round_id: str, report: Report | None = None, settings=None, *,
             return out
 
     pre = preflight(report, out.round_id, base)
-    for note in pre.notes:
+    for note in pre.notes + pre.warnings:
         out.lines.append(note)
     if not pre.ok:
         echo("[준비] 자료 확인        ✗")
@@ -1573,12 +1620,16 @@ def run(round_id: str, report: Report | None = None, settings=None, *,
         # 조용히 두지만, 여기서 감추면 사용자가 무엇을 고쳐야 할지 모른다.
         for note in pre.notes:
             echo(f"      · {note}")
+        for warning in pre.warnings:
+            echo(f"      ⚠ {warning}")
         out.status = AGENT_FAILED
         out.stopped_reason = pre.problems[0]
         return out
     echo(f"[준비] 자료 확인        ✓  {pre.matches}경기 · {pre.version}")
     echo(f"      └ 모델 {model or 'Claude Code 기본'} · 작업 폴더 "
          f"{auto_dir(out.round_id, base)}")
+    for warning in pre.warnings:
+        echo(f"      ⚠ {warning}")
     out.model = model
     # **무엇을 얼마나 보내는지 먼저 보여 준다** (6-F-10 §26·§34).
     # 한 덩어리이고 A·B 가 그것을 그대로 받는다 — 역할마다 줄을 나누지

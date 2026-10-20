@@ -7490,6 +7490,84 @@ newline 으로 읽는다) · `pagespublish.sha256_of`(원바이트) ·
     지금 표본으로는 작은 차이를 판별할 수 없다.
   · 다시 볼 때도 측정 도구를 만들지 않고, 로컬에서 저장본을 읽어 뽑는다.
 
+**후속 결정 (같은 날, 사용자):** 목표 지표를 **정확 스코어 적중**으로 정하고,
+실제 결과가 쌓이기를 기다리는 대신 **오프라인 재생**으로 프롬프트 안을
+견주기로 했다 (§1-63). 코드가 기대 득점을 계산하는 기준 모델(3-a)은
+**후보로만** 둔다 — §1-27 의 "독립 모델 확률이 없다" 를 바꾸는 결정이다.
+
+  · 정확 스코어의 천장은 낮다. 같은 37경기에서 피나클 승무패 확률로 양 팀
+    기대 득점을 맞춘 독립 포아송의 최빈 스코어는 **기대 적중 12.3%**이고
+    A 의 스코어는 같은 모델 아래 10.3% 다. 실제 적중은 시장 최빈 7/37 ·
+    A 3/37 이었다(운이 섞인 값). 이 계산은 판단 근거로만 썼고 코드에 넣지
+    않았다.
+  · A 의 스코어 37개 중 20개가 2-1/1-2 였다. 같은 모델의 최빈 스코어는
+    1-1 16 · 1-0 10 · 2-0 5 · 0-1 4 · 2-1 1 이다 — 한 팀의 가장 흔한 득점은
+    득점 수준의 **내림**값이다.
+
+### 1-63. 패널 오프라인 재생 — `tools/replay_panel.py`
+
+이미 정산된 회차의 **킥오프 전 저장본**에 프롬프트 안을 다시 돌려, 같은
+경기에서 운영 결과·안끼리 정확 스코어 적중을 견준다. 운영 프롬프트와 판
+번호(PANEL 5 · MODERATOR 6 · 지침 지문 `71163a6f`)는 **바뀌지 않는다.**
+
+```bash
+python tools/replay_panel.py show --variant v1                       # 무엇이 바뀌나 · $0
+python tools/replay_panel.py run --rounds 260054 260059 260061 --variant baseline --dry-run   # $0
+python tools/replay_panel.py run --rounds 260054 260059 260061 --variant baseline
+python tools/replay_panel.py run --rounds 260054 260059 260061 --variant v1
+python tools/replay_panel.py score --rounds 260054 260059 260061 --variants baseline v1
+```
+
+  · **운영 자리를 건드리지 않는다.** 저장·조립·검증은 운영 함수
+    (`panelwork.save_stage`·`build_completed_sheet`·`save_moderator_result`·
+    `assemble_panel_result`)를 그대로 부르되 `base=` 로 재생 폴더를 넘긴다
+    (§1-8). 그래서 검증은 운영과 같고(ok 경로까지), `panel_work/`·
+    `panel_results/`·`reports/`·`data/` 에 쓰지 않는다(테스트로 고정).
+    `run_existing_cli`·`write_canonical`·`_run_stage` 를 부르지 않는다.
+  · **재생 폴더는 저장소 밖이다** — 기본 `<임시 폴더>/toto_panel_replay`,
+    `--out` 또는 `TOTO_PANEL_REPLAY_DIR` 로 바꾼다. 저장소 안이면 시작하지
+    않는다 (`claude -p` 가 `CLAUDE.md` 를 호출마다 싣는다, §1-45).
+  · **사후 스냅샷으로 돌리지 않는다.** 저장본의 `saved_at` 이 그 회차의 첫
+    킥오프와 같거나 뒤면 거부한다 — 다시 수집한 저장본에는 결과가 섞여
+    있다 (§1-13·§1-27). PC 의 260052 가 그 경우라 쓰지 않는다.
+  · **안전장치는 운영과 같다** — `panelauto.preflight()` 를 그대로 부른다
+    (API 키 차단 · 구독 인증 · 공통 packet 한 번 · A·B 같은 문자열).
+  · **안은 운영 프롬프트 글자 위의 치환 목록**이다 (`VARIANTS`). 치환할
+    글자가 정확히 한 번 있어야 하고 아니면 시작하지 않는다 — 운영
+    프롬프트가 바뀌면 안이 조용히 다른 것이 되지 않는다. `baseline` 은
+    치환 0개이고 운영이 넘기는 시스템 프롬프트와 **글자까지 같다**(테스트).
+  · 끝난 단계는 건너뛴다. 한도에서 멈추면(종료코드 3) 같은 명령으로 이어서
+    돈다 — 과금으로 넘기지 않는다.
+  · `score` 는 읽기만 한다. 정확 스코어 적중을 A·B·C 별로 세고, 운영 보관본
+    대비 사회자 스코어가 **바뀐 경기 수**를 적는다 — `baseline` 의 그 수가
+    같은 프롬프트로 다시 돌렸을 때의 흔들림(잡음 바닥)이다. 운영 보관본과
+    재생의 packet sha 도 함께 적는다 — 다르면 입력이 다른 것이다.
+
+**v1 안** (정확 스코어 목표) — 셋을 함께 바꾼다.
+
+  · 분석가 둘(공통 규칙): 예상 스코어는 **가장 나올 법한 정확한 스코어
+    하나**이고, 한 팀의 득점은 득점 수준의 내림값이 가장 흔하다(1골 미만 0 ·
+    1~2골 1 · 2골 이상 2). 2-1·1-2 는 두 팀 모두 득점 수준이 높을 때 나온다.
+    새 지표·확률·공식을 계산하지 않는다는 규칙은 그대로다.
+  · 사회자: 토론 라운드에서 **먼저 말하는 쪽을 번갈아** 바꾼다 — 불일치
+    9경기 중 8경기에서 늘 두 번째로 말하는 B 를 골랐다.
+  · 사회자: 고르는 것은 분포 안에서 가장 나올 법한 정확한 스코어다.
+
+**이 재생이 보여 줄 수 있는 것과 없는 것.** 42경기로는 정확 적중이 두세
+경기 다른 것은 잡음과 가르지 못한다. 읽을 것은 넷이다 — 잡음 바닥(같은
+프롬프트를 다시 돌리면 사회자 스코어가 몇 경기 바뀌나) · 안이 스코어 분포를
+의도대로 옮겼나(2-1 감소) · 검증·조립이 깨지지 않았나 · 정확 적중이 크게
+나빠지지 않았나. 모델이 그 경기 결과를 학습했을 가능성은 낮다(2026-09~10
+경기 · 도구 없음 `--tools ""`)지만 확인할 수 없다.
+
+운영 쪽 변경은 동작을 바꾸지 않는 분리 셋뿐이다 — `panelauto.prompt_texts()`·
+`join_system()`(시스템 프롬프트 글자를 파일 없이) · `agent_text()`(실행
+봉투에서 글자 꺼내기) · `pack_moderator_data(sheet_dir=)`(기본값은 그대로
+`reports/panel_<회차>/`). 골든 9/9 그대로다.
+
+회귀 테스트: `python tests/test_panel_replay.py` (26개 · 가짜 에이전트 ·
+실제 모델 호출 0).
+
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
 260052 실행이 남긴 것은 후스코어드 `팀명 매칭 실패` 5건과 `강점 0개` 3팀이다.
@@ -8210,6 +8288,8 @@ python tests/test_canonical_bytes.py       # 정본 JSON·체크포인트 LF 바
 python tests/test_text_digest.py           # packet·체크포인트 텍스트 sha 한 곳 · 계약 다른 해시는 따로 M14 §1-60 (11개)
 python tests/test_pages_html_newline.py    # 최종 리포트 HTML LF · check_final_html 통과 §1-60 (8개)
 python tests/test_whoscored_block_retry.py # 후스코어드 차단 재시도 · 팀 페이지 차단 원본 · 정성 자료 공백 알림 · 점검 화면 §1-61 (31개)
+python tools/replay_panel.py show --variant v1   # 패널 오프라인 재생 — 안이 바꾸는 것 · run/score 는 §1-63
+python tests/test_panel_replay.py          # 패널 오프라인 재생 · 운영 자리 무변경 · 사후 스냅샷 거부 §1-63 (26개)
 python -m pytest -q -rs                    # 전체 — `pytest` 가 아니라 `python -m pytest` (PyYAML 있는 인터프리터)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개

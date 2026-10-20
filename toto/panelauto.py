@@ -1182,7 +1182,8 @@ def common_packet_text(report: Report, settings=None, index=None) -> str:
     return panelpacket.packet_text(panelpacket.build_compact_packet(idx))
 
 
-def pack_moderator_data(report: Report, base: Path | None = None) -> tuple:
+def pack_moderator_data(report: Report, base: Path | None = None,
+                        sheet_dir: Path | None = None) -> tuple:
     """C 가 stdin 으로 받는 자료. (본문, 사유).
 
     **경기자료 7개가 들어가지 않는다** (§7·§15 금지 4). 들어가는 것은 셋
@@ -1193,9 +1194,15 @@ def pack_moderator_data(report: Report, base: Path | None = None) -> tuple:
     `"opinions"` 가 채워져 있으므로(6-F-3) A·B 배열은 **원문 보존용**으로
     따로 싣는다 — 사회자가 분석가가 실제로 적은 문장을 그대로 볼 수 있어야
     한다.
+
+    `sheet_dir` 는 그 시트가 있는 폴더다. 주지 않으면 운영 자리
+    (`reports/panel_<회차>/`)이고, 오프라인 재생(`tools/replay_panel.py`)이
+    운영 폴더를 건드리지 않으려고 자기 자리를 넘긴다.
     """
     round_id = report.round_id or "unknown"
-    sheet = panelexport.round_dir(round_id) / panelwork.COMPLETED_SHEET
+    folder = Path(sheet_dir) if sheet_dir is not None \
+        else panelexport.round_dir(round_id)
+    sheet = folder / panelwork.COMPLETED_SHEET
     if not sheet.is_file():
         return "", f"{panelwork.COMPLETED_SHEET} 이 없습니다 ({sheet})"
     try:
@@ -1240,30 +1247,49 @@ def write_prompt_files(workspace: Path, stage: str,
     `system.md` 다 (`run_agent` 가 쓴다).
     """
     workspace.mkdir(parents=True, exist_ok=True)
+    common_text, role_text = prompt_texts(stage, settings)
     common = workspace / COMMON_FILE
-    common.write_text(panel.SYSTEM_COMMON, encoding="utf-8")
+    common.write_text(common_text, encoding="utf-8")
+    role_path = workspace / (MODERATOR_PROMPT_FILE if stage == MODERATOR_DIR
+                             else ROLE_PROMPT_FILES[stage])
+    role_path.write_text(role_text, encoding="utf-8")
+    return common, role_path
+
+
+def prompt_texts(stage: str, settings=None) -> tuple:
+    """그 단계의 (공통 규칙, 역할 규칙) 글자. **코드 상수에서만 온다.**
+
+    파일을 쓰지 않는다. `write_prompt_files()` 와 오프라인 재생이 같은
+    글자에서 출발하도록 한 곳에 둔다 (§1-8) — 재생이 프롬프트를 따로 조립하면
+    '운영과 같은 프롬프트로 다시 돌렸다' 를 보증할 수 없다.
+    """
     if stage == MODERATOR_DIR:
         sims = moderator.simulations_of(settings) if settings is not None \
             else moderator.DEBATE_SIMULATIONS
-        role_path = workspace / MODERATOR_PROMPT_FILE
-        role_path.write_text(moderator.system_prompt(sims), encoding="utf-8")
-    else:
-        role_path = workspace / ROLE_PROMPT_FILES[stage]
-        role_path.write_text(panel.ROLE_PROMPTS[stage], encoding="utf-8")
-    return common, role_path
+        return panel.SYSTEM_COMMON, moderator.system_prompt(sims)
+    return panel.SYSTEM_COMMON, panel.ROLE_PROMPTS[stage]
+
+
+def join_system(stage: str, common_text: str, role_text: str) -> str:
+    """(공통, 역할) → 그 단계의 시스템 프롬프트. **역할 규칙은 그 단계에만**.
+
+    사회자 지침은 `moderator.system_prompt()` 가 이미 공통 규칙을 포함하고
+    있어 그것만 싣는다 — 두 번 실으면 같은 말이 두 벌 들어간다.
+    """
+    if stage == MODERATOR_DIR:
+        return role_text
+    return common_text + "\n\n" + role_text
 
 
 def stage_system(workspace: Path, stage: str, settings=None) -> str:
     """그 단계의 시스템 프롬프트. **역할 규칙은 그 단계에만 실린다** (§15 금지 6).
 
-    사회자 지침은 `moderator.system_prompt()` 가 이미 공통 규칙을 포함하고
-    있어 그것만 싣는다 — 두 번 실으면 같은 말이 두 벌 들어간다.
+    사람이 열어 볼 수 있게 파일로 떨어뜨리고, 실제로 넘기는 글자는 그
+    파일에서 다시 읽는다 — 파일과 넘긴 것이 갈릴 자리를 두지 않는다.
     """
     common, role_path = write_prompt_files(workspace, stage, settings)
-    role_text = role_path.read_text(encoding="utf-8")
-    if stage == MODERATOR_DIR:
-        return role_text
-    return common.read_text(encoding="utf-8") + "\n\n" + role_text
+    return join_system(stage, common.read_text(encoding="utf-8"),
+                       role_path.read_text(encoding="utf-8"))
 
 
 # ==========================================================================
@@ -1335,6 +1361,23 @@ def run_existing_cli(argv: list) -> int:
     return cli_main(list(argv))
 
 
+def agent_text(run: AgentRun, workspace: Path) -> tuple[str, str]:
+    """성공한 실행에서 모델이 돌려준 글자를 꺼낸다. (글자, 사유).
+
+    실행 봉투를 먼저 읽고, 못 읽었더라도 `run_agent` 가 이미 꺼내 둔 것이
+    있으면 쓴다. 운영 단계(`_run_stage`)와 오프라인 재생이 같은 규칙으로
+    꺼내도록 한 곳에 둔다 (§1-8).
+    """
+    envelope = workspace / AGENT_ENVELOPE
+    text, why = parse_claude_result(
+        envelope.read_text(encoding="utf-8") if envelope.is_file() else "")
+    if not text:
+        text = (run.text or "").strip()
+        if text:
+            why = ""
+    return text, why
+
+
 def _stage_file(round_id: str, stage: str, base: Path | None = None) -> Path:
     """모델이 돌려준 배열을 담을 자리. **Python 이 쓴다** (§15 금지 5)."""
     ws = stage_workspace(round_id, stage, base)
@@ -1392,14 +1435,7 @@ def _run_stage(report: Report, stage: str, prompt: str, stdin_text: str,
     if not run.ok:
         return fail(run.status, run.message)
 
-    text, why = parse_claude_result(
-        (ws / AGENT_ENVELOPE).read_text(encoding="utf-8")
-        if (ws / AGENT_ENVELOPE).is_file() else "")
-    if not text:
-        # 봉투를 못 읽었더라도 `run_agent` 가 이미 꺼내 둔 것이 있으면 쓴다.
-        text = (run.text or "").strip()
-        if text:
-            why = ""
+    text, why = agent_text(run, ws)
     if not text:
         return fail(AGENT_NO_OUTPUT, why or "모델이 빈 응답을 돌려줬습니다")
 

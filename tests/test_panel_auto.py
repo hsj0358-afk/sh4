@@ -1871,7 +1871,10 @@ def test_l10_role_files_are_generated_not_copied():
     내용은 전부 코드 상수에서 온다 — 손으로 적은 사본이 있으면 채팅 판과
     자동 판이 조용히 갈라진다.
     """
-    node = fn_node(panelauto, "write_prompt_files")
+    # 글자는 `prompt_texts` 한 곳에서 나오고, 파일 쓰기는 그것을 부른다
+    # (오프라인 재생도 같은 함수에서 출발한다 — tools/replay_panel.py).
+    assert "prompt_texts" in calls_in(fn_node(panelauto, "write_prompt_files"))
+    node = fn_node(panelauto, "prompt_texts")
     names = calls_in(node)
     assert "moderator.system_prompt" in names
     body = code_of(node)

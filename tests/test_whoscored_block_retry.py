@@ -366,6 +366,61 @@ def test_d8_run_screen_echoes_warnings_on_the_normal_path():
 
 
 # --------------------------------------------------------------------------
+# ==========================================================================
+# E. 점검 화면 (260061 후속) — 차단과 같은 길을 탄다
+# ==========================================================================
+# 260061 레알마드 팀 페이지의 모양 그대로다: 제목 `Site Maintenance`, 제목
+# 노드 `Website under maintenance`, 약 5KB. 봇 차단 표지는 없다.
+MAINTENANCE_HTML = (
+    "<html><head><title>Site Maintenance</title><style>"
+    + "body{font-family:sans-serif}" * 180
+    + "</style></head><body><h1>Website under maintenance</h1>"
+    "<p>We&rsquo;ll be back soon.</p></body></html>")
+
+
+def test_e1_maintenance_title_is_its_own_kind():
+    assert len(MAINTENANCE_HTML) > 800          # 짧은 페이지 규칙으로 걸린 게 아니다
+    assert W._block_kind(MAINTENANCE_HTML, 200) == "maintenance"
+    assert W._block_kind(MAINTENANCE_HTML, None) == "maintenance"
+    assert W._looks_blocked(MAINTENANCE_HTML)
+
+
+def test_e2_browser_hook_reports_maintenance():
+    """수집기가 실제로 쓰는 훅이 같은 판정을 낸다 — 그래야 last_block 이 선다."""
+    assert W.WhoScoredBrowser._block_reason(None, MAINTENANCE_HTML, 200) == "maintenance"
+    assert W.WhoScoredBrowser._is_blocked(None, MAINTENANCE_HTML)
+
+
+def test_e3_only_the_title_counts():
+    """본문에 그 낱말이 있어도 제목이 정상이면 정상 페이지다."""
+    page = ("<html><head><title>AC Milan - Football Statistics | WhoScored.com"
+            "</title></head><body><p>Site Maintenance notice: website under "
+            "maintenance on Monday</p>" + "<div>x</div>" * 200 + "</body></html>")
+    assert W._block_kind(page, 200) == ""
+
+
+def test_e4_other_kinds_unchanged():
+    assert W._block_kind(BLOCK_HTML * 40, 403) == "cloudflare"
+    assert W._block_kind("<title>Just a moment...</title>" + "x" * 900) == "cloudflare"
+    assert W._block_kind("<p>Incapsula incident</p>" + "x" * 900) == "incapsula"
+    assert W._block_kind("<p>ok</p>" + "x" * 900, 403) == "http_403"
+
+
+def test_e5_maintenance_team_page_retried_then_parsed():
+    got, b, cache, s, _h = _team(
+        [("/teams/", [("", "maintenance"), (WC.NO_STRENGTH, "")])])
+    assert len(b.calls) == 2 and len(s.waits) == 1
+    assert len(got["weaknesses"]) == 2, got
+
+
+def test_e6_maintenance_that_lasts_is_named_in_log_and_raw_kept():
+    got, _b, cache, _s, h = _team([("/teams/", [("", "maintenance")])])
+    assert got == {}
+    assert ("whoscored", "blocked_team_Celta Vigo", False) in cache.debug, cache.debug
+    assert any("type=maintenance" in ln for ln in h.lines), h.lines
+    assert cache.saved == {}
+
+
 def main() -> int:
     # 직접 실행 러너는 `tests/_runner.py` 한 곳에 있다 (Phase 3 M13).
     sys.path.insert(0, str(Path(__file__).resolve().parent))

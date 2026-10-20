@@ -161,10 +161,17 @@ def _block_kind(html: str, status: int | None = None) -> str:
       화면은 `Attention Required! | Cloudflare` · `Just a moment...` 다
       (2026-09-25 Actions 실측: 403 · 4KB · 앞의 제목).
     · `status` 가 None 이면(응답을 모르는 경우) 예전 판정과 같다.
+    · **점검 화면도 여기서 가른다** (`maintenance`). 차단은 아니지만 쓸 수
+      없는 페이지이고 지나가는 상태라 차단과 같은 길(재시도·원본 보관)을
+      탄다. 260061 실측: 레알마드 팀 페이지가 `<title>Site Maintenance` ·
+      5KB 로 와서 `FAILED_team_*` 로만 남았다. 표지는 **관측한 제목 하나**
+      이고 본문 문구로 넓히지 않는다 (§1-4).
     """
     title = page_title(html).lower() if html else ""
     if "cloudflare" in title or title.startswith("just a moment"):
         return "cloudflare"
+    if title.startswith("site maintenance"):
+        return "maintenance"
     lowered = (html or "")[:4000].lower()
     for kind, signs in _BLOCK_SIGNS:
         if any(sig in lowered for sig in signs):

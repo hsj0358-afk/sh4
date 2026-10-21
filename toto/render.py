@@ -345,8 +345,34 @@ def _odds_block(match: Match, report=None) -> str:
                 f'<b class="pk">{esc(p.pick_ko)}</b> — 예상적중률 '
                 f'<b>{p.p_pick * 100:.1f}%</b>{tag}</div>')
     return (f'<div class="block"><h4>Pinnacle 시장 기준선 · 보정 확률 (지침 §3-(b) 가산 마진 제거)</h4>'
-            f'{bar}{pickline}'
+            f'{bar}{pickline}{_market_mode_line(p)}'
             f'<div class="kv">{"".join(f"<span>{e}</span>" for e in extra)}</div></div>')
+
+
+# 맞춤 오차가 이보다 크면 그 사실을 적는다 — 독립 포아송이 이 시장의
+# 승/무/패를 잘 재현하지 못했다는 뜻이다.
+MARKET_MODE_FIT_NOTE = 0.01
+
+
+def _market_mode_line(probs) -> str:
+    """시장 기준 가장 그럴듯한 스코어 한 줄 (§1-64). 못 구하면 빈 문자열.
+
+    **시장 확률의 파생값**이고 패널에 전달되지 않는다. 승/무/패 라벨을
+    붙이지 않는다 (§1-3).
+    """
+    from . import marketscore
+
+    ms = marketscore.most_likely(probs)
+    if ms is None:
+        return ""
+    note = (f' · 승/무/패 재현 오차 최대 {ms.fit_error * 100:.1f}%p'
+            if ms.fit_error > MARKET_MODE_FIT_NOTE else "")
+    return (f'<div class="kv"><span>시장 기준 가장 그럴듯한 스코어 '
+            f'<b>{esc(ms.label)}</b> (이 스코어 {ms.probability * 100:.1f}%) · '
+            f'양 팀 기대 득점 <b>{ms.home_goals:.2f}</b> · '
+            f'<b>{ms.away_goals:.2f}</b></span></div>'
+            f'<p class="meta">위 승/무/패 확률에 맞춘 독립 포아송에서 읽은 '
+            f'시장의 값입니다 · 패널에는 전달되지 않습니다{note}</p>')
 
 
 def _standing_row(match: Match) -> str:

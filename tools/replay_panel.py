@@ -45,8 +45,9 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from toto import (artifact, marketeval, moderator, panel,  # noqa: E402
-                  panelauto, panelpacket, panelwork, roundlog, xpts)
+from toto import (artifact, marketeval, marketscore,  # noqa: E402
+                  moderator, panel, panelauto, panelpacket, panelwork,
+                  roundlog)
 from toto.settings import load_settings                    # noqa: E402
 
 REPLAY_ENV = "TOTO_PANEL_REPLAY_DIR"      # 재생 폴더를 직접 정할 때
@@ -427,66 +428,16 @@ def actual_scores(round_id: str, path: Path | None = None) -> dict:
 #
 #   · **시장을 정답에 가까운 기준으로 쓴다.** 높게 나오면 "시장보다 나쁘지
 #     않다" 이지 "시장을 넘었다" 가 아니다. 시장 최빈 스코어가 언제나 위다.
-#   · 재생 도구의 **채점에만** 쓴다. 운영 분석·리포트·패널 자료에 이 값이
-#     들어가지 않는다 (§1-27 — 이 시스템에 독립 모델 확률은 없다).
+#   · 기대 적중은 재생 도구의 **채점에만** 쓴다. 리포트에는 시장 최빈 스코어
+#     하나만 별도 참고값으로 나가고(§1-64), 패널 자료에는 아무것도 가지 않는다.
 #   · 시장 확률은 `marketeval.select()` 를 그대로 거친다 — 킥오프 전에 기록됐고
 #     합이 1 근처이고 실제 결과가 있는 경기만 들어온다. 빠진 경기는 0 으로
 #     세지 않고 따로 센다.
 #   · 무승부 보정(Dixon-Coles)이 없다. 맞춤 오차를 함께 적는다.
-FIT_LAMBDA_MAX = 5.0
-FIT_COARSE_STEP = 0.1
-FIT_REFINE_ROUNDS = 6
-
-
-def _outcome_probs(lh: float, la: float) -> tuple:
-    r = xpts.match_xpts(lh, la)
-    return (r.home_win_probability, r.draw_probability,
-            r.away_win_probability)
-
-
-def _fit_error(lh: float, la: float, target: tuple) -> float:
-    got = _outcome_probs(lh, la)
-    return sum((g - t) ** 2 for g, t in zip(got, target))
-
-
-def fit_market(p_home: float, p_draw: float, p_away: float) -> tuple:
-    """시장 승/무/패 확률 → (홈 기대 득점, 원정 기대 득점, 최대 절대 오차).
-
-    격자에서 시작해 간격을 줄여 가며 오차 제곱합이 가장 작은 점을 찾는다.
-    같은 입력이면 같은 답이다(난수 없음).
-    """
-    target = (p_home, p_draw, p_away)
-    step = FIT_COARSE_STEP
-    grid = [step * i for i in range(1, int(FIT_LAMBDA_MAX / step) + 1)]
-    best = min(((_fit_error(h, a, target), h, a) for h in grid for a in grid))
-    _, lh, la = best
-    for _ in range(FIT_REFINE_ROUNDS):
-        step /= 4
-        cands = [(lh + dh * step, la + da * step)
-                 for dh in range(-4, 5) for da in range(-4, 5)]
-        best = min((_fit_error(h, a, target), h, a) for h, a in cands
-                   if 0 < h <= FIT_LAMBDA_MAX and 0 < a <= FIT_LAMBDA_MAX)
-        _, lh, la = best
-    got = _outcome_probs(lh, la)
-    err = max(abs(g - t) for g, t in zip(got, target))
-    return lh, la, err
-
-
-def score_probability(lh: float, la: float, home: int, away: int) -> float:
-    """독립 포아송에서 정확히 `home`-`away` 가 나올 확률 (0~9 절단)."""
-    ph, pa = xpts.poisson_pmf(lh), xpts.poisson_pmf(la)
-    if not (0 <= home < len(ph) and 0 <= away < len(pa)):
-        return 0.0
-    return ph[home] * pa[away]
-
-
-def market_mode(lh: float, la: float) -> tuple:
-    """시장 확률에서 가장 그럴듯한 스코어. 동률이면 득점 합이 적은 쪽, 그다음 홈 득점이 적은 쪽."""
-    ph, pa = xpts.poisson_pmf(lh), xpts.poisson_pmf(la)
-    p, neg_total, neg_home = max(
-        (ph[i] * pa[j], -(i + j), -i)
-        for i in range(len(ph)) for j in range(len(pa)))
-    return (-neg_home, -neg_total + neg_home), p
+# 맞춤·스코어 확률·최빈은 리포트와 **같은 함수**를 쓴다 (§1-8 · §1-64).
+fit_market = marketscore.fit_market
+score_probability = marketscore.score_probability
+market_mode = marketscore.market_mode
 
 
 def market_fits(rounds, path: Path | None = None) -> tuple:

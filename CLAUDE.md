@@ -7635,6 +7635,46 @@ python tools/replay_panel.py score --rounds 260054 260059 260061 --variants base
 회귀 테스트: `python tests/test_panel_replay.py` (35개 · 가짜 에이전트 ·
 실제 모델 호출 0).
 
+### 1-64. 시장 기준 가장 그럴듯한 스코어 (3-a) — `toto/marketscore.py`
+
+§1-63 의 재생에서 **시장 최빈 스코어가 정확 스코어 지표 둘 다에서 패널보다
+좋았다**(기대 적중 5.25 대 4.95 · 실제 적중 8 대 4). 그래서 리포트의 Pinnacle
+시장 기준선 블록에 **별도 참고값** 한 줄을 더했다 (2026-10-22, 사용자 결정).
+
+```
+시장 기준 가장 그럴듯한 스코어 1 - 1 (이 스코어 12.6%) · 양 팀 기대 득점 1.40 · 1.10
+위 승/무/패 확률에 맞춘 독립 포아송에서 읽은 시장의 값입니다 · 패널에는 전달되지 않습니다
+```
+
+**새 모델이 아니라 시장 확률의 파생값이다.** `Match.probs`(피나클 보정 확률)에
+맞는 독립 포아송 두 개를 찾고 그 분포의 최빈 스코어를 읽는다. §1-27 의 "독립
+모델 확률이 없다" 는 그대로 참이다 — 이 값의 출처는 시장이다.
+
+  · **패널에 주지 않는다.** 분석가가 보면 시장을 따라간다 (§1-19 의 시장 추종
+    금지). `panel`·`panelpacket`·`panelexport`·`moderator`·`match_material`·
+    `panelauto`·`panelwork`·`evidence`·`analysis` 가 이 모듈을 import 하지
+    않고, PanelPayload 에 그 글자가 없다(테스트). 경기자료 MD 에도 싣지 않는다
+    — 채팅 프로젝트로 가는 공식 인터페이스이기 때문이다 (§1-14).
+  · **승/무/패 라벨을 붙이지 않는다** (§1-3). 스코어와 그 확률, 양 팀 기대
+    득점만 적는다. 확률은 시장 기준선 블록에만 나온다는 규칙(§1-11) 안이다.
+  · 포아송 계산은 `xpts.poisson_pmf`·`match_xpts` 를 그대로 쓴다. `predict` 를
+    import 하지 않는다 — 확률은 이미 계산된 값을 읽기만 한다.
+  · 맞춤은 격자에서 시작해 간격을 줄이는 **결정적 탐색**이다. 독립 포아송이라
+    무승부 보정이 없어, 승/무/패 재현 오차가 1%p 를 넘으면 그 사실을 줄에
+    적는다. 확률이 없거나 0 이하이거나 합이 1 근처가 아니면 줄을 내지 않는다
+    — 0 으로 채우지 않는다 (§1-5).
+  · 저장 형식은 바뀌지 않는다. 렌더 때 계산하므로 **옛 저장본을 재렌더해도
+    이 줄이 나온다**. 회차 기록(CSV)·저장본·캐시 판은 그대로다.
+  · 재생 도구(`tools/replay_panel.py`)의 기대 적중 채점이 **같은 함수**를 쓴다
+    (§1-8) — 리포트의 최빈과 채점의 기준선이 갈릴 수 없다.
+
+**`--demo` 출력이 바뀐다** — 664,752 → 669,117 bytes(경기 14줄). 패널 붙인
+리포트도 같은 크기만큼 늘었다. 경기자료 MD·PanelPayload·채팅 내보내기는
+바이트까지 그대로다(골든). 실물 골든(260052)의 `report.html` 은 §3-7 과 같은
+사정으로 그 저장본이 있는 곳에서 갱신해야 한다.
+
+회귀 테스트: `python tests/test_market_score.py` (13개).
+
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
 260052 실행이 남긴 것은 후스코어드 `팀명 매칭 실패` 5건과 `강점 0개` 3팀이다.
@@ -8357,6 +8397,7 @@ python tests/test_pages_html_newline.py    # 최종 리포트 HTML LF · check_f
 python tests/test_whoscored_block_retry.py # 후스코어드 차단 재시도 · 팀 페이지 차단 원본 · 정성 자료 공백 알림 · 점검 화면 §1-61 (31개)
 python tools/replay_panel.py score --rounds 260054 260059 260061 --variants baseline   # 패널 재생 채점 · run/show 는 §1-63
 python tests/test_panel_replay.py          # 패널 오프라인 재생 · 운영 자리 무변경 · 사후 스냅샷 거부 · 기대 적중 §1-63 (35개)
+python tests/test_market_score.py          # 시장 기준 가장 그럴듯한 스코어 · 패널에 안 감 · 라벨 없음 §1-64 (13개)
 python -m pytest -q -rs                    # 전체 — `pytest` 가 아니라 `python -m pytest` (PyYAML 있는 인터프리터)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개

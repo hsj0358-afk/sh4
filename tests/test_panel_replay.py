@@ -22,7 +22,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tools"))
 
 import replay_panel as R                                    # noqa: E402
-from toto import artifact, panel, panelauto, panelwork, roundlog  # noqa: E402
+from toto import artifact, panel, panelauto, panelwork, roundlog, xpts  # noqa: E402
 from toto.models import Report                              # noqa: E402
 
 import tests.test_panel_auto as PA                          # noqa: E402
@@ -460,7 +460,7 @@ def test_e3_score_reads_only():
 # F. 기대 적중 — 시장 확률에 맞춘 독립 포아송
 # ==========================================================================
 def _probs(lh, la):
-    r = R.xpts.match_xpts(lh, la)
+    r = xpts.match_xpts(lh, la)
     return (r.home_win_probability, r.draw_probability, r.away_win_probability)
 
 
@@ -496,7 +496,7 @@ def test_f2_fit_is_deterministic_and_reports_error():
 
 
 def test_f3_score_probability_is_poisson_product():
-    ph, pa = R.xpts.poisson_pmf(1.3), R.xpts.poisson_pmf(0.9)
+    ph, pa = xpts.poisson_pmf(1.3), xpts.poisson_pmf(0.9)
     assert R.score_probability(1.3, 0.9, 2, 1) == ph[2] * pa[1]
     assert R.score_probability(1.3, 0.9, 12, 0) == 0.0
 

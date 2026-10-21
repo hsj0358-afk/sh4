@@ -395,6 +395,117 @@ def test_e3_score_reads_only():
     assert repo_untouched(rid)
 
 
+# ==========================================================================
+# F. 기대 적중 — 시장 확률에 맞춘 독립 포아송
+# ==========================================================================
+def _probs(lh, la):
+    r = R.xpts.match_xpts(lh, la)
+    return (r.home_win_probability, r.draw_probability, r.away_win_probability)
+
+
+def _write_market(path: Path, rid: str, rows: dict) -> None:
+    """rows = {no: ((홈골, 원정골), (pH, pD, pA) | None, 기록 시각)}."""
+    with path.open("w", encoding="utf-8-sig", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=roundlog.MATCH_FIELDS)
+        w.writeheader()
+        for no, ((h, a), probs, recorded) in rows.items():
+            result = "H" if h > a else ("D" if h == a else "A")
+            row = {"round": rid, "no": no, "home_goals": h, "away_goals": a,
+                   "result": result, "recorded_at": recorded,
+                   "kickoff_kst": "2026-09-20 23:00"}
+            if probs is not None:
+                total = sum(probs)
+                row.update(p_home=f"{probs[0] / total:.6f}",
+                           p_draw=f"{probs[1] / total:.6f}",
+                           p_away=f"{probs[2] / total:.6f}")
+            w.writerow(row)
+
+
+def test_f1_fit_recovers_expected_goals():
+    for lh, la in ((1.4, 1.1), (2.2, 0.6), (0.8, 0.9), (1.0, 2.5)):
+        got = R.fit_market(*_probs(lh, la))
+        assert abs(got[0] - lh) < 0.01 and abs(got[1] - la) < 0.01, got
+        assert got[2] < 1e-4
+
+
+def test_f2_fit_is_deterministic_and_reports_error():
+    one = R.fit_market(0.45, 0.28, 0.27)
+    assert one == R.fit_market(0.45, 0.28, 0.27)
+    assert one[2] >= 0.0
+
+
+def test_f3_score_probability_is_poisson_product():
+    ph, pa = R.xpts.poisson_pmf(1.3), R.xpts.poisson_pmf(0.9)
+    assert R.score_probability(1.3, 0.9, 2, 1) == ph[2] * pa[1]
+    assert R.score_probability(1.3, 0.9, 12, 0) == 0.0
+
+
+def test_f4_market_mode_is_the_most_likely_score():
+    (h, a), p = R.market_mode(1.4, 1.1)
+    assert (h, a) == (1, 1)
+    best = max(R.score_probability(1.4, 1.1, i, j)
+               for i in range(10) for j in range(10))
+    assert p == best
+    assert R.market_mode(2.2, 0.6)[0] == (2, 0)
+
+
+def test_f5_expected_hits_sum_and_missing_market_is_not_zero():
+    rid = "990030"
+    root, stored, d = tmp(), tmp(), tmp()
+    actual = d / "round_matches.csv"
+    _write_market(actual, rid, {
+        1: ((1, 1), _probs(1.4, 1.1), "2026-09-19 10:00"),
+        2: ((2, 0), _probs(2.2, 0.6), "2026-09-19 10:00"),
+        3: ((0, 1), None, "2026-09-19 10:00"),                 # 시장 없음
+        4: ((1, 0), _probs(1.2, 1.0), "2026-09-21 10:00")})   # 킥오프 뒤 기록
+    rep = R.round_base(root, "v1", rid)
+    rep.mkdir(parents=True)
+    picks = {"1": {"c": [1, 1]}, "2": {"c": [2, 1]}, "3": {"c": [0, 1]},
+             "4": {"c": [1, 0]}}
+    (rep / R.RESULT_FILE).write_text(json.dumps({"scores": picks}),
+                                     encoding="utf-8")
+    got = R.score([rid], ["v1"], root, actual_path=actual, stored_base=stored)
+    v = got["table"]["v1"]
+    assert v["expected_n"]["c"] == 2            # 3·4번은 빠진다 — 0 으로 세지 않는다
+    f1, f2 = R.fit_market(*_probs(1.4, 1.1)), R.fit_market(*_probs(2.2, 0.6))
+    want = (R.score_probability(f1[0], f1[1], 1, 1)
+            + R.score_probability(f2[0], f2[1], 2, 1))
+    assert abs(v["expected"]["c"] - want) < 1e-4   # CSV 는 소수 6자리
+    assert v["hits"]["c"] == 3                  # 실제 적중은 그대로 센다
+    market = got["market"]
+    assert market["fitted"] == 2 and market["mode"]["n"] == 2
+    assert market["mode"]["hits"] == 2          # 1-1 · 2-0
+    reasons = {no: why for _, no, why in market["skipped"]}
+    assert "시장 확률" in reasons["3"] and "킥오프" in reasons["4"]
+    text = "\n".join(R.score_lines(got))
+    assert "기대 적중" in text and "시장 최빈" in text and "뺌" in text
+
+
+def test_f6_no_market_rows_says_so():
+    rid = "990031"
+    root, d = tmp(), tmp()
+    actual = d / "round_matches.csv"
+    _write_actual(actual, rid, {1: (1, 0)})
+    got = R.score([rid], [], root, actual_path=actual, stored_base=tmp())
+    assert got["market"]["fitted"] == 0
+    assert any("시장 확률이 있는 정산 경기가 없습니다" in line
+               for line in R.score_lines(got))
+
+
+def test_f7_tool_does_not_import_predict():
+    """시장 확률은 기록된 CSV 에서만 읽는다 — 배당을 다시 계산하지 않는다."""
+    tree = ast.parse((ROOT / "tools" / "replay_panel.py").read_text(
+        encoding="utf-8"))
+    names = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            names |= {a.name for a in node.names}
+            names.add(node.module or "")
+        elif isinstance(node, ast.Import):
+            names |= {a.name for a in node.names}
+    assert "predict" not in names and "toto.predict" not in names
+
+
 def main() -> int:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from _runner import run_tests

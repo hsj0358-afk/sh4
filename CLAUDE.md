@@ -7565,7 +7565,39 @@ python tools/replay_panel.py score --rounds 260054 260059 260061 --variants base
 봉투에서 글자 꺼내기) · `pack_moderator_data(sheet_dir=)`(기본값은 그대로
 `reports/panel_<회차>/`). 골든 9/9 그대로다.
 
-회귀 테스트: `python tests/test_panel_replay.py` (26개 · 가짜 에이전트 ·
+**첫 결과 (PC · 2026-10-22 · 42경기).** 세 출처 모두 packet sha 가 같았다.
+
+| | A 적중 | B 적중 | C 적중 | C 가 운영과 달라진 경기 |
+|---|---|---|---|---|
+| 운영 결과 | 4 | 3 | 3 | — |
+| baseline | 3 | 3 | 4 | **11/42** (잡음 바닥) |
+| v1 | 3 | 4 | 4 | 18/42 |
+
+  · 같은 프롬프트로 다시 돌리기만 해도 사회자 스코어가 26% 경기에서 바뀐다.
+  · v1 은 C 의 2-1·1-2 를 19 → 10 으로 줄이고 1-0·0-1 을 2 → 10 으로
+    늘렸다 — 분포는 의도대로 움직였다. 적중 수는 4 대 4 로 같아 판단할 수 없다.
+  · v1 은 같은 스코어 규칙을 **A·B 공통 규칙에** 넣으므로 두 분석가가
+    같은 스코어로 모이기 쉽다(260054 v1 은 14경기 전부 같았다). 토론의 폭이
+    줄어드는 쪽이다.
+  · **v1 은 채택하지 않은 상태다.**
+
+**기대 적중 (채점 열 추가).** 실제 결과 하나 대신 **시장이 매긴 그 스코어의
+확률**로 다시 잰다 — 운에 덜 흔들린다.
+
+  · 경기마다 킥오프 전 피나클 승/무/패 확률(`round_matches.csv` 의 `p_*`)에
+    맞춘 독립 포아송 두 개(양 팀 기대 득점)를 구하고, 고른 스코어의 확률을
+    더한다. 시장 확률은 `marketeval.select()` 를 그대로 거친다 — 킥오프 뒤에
+    기록됐거나 확률이 없는 경기는 **빼고 사유를 적는다**(0 으로 세지 않는다).
+  · 맞춤은 격자에서 시작해 간격을 줄이는 결정적 탐색이다. 포아송 계산은
+    `xpts.poisson_pmf`·`match_xpts` 를 그대로 쓴다. 무승부 보정이 없어
+    승/무/패 맞춤 오차(평균·최대)를 함께 적는다.
+  · **시장을 정답에 가까운 기준으로 쓴다.** 높게 나오면 "시장 쪽에 가깝다"
+    이지 "시장을 넘었다" 가 아니다. 그래서 시장 최빈 스코어 줄을 기준선으로
+    함께 낸다.
+  · **재생 도구의 채점에만 있다.** 운영 분석·리포트·패널 자료에 들어가지
+    않고, `predict` 를 import 하지 않는다 (§1-27 — 3-a 는 여전히 후보다).
+
+회귀 테스트: `python tests/test_panel_replay.py` (33개 · 가짜 에이전트 ·
 실제 모델 호출 0).
 
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
@@ -8289,7 +8321,7 @@ python tests/test_text_digest.py           # packet·체크포인트 텍스트 s
 python tests/test_pages_html_newline.py    # 최종 리포트 HTML LF · check_final_html 통과 §1-60 (8개)
 python tests/test_whoscored_block_retry.py # 후스코어드 차단 재시도 · 팀 페이지 차단 원본 · 정성 자료 공백 알림 · 점검 화면 §1-61 (31개)
 python tools/replay_panel.py show --variant v1   # 패널 오프라인 재생 — 안이 바꾸는 것 · run/score 는 §1-63
-python tests/test_panel_replay.py          # 패널 오프라인 재생 · 운영 자리 무변경 · 사후 스냅샷 거부 §1-63 (26개)
+python tests/test_panel_replay.py          # 패널 오프라인 재생 · 운영 자리 무변경 · 사후 스냅샷 거부 · 기대 적중 §1-63 (33개)
 python -m pytest -q -rs                    # 전체 — `pytest` 가 아니라 `python -m pytest` (PyYAML 있는 인터프리터)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개

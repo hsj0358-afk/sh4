@@ -45,8 +45,8 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from toto import (artifact, moderator, panel, panelauto,  # noqa: E402
-                  panelpacket, panelwork, roundlog)
+from toto import (artifact, marketeval, moderator, panel,  # noqa: E402
+                  panelauto, panelpacket, panelwork, roundlog, xpts)
 from toto.settings import load_settings                    # noqa: E402
 
 REPLAY_ENV = "TOTO_PANEL_REPLAY_DIR"      # 재생 폴더를 직접 정할 때
@@ -438,6 +438,93 @@ def actual_scores(round_id: str, path: Path | None = None) -> dict:
     return out
 
 
+# --------------------------------------------------------------------------
+# 기대 적중 — 실제 결과 하나 대신 시장이 매긴 스코어 확률로 잰다
+# --------------------------------------------------------------------------
+# 정확 스코어는 잘 맞혀도 경기당 12% 안팎이라, 42경기의 실제 적중 수는 운에
+# 크게 흔들린다. 그래서 같은 고른 스코어를 **시장이 매긴 그 스코어의 확률**로
+# 다시 잰다 — 경기마다 킥오프 전 피나클 승/무/패 확률에 맞춘 독립 포아송
+# 두 개(양 팀 기대 득점)로 스코어 확률을 만들고, 고른 스코어의 확률을 더한다.
+#
+#   · **시장을 정답에 가까운 기준으로 쓴다.** 높게 나오면 "시장보다 나쁘지
+#     않다" 이지 "시장을 넘었다" 가 아니다. 시장 최빈 스코어가 언제나 위다.
+#   · 재생 도구의 **채점에만** 쓴다. 운영 분석·리포트·패널 자료에 이 값이
+#     들어가지 않는다 (§1-27 — 이 시스템에 독립 모델 확률은 없다).
+#   · 시장 확률은 `marketeval.select()` 를 그대로 거친다 — 킥오프 전에 기록됐고
+#     합이 1 근처이고 실제 결과가 있는 경기만 들어온다. 빠진 경기는 0 으로
+#     세지 않고 따로 센다.
+#   · 무승부 보정(Dixon-Coles)이 없다. 맞춤 오차를 함께 적는다.
+FIT_LAMBDA_MAX = 5.0
+FIT_COARSE_STEP = 0.1
+FIT_REFINE_ROUNDS = 6
+
+
+def _outcome_probs(lh: float, la: float) -> tuple:
+    r = xpts.match_xpts(lh, la)
+    return (r.home_win_probability, r.draw_probability,
+            r.away_win_probability)
+
+
+def _fit_error(lh: float, la: float, target: tuple) -> float:
+    got = _outcome_probs(lh, la)
+    return sum((g - t) ** 2 for g, t in zip(got, target))
+
+
+def fit_market(p_home: float, p_draw: float, p_away: float) -> tuple:
+    """시장 승/무/패 확률 → (홈 기대 득점, 원정 기대 득점, 최대 절대 오차).
+
+    격자에서 시작해 간격을 줄여 가며 오차 제곱합이 가장 작은 점을 찾는다.
+    같은 입력이면 같은 답이다(난수 없음).
+    """
+    target = (p_home, p_draw, p_away)
+    step = FIT_COARSE_STEP
+    grid = [step * i for i in range(1, int(FIT_LAMBDA_MAX / step) + 1)]
+    best = min(((_fit_error(h, a, target), h, a) for h in grid for a in grid))
+    _, lh, la = best
+    for _ in range(FIT_REFINE_ROUNDS):
+        step /= 4
+        cands = [(lh + dh * step, la + da * step)
+                 for dh in range(-4, 5) for da in range(-4, 5)]
+        best = min((_fit_error(h, a, target), h, a) for h, a in cands
+                   if 0 < h <= FIT_LAMBDA_MAX and 0 < a <= FIT_LAMBDA_MAX)
+        _, lh, la = best
+    got = _outcome_probs(lh, la)
+    err = max(abs(g - t) for g, t in zip(got, target))
+    return lh, la, err
+
+
+def score_probability(lh: float, la: float, home: int, away: int) -> float:
+    """독립 포아송에서 정확히 `home`-`away` 가 나올 확률 (0~9 절단)."""
+    ph, pa = xpts.poisson_pmf(lh), xpts.poisson_pmf(la)
+    if not (0 <= home < len(ph) and 0 <= away < len(pa)):
+        return 0.0
+    return ph[home] * pa[away]
+
+
+def market_mode(lh: float, la: float) -> tuple:
+    """시장 확률에서 가장 그럴듯한 스코어. 동률이면 득점 합이 적은 쪽, 그다음 홈 득점이 적은 쪽."""
+    ph, pa = xpts.poisson_pmf(lh), xpts.poisson_pmf(la)
+    p, neg_total, neg_home = max(
+        (ph[i] * pa[j], -(i + j), -i)
+        for i in range(len(ph)) for j in range(len(pa)))
+    return (-neg_home, -neg_total + neg_home), p
+
+
+def market_fits(rounds, path: Path | None = None) -> tuple:
+    """{(회차, 경기번호): (λh, λa, 오차)}, [(회차, 번호, 뺀 사유)]. 읽기만."""
+    rows = marketeval.load_rows(path)
+    wanted = {str(r) for r in rounds}
+    picked, dropped = marketeval.select(
+        [r for r in rows if str(r.get("round")) in wanted])
+    fits = {}
+    for row in picked:
+        m = row.market
+        fits[(row.round_id, str(row.no))] = fit_market(m["H"], m["D"], m["A"])
+    skipped = [(d.round_id, d.no, d.reason) for d in dropped
+               if d.reason != "실제 결과가 없습니다"]
+    return fits, skipped
+
+
 def score(rounds, variants, root: Path, *, actual_path: Path | None = None,
           stored_base: Path | None = None) -> dict:
     """운영 보관본 · 재생 안들을 실제 스코어와 견준다.
@@ -460,24 +547,33 @@ def score(rounds, variants, root: Path, *, actual_path: Path | None = None,
             meta[(v, rid)] = body
 
     actual = {rid: actual_scores(rid, actual_path) for rid in rounds}
+    fits, skipped = market_fits(rounds, actual_path)
     table = {}
     for name, per_round in sources.items():
         row = {"n": 0, "hits": {"a": 0, "b": 0, "c": 0},
                "missing": {"a": 0, "b": 0, "c": 0},
                "changed_c_vs_stored": 0, "compared_c": 0,
-               "c_scores": Counter()}
+               "c_scores": Counter(),
+               "expected": {"a": 0.0, "b": 0.0, "c": 0.0},
+               "expected_n": {"a": 0, "b": 0, "c": 0}}
         for rid in rounds:
             got = per_round.get(rid) or {}
             stored = sources["stored"].get(rid) or {}
             for no, real in actual[rid].items():
                 row["n"] += 1
                 pick = got.get(no) or {}
+                fit = fits.get((str(rid), no))
                 for k in ("a", "b", "c"):
                     s = pick.get(k)
                     if s is None:
                         row["missing"][k] += 1
-                    elif s == real:
+                        continue
+                    if s == real:
                         row["hits"][k] += 1
+                    if fit is not None:
+                        row["expected"][k] += score_probability(
+                            fit[0], fit[1], s[0], s[1])
+                        row["expected_n"][k] += 1
                 c = pick.get("c")
                 if c is not None:
                     row["c_scores"][f"{c[0]}-{c[1]}"] += 1
@@ -486,12 +582,29 @@ def score(rounds, variants, root: Path, *, actual_path: Path | None = None,
                     row["compared_c"] += 1
                     row["changed_c_vs_stored"] += int(c != s0)
         table[name] = row
+    mode = {"expected": 0.0, "hits": 0, "n": 0, "scores": Counter()}
+    errs = []
+    for rid in rounds:
+        for no, real in actual[rid].items():
+            fit = fits.get((str(rid), no))
+            if fit is None:
+                continue
+            (h, a), p = market_mode(fit[0], fit[1])
+            mode["expected"] += p
+            mode["hits"] += int([h, a] == real)
+            mode["n"] += 1
+            mode["scores"][f"{h}-{a}"] += 1
+            errs.append(fit[2])
+    market = {"mode": mode, "fitted": len(errs),
+              "fit_error_mean": (sum(errs) / len(errs)) if errs else None,
+              "fit_error_max": max(errs) if errs else None,
+              "skipped": skipped}
     stored_packets = {}
     for rid in rounds:
         rec = panelwork.read_manifest(rid, stored_base).get("stages", {}) \
             .get(panelwork.STAGE_A, {})
         stored_packets[rid] = rec.get("packet_sha256", "")
-    return {"rounds": list(rounds), "table": table,
+    return {"rounds": list(rounds), "table": table, "market": market,
             "actual_matches": {rid: len(v) for rid, v in actual.items()},
             "stored_packet_sha256": stored_packets,
             "replay_packet_sha256": {f"{v}/{rid}": (m or {}).get(
@@ -514,6 +627,7 @@ def score_lines(result: dict) -> list:
         if miss:
             lines.append(f"{'':<10}스코어 없음: " + " · ".join(
                 f"{k} {v}" for k, v in miss.items()))
+    lines += expected_lines(result)
     lines.append("같은 입력인가 (packet sha 앞 12자):")
     for rid in result["rounds"]:
         stored = (result["stored_packet_sha256"].get(rid) or "")[:12] or "기록 없음"
@@ -521,6 +635,32 @@ def score_lines(result: dict) -> list:
                           for k, v in result["replay_packet_sha256"].items()
                           if k.endswith(f"/{rid}"))
         lines.append(f"  {rid}: 운영 {stored} · {reps}")
+    return lines
+
+
+def expected_lines(result: dict) -> list:
+    market = result.get("market") or {}
+    mode = market.get("mode") or {}
+    if not market.get("fitted"):
+        return ["기대 적중: 시장 확률이 있는 정산 경기가 없습니다"]
+    lines = ["기대 적중 (킥오프 전 피나클 승/무/패에 맞춘 독립 포아송 · 시장 기준 — "
+             "시장보다 나은지가 아니라 시장 쪽에 얼마나 가까운지를 잰다)",
+             f"{'출처':<10}{'A':>16}{'B':>16}{'C':>16}"]
+
+    def cell(total: float, n: int) -> str:
+        return f"{total:.2f}/{n} ({100 * total / n:.1f}%)" if n else "없음"
+
+    for name, row in result["table"].items():
+        exp, n = row.get("expected") or {}, row.get("expected_n") or {}
+        lines.append(f"{name:<10}" + "".join(
+            f"{cell(exp.get(k, 0.0), n.get(k, 0)):>16}" for k in ("a", "b", "c")))
+    top = " ".join(f"{s}×{c}" for s, c in mode["scores"].most_common(6))
+    lines.append(f"{'시장 최빈':<10}{cell(mode['expected'], mode['n']):>16}"
+                 f"   실제 적중 {mode['hits']}/{mode['n']} · {top}")
+    lines.append(f"맞춤 경기 {market['fitted']} · 승/무/패 맞춤 오차 평균 "
+                 f"{market['fit_error_mean']:.4f} · 최대 {market['fit_error_max']:.4f}")
+    for rid, no, why in market.get("skipped") or []:
+        lines.append(f"  기대 적중에서 뺌: {rid} {no}번 — {why}")
     return lines
 
 
@@ -578,6 +718,10 @@ def main(argv=None) -> int:
             body = dict(result, table={
                 k: dict(v, c_scores=dict(v["c_scores"]))
                 for k, v in result["table"].items()})
+            if "market" in body:
+                body["market"] = dict(body["market"], mode=dict(
+                    body["market"]["mode"],
+                    scores=dict(body["market"]["mode"]["scores"])))
             (root / SCORE_FILE).write_text(
                 json.dumps(body, ensure_ascii=False, indent=1),
                 encoding="utf-8")

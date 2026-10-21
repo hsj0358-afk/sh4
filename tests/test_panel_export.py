@@ -746,11 +746,15 @@ def test_t10_guide_does_not_change_the_instructions_fingerprint():
     리팩터링 Phase 4 후속에서 또 바뀌었다 (`4a54e7ad` → `71163a6f`). 지침이
     가리키던 `경기별/` 대체 경로를 지웠다 (§1-56). 프롬프트 판은 그대로다.
 
+    v1 채택(§1-63)에서 또 바뀌었다 (`71163a6f` → `d1212e24`). 분석가 공통
+    규칙에 예상 스코어를 고르는 법이, 사회자에 발언 순서 교대가 들어갔다.
+    **다시 붙여넣어야 한다.**
+
     Phase 6-E-6 에서 바뀌었다 (`b389d4f0` → `fe098456`). 맞대결 분석가에
     `style_of_play` 조건과 정량/정성 분리·일치 여부가, 사회자에 '정성 원문을
     받지 않았다' 는 규칙이 들어갔다. **다시 붙여넣어야 한다.**
     """
-    assert panelexport.instructions_fingerprint() == "71163a6f"
+    assert panelexport.instructions_fingerprint() == "d1212e24"
 
 
 def test_s3_conclusion_is_the_first_field_in_the_schema():

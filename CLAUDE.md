@@ -4424,9 +4424,10 @@ MD 의 특성 칸이 `" · ".join(items)` 였는데, 항목 구분자와 `라벨
 "사회자는 정성 원문을 직접 받지 않으므로 **분석가가 실제로 적은 내용만**
 견주고 없던 관계를 새로 만들지 않는다" 를 프롬프트에 적었다.
 
-**현재값**: `PANEL_PROMPT_VERSION` **4** · `MODERATOR_PROMPT_VERSION` **6** ·
+**그때 값**: `PANEL_PROMPT_VERSION` **4** · `MODERATOR_PROMPT_VERSION` **6** ·
 지침 지문 **`fe098456`**(`b389d4f0` 에서 바뀌었다). **프로젝트 지침을 다시
-붙여넣어야 한다** (§1-11-1). 회귀 기준(아래 표)은 그대로다 — 프롬프트는
+붙여넣어야 한다** (§1-11-1). 지금 값은 PANEL **6** · MODERATOR **7** · 지침
+지문 **`d1212e24`** 다 (§1-63 v1 채택). 회귀 기준(아래 표)은 그대로다 — 프롬프트는
 리포트·MD·payload 어디에도 실리지 않는다.
 
 #### 회귀 기준이 움직인다
@@ -7507,15 +7508,16 @@ newline 으로 읽는다) · `pagespublish.sha256_of`(원바이트) ·
 ### 1-63. 패널 오프라인 재생 — `tools/replay_panel.py`
 
 이미 정산된 회차의 **킥오프 전 저장본**에 프롬프트 안을 다시 돌려, 같은
-경기에서 운영 결과·안끼리 정확 스코어 적중을 견준다. 운영 프롬프트와 판
-번호(PANEL 5 · MODERATOR 6 · 지침 지문 `71163a6f`)는 **바뀌지 않는다.**
+경기에서 운영 결과·안끼리 정확 스코어 적중을 견준다. **재생은 운영
+프롬프트와 판 번호를 바꾸지 않는다** — 안을 채택하는 것은 따로 하는 일이다
+(아래 'v1 채택').
 
 ```bash
-python tools/replay_panel.py show --variant v1                       # 무엇이 바뀌나 · $0
+python tools/replay_panel.py show --variant <안>                     # 무엇이 바뀌나 · $0
 python tools/replay_panel.py run --rounds 260054 260059 260061 --variant baseline --dry-run   # $0
 python tools/replay_panel.py run --rounds 260054 260059 260061 --variant baseline
-python tools/replay_panel.py run --rounds 260054 260059 260061 --variant v1
-python tools/replay_panel.py score --rounds 260054 260059 260061 --variants baseline v1
+python tools/replay_panel.py run --rounds 260054 260059 260061 --variant <안>
+python tools/replay_panel.py score --rounds 260054 260059 260061 --variants baseline <안>
 ```
 
   · **운영 자리를 건드리지 않는다.** 저장·조립·검증은 운영 함수
@@ -7579,7 +7581,7 @@ python tools/replay_panel.py score --rounds 260054 260059 260061 --variants base
   · v1 은 같은 스코어 규칙을 **A·B 공통 규칙에** 넣으므로 두 분석가가
     같은 스코어로 모이기 쉽다(260054 v1 은 14경기 전부 같았다). 토론의 폭이
     줄어드는 쪽이다.
-  · **v1 은 채택하지 않은 상태다.**
+  · 실제 적중으로는 판단하지 않았다(아래 기대 적중으로 판단했다).
 
 **기대 적중 (채점 열 추가).** 실제 결과 하나 대신 **시장이 매긴 그 스코어의
 확률**로 다시 잰다 — 운에 덜 흔들린다.
@@ -7595,9 +7597,42 @@ python tools/replay_panel.py score --rounds 260054 260059 260061 --variants base
     이지 "시장을 넘었다" 가 아니다. 그래서 시장 최빈 스코어 줄을 기준선으로
     함께 낸다.
   · **재생 도구의 채점에만 있다.** 운영 분석·리포트·패널 자료에 들어가지
-    않고, `predict` 를 import 하지 않는다 (§1-27 — 3-a 는 여전히 후보다).
+    않고, `predict` 를 import 하지 않는다 (§1-27).
 
-회귀 테스트: `python tests/test_panel_replay.py` (33개 · 가짜 에이전트 ·
+| 기대 적중 (42경기) | A | B | C |
+|---|---|---|---|
+| 운영 결과 | 4.35 | 4.31 | 4.41 |
+| baseline | 4.63 | 4.51 | 4.58 |
+| v1 | 4.82 | 4.97 | **4.95** |
+| 시장 최빈 (기준선) | | | 5.25 · 실제 적중 8/42 |
+
+  · v1 효과(baseline 대비 C +0.37)가 같은 프롬프트 재실행 흔들림(+0.17)의
+    두 배쯤이고 A·B·C 가 모두 올랐다. 재실행이 한 번뿐이라 강한 증거가 아니라
+    **일관된 방향**이다. 실제 적중은 나빠지지 않았다.
+  · **시장 최빈 스코어가 두 지표 모두에서 가장 좋다.** 패널은 프롬프트를
+    고쳐도 거기에 가까워질 뿐 넘기 어렵다 — 그래서 3-a 를 리포트의 별도
+    참고값으로 넣었다 (§1-64).
+
+**v1 채택 (2026-10-22, 사용자 결정).** 운영 프롬프트가 v1 의 글자와 **바이트
+까지 같다**(재생이 실제로 보낸 시스템 프롬프트와 대조했다).
+
+  · `PANEL_PROMPT_VERSION` 5 → **6** · `MODERATOR_PROMPT_VERSION` 6 → **7** ·
+    지침 지문 `71163a6f` → **`d1212e24`**. 패널 캐시는 미적중이고 **채팅
+    프로젝트 지침을 다시 붙여넣어야 한다** (§1-11-1).
+  · 분석가 공통 규칙에 예상 스코어를 고르는 법이 들어가 **A·B 의 스코어가
+    더 자주 같아진다**(260054 재생은 14경기 전부 같았다). 토론의 폭이 줄어드는
+    대가를 알고 받아들였다.
+  · 재생 도구의 `VARIANTS` 에서 `v1` 을 뺐다 — 다시 끼워 넣으면 두 번 들어간다.
+    지금 `baseline` 이 곧 v1 이다. PC 의 옛 재생 폴더(`baseline`·`v1`)는 그대로
+    채점할 수 있다(`score` 는 안 목록을 보지 않는다).
+  · **옛 프롬프트의 결과를 새 이름표로 재사용하지 않는다.** 재생 폴더에
+    `prompts.json`(단계별 시스템 프롬프트 sha)을 남기고, 기록이 지금과 다르면
+    시작하지 않는다(종료코드 2). 기록이 없는 옛 폴더는 `replay.json` 의
+    `system_sha256` 으로 판정한다. 다시 재려면 다른 `--out` 을 쓴다.
+  · 판 번호를 못 박던 테스트 여덟은 "내려가지 않았다(≥)" 로, 지문 핀 셋은 새
+    값으로 옮겼다 — 각 Phase 가 지키려던 것은 그대로다(§1-29 와 같은 교정).
+
+회귀 테스트: `python tests/test_panel_replay.py` (35개 · 가짜 에이전트 ·
 실제 모델 호출 0).
 
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
@@ -8320,8 +8355,8 @@ python tests/test_canonical_bytes.py       # 정본 JSON·체크포인트 LF 바
 python tests/test_text_digest.py           # packet·체크포인트 텍스트 sha 한 곳 · 계약 다른 해시는 따로 M14 §1-60 (11개)
 python tests/test_pages_html_newline.py    # 최종 리포트 HTML LF · check_final_html 통과 §1-60 (8개)
 python tests/test_whoscored_block_retry.py # 후스코어드 차단 재시도 · 팀 페이지 차단 원본 · 정성 자료 공백 알림 · 점검 화면 §1-61 (31개)
-python tools/replay_panel.py show --variant v1   # 패널 오프라인 재생 — 안이 바꾸는 것 · run/score 는 §1-63
-python tests/test_panel_replay.py          # 패널 오프라인 재생 · 운영 자리 무변경 · 사후 스냅샷 거부 · 기대 적중 §1-63 (33개)
+python tools/replay_panel.py score --rounds 260054 260059 260061 --variants baseline   # 패널 재생 채점 · run/show 는 §1-63
+python tests/test_panel_replay.py          # 패널 오프라인 재생 · 운영 자리 무변경 · 사후 스냅샷 거부 · 기대 적중 §1-63 (35개)
 python -m pytest -q -rs                    # 전체 — `pytest` 가 아니라 `python -m pytest` (PyYAML 있는 인터프리터)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개

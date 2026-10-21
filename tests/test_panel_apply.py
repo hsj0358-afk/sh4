@@ -778,8 +778,10 @@ def test_k3_no_recompute_no_new_schema_no_prompt_change():
                 "initial_scores", "schema_version"):
         assert bad not in body, bad
     assert panelimport.SCHEMA_VERSION == "1.1"
-    assert panel.PANEL_PROMPT_VERSION == "5"
-    assert moderator.MODERATOR_PROMPT_VERSION == "6"
+    # 6-F-14 는 프롬프트를 고치지 않았다. 판은 그 뒤(§1-63)에 올랐으므로
+    # 내려가지 않았는지만 본다 — 조립은 프롬프트 글자를 담지 않는다.
+    assert int(panel.PANEL_PROMPT_VERSION) >= 5
+    assert int(moderator.MODERATOR_PROMPT_VERSION) >= 6
 
 
 def main() -> int:

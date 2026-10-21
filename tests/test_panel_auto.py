@@ -786,7 +786,8 @@ def test_e7_prompt_versions_are_unchanged():
     이고 ② 프롬프트를 고쳤으면 **판이 올라가 캐시가 무효화된다** 이다.
     """
     assert int(panel.PANEL_PROMPT_VERSION) >= 5
-    assert moderator.MODERATOR_PROMPT_VERSION == "6"
+    # 사회자는 §1-63 의 v1 채택으로 7 이 됐다 — 내려가지만 않으면 된다.
+    assert int(moderator.MODERATOR_PROMPT_VERSION) >= 6
     assert panelimport.SCHEMA_VERSION == "1.1"
 
 
@@ -1691,8 +1692,9 @@ def test_k5_the_system_text_itself_is_unchanged():
     got = (ws / panelauto.AGENT_SYSTEM).read_text(encoding="utf-8")
     assert got == system, "시스템 프롬프트가 달라졌다"
     # 6-F-7 이 지키려는 것은 **자리를 옮겨도 글자가 그대로**라는 것이고,
-    # 그것은 위 한 줄이 본다. PANEL 판 숫자는 6-F-11 이 올린다 (§1-47).
-    assert moderator.MODERATOR_PROMPT_VERSION == "6"
+    # 그것은 위 한 줄이 본다. 판 숫자는 프롬프트를 고친 Phase 가 올린다
+    # (§1-47 · §1-63).
+    assert int(moderator.MODERATOR_PROMPT_VERSION) >= 6
 
 
 def test_k6_non_json_stdout_is_not_swallowed():

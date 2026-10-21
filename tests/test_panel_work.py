@@ -719,7 +719,7 @@ def test_p1_prompt_versions_are_untouched():
     이므로 그쪽을 본다 — 사회자는 그대로이고, `panelwork` 에 프롬프트
     문자열이 없다.
     """
-    assert moderator.MODERATOR_PROMPT_VERSION == "6"
+    assert int(moderator.MODERATOR_PROMPT_VERSION) >= 6     # §1-63 에서 7
     assert int(panel.PANEL_PROMPT_VERSION) >= 5
     src = inspect.getsource(panelwork)
     for text in (panel.SYSTEM_COMMON, *panel.ROLE_PROMPTS.values()):

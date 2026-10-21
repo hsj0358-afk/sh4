@@ -918,8 +918,10 @@ def test_g4_no_auto_commit_of_panel_results():
 
 def test_g5_schema_and_prompt_versions_are_unchanged():
     assert panelimport.SCHEMA_VERSION == "1.1"
-    assert panel.PANEL_PROMPT_VERSION == "5"
-    assert moderator.MODERATOR_PROMPT_VERSION == "6"
+    # 6-F-12 는 프롬프트를 고치지 않았다. 판은 §1-63 에서 올랐다 —
+    # 내려가지 않았는지만 본다. packet 형식은 그대로다.
+    assert int(panel.PANEL_PROMPT_VERSION) >= 5
+    assert int(moderator.MODERATOR_PROMPT_VERSION) >= 6
     assert panelpacket.PACKET_VERSION == "6-F-10-common-v2"
 
 

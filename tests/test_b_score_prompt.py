@@ -250,12 +250,15 @@ def test_only_the_b_system_text_changed():
     """바뀐 것은 **B system 문자열 하나**다 (§12).
 
     A·C 의 시스템 문자열은 그대로이고, B 만 새 문단을 갖는다.
+
+    §1-63 에서 범위를 옮겼다 — v1 채택으로 **공통 규칙**에도 예상 스코어를
+    고르는 법이 들어가 두 분석가가 함께 받는다. 6-F-11 이 지키려던 것(그
+    문단은 B **역할 규칙**에만 있다)은 역할 규칙끼리 견줘 그대로 본다.
     """
-    marker = "예상 스코어(`predicted_home`·`predicted_away`)"
-    assert marker in panel.SYSTEM_COMMON + "\n" \
-        + panel.ROLE_PROMPTS[panel.MATCHUP_ANALYST]
-    assert marker not in panel.SYSTEM_COMMON + "\n" \
-        + panel.ROLE_PROMPTS[panel.DATA_ANALYST]
+    marker = "**예상 스코어(`predicted_home`·`predicted_away`)도 당신이 내는 값입니다.**"
+    assert marker in panel.ROLE_PROMPTS[panel.MATCHUP_ANALYST]
+    assert marker not in panel.ROLE_PROMPTS[panel.DATA_ANALYST]
+    assert marker not in panel.SYSTEM_COMMON
     assert marker not in moderator.system_prompt(30)
 
 
@@ -265,8 +268,9 @@ def test_prompt_version_was_raised():
     특정 숫자가 아니라 '6-E-6 의 4 보다 높다' 를 본다 (§1-29 범위 이동).
     """
     assert int(panel.PANEL_PROMPT_VERSION) >= 5
-    # 사회자는 건드리지 않았다 (§20).
-    assert moderator.MODERATOR_PROMPT_VERSION == "6"
+    # 6-F-11 은 사회자를 건드리지 않았다(§20). §1-63 이 v1 을 채택하며 7 로
+    # 올렸다 — 내려가지만 않으면 된다.
+    assert int(moderator.MODERATOR_PROMPT_VERSION) >= 6
     assert panelimport.SCHEMA_VERSION == "1.1"
 
 
@@ -275,8 +279,8 @@ def test_instructions_fingerprint_changed():
     fp = panelexport.instructions_fingerprint()
     assert fp != "fe098456", "지문이 그대로면 지침이 낡은 줄 모른다"
     # 6-F-11 에서 `4a54e7ad` 가 됐고, 리팩터링 Phase 4 후속이 `경기별/` 안내를
-    # 지우며 `71163a6f` 가 됐다 (§1-56 · 프롬프트 판은 그대로).
-    assert fp == "71163a6f", fp
+    # 지우며 `71163a6f` 가 됐고, v1 채택(§1-63)으로 `d1212e24` 가 됐다.
+    assert fp == "d1212e24", fp
 
 
 def test_scope_untouched_modules():

@@ -6,11 +6,11 @@
    "bytes": 855715
   },
   "demo/chat_export_all/00_프로젝트_지침.md": {
-   "sha256": "29eea0e8ebaaaeb7ec67e7ae2edfdc36d112561809d6920f23889bc6117ec4ec",
-   "bytes": 22425
+   "sha256": "4662cdbb14653c83b8360c9f8760085a57eecab6485596584de4e0144479db74",
+   "bytes": 24585
   },
   "demo/chat_export_all/01_채팅에_적을_말.md": {
-   "sha256": "e3af6b61fe67f370c28eebc24ae9670ee8c99529c31ec1437df034f2fe3c0b0b",
+   "sha256": "fb6a155babb4730ed12aebc01b03f031fd25c7ff180c65f2c2e3ea0a749cd8c7",
    "bytes": 9406
   },
   "demo/chat_export_all/02_경기자료_1of2.md": {
@@ -62,11 +62,11 @@
    "bytes": 1709
   },
   "panel/chat_export/00_프로젝트_지침.md": {
-   "sha256": "29eea0e8ebaaaeb7ec67e7ae2edfdc36d112561809d6920f23889bc6117ec4ec",
-   "bytes": 22425
+   "sha256": "4662cdbb14653c83b8360c9f8760085a57eecab6485596584de4e0144479db74",
+   "bytes": 24585
   },
   "panel/chat_export/01_채팅에_적을_말.md": {
-   "sha256": "e06e5ceaadeeee5c1520a2ae10f1c8d0b6c11539f460e5ece657a991f8e7656c",
+   "sha256": "e3f7dfb47e0d96687aecaf138daf5a7f6aca2b7a3bd51a54af1818245cf24b24",
    "bytes": 8225
   },
   "panel/chat_export/02_경기자료_1of2.md": {
@@ -126,39 +126,39 @@
    "bytes": 4744
   },
   "prompt/moderator.md": {
-   "sha256": "81f28ba7324eb033e6381ddd9536de539de236bc61bdcd68767fbd3ad0ba4cc5",
-   "bytes": 9278
+   "sha256": "1a14095bb26fe7da4a040661e719f2b91bfc334793c4df14c72fcddf3342fd5d",
+   "bytes": 10040
   },
   "prompt/moderator_task.txt": {
    "sha256": "7e1589757944c4711decc6bfec2e4b6862204d13ac56d7a728e992e53607c74a",
    "bytes": 477
   },
   "prompt/project_instructions.md": {
-   "sha256": "29eea0e8ebaaaeb7ec67e7ae2edfdc36d112561809d6920f23889bc6117ec4ec",
-   "bytes": 22425
+   "sha256": "4662cdbb14653c83b8360c9f8760085a57eecab6485596584de4e0144479db74",
+   "bytes": 24585
   },
   "prompt/schema_guide.md": {
    "sha256": "74037f0f3dc6bd889aa6fecf11e9014b9058c6f93916c585849ed2a09c8ed7e7",
    "bytes": 19881
   },
   "prompt/stage_system/c.md": {
-   "sha256": "81f28ba7324eb033e6381ddd9536de539de236bc61bdcd68767fbd3ad0ba4cc5",
-   "bytes": 9278
+   "sha256": "1a14095bb26fe7da4a040661e719f2b91bfc334793c4df14c72fcddf3342fd5d",
+   "bytes": 10040
   },
   "prompt/stage_system/data_analyst.md": {
-   "sha256": "a073c815d0bd700927ecf2a1032bb2f7e221de2936601d7fb13e28213c2418a6",
-   "bytes": 2699
+   "sha256": "5fcf25d13e8da2e2fdd7374d2546d09eda05ec2b29d8cfa69faa1c24fd14316e",
+   "bytes": 4097
   },
   "prompt/stage_system/matchup_tactical_analyst.md": {
-   "sha256": "0114fab99505c9a4365162700c504cce88b53a871ee7da2ca6e2cfacb070a4b7",
-   "bytes": 6776
+   "sha256": "988481fb138488ca1a57be9b5cac4df25e0c068a975e89ae8585dc5c04b20d67",
+   "bytes": 8174
   },
   "prompt/system_common.md": {
-   "sha256": "79caf43a26b5b30baddf14aeb0bb75073bb30a5f689e7d56b33e6da2b66ff535",
-   "bytes": 2030
+   "sha256": "97f154080e581450730e1df8e4d553fd15be4cbe1c2c89a8fb925f51a7d3e2cd",
+   "bytes": 3428
   },
   "prompt/versions.json": {
-   "sha256": "fcef835e8d4f7ff2fcdb9016ad20e70d99c1cb9e53de83401d13ac0d0c97b794",
+   "sha256": "bf062cfccebeb2da5343a52e53e94fcf46ca451c67a3f9c4ff6562005c665f14",
    "bytes": 205
   }
  }

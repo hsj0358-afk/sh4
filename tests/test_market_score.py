@@ -80,6 +80,39 @@ def test_a5_does_not_import_predict():
     assert "predict" not in names and "toto.predict" not in names
 
 
+
+def test_a6_outcome_probs_equal_xpts_exactly():
+    """맞춤이 쓰는 승/무/패 확률이 `xpts.match_xpts()` 와 바이트까지 같다."""
+    for lh in (0.1, 0.65, 1.4, 2.73, 4.9, 5.0):
+        for la in (0.1, 0.88, 1.56, 3.2, 5.0):
+            r = xpts.match_xpts(lh, la)
+            assert marketscore._outcome_probs(lh, la) == (
+                r.home_win_probability, r.draw_probability,
+                r.away_win_probability), (lh, la)
+
+
+def test_a7_fit_does_not_flood_the_log():
+    """격자를 훑는 동안 xPTS 절단 경고를 남기지 않는다 (실측 260061 · 12,250줄)."""
+    import logging
+
+    class Count(logging.Handler):
+        n = 0
+
+        def emit(self, record):
+            Count.n += 1
+
+    handler = Count(level=logging.DEBUG)
+    logger = logging.getLogger("toto.xpts")
+    old = logger.level
+    logger.addHandler(handler)
+    logger.setLevel(logging.DEBUG)
+    try:
+        marketscore.most_likely(MatchProb(home=0.70, draw=0.18, away=0.12))
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(old)
+    assert Count.n == 0, Count.n
+
 # ==========================================================================
 # B. 경계 — 패널에는 가지 않는다
 # ==========================================================================

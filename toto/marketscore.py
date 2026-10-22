@@ -51,9 +51,25 @@ class MarketScore:
 
 
 def _outcome_probs(lh: float, la: float) -> tuple:
-    r = xpts.match_xpts(lh, la)
-    return (r.home_win_probability, r.draw_probability,
-            r.away_win_probability)
+    """(홈승, 무, 원정승) 확률. `xpts.match_xpts()` 와 같은 수를 같은 순서로 더한다.
+
+    `match_xpts` 를 부르지 않는 이유: 맞춤은 기대 득점을 5.0 까지 훑는데,
+    그 함수는 0~9골 절단 밖으로 1% 넘게 새면 INFO 를 남긴다. 시도값마다
+    찍혀 회차 하나에 로그가 만 줄을 넘었다(실측 260061 · 12,250줄). 값은
+    바이트까지 같다(테스트로 고정).
+    """
+    ph, pa = xpts.poisson_pmf(lh), xpts.poisson_pmf(la)
+    p_home = p_draw = p_away = 0.0
+    for i, h in enumerate(ph):
+        for j, a in enumerate(pa):
+            joint = h * a
+            if i > j:
+                p_home += joint
+            elif i == j:
+                p_draw += joint
+            else:
+                p_away += joint
+    return p_home, p_draw, p_away
 
 
 def _fit_error(lh: float, la: float, target: tuple) -> float:

@@ -7667,13 +7667,18 @@ python tools/replay_panel.py score --rounds 260054 260059 260061 --variants base
     이 줄이 나온다**. 회차 기록(CSV)·저장본·캐시 판은 그대로다.
   · 재생 도구(`tools/replay_panel.py`)의 기대 적중 채점이 **같은 함수**를 쓴다
     (§1-8) — 리포트의 최빈과 채점의 기준선이 갈릴 수 없다.
+  · **맞춤은 로그를 남기지 않는다.** 처음에는 승/무/패 확률을 `xpts.match_xpts()`
+    로 구했는데, 그 함수는 0~9골 절단 밖으로 1% 넘게 새면 INFO 를 남기고 격자는
+    기대 득점 5.0 까지 훑는다 — 실물 260061 재렌더 출력 12,257줄 중 12,250줄이
+    그 경고였다. 같은 `poisson_pmf` 를 같은 순서로 더하는 `_outcome_probs()` 로
+    바꿨고 값은 바이트까지 같다(테스트로 대조 · 골든 무변화).
 
 **`--demo` 출력이 바뀐다** — 664,752 → 669,117 bytes(경기 14줄). 패널 붙인
 리포트도 같은 크기만큼 늘었다. 경기자료 MD·PanelPayload·채팅 내보내기는
 바이트까지 그대로다(골든). 실물 골든(260052)의 `report.html` 은 §3-7 과 같은
 사정으로 그 저장본이 있는 곳에서 갱신해야 한다.
 
-회귀 테스트: `python tests/test_market_score.py` (13개).
+회귀 테스트: `python tests/test_market_score.py` (15개).
 
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
@@ -8397,7 +8402,7 @@ python tests/test_pages_html_newline.py    # 최종 리포트 HTML LF · check_f
 python tests/test_whoscored_block_retry.py # 후스코어드 차단 재시도 · 팀 페이지 차단 원본 · 정성 자료 공백 알림 · 점검 화면 §1-61 (31개)
 python tools/replay_panel.py score --rounds 260054 260059 260061 --variants baseline   # 패널 재생 채점 · run/show 는 §1-63
 python tests/test_panel_replay.py          # 패널 오프라인 재생 · 운영 자리 무변경 · 사후 스냅샷 거부 · 기대 적중 §1-63 (35개)
-python tests/test_market_score.py          # 시장 기준 가장 그럴듯한 스코어 · 패널에 안 감 · 라벨 없음 §1-64 (13개)
+python tests/test_market_score.py          # 시장 기준 가장 그럴듯한 스코어 · 패널에 안 감 · 라벨 없음 · 로그 없음 §1-64 (15개)
 python -m pytest -q -rs                    # 전체 — `pytest` 가 아니라 `python -m pytest` (PyYAML 있는 인터프리터)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개

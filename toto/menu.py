@@ -472,14 +472,11 @@ def _panel_auto_args() -> list[str] | None:
     if rnd is None or not rnd.strip():
         print("회차를 알 수 없어 실행하지 않았습니다.")
         return None
-    argv = ["--round", rnd.strip(), "--panel-auto"]
-    # **기본은 재개다** (6-F-12 §19). 끝난 단계를 다시 부르면 Claude 세션
-    # 3회를 다시 쓰므로 일부러 골라야 한다 — 기본값이 '아니오' 인 이유다.
-    again = _ask("끝난 단계도 처음부터 다시 돌릴까요? "
-                 "(Claude 세션 3회를 다시 씁니다) [y/N]: ")
-    if (again or "").strip().lower() in ("y", "yes", "ㅇ"):
-        argv.append("--panel-auto-rerun")
-    return argv
+    # **언제나 재개다** (§1-48). 끝난 단계를 다시 부르는 것은 Claude 세션
+    # 3회를 다시 쓰는 일이라 메뉴에서 묻지 않는다 — 필요하면 CLI 의
+    # `--panel-auto-rerun` 으로 명시한다. 자료가 바뀐 단계는 묻지 않아도
+    # 낡은 것으로 판정되어 다시 돈다.
+    return ["--round", rnd.strip(), "--panel-auto"]
 
 
 def _rerender_args() -> list[str] | None:

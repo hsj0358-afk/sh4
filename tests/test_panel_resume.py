@@ -1020,12 +1020,23 @@ def test_h4_rerun_actually_calls_all_three():
     assert "다시 실행 (요청)" in "\n".join(lines)
 
 
-def test_h5_the_menu_asks_and_defaults_to_no():
-    """메뉴가 묻되 **기본이 아니오**다 (§19). 돈이 드는 쪽이 기본일 수 없다."""
+def test_h5_the_menu_always_resumes():
+    """메뉴는 **언제나 재개**다 (§1-48). 돈이 드는 다시 실행은 CLI 에서만
+    명시한다 — 메뉴가 그 인자를 만들 길이 없다."""
     from toto import menu
     body = code_of(fn_node(menu, "_panel_auto_args"))
-    assert "--panel-auto-rerun" in body
-    assert "[y/N]" in body, "기본값을 예로 두었다"
+    assert "--panel-auto" in body
+    assert "--panel-auto-rerun" not in body, "메뉴가 다시 실행을 만든다"
+    assert "[y/N]" not in body, "메뉴가 다시 실행을 묻는다"
+    real_ask = menu._ask
+    asked = []
+    menu._ask = lambda prompt: (asked.append(prompt), "260054")[1]
+    try:
+        argv = menu._panel_auto_args()
+    finally:
+        menu._ask = real_ask
+    assert argv == ["--round", "260054", "--panel-auto"], argv
+    assert len(asked) == 1, asked                 # 회차만 묻는다
     # 판정을 메뉴에서 다시 구현하지 않는다 — 인자를 만들어 CLI 에 넘긴다.
     for bad in ("resume_plan", "checkpoint_state", "force_rerun"):
         assert bad not in body, f"메뉴가 {bad} 를 직접 부른다"

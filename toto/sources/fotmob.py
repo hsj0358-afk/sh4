@@ -1025,6 +1025,173 @@ def _read_season(browser: "FotMobBrowser", settings: Settings, league_key: str,
 
 
 # --------------------------------------------------------------------------
+# 일정 문맥용 대회 경기 — 휴식·경기 밀도는 대회를 가로질러야 한다
+# --------------------------------------------------------------------------
+# `models.team_timeline()` 은 6-D-8 부터 대회를 가로지르는 시간축을 만들지만,
+# 그 재료인 시즌 색인에는 **국내리그 피드만** 들어 있었다 — `enrich()` 가 회차
+# 경기의 리그와 팀 소속에서만 수집 키를 모으기 때문이다. 그래서 목요일 UCL 을
+# 치른 팀의 직전 경기가 지난 주말 리그 경기로 잡혔다.
+#
+# 대회 피드에서는 **경기 목록만** 받는다. 순위표·시즌 통계·경기 상세는 받지
+# 않는다 — 그건 분석 모집단의 재료이고, 대회 경기는 국내리그 분석에 섞이지
+# 않는다 (§1-30 · §1-34). 여기서 받는 것은 "이 팀이 언제 뛰었나" 뿐이다.
+SCHEDULE_CACHE_KEY = "schedule_{key}"
+
+
+def schedule_competitions(settings: Settings) -> list[str]:
+    """`fotmob.schedule_competitions` 에 적힌 대회 키 (설정 순서 · 중복 제거).
+
+    **국내리그는 받지 않는다** — 이미 리그 피드로 들어오고, 여기 규칙(한쪽
+    팀만 알아도 담는다)으로 국내리그 경기를 담으면 분석 모집단에 팀을 모르는
+    경기가 섞인다. 판정은 `owns_team_league()` 하나다.
+    """
+    out: list[str] = []
+    for key in (settings.fotmob or {}).get("schedule_competitions") or []:
+        key = str(key)
+        if key in out:
+            continue
+        if key not in settings.leagues:
+            log.warning("fotmob.schedule_competitions 의 '%s' 는 leagues 에 "
+                        "없어 건너뜁니다.", key)
+            continue
+        if settings.owns_team_league(key):
+            log.warning("fotmob.schedule_competitions 의 '%s' 는 국내리그라 "
+                        "건너뜁니다 — 리그 피드로 이미 받습니다.", key)
+            continue
+        out.append(key)
+    return out
+
+
+def _schedule_rows(data: Any) -> list[dict]:
+    """대회 응답 → 팀을 해석하기 **전**의 경기 줄. 캐시하는 모양이 이것이다.
+
+    해석 전 모양으로 캐시하는 이유: 팀 연결은 그 실행의 국내리그 팀 ID 에
+    달려 있어, 해석한 결과를 캐시하면 다른 회차가 옛 연결을 읽는다.
+    """
+    rows = []
+    for raw in _match_list(data):
+        mid = match_id_of(raw)
+        if not mid:
+            continue
+        hg, ag = _goals(raw)
+        rows.append({
+            "id": mid,
+            "utc": _utc_time(raw),
+            "home_name": str((raw.get("home") or {}).get("name") or ""),
+            "away_name": str((raw.get("away") or {}).get("name") or ""),
+            "home_id": _int((raw.get("home") or {}).get("id")),
+            "away_id": _int((raw.get("away") or {}).get("id")),
+            "home_goals": hg,
+            "away_goals": ag,
+            "finished": _finished(raw) and hg is not None,
+        })
+    return rows
+
+
+def schedule_matches(rows: list[dict], known_ids: dict[int, str],
+                     resolver: TeamResolver) -> tuple[list[dict], dict[str, int]]:
+    """경기 줄 → `_parse_matches()` 와 같은 모양. (경기, 연결 경로별 수).
+
+    **팀은 숫자 FotMob teamId 로 먼저 잇는다** (§1-1-3 과 같은 원칙). 국내리그
+    순위표가 준 ID 와 같으면 그 정규명이다. ID 로 못 이으면 이름을
+    **정확일치로만** 해석한다(`strict=True`, §1-29) — 대회 참가팀 대부분은
+    우리가 모르는 팀이라 추측하면 엉뚱한 팀에 붙는다.
+
+    **한쪽만 알아도 담는다.** 휴식은 우리 팀이 언제 뛰었나만 묻는다 — 상대가
+    우리가 모르는 팀이라고 그 경기를 버리면 바로 그 경기가 시간축에서 빠진다.
+    모르는 쪽은 빈 문자열이고 이름을 지어내지 않는다 (§1-5). 이 경기들은 대회
+    키로 표시돼 국내리그 분석 모집단에 들어가지 않는다 (§1-30).
+    """
+    out: list[dict] = []
+    links = {"id": 0, "name": 0}
+    for r in rows:
+        names: list[str] = []
+        for side in ("home", "away"):
+            tid = r.get(f"{side}_id")
+            canon = known_ids.get(tid) if tid is not None else None
+            if canon:
+                links["id"] += 1
+            else:
+                canon = resolver.resolve(r.get(f"{side}_name") or "", learn=False,
+                                         quiet=True, strict=True) or ""
+                if canon:
+                    links["name"] += 1
+            names.append(canon)
+        home, away = names
+        if not home and not away:
+            continue
+        if home and home == away:
+            continue
+        out.append({
+            "id": r.get("id") or None,
+            "date": (r.get("utc") or "")[:10],
+            "utc": r.get("utc") or "",
+            "home": home,
+            "away": away,
+            "home_id": r.get("home_id"),
+            "away_id": r.get("away_id"),
+            "home_goals": r.get("home_goals"),
+            "away_goals": r.get("away_goals"),
+            "finished": bool(r.get("finished")),
+        })
+    out.sort(key=lambda m: m["utc"], reverse=True)
+    return out, links
+
+
+def _read_schedule(browser: "FotMobBrowser", settings: Settings, key: str,
+                   resolver: TeamResolver, cache) -> list[dict] | None:
+    """대회 응답 1회 → 해석 전 경기 줄. 실패하면 None (빈 목록과 다르다, §1-6)."""
+    hit = cache.get("fotmob", SCHEDULE_CACHE_KEY.format(key=key)) if cache else None
+    if isinstance(hit, dict) and hit.get("_v") == _CACHE_VERSION:
+        return list(hit.get("rows") or [])
+    league_id = resolve_league_id(browser, settings, key,
+                                  cache=cache, resolver=resolver)
+    if league_id is None:
+        return None
+    data = browser.get_json(browser.abs_url(LEAGUE_PATH.format(id=league_id)))
+    if data is None:
+        log.error("[%s] FotMob 대회 응답을 받지 못했습니다 (id=%d).", key, league_id)
+        return None
+    rows = _schedule_rows(data)
+    if cache:
+        cache.set("fotmob", SCHEDULE_CACHE_KEY.format(key=key),
+                  {"_v": _CACHE_VERSION, "rows": rows})
+    return rows
+
+
+def merge_schedule(season_out: list, rows_by_key: dict[str, list | None],
+                   data: dict, matches, resolver: TeamResolver) -> None:
+    """대회 경기를 시즌 색인에 합치고, 무엇이 들어왔는지 로그에 적는다.
+
+    `known_ids` 는 이번 실행이 받은 국내리그 순위표의 팀 ID 다. 회차 팀이
+    대회 피드에 몇 팀 나왔는지도 적는다 — 0 이면 대회에 나가지 않은 회차일
+    수도, 연결이 안 된 것일 수도 있어서 이름까지 남긴다 (§1-6-1).
+    """
+    known: dict[int, str] = {}
+    for league in data.values():
+        for canon, entry in (league or {}).get("teams", {}).items():
+            tid = _int(entry.get("fotmob_id"))
+            if tid is not None:
+                known.setdefault(tid, canon)
+    round_teams = {ref.canonical for m in matches
+                   for ref in (m.home, m.away) if ref.canonical}
+    for key, rows in rows_by_key.items():
+        if rows is None:
+            log.warning("[%s] 대회 일정을 받지 못했습니다 — 휴식·경기 밀도에서 "
+                        "이 대회 경기가 빠집니다.", key)
+            continue
+        parsed, links = schedule_matches(rows, known, resolver)
+        merge_season(season_out, parsed, key)
+        found = sorted(round_teams & {t for m in parsed
+                                      for t in (m["home"], m["away"]) if t})
+        log.info("[%s] 일정 문맥용 경기 %d개 (종료 %d · 팀 연결 ID %d · 이름 %d) — "
+                 "이 회차 팀 %d팀%s", key, len(parsed),
+                 sum(1 for m in parsed if m["finished"]), links["id"],
+                 links["name"], len(found),
+                 f": {', '.join(found)}" if found else "")
+
+
+# --------------------------------------------------------------------------
 # 경기 상세 (matchDetails) — 시즌 통계에 없는 지표는 여기에만 있다
 # --------------------------------------------------------------------------
 MATCH_PATH = "/api/data/matchDetails?matchId={id}"
@@ -1650,6 +1817,11 @@ def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None,
 
         data = {key: read_league(browser, settings, key, resolver, cache=cache)
                 for key in leagues}
+        # 휴식·경기 밀도용 대회 경기 — 경기 목록만 받는다 (`_read_schedule`).
+        # 시즌 색인을 받는 실행에서만 받는다. 색인이 없으면 쓸 곳이 없다.
+        schedule_rows = {key: _read_schedule(browser, settings, key, resolver, cache)
+                         for key in (schedule_competitions(settings)
+                                     if season_out is not None else [])}
 
     # 시즌 경기 색인 (Phase 2). 같은 경기가 두 리그 피드에 겹쳐 실릴 수 있어
     # match_id 로 한 번만 담고, kickoff 오름차순으로 정렬해 둔다.
@@ -1658,6 +1830,7 @@ def enrich(matches, settings: Settings, resolver: TeamResolver, cache=None,
             merge_season(season_out,
                          (data.get(league_key) or {}).get("matches", []),
                          league_key)
+        merge_schedule(season_out, schedule_rows, data, matches, resolver)
         no_time = sum(1 for sm in season_out if sm.kickoff is None)
         log.info("시즌 경기 색인 %d경기 (종료 %d) — Phase 2 시점 분석용%s",
                  len(season_out), sum(1 for sm in season_out if sm.finished),

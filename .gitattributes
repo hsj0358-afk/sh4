@@ -1,0 +1,17 @@
+# Windows batch files must keep CRLF. cmd.exe seeks by byte offset, so
+# LF-only endings make it resume mid-command and fail with a truncated
+# command name.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# PowerShell scripts: CRLF. They are saved as UTF-8 WITH BOM because
+# Windows PowerShell 5.1 reads BOM-less .ps1 as ANSI (cp949 on Korean
+# Windows), which corrupts non-ASCII string literals.
+*.ps1 text eol=crlf
+
+# Shell scripts must keep LF even when checked out on Windows.
+*.sh text eol=lf
+
+# 아이콘은 바이너리 — 줄바꿈 변환 금지
+*.ico binary
+*.png binary

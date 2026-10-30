@@ -142,6 +142,41 @@ def test_a8_v1_is_production_and_versions_moved():
     assert "v1" not in R.VARIANTS          # 다시 끼워 넣으면 두 번 들어간다
 
 
+def test_a9_dir1_changes_only_the_score_rules():
+    """dir1 (방향 목표, §1-66) — 두 분석가는 같은 공통 규칙을 받고 역할 규칙은
+    그대로이며, 사회자는 역할 지침만 바뀐다. 운영 프롬프트는 그대로다."""
+    from toto import moderator
+    a_common, a_role = R.prompt_parts(A, "dir1")
+    b_common, b_role = R.prompt_parts(B, "dir1")
+    assert a_common == b_common != panel.SYSTEM_COMMON
+    assert a_role == panel.ROLE_PROMPTS[A] and b_role == panel.ROLE_PROMPTS[B]
+    _c_common, c_role = R.prompt_parts(C, "dir1")
+    assert c_role != moderator.system_prompt(30)
+    # 운영 글자는 바뀌지 않았다 — 안은 재생에만 있다
+    assert "실제로 비슷할 때만" not in panel.SYSTEM_COMMON
+    assert "실제로 비슷할 때만" not in moderator.SYSTEM
+    assert "실제로 비슷할 때만" in a_common
+    assert "절충으로 삼지 마십시오" in c_role
+
+
+def test_a10_dir1_keeps_the_guards():
+    """방향을 담게 했어도 승무패 낱말·추천·새 확률이 들어오지 않고, 분포 밖
+    스코어 금지와 '승무패에서 역산하지 않는다' 가 그대로 남는다."""
+    a_common, _ = R.prompt_parts(A, "dir1")
+    _c, c_role = R.prompt_parts(C, "dir1")
+    added = R._DIR1_COMMON_SCORE_NEW + R._DIR1_COMMON_FLOOR_NEW + \
+        R._DIR1_MOD_ROUND_NEW + R._DIR1_MOD_PICK_NEW
+    for word in ("확률을 계산", "%", "홈승", "원정승", "추천", "베팅", "픽"):
+        assert word not in added, word
+    assert "새 지표·확률·공식을 계산하지 마십시오" in a_common
+    assert "승/무/패를 먼저 정하고 스코어를 맞추는 것이 아닙니다" in a_common
+    assert "분포 밖의 값은 여전히 고를 수 없습니다" in c_role
+    assert "실제로 나타난 스코어 중에서만" in c_role
+    assert "시장 확률이 어느 쪽에 가깝다는 이유로 고르지 마십시오" in c_role
+    # 맞대결 분석가의 역산 금지도 그대로다
+    assert "승무패에서 스코어를 역산하지 마십시오" in R.prompt_parts(B, "dir1")[1]
+
+
 # ==========================================================================
 # B. 운영 함수의 분리 — 동작이 그대로다
 # ==========================================================================

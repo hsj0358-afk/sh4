@@ -3129,6 +3129,10 @@ Match.probs = 피나클 배당에서 가산 마진만 뺀 값
 
 > **`Match.probs` 는 시장 확률이다.** 이 시스템에는 대상 경기의 승·무·패에
 > 대한 **독립적인 모델 확률이 없다.**
+>
+> (2026-10-30 갱신) **이제 하나 있다** — `toto/statmodel.py` 의 득점 기반
+> 통계 모델 기준선(§1-66). `Match.probs` 와 다른 객체이고 합치지 않으며,
+> 리포트 참고값과 백테스트에만 쓴다. `marketeval` 은 그대로 시장만 잰다.
 
 그래서 "우리 확률 vs 시장 확률 vs 실제" 3열 비교는 **성립하지 않는다** —
 앞의 두 열이 같은 수다. 모르고 진행하면 자기 자신과의 비교표를 만들게 된다.
@@ -7720,6 +7724,88 @@ python tools/replay_panel.py score --rounds 260054 260059 260061 --variants base
 
 회귀 테스트: `python tests/test_schedule_competitions.py` (15개).
 
+### 1-66. 목표는 승무패 방향 · 통계 모델 기준선 — `toto/statmodel.py`
+
+**평가의 주 지표를 승무패 방향 적중으로 바꿨다** (2026-10-30, 사용자 결정).
+§1-62~§1-63 의 정확 스코어 목표를 대신한다. 56경기(260054~260063)에서
+사회자의 방향 적중(25)이 데이터 분석가 혼자(29)보다 낮았고, 원인은 무승부
+스코어 쏠림이다(24경기). v1 의 내림 규칙(§1-63)은 정확 스코어를 최대화하는
+규칙이라 두 팀 득점 수준이 1~2골이면 1-1 이 된다 — **방향 목표와 반대로
+작동한다.** 규칙을 바꾸는 일은 다음 단계(통계 모델의 확률을 기준으로)다.
+
+  · `tools/replay_panel.py score` 가 **방향 적중을 맨 앞에** 적는다 — A·B·C ·
+    시장 pick · 시장 최빈, 무승부 스코어를 낸 수와 그 적중을 함께. 시장 pick 은
+    `marketeval.EvalRow.favorite`(시장 확률이 가장 높은 결과) 그대로이고
+    추천이 아니다. 정확 스코어·기대 적중은 그 아래에 그대로 있다.
+
+**통계 모델 기준선을 만들었다 — 이 시스템의 첫 독립 모델 확률이다.** §1-27 의
+"독립 모델 확률이 없다" 를 바꾸는 결정이고 사용자가 정했다. 다만 세 가지를
+지킨다.
+
+  · **시장 확률과 합치지 않는다.** `statmodel` 은 `predict` 를 import 하지 않고,
+    `Match.probs` 를 읽지도 쓰지도 않는다.
+  · **패널에 주지 않는다** (이번 단계). `panel`·`panelpacket`·`panelexport`·
+    `moderator`·`match_material`·`panelauto`·`panelwork`·`evidence`·`analysis`
+    가 이 모듈을 import 하지 않는다(테스트). 사회자 연결은 백테스트 결과를 본 뒤다.
+  · **추천이 아니다.** `Forecast` 에 `pick`·`winner`·`confidence` 칸이 없다.
+    `favorite` 은 채점용이다 (§1-3).
+
+모델은 득점 기반 독립 포아송이다.
+
+```
+그 경기 이전·그 대회 종료 경기 (history → matches_before · scope_to_competition)
+  → 리그 평균 득점 μ홈·μ원정
+  → 팀 공격·수비 = 득점(실점) ÷ (기준 득점 × 상대 수비(공격))   ← 12회 반복
+                   리그 평균 수준의 가상 경기 k 개로 당긴다
+  → λ홈 = μ홈 × 홈팀 공격 × 원정팀 수비 · λ원정 = μ원정 × 원정팀 공격 × 홈팀 수비
+  → 독립 포아송 → 승/무/패 · 가장 그럴듯한 스코어
+```
+
+  · **시점은 `matches_before()` 하나로 자른다.** 미래 경기·같은 시각 경기를
+    덧붙여도 예측이 한 자리도 바뀌지 않는다(테스트). 모집단은
+    `scope_to_competition()` 이라 휴식용 유럽대회 경기(§1-65)가 섞이지 않는다.
+    대회를 모르거나 색인에 대회 표시가 없으면 **만들지 않는다**(두 리그가 한
+    평균으로 섞인다).
+  · 리그 종료 경기 20 · 양 팀 각 3경기에 못 미치면 만들지 않고 사유를 남긴다.
+  · 선택지 셋 — `venue_split`(홈팀은 홈 경기, 원정팀은 원정 경기 수준 · 표본이
+    작으면 그 팀 전체 수준 쪽으로 당김) · `half_life_days`(최근 경기 가중) ·
+    `shrink_matches`. 설정은 `config_toto.yaml` 의 `analysis.statmodel` 이고
+    **운영용 기준이며 통계적으로 검증된 기준이 아님**이라고 적어 두었다.
+    가중치를 주면 유효 표본이 줄어 같은 k 라도 당김이 세진다.
+  · 포아송 계산은 `marketscore._outcome_probs`·`market_mode` 를 그대로 쓴다
+    (§1-8). 무승부 보정이 없다.
+  · 저장하지 않는다. 렌더 때 계산하므로 옛 저장본을 재렌더해도 나온다.
+
+**리포트** — Pinnacle 블록 바로 아래 `통계 모델 기준선 (득점 기반 · 참고값)`.
+승/무/패 막대 · 양 팀 기대 득점 · 가장 그럴듯한 스코어 · 표본(팀 경기 수와 그중
+장소 경기 수, 리그 경기 수). 그 대회의 이전 종료 경기가 하나도 없으면 블록을
+내지 않는다(카드마다 같은 빈 줄을 늘어놓지 않는다). 데모·패널 골든에는 그런
+경기가 없어 **골든이 바뀌지 않았다.**
+
+**백테스트** — `tools/backtest_statmodel.py` (읽기만).
+
+```bash
+python tools/backtest_statmodel.py                          # data/artifacts/*.json
+python tools/backtest_statmodel.py --half-lives 0 60 30 --shrinks 3 5 10
+```
+
+  · 저장본들의 시즌 색인을 경기 ID 로 합치고(종료된 판을 남긴다), 국내리그
+    종료 경기마다 **그 킥오프 이전 경기만으로** 예측한다. 시즌 색인은 과거
+    시점으로 잘리므로(§1-13 HISTORICAL_AS_OF) 회차 56경기보다 훨씬 큰 표본이다.
+  · 안마다 방향 적중(±표준오차) · Brier · log loss · 고른 결과를 **모든 안이
+    예측한 같은 경기 집합**에서 잰다. 기저율·언제나 홈을 함께 적는다.
+  · 기준 안과 고른 결과가 갈린 경기 수(기준만 맞음 / 이 안만 맞음)를 적는다 —
+    안을 여럿 견주면 하나는 운으로 좋아 보인다.
+  · `data/round_matches.csv` 의 킥오프 전 시장 확률을 **경기 ID** 로 이어
+    같은 경기에서 시장과 견준다.
+  · `--json` 은 저장소 밖에만 쓴다.
+
+**실물로는 아직 돌리지 않았다** — 저장본과 CSV 가 사용자 PC 에만 있다 (§2-1).
+합성 시즌(20팀 × 2리그 × 10라운드)으로 도구가 끝까지 도는 것만 확인했다.
+
+회귀 테스트: `python tests/test_statmodel.py` (17개) ·
+`tests/test_panel_replay.py` 의 `test_f8` (방향 적중).
+
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
 260052 실행이 남긴 것은 후스코어드 `팀명 매칭 실패` 5건과 `강점 0개` 3팀이다.
@@ -8440,10 +8526,12 @@ python tests/test_canonical_bytes.py       # 정본 JSON·체크포인트 LF 바
 python tests/test_text_digest.py           # packet·체크포인트 텍스트 sha 한 곳 · 계약 다른 해시는 따로 M14 §1-60 (11개)
 python tests/test_pages_html_newline.py    # 최종 리포트 HTML LF · check_final_html 통과 §1-60 (8개)
 python tests/test_whoscored_block_retry.py # 후스코어드 차단 재시도 · 팀 페이지 차단 원본 · 정성 자료 공백 알림 · 점검 화면 §1-61 (31개)
-python tools/replay_panel.py score --rounds 260054 260059 260061 --variants baseline   # 패널 재생 채점 · run/show 는 §1-63
+python tools/replay_panel.py score --rounds 260054 260059 260061 --variants baseline   # 패널 재생 채점 · 방향 적중이 주 지표 (§1-66) · run/show 는 §1-63
 python tests/test_panel_replay.py          # 패널 오프라인 재생 · 운영 자리 무변경 · 사후 스냅샷 거부 · 기대 적중 §1-63 (35개)
 python tests/test_market_score.py          # 시장 기준 가장 그럴듯한 스코어 · 패널에 안 감 · 라벨 없음 · 로그 없음 §1-64 (15개)
 python tests/test_schedule_competitions.py # 휴식·경기 밀도에 유럽대회 경기 · teamId 연결 · 분석 모집단 불변 §1-65 (15개)
+python tests/test_statmodel.py             # 통계 모델 기준선 · 시점 · 모집단 · 패널 격리 · 백테스트 §1-66 (17개)
+python tools/backtest_statmodel.py         # 통계 모델 백테스트 · 시즌 색인 walk-forward · 시장과 같은 경기 비교 · 읽기만 §1-66
 python -m pytest -q -rs                    # 전체 — `pytest` 가 아니라 `python -m pytest` (PyYAML 있는 인터프리터)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개

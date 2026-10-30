@@ -375,6 +375,45 @@ def _market_mode_line(probs) -> str:
             f'시장의 값입니다 · 패널에는 전달되지 않습니다{note}</p>')
 
 
+def _model_block(match: Match, report=None, settings=None) -> str:
+    """통계 모델 기준선 — 득점 기반 독립 포아송 (`toto.statmodel`).
+
+    **모델 산출값**이고 시장 확률과 합치지 않는다. 패널에 전달되지 않는다.
+    승/무/패를 고르지 않는다 — 확률과 기대 득점, 표본만 적는다 (§1-3).
+    시즌 경기 색인이 없거나(데모·옛 저장본) 표본이 모자라면 블록을 내지 않고,
+    색인은 있는데 못 만들었으면 사유를 한 줄 적는다.
+    """
+    if report is None or not getattr(report, "season_matches", None):
+        return ""
+    from . import models, statmodel
+
+    f, why = statmodel.for_match(match, report, settings)
+    head = '<div class="block"><h4>통계 모델 기준선 (득점 기반 · 참고값)</h4>'
+    if f is None:
+        # 그 대회의 이전 종료 경기가 하나도 없으면(색인이 다른 리그뿐이거나
+        # 시즌 첫 경기) 모델이 설 자리가 없다 — 카드마다 같은 빈 줄을 늘어놓지
+        # 않는다. 경기가 있는데 표본이 모자라면 그 사유를 적는다.
+        past, _ = statmodel.history(report.season_matches, match.league,
+                                    models.as_of_from_match(match))
+        if not past:
+            return ""
+        return f'{head}<p class="nodata">{esc(why)}</p></div>'
+    bar = charts.prob_bar(f.p_home, f.p_draw, f.p_away, None, None, None)
+    h, a = f.score
+    return (f'{head}{bar}'
+            f'<div class="kv"><span>양 팀 기대 득점 <b>{f.home_goals:.2f}</b> · '
+            f'<b>{f.away_goals:.2f}</b></span>'
+            f'<span>가장 그럴듯한 스코어 <b>{h} - {a}</b> '
+            f'(이 스코어 {f.score_probability * 100:.1f}%)</span>'
+            f'<span>표본 홈팀 {f.home_matches}경기(홈 {f.home_venue_matches}) · '
+            f'원정팀 {f.away_matches}경기(원정 {f.away_venue_matches}) · '
+            f'리그 {f.league_matches}경기</span></div>'
+            f'<p class="meta">그 경기 이전의 최종 스코어만으로 맞춘 모델 산출값입니다 '
+            f'({esc(f.config)}) · 시장 확률과 합치지 않습니다 · 패널에는 '
+            f'전달되지 않습니다 · 무승부 보정이 없어 무승부 확률이 낮게 나올 수 '
+            f'있습니다 · 운영용 기준이며 아직 검증되지 않았습니다</p></div>')
+
+
 def _standing_row(match: Match) -> str:
     """순위표 요약 한 줄."""
     cells = []
@@ -1739,6 +1778,7 @@ def _match_card(match: Match, settings: Settings, report=None,
             f'{_standing_row(match)}'
             f'{notes}'
             f'{_odds_block(match, report)}'
+            f'{_model_block(match, report, settings)}'
             # **요약 블록은 Phase 5-D 에서 뺐다.** 4-D 가 그것을 맨 위에 둔
             # 이유는 "무엇이 있고 무엇이 없는지" 를 먼저 보이려는 것이었는데,
             # 실물 260052 에서는 그 네 줄이 전부 아래 블록의 값을 그대로 옮겨

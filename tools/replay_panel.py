@@ -440,12 +440,16 @@ score_probability = marketscore.score_probability
 market_mode = marketscore.market_mode
 
 
-def market_fits(rounds, path: Path | None = None) -> tuple:
-    """{(회차, 경기번호): (λh, λa, 오차)}, [(회차, 번호, 뺀 사유)]. 읽기만."""
+def _market_rows(rounds, path: Path | None = None) -> tuple:
     rows = marketeval.load_rows(path)
     wanted = {str(r) for r in rounds}
-    picked, dropped = marketeval.select(
+    return marketeval.select(
         [r for r in rows if str(r.get("round")) in wanted])
+
+
+def market_fits(rounds, path: Path | None = None) -> tuple:
+    """{(회차, 경기번호): (λh, λa, 오차)}, [(회차, 번호, 뺀 사유)]. 읽기만."""
+    picked, dropped = _market_rows(rounds, path)
     fits = {}
     for row in picked:
         m = row.market
@@ -455,12 +459,34 @@ def market_fits(rounds, path: Path | None = None) -> tuple:
     return fits, skipped
 
 
+def market_favorites(rounds, path: Path | None = None) -> dict:
+    """{(회차, 경기번호): 'H'|'D'|'A'} — 시장 확률이 가장 높은 결과. 읽기만.
+
+    **추천이 아니다** — 시장이 어디에 값을 매겼는지를 읽은 것이고, 채점에서
+    견줄 기준선으로만 쓴다 (`marketeval.EvalRow.favorite` 그대로).
+    """
+    picked, _ = _market_rows(rounds, path)
+    return {(r.round_id, str(r.no)): r.favorite for r in picked}
+
+
+def direction(score) -> str | None:
+    """[홈, 원정] → 'H'·'D'·'A'. 스코어가 없으면 None.
+
+    채점용이다 — 패널의 스코어가 실제 승/무/패와 **같은 방향이었나**를 센다.
+    프로그램이 승무패를 고르는 것이 아니다 (§1-3).
+    """
+    if score is None:
+        return None
+    h, a = score
+    return "H" if h > a else ("D" if h == a else "A")
+
+
 def score(rounds, variants, root: Path, *, actual_path: Path | None = None,
           stored_base: Path | None = None) -> dict:
     """운영 보관본 · 재생 안들을 실제 스코어와 견준다.
 
-    세는 것은 **정확 스코어 적중**과, 운영 보관본 대비 사회자 스코어가 바뀐
-    경기 수다. baseline 의 바뀐 수가 곧 같은 프롬프트로 다시 돌렸을 때의
+    세는 것은 **승무패 방향 적중**(주 지표) · **정확 스코어 적중**과, 운영
+    보관본 대비 사회자 스코어가 바뀐 경기 수다. baseline 의 바뀐 수가 곧 같은 프롬프트로 다시 돌렸을 때의
     흔들림(잡음 바닥)이다.
     """
     sources = {"stored": {rid: read_scores(rid, stored_base) for rid in rounds}}
@@ -478,9 +504,13 @@ def score(rounds, variants, root: Path, *, actual_path: Path | None = None,
 
     actual = {rid: actual_scores(rid, actual_path) for rid in rounds}
     fits, skipped = market_fits(rounds, actual_path)
+    favorites = market_favorites(rounds, actual_path)
     table = {}
     for name, per_round in sources.items():
         row = {"n": 0, "hits": {"a": 0, "b": 0, "c": 0},
+               "dir_hits": {"a": 0, "b": 0, "c": 0},
+               "draws": {"a": 0, "b": 0, "c": 0},
+               "draw_hits": {"a": 0, "b": 0, "c": 0},
                "missing": {"a": 0, "b": 0, "c": 0},
                "changed_c_vs_stored": 0, "compared_c": 0,
                "c_scores": Counter(),
@@ -500,6 +530,11 @@ def score(rounds, variants, root: Path, *, actual_path: Path | None = None,
                         continue
                     if s == real:
                         row["hits"][k] += 1
+                    same = direction(s) == direction(real)
+                    row["dir_hits"][k] += int(same)
+                    if direction(s) == "D":
+                        row["draws"][k] += 1
+                        row["draw_hits"][k] += int(same)
                     if fit is not None:
                         row["expected"][k] += score_probability(
                             fit[0], fit[1], s[0], s[1])
@@ -512,10 +547,19 @@ def score(rounds, variants, root: Path, *, actual_path: Path | None = None,
                     row["compared_c"] += 1
                     row["changed_c_vs_stored"] += int(c != s0)
         table[name] = row
-    mode = {"expected": 0.0, "hits": 0, "n": 0, "scores": Counter()}
+    mode = {"expected": 0.0, "hits": 0, "n": 0, "scores": Counter(),
+            "dir_hits": 0, "draws": 0, "draw_hits": 0}
+    pick = {"n": 0, "dir_hits": 0, "draws": 0, "draw_hits": 0}
     errs = []
     for rid in rounds:
         for no, real in actual[rid].items():
+            fav = favorites.get((str(rid), no))
+            if fav is not None:
+                pick["n"] += 1
+                pick["dir_hits"] += int(fav == direction(real))
+                if fav == "D":
+                    pick["draws"] += 1
+                    pick["draw_hits"] += int(fav == direction(real))
             fit = fits.get((str(rid), no))
             if fit is None:
                 continue
@@ -524,8 +568,13 @@ def score(rounds, variants, root: Path, *, actual_path: Path | None = None,
             mode["hits"] += int([h, a] == real)
             mode["n"] += 1
             mode["scores"][f"{h}-{a}"] += 1
+            same = direction([h, a]) == direction(real)
+            mode["dir_hits"] += int(same)
+            if h == a:
+                mode["draws"] += 1
+                mode["draw_hits"] += int(same)
             errs.append(fit[2])
-    market = {"mode": mode, "fitted": len(errs),
+    market = {"mode": mode, "pick": pick, "fitted": len(errs),
               "fit_error_mean": (sum(errs) / len(errs)) if errs else None,
               "fit_error_max": max(errs) if errs else None,
               "skipped": skipped}
@@ -541,9 +590,41 @@ def score(rounds, variants, root: Path, *, actual_path: Path | None = None,
                 "packet_sha256", "") for (v, rid), m in meta.items()}}
 
 
+def direction_lines(result: dict) -> list:
+    """승/무/패 방향 적중 — **주 지표** (2026-10-30 사용자 결정).
+
+    스코어가 실제 결과와 같은 방향(홈승·무·원정승)이었나를 센다. 무승부
+    스코어를 몇 번 냈고 그중 몇 번 맞았는지를 함께 적는다 — 무승부로 쏠리면
+    방향 적중이 떨어지는 것을 숫자로 보이려는 것이다.
+    """
+    lines = ["승무패 방향 적중 (주 지표) — 적중/경기 · 무승부 스코어 낸 수(적중)",
+             f"{'출처':<10}{'A':>16}{'B':>16}{'C':>16}"]
+
+    def cell(row: dict, k: str | None, n: int) -> str:
+        hits = row["dir_hits"] if k is None else row["dir_hits"][k]
+        draws = row["draws"] if k is None else row["draws"][k]
+        dh = row["draw_hits"] if k is None else row["draw_hits"][k]
+        return f"{hits}/{n} · 무{draws}({dh})" if n else "없음"
+
+    for name, row in result["table"].items():
+        lines.append(f"{name:<10}" + "".join(
+            f"{cell(row, k, row['n'] - row['missing'][k]):>16}"
+            for k in ("a", "b", "c")))
+    market = result.get("market") or {}
+    pick, mode = market.get("pick") or {}, market.get("mode") or {}
+    if pick.get("n"):
+        lines.append(f"{'시장 pick':<10}{cell(pick, None, pick['n']):>16}"
+                     "   (시장 확률이 가장 높은 결과 · 추천이 아니다)")
+    if mode.get("n"):
+        lines.append(f"{'시장 최빈':<10}{cell(mode, None, mode['n']):>16}")
+    return lines
+
+
 def score_lines(result: dict) -> list:
     lines = [f"회차 {', '.join(result['rounds'])} · 정산된 경기 "
              f"{sum(result['actual_matches'].values())}"]
+    lines += direction_lines(result)
+    lines.append("정확 스코어 적중")
     lines.append(f"{'출처':<10}{'A 적중':>8}{'B 적중':>8}{'C 적중':>8}"
                  f"{'C 바뀜(vs 운영)':>18}   C 스코어 상위")
     for name, row in result["table"].items():
@@ -610,7 +691,7 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--out", default=None, help="재생 폴더 (저장소 밖)")
     run.add_argument("--dry-run", action="store_true",
                      help="준비 점검만 · 모델을 부르지 않는다")
-    sc = sub.add_parser("score", help="정확 스코어 적중을 센다 ($0)")
+    sc = sub.add_parser("score", help="승무패 방향·정확 스코어 적중을 센다 ($0)")
     sc.add_argument("--rounds", nargs="+", required=True)
     sc.add_argument("--variants", nargs="+", required=True)
     sc.add_argument("--out", default=None)

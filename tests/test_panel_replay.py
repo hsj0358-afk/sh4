@@ -542,6 +542,37 @@ def test_f5_expected_hits_sum_and_missing_market_is_not_zero():
     assert "기대 적중" in text and "시장 최빈" in text and "뺌" in text
 
 
+def test_f8_direction_hits_are_counted_first():
+    """방향 적중이 주 지표다 — 무승부 스코어 수와 함께 맨 앞에 나온다."""
+    rid = "990032"
+    root, stored, d = tmp(), tmp(), tmp()
+    actual = d / "round_matches.csv"
+    _write_market(actual, rid, {
+        1: ((2, 0), _probs(2.0, 0.8), "2026-09-19 10:00"),   # 시장 H · 실제 H
+        2: ((0, 0), _probs(1.0, 1.0), "2026-09-19 10:00"),   # 시장 H(근소) · 실제 D
+        3: ((0, 2), _probs(0.7, 1.9), "2026-09-19 10:00")})  # 시장 A · 실제 A
+    rep = R.round_base(root, "v1", rid)
+    rep.mkdir(parents=True)
+    (rep / R.RESULT_FILE).write_text(json.dumps({"scores": {
+        "1": {"a": [1, 0], "b": [1, 1], "c": [1, 1]},
+        "2": {"a": [2, 1], "b": [1, 1], "c": [0, 0]},
+        "3": {"a": [1, 2], "b": [1, 1], "c": [0, 1]}}}), encoding="utf-8")
+    got = R.score([rid], ["v1"], root, actual_path=actual, stored_base=stored)
+    v = got["table"]["v1"]
+    assert v["dir_hits"] == {"a": 2, "b": 1, "c": 2}
+    assert v["draws"] == {"a": 0, "b": 3, "c": 2}
+    assert v["draw_hits"] == {"a": 0, "b": 1, "c": 1}
+    assert v["hits"]["c"] == 1                       # 정확 스코어는 따로 센다
+    pick = got["market"]["pick"]
+    assert pick["n"] == 3 and pick["dir_hits"] == 2
+    lines = R.score_lines(got)
+    head = next(i for i, x in enumerate(lines) if "승무패 방향 적중" in x)
+    exact = next(i for i, x in enumerate(lines) if x == "정확 스코어 적중")
+    assert head < exact
+    assert any(x.startswith("시장 pick") and "2/3" in x for x in lines)
+    assert R.direction(None) is None and R.direction([1, 1]) == "D"
+
+
 def test_f6_no_market_rows_says_so():
     rid = "990031"
     root, d = tmp(), tmp()

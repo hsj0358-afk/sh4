@@ -120,9 +120,11 @@ def load_champion(path: Path | None = None) -> dict | None:
 
 def champion_id(candidate: dict) -> str:
     import hashlib
-    raw = json.dumps({k: candidate.get(k) for k in
-                      ("kind", "engines", "features", "l2", "per_league", "window")},
-                     sort_keys=True)
+    keys = ("kind", "engines", "features", "l2", "per_league", "window")
+    picked = {k: candidate.get(k) for k in keys}
+    if candidate.get("train_from"):          # 기본값이면 싣지 않는다 — 옛 id 가 그대로다
+        picked["train_from"] = candidate["train_from"]
+    raw = json.dumps(picked, sort_keys=True)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
 
 
@@ -191,7 +193,7 @@ def build_state(cand, rows, stack: stacker.Stacker | None = None) -> tuple:
     engines, feats = replay_engines(cand.engines, rows)
     notes = []
     if stack is None:
-        lo = arena.TRAIN_FROM
+        lo = cand.train_from or arena.TRAIN_FROM
         if cand.window:
             lo = max(lo, arena.fyear(rows[-1].date) - cand.window)
         X, y, lg = [], [], []
@@ -231,22 +233,63 @@ def save_state(state: dict, path: Path | None = None) -> None:
     _write_json(path or STATE_FILE, state)
 
 
-def refresh_state(rows, base: dict | None = None,
-                  out_path: Path | None = None) -> tuple:
-    """출력층은 그대로 두고 엔진만 최신 기록으로 다시 굴린다 (numpy 없이)."""
-    base = base or _read_json(STATE_FILE)
-    if not base:
-        return None, REASON_NO_STATE
-    champ = load_champion()
-    if champ is None:
-        return None, "챔피언 기록 없음"
-    from .arena import Candidate
+# football-data 의 진행 중 시즌 파일이 주는 칸 (2026/27 은 xG 까지 있다)
+FD_COLUMNS = {"hg", "ag", "hs", "as_", "hst", "ast", "hxg", "axg"}
 
-    cand = Candidate.from_dict(champ["candidate"])
-    stack = stacker.Stacker.from_dict(base["stacker"])
-    state, notes = build_state(cand, rows, stack=stack)
-    save_state(state, out_path or FRESH_STATE_FILE)
-    return state, "; ".join(notes)
+
+# 경기 상세의 명단(선발 · 결장 · 시장가치 · 감독)을 읽는 엔진 — FotMob 에만 있다.
+LINEUP_KINDS = ("ply",)
+
+
+def _engine_columns(spec: dict) -> set:
+    if spec.get("kind") == "dp":
+        cols = set(ratings.STAT_COLUMNS[spec["stat"]][:2])
+        if spec.get("mix"):
+            cols |= {"hxg_fotmob"}      # 득점 엔진이 xG 를 섞는다 — 지난 시즌 xG 는 FotMob 뿐
+        return cols
+    if spec.get("kind") == "lin":
+        return set(ratings.LIN_COLUMNS[spec["stat"]])
+    if spec.get("kind") in LINEUP_KINDS:
+        return {"lineup"}
+    if spec.get("kind") == "pi" and spec.get("mix"):
+        return {"hg", "ag", "hxg_fotmob"}
+    return {"hg", "ag"}
+
+
+def needs_fotmob(candidate: dict) -> bool:
+    """챔피언 엔진 중 FotMob 경기 상세에만 있는 칸을 배우는 것이 있나 (§1-68)."""
+    cols = set()
+    for spec in candidate.get("engines") or []:
+        cols |= _engine_columns(spec)
+    return bool(cols - FD_COLUMNS)
+
+
+def advance_state(state: dict, rows) -> tuple:
+    """상태 이후의 경기만 덧붙여 배운다 → (새 상태, 배운 경기 수).
+
+    과거 전체를 다시 굴리지 않는다 — 사용자 PC 에 과거 기록이 없어도 된다.
+    출력층(계수)은 그대로다. 새로 나타난 팀(승격)은 정규명 표에 더한다.
+    """
+    through = date.fromisoformat(state["data_through"])
+    leagues = set(state["teams"])
+    new = [m for m in rows if m.date > through and m.league in leagues]
+    new.sort(key=lambda m: (m.date, m.league, m.home, m.away))
+    if not new:
+        return state, 0
+    engines = [ratings.Engine.from_state(s) for s in state["engines"]]
+    ratings.replay(new, engines)
+    mapping, _missing = team_map(new)
+    teams = {lg: dict(v) for lg, v in state["teams"].items()}
+    for lg, mp in mapping.items():
+        if lg in teams:
+            teams[lg].update(mp)
+    league_last = dict(state["league_last"])
+    for m in new:
+        league_last[m.league] = max(league_last.get(m.league, ""), m.date.isoformat())
+    out = dict(state, engines=[e.state() for e in engines], teams=teams,
+               league_last=league_last,
+               data_through=max(m.date for m in new).isoformat())
+    return out, len(new)
 
 
 _CACHE = {}
@@ -384,24 +427,48 @@ def for_match(match, report=None) -> tuple:
 
 
 def update(refresh: bool = True) -> str:
-    """과거 기록의 진행 중 시즌을 다시 받고 엔진 상태를 굴린다 → 상태 문자열 (§1-6).
+    """진행 중 시즌의 결과를 받아 챔피언 상태에 덧붙인다 → 상태 문자열 (§1-6).
 
-    출력층은 그대로 쓴다(numpy 없이 돈다). 실패해도 리포트는 커밋된 상태와
-    시즌 색인으로 그대로 돈다 — 이 단계가 실행을 죽이지 않는다.
+    커밋된 상태(`data/model/champion_state.json`)에서 **그 뒤 경기만** 배운다 —
+    과거 전체를 받지 않는다. 출력층은 그대로다(numpy 없이 돈다). FotMob 이
+    필요한 챔피언이면(§1-68) 진행 중 시즌의 경기 상세만 받고, 못 받으면
+    football-data 만으로 간다. 실패해도 리포트는 커밋된 상태와 시즌 색인으로
+    돈다 — 이 단계가 실행을 죽이지 않는다.
     """
-    if load_champion() is None:
+    champ = load_champion()
+    if champ is None:
         return "생략 (챔피언 없음)"
-    if _read_json(STATE_FILE) is None:
+    base = load_state() or _read_json(STATE_FILE)
+    if not base:
         return f"생략 ({REASON_NO_STATE})"
     from . import history
 
-    got = history.fetch(refresh=refresh)
-    rows, _missing = history.load()
+    first = history.current_season_start() - 1
+    seasons = history.season_codes(first)
+    got = history.fetch(seasons=seasons, refresh=refresh)
+    rows, _missing = history.load(seasons=seasons)
+    notes = []
+    if got["failed"]:
+        notes.append(f"football-data 실패 {len(got['failed'])}")
+    if needs_fotmob(champ["candidate"]) or "kleague1" in base["teams"]:
+        from . import fmhistory
+        try:
+            # 상태 이후 경기만 배우지만, football-data 와 잇는 이름 투표(팀당 3표)에
+            # 경기가 몇 주치 있어야 하므로 5주 전부터 받는다. 받은 것은 캐시에 남는다.
+            since = date.fromisoformat(base["data_through"]) - timedelta(days=35)
+            fm = fmhistory.fetch(leagues=[lg for lg in fmhistory.LEAGUES
+                                          if lg in base["teams"]],
+                                 latest_only=True, log_fn=lambda *_: None, since=since)
+            rows, _ = fmhistory.combined(rows, fmhistory.load())
+            if fm.get("failed"):
+                notes.append(f"FotMob 실패 {fm['failed']}경기")
+        except Exception as e:                       # noqa: BLE001
+            notes.append(f"FotMob 실패 ({type(e).__name__})")
     if not rows:
-        return "실패 (과거 기록을 읽지 못함)"
-    state, why = refresh_state(rows)
-    if state is None:
-        return f"실패 ({why})"
-    fails = len(got["failed"])
-    tail = f" · 받기 실패 {fails}" if fails else ""
-    return f"ok (자료 {state['data_through']}까지 · 받음 {got['ok']}{tail})"
+        return "실패 (진행 중 시즌 기록을 읽지 못함)"
+    state, n = advance_state(base, rows)
+    if state["champion"] != champ.get("id"):
+        return "실패 (상태가 지금 챔피언 것이 아님)"
+    save_state(state, FRESH_STATE_FILE)
+    tail = f" · {' · '.join(notes)}" if notes else ""
+    return f"ok (자료 {state['data_through']}까지 · 새 경기 {n}{tail})"

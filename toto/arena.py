@@ -83,18 +83,22 @@ class Candidate:
     window: int = 0                 # 출력층 학습 기간(시즌). 0 = 처음부터
     track: str = "independent"      # independent · market
     options: dict = field(default_factory=dict)
+    train_from: int = 0             # 출력층 학습 첫 시즌. 0 = TRAIN_FROM (xG 시대는 2021)
 
     def to_dict(self) -> dict:
-        return {"name": self.name, "kind": self.kind, "engines": self.engines,
-                "features": self.features, "l2": self.l2,
-                "per_league": self.per_league, "window": self.window,
-                "track": self.track, "options": self.options}
+        d = {"name": self.name, "kind": self.kind, "engines": self.engines,
+             "features": self.features, "l2": self.l2,
+             "per_league": self.per_league, "window": self.window,
+             "track": self.track, "options": self.options}
+        if self.train_from:
+            d["train_from"] = self.train_from
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "Candidate":
         return cls(**{k: d[k] for k in ("name", "kind", "engines", "features",
                                          "l2", "per_league", "window", "track",
-                                         "options") if k in d})
+                                         "options", "train_from") if k in d})
 
 
 # --------------------------------------------------------------------------
@@ -168,8 +172,9 @@ def _years_of(rows):
     return [fyear(m.date) for m in rows]
 
 
-def _train_years(year: int, window: int) -> tuple:
-    lo = TRAIN_FROM if not window else max(TRAIN_FROM, year - window)
+def _train_years(year: int, window: int, train_from: int = 0) -> tuple:
+    first = train_from or TRAIN_FROM
+    lo = first if not window else max(first, year - window)
     return lo, year
 
 
@@ -200,7 +205,7 @@ def _walk_stack(rows, X, cand, years, keep_models=None) -> list:
     yrs = _years_of(rows)
     out = [None] * len(rows)
     for year in sorted(set(years)):
-        lo, hi = _train_years(year, cand.window)
+        lo, hi = _train_years(year, cand.window, cand.train_from)
         tr = [i for i, y in enumerate(yrs) if lo <= y < hi and X[i] is not None]
         if len(tr) < 200:
             continue
@@ -232,7 +237,7 @@ def _walk_sklearn(rows, X, cand, years) -> list:
     leagues = sorted({m.league for m in rows})
     out = [None] * len(rows)
     for year in sorted(set(years)):
-        lo, hi = _train_years(year, cand.window)
+        lo, hi = _train_years(year, cand.window, cand.train_from)
         tr = [i for i, y in enumerate(yrs) if lo <= y < hi and X[i] is not None]
         te = [i for i, y in enumerate(yrs) if y == year and X[i] is not None]
         if len(tr) < 200 or not te:
@@ -500,6 +505,15 @@ SPACE = {
               "eta_g": [0.0, 0.001, 0.002, 0.005, 0.01],
               "carry": [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]},
 }
+# xG 시대 (§1-68) — FotMob 경기 상세의 값. 득점과 같은 온라인 포아송이다.
+for _fam in ("linxgd", "linrat"):
+    SPACE[_fam] = {"k": [0.01, 0.02, 0.03, 0.05, 0.08, 0.12, 0.18],
+                   "hfa_lr": [0.0, 0.001, 0.003, 0.01],
+                   "carry": [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]}
+for _fam in ("xg", "npxg", "xgot", "bigch", "touch"):
+    SPACE[_fam] = {"eta": [0.01, 0.015, 0.02, 0.03, 0.04, 0.05, 0.07, 0.1],
+                   "eta_g": [0.0, 0.001, 0.002, 0.005, 0.01],
+                   "carry": [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]}
 
 # 엔진 하나만으로 잴 때 쓰는 특징.
 SOLO_FEATURES = {
@@ -508,17 +522,34 @@ SOLO_FEATURES = {
     "goals": ["goals_diff", "goals_sum", "abs:goals_diff"],
     "sot": ["sot_diff", "sot_sum", "abs:sot_diff"],
     "shots": ["shots_diff", "shots_sum", "abs:shots_diff"],
+    "xg": ["xg_diff", "xg_sum", "abs:xg_diff"],
+    "npxg": ["npxg_diff", "npxg_sum", "abs:npxg_diff"],
+    "xgot": ["xgot_diff", "xgot_sum", "abs:xgot_diff"],
+    "bigch": ["bigch_diff", "bigch_sum", "abs:bigch_diff"],
+    "touch": ["touch_diff", "touch_sum", "abs:touch_diff"],
+    "linxgd": ["xgd_m", "abs:xgd_m"],
+    "linrat": ["rating_m", "abs:rating_m"],
 }
 
 
+DP_FAMILIES = ("goals", "sot", "shots", "xg", "npxg", "xgot", "bigch", "touch")
+LIN_FAMILIES = {"linxgd": "xgd", "linrat": "rating", "lingd": "gd"}
+
+
 def make_spec(family: str, params: dict) -> dict:
-    if family in ("goals", "sot", "shots"):
+    if family in DP_FAMILIES:
         return {"kind": "dp", "stat": family, **params}
+    if family in LIN_FAMILIES:
+        return {"kind": "lin", "stat": LIN_FAMILIES[family], **params}
     return {"kind": family, **params}
 
 
 def family_of(spec: dict) -> str:
-    return spec["stat"] if spec["kind"] == "dp" else spec["kind"]
+    if spec["kind"] == "dp":
+        return spec["stat"]
+    if spec["kind"] == "lin":
+        return {v: k for k, v in LIN_FAMILIES.items()}[spec["stat"]]
+    return spec["kind"]
 
 
 def solo(spec: dict, name: str = "") -> Candidate:
@@ -528,13 +559,14 @@ def solo(spec: dict, name: str = "") -> Candidate:
 
 
 def dev_logloss(cand: Candidate, store: FeatureStore, years=DEV_YEARS) -> float:
-    probs = predict(cand, store, years)
+    probs = predict(cand, store, tuple(years))
     s = score(store.rows, probs, index_of(store.rows, years))
     return s.get("logloss", float("inf"))
 
 
 def search_engine(family: str, store: FeatureStore, n_random: int = 24,
-                  seed: int = 0, log=print) -> tuple:
+                  seed: int = 0, log=print, years=DEV_YEARS,
+                  train_from: int = 0, keep=()) -> tuple:
     """무작위 탐색 → 국소 개선. (최고 spec, 개발 log loss, 시도 기록)."""
     space = SPACE[family]
     rng = random.Random(f"{family}-{seed}")
@@ -544,8 +576,11 @@ def search_engine(family: str, store: FeatureStore, n_random: int = 24,
         spec = make_spec(family, params)
         key = spec_key(spec)
         if key not in tried:
-            tried[key] = (dev_logloss(solo(spec), store), spec)
-            store.drop([v[1] for v in sorted(tried.values(), key=lambda t: t[0])[:1]])
+            cand = solo(spec)
+            cand.train_from = train_from
+            tried[key] = (dev_logloss(cand, store, years), spec)
+            store.drop([v[1] for v in sorted(tried.values(), key=lambda t: t[0])[:1]]
+                       + list(keep))
         return tried[key][0]
 
     default = make_spec(family, {})
@@ -589,3 +624,119 @@ def stack_of(names, specs, name=None, **kw) -> Candidate:
         feats.extend(SOLO_FEATURES[n])
     return Candidate(name=name or "stack:" + "+".join(names), kind="stack",
                      engines=[specs[n] for n in names], features=feats, **kw)
+
+
+# --------------------------------------------------------------------------
+# 확장 탐색 (§1-68) — 현 챔피언에 엔진을 하나씩 더해 본다
+# --------------------------------------------------------------------------
+# FotMob 경기 상세(xG · 명단)는 2020/21 부터다. 그래서 고르는 구간을 2019~2022
+# 축구 연도로, 게이팅 구간을 2023~ 으로 둔다. 출력층은 여전히 2002/03~ 전체로
+# 배운다 — 새 특징이 없는 시즌에는 0 이고, 그 계수는 값이 있는 경기에서만
+# 움직인다.
+EXTEND_DEV = (2019, 2020, 2021, 2022)
+EXTEND_HOLD_FROM = 2023
+TABLE_FEATURES = ["tbl_st_diff", "tbl_lst_diff", "tbl_top_diff", "tbl_eur_diff",
+                  "tbl_rel_diff", "tbl_dead_sum"]
+
+
+def _dp(stat, eta, carry=0.9, eta_g=0.002, **kw) -> dict:
+    return {"kind": "dp", "stat": stat, "eta": eta, "eta_g": eta_g,
+            "carry": carry, **kw}
+
+
+def extend_library() -> list:
+    """[(가족, 이름, 더할 엔진, 더할 특징, mix 바꾸기 또는 None)].
+
+    mix 칸: 숫자면 득점 엔진(tag 없는 dp goals)의 mix, ('pi', 값) 이면 pi-rating 의 mix.
+    """
+    lib = []
+    for mix in (0.5, 0.75, 1.0):
+        lib.append(("mix", f"mix{mix:g}", [], [], mix))
+    for mix in (0.5, 1.0):
+        lib.append(("pimix", f"pimix{mix:g}", [], [], ("pi", mix)))
+    for eta in (0.04, 0.06, 0.1):
+        lib.append(("fast", f"fast{eta:g}", [_dp("goals", eta, mix=1.0, tag="gf")],
+                    ["gf_diff"], None))
+    for eta in (0.005, 0.008):
+        lib.append(("slow", f"slow{eta:g}",
+                    [_dp("goals", eta, carry=0.95, mix=1.0, tag="gs")], ["gs_diff"], None))
+    for slack in (0.0, 3.0, 6.0):
+        lib.append(("tbl", f"tbl{slack:g}",
+                    [{"kind": "tbl", "rel": 3, "eur": 4, "slack": slack}],
+                    list(TABLE_FEATURES), None))
+    for k in (0.006, 0.012, 0.02, 0.03):
+        lib.append(("ply", f"ply{k:g}", [{"kind": "ply", "k": k}], ["ply_diff"], None))
+    for k in (0.012, 0.02):
+        lib.append(("ply", f"ply{k:g}+q", [{"kind": "ply", "k": k}],
+                    ["ply_diff", "plyq_diff"], None))
+    for fam in ("xg", "npxg", "xgot", "bigch", "touch"):
+        for eta in (0.02, 0.04, 0.07):
+            lib.append((fam, f"{fam}{eta:g}", [_dp(fam, eta)],
+                        list(SOLO_FEATURES[fam]), None))
+    for fam, stat in (("linxgd", "xgd"), ("linrat", "rating")):
+        for k in (0.03, 0.06, 0.12):
+            lib.append((fam, f"{fam}{k:g}",
+                        [{"kind": "lin", "stat": stat, "k": k, "carry": 0.8,
+                          "hfa_lr": 0.001}], list(SOLO_FEATURES[fam]), None))
+    for eta in (0.03, 0.05, 0.1):
+        lib.append(("sot", f"sot{eta:g}", [_dp("sot", eta)], list(SOLO_FEATURES["sot"]),
+                    None))
+    lib.append(("elo", "elo", [{"kind": "elo", "k": 20, "hfa": 60, "carry": 0.8,
+                                "gd": "log"}], list(SOLO_FEATURES["elo"]), None))
+    return lib
+
+
+def extend(cand: Candidate, entry) -> Candidate:
+    """후보에 라이브러리 항목 하나를 더한 새 후보."""
+    fam, label, engines, feats, mix = entry
+    out = Candidate.from_dict(cand.to_dict())
+    if mix is not None:
+        # 숫자 하나 = 득점 엔진의 mix · ('pi', 값) = pi-rating 의 mix
+        kind, value = mix if isinstance(mix, tuple) else ("dp", mix)
+        new = []
+        for spec in out.engines:
+            if (spec.get("kind") == kind and not spec.get("tag")
+                    and (kind != "dp" or spec.get("stat") == "goals")):
+                spec = {k: v for k, v in spec.items() if k != "mix"}
+                if value:
+                    spec["mix"] = value
+            new.append(spec)
+        out.engines = new
+    out.engines = out.engines + [dict(e) for e in engines]
+    out.features = out.features + [f for f in feats if f not in out.features]
+    out.name = f"{cand.name}+{label}"
+    return out
+
+
+def forward_select(base: Candidate, store: FeatureStore, years=EXTEND_DEV,
+                   min_gain: float = 0.0003, max_steps: int = 8, log=print,
+                   library=None) -> tuple:
+    """가족마다 한 번씩만 더한다. 매 단계 개발 log loss 를 가장 줄이는 항목을 고른다.
+
+    → (최종 후보, 단계 기록 [(이름, 개발 log loss)], 시도 기록).
+    """
+    library = list(library if library is not None else extend_library())
+    current, cur_ll = base, dev_logloss(base, store, years)
+    steps = [(base.name, cur_ll)]
+    tried = []
+    used = set()
+    log(f"  출발: {base.name} → {cur_ll:.5f}")
+    for step in range(max_steps):
+        best = None
+        for entry in library:
+            if entry[0] in used:
+                continue
+            cand = extend(current, entry)
+            ll = dev_logloss(cand, store, years)
+            tried.append({"step": step + 1, "entry": entry[1], "dev_logloss": ll})
+            if best is None or ll < best[0]:
+                best = (ll, entry, cand)
+        if best is None or best[0] > cur_ll - min_gain:
+            log(f"  {step + 1}단계: 더할 것 없음 (최고 {best[1][1] if best else '-'} "
+                f"{best[0] if best else float('nan'):.5f})")
+            break
+        cur_ll, current = best[0], best[2]
+        used.add(best[1][0])
+        steps.append((best[1][1], cur_ll))
+        log(f"  {step + 1}단계: +{best[1][1]} → {cur_ll:.5f}")
+    return current, steps, tried

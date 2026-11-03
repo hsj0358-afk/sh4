@@ -32,10 +32,14 @@ sys.path.insert(0, str(ROOT))
 
 from toto import arena as A          # noqa: E402
 from toto import champion as C       # noqa: E402
+from toto import fmhistory as FH     # noqa: E402
 from toto import history as H        # noqa: E402
 
 RESULT_FILE = ROOT / "data" / "model" / "arena_result.json"
 REPORT_FILE = ROOT / "docs" / "model_arena.md"
+EXTEND_RESULT_FILE = ROOT / "data" / "model" / "arena_extend_result.json"
+EXTEND_REPORT_FILE = ROOT / "docs" / "model_arena_extend.md"
+
 RUNTIME_KINDS = ("stack",)            # 리포트 경로(순수 파이썬)에서 돌 수 있는 종류
 
 
@@ -256,7 +260,8 @@ def cmd_promote(args, rows=None) -> int:
     게이팅을 통과했고, 그 `run` 이 견준 현 챔피언이 **지금도** 같을 때만.
     그 사이에 챔피언이 바뀌었으면 결과가 낡았으므로 거부한다.
     """
-    result = C._read_json(RESULT_FILE)
+    result = C._read_json(EXTEND_RESULT_FILE if getattr(args, "extend", False)
+                          else RESULT_FILE)
     if not result:
         log("경기장 결과가 없습니다 — 먼저 run 을 돌리십시오")
         return 2
@@ -279,13 +284,132 @@ def cmd_promote(args, rows=None) -> int:
     return cmd_export(args, rows=rows)
 
 
+def load_xg_rows(log=print) -> tuple:
+    """football-data 기록 + FotMob 경기 상세(xG 등) + K리그1(FotMob 만)."""
+    rows, _ = H.load()
+    return FH.combined(rows, FH.load(), log_fn=log)
+
+
+def cmd_fetch_fotmob(args) -> int:
+    out = FH.fetch(leagues=args.leagues or None, workers=args.workers,
+                   delay=args.delay, limit=args.limit)
+    log(f"FotMob: {out}")
+    return 0
+
+
+def cmd_extend(args) -> int:
+    """확장 탐색 — 현 챔피언에 새 엔진(xG · 순위표 · 선수 · 시간척도)을 하나씩 더한다 (§1-68).
+
+    고르기: 2019~2022 축구 연도 (FotMob 경기 상세가 있는 첫 시즌들).
+    게이팅: 2023~ — 고를 때 쓰지 않은 구간에서 현 챔피언과 같은 경기로 견준다.
+    """
+    t0 = time.time()
+    incumbent = C.load_champion()
+    if incumbent is None:
+        log("챔피언이 없습니다 — 먼저 run → promote 로 기준 챔피언을 만드십시오")
+        return 2
+    rows, join = load_xg_rows(log)
+    store = A.FeatureStore(rows)
+    dev = A.EXTEND_DEV
+    hold = tuple(range(A.EXTEND_HOLD_FROM, A.fyear(rows[-1].date) + 1))
+    base = A.Candidate.from_dict(incumbent["candidate"])
+    base.name = "incumbent"
+    log(f"경기 {len(rows):,} · 리그 {sorted({m.league for m in rows})} · xG 있는 경기 "
+        f"{sum(1 for m in rows if m.hxg is not None):,} · 명단 있는 경기 "
+        f"{sum(1 for m in rows if m.lineup):,} · 연결 {join}")
+
+    log(f"\n[1] 앞으로 고르기 (개발 {dev[0]}~{dev[-1]})")
+    chosen, steps, tried = A.forward_select(base, store, years=dev,
+                                            max_steps=args.max_steps, log=log)
+
+    log("\n[2] 출력층 설정")
+    stack_best = None
+    for l2 in (30.0, 100.0, 300.0):
+        for per_league in (True, False):
+            c = A.Candidate.from_dict(chosen.to_dict())
+            c.l2, c.per_league = l2, per_league
+            c.name = f"{chosen.name}[l2={l2:g},lg={int(per_league)}]"
+            ll = A.dev_logloss(c, store, dev)
+            log(f"  {c.name[-24:]:<24} {ll:.5f}")
+            if stack_best is None or ll < stack_best[0]:
+                stack_best = (ll, c)
+    challenger = stack_best[1]
+    challenger.name = "challenger:" + challenger.name
+    log(f"\n도전자: {challenger.name}\n  엔진 {[A.family_of(e) for e in challenger.engines]}"
+        f"\n  특징 {challenger.features}")
+
+    log(f"\n[3] 검증 구간 {hold[0]}/{hold[0] + 1 - 2000:02d} ~ (고를 때 쓰지 않았다)")
+    market = A.Candidate("market-pinnacle", "market", track="market",
+                         options={"odds": "open"})
+    finals = {"challenger": challenger, "incumbent": base, "market-pinnacle": market,
+              "base": A.Candidate("base", "base")}
+    hidx = A.index_of(rows, hold)
+    hprobs, hold_scores = {}, {}
+    for key, cand in finals.items():
+        hprobs[key] = A.predict(cand, store, hold)
+        hold_scores[key] = A.score(rows, hprobs[key], hidx)
+        log(f"  {key:<28} {_fmt(hold_scores[key])}")
+    midx = [i for i in hidx if hprobs["market-pinnacle"][i] is not None]
+    on_market = {k: A.score(rows, hprobs[k], midx) for k in finals}
+    log(f"  시장 배당이 있는 {len(midx):,}경기에서:")
+    for k, sc in on_market.items():
+        log(f"    {k:<26} {_fmt(sc)}")
+    per_league = {}
+    for lg in sorted({m.league for m in rows}):
+        li = A.index_of(rows, hold, leagues={lg})
+        per_league[lg] = {k: A.score(rows, hprobs[k], li) for k in finals}
+
+    log("\n[4] 짝 비교 (A − B · 양수면 B 가 낫다 · 날짜 부트스트랩)")
+    comps = {}
+    for a, b, idx in (("incumbent", "challenger", hidx),
+                      ("market-pinnacle", "challenger", midx),
+                      ("market-pinnacle", "incumbent", midx)):
+        r = A.compare(rows, hprobs[a], hprobs[b], idx)
+        comps[f"{a} → {b}"] = r
+        if r.get("n"):
+            log(f"  {a:>18} → {b:<11} n={r['n']:>5}  Δlogloss {r['d_logloss']:+.4f} "
+                f"[{r['d_logloss_ci'][0]:+.4f}, {r['d_logloss_ci'][1]:+.4f}]  "
+                f"Δ적중 {r['d_accuracy'] * 100:+.2f}%p  P(B 우위) {r['p_b_better']:.3f}")
+    gate_result = comps["incumbent → challenger"]
+    passed = A.gate(gate_result)
+    log(f"\n게이팅 (현 챔피언 → 도전자): {'통과' if passed else '실패'} "
+        f"(P {gate_result.get('p_b_better', 0):.3f}, 기준 0.95)")
+    result = {
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "era": "extend",
+        "data": {"matches": len(rows), "first": str(rows[0].date),
+                 "last": str(rows[-1].date),
+                 "leagues": sorted({m.league for m in rows}),
+                 "xg_matches": sum(1 for m in rows if m.hxg is not None),
+                 "lineup_matches": sum(1 for m in rows if m.lineup),
+                 "join": join, "dev_years": [dev[0], dev[-1]],
+                 "holdout_years": [hold[0], hold[-1]]},
+        "steps": [{"added": n, "dev_logloss": v} for n, v in steps],
+        "tried": tried, "challenger": challenger.to_dict(),
+        "holdout": hold_scores, "holdout_on_market": on_market,
+        "market_matches": len(midx), "holdout_per_league": per_league,
+        "comparisons": comps,
+        "gate": {"against": "incumbent", "passed": passed, **gate_result},
+        "incumbent_id": incumbent.get("id"),
+        "seconds": round(time.time() - t0, 1),
+    }
+    EXTEND_RESULT_FILE.write_text(json.dumps(result, ensure_ascii=False, indent=1) + "\n",
+                                  encoding="utf-8", newline="\n")
+    EXTEND_REPORT_FILE.write_text(render_extend_report(result), encoding="utf-8",
+                                  newline="\n")
+    log(f"\n결과 → {EXTEND_RESULT_FILE.relative_to(ROOT)} · "
+        f"{EXTEND_REPORT_FILE.relative_to(ROOT)} · {time.time() - t0:.0f}초")
+    return 0
+
+
 def cmd_export(args, rows=None) -> int:
     champ = C.load_champion()
     if champ is None:
         log("챔피언이 없습니다 — run --promote 를 먼저 돌리십시오")
         return 2
-    if rows is None:
-        rows, _ = H.load()
+    if rows is None or C.needs_fotmob(champ["candidate"]):
+        rows, _ = (load_xg_rows(log) if C.needs_fotmob(champ["candidate"])
+                   else H.load())
     state, notes = C.build_state(A.Candidate.from_dict(champ["candidate"]), rows)
     C.save_state(state)
     for n in notes:
@@ -303,7 +427,8 @@ def _row(name, s):
 
 
 LEAGUE_KO = {"epl": "EPL", "laliga": "라리가", "bundesliga": "분데스리가",
-             "seriea": "세리에A", "ligue1": "리그앙", "jleague": "J리그"}
+             "seriea": "세리에A", "ligue1": "리그앙", "jleague": "J리그",
+             "kleague1": "K리그1"}
 
 
 def render_report(r: dict) -> str:
@@ -375,6 +500,61 @@ def render_report(r: dict) -> str:
     return "\n".join(lines)
 
 
+def render_extend_report(r: dict) -> str:
+    """확장 탐색 결과 → Markdown (docs/model_arena_extend.md)."""
+    d = r["data"]
+    h, hm = r["holdout"], r["holdout_on_market"]
+    g = r["gate"]
+    lines = [
+        "# 예측 모델 경기장 — 확장 탐색 (§1-68)",
+        "",
+        f"생성 {r['generated_at']} · 경기 {d['matches']:,} ({d['first']} ~ {d['last']}) · "
+        f"xG {d['xg_matches']:,} · 명단 {d['lineup_matches']:,}",
+        "",
+        f"고르기 {d['dev_years'][0]}~{d['dev_years'][1]} 축구 연도 · 검증 "
+        f"{d['holdout_years'][0]}~{d['holdout_years'][1]} (고를 때 쓰지 않았다).",
+        "",
+        "## 앞으로 고르기",
+        "",
+        "| 단계 | 더한 것 | 개발 log loss |", "|---|---|---|",
+    ]
+    for i, st in enumerate(r["steps"]):
+        lines.append(f"| {i} | {st['added']} | {st['dev_logloss']:.5f} |")
+    lines += ["", "## 검증 구간", "",
+              "| 후보 | log loss | RPS | Brier | 적중률 | n |", "|---|---|---|---|---|---|"]
+    for k in ("challenger", "incumbent", "market-pinnacle", "base"):
+        lines.append(_row(k, h[k]))
+    lines += ["", f"시장 배당이 있는 {r['market_matches']:,}경기만:", "",
+              "| 후보 | log loss | RPS | Brier | 적중률 | n |", "|---|---|---|---|---|---|"]
+    for k in ("challenger", "incumbent", "market-pinnacle"):
+        lines.append(_row(k, hm[k]))
+    lines += ["", "## 짝 비교 (A − B · 양수면 B 가 낫다)", "",
+              "| A → B | n | Δlog loss [95%] | Δ적중 | P(B 우위) |", "|---|---|---|---|---|"]
+    for key, c in r["comparisons"].items():
+        if not c.get("n"):
+            continue
+        lines.append(f"| {key} | {c['n']:,} | {c['d_logloss']:+.4f} "
+                     f"[{c['d_logloss_ci'][0]:+.4f}, {c['d_logloss_ci'][1]:+.4f}] | "
+                     f"{c['d_accuracy'] * 100:+.2f}%p | {c['p_b_better']:.3f} |")
+    lines += ["", f"게이팅 (현 챔피언 → 도전자): **{'통과' if g['passed'] else '실패'}** "
+              f"(P {g.get('p_b_better', 0):.3f}, 기준 0.95)", "",
+              "## 리그별 (검증 구간)", "",
+              "| 리그 | 도전자 | 현 챔피언 | 시장 | n |", "|---|---|---|---|---|"]
+    for lg, sc in r["holdout_per_league"].items():
+        def cell(s):
+            return (f"{s['logloss']:.4f} · {s['accuracy'] * 100:.1f}%"
+                    if s.get("n") else "—")
+        lines.append(f"| {LEAGUE_KO.get(lg, lg)} | {cell(sc['challenger'])} | "
+                     f"{cell(sc['incumbent'])} | {cell(sc['market-pinnacle'])} | "
+                     f"{sc['challenger'].get('n', 0):,} |")
+    ch = r["challenger"]
+    lines += ["", "## 도전자", "", f"- 엔진: `{json.dumps(ch['engines'], ensure_ascii=False)}`",
+              f"- 특징: `{', '.join(ch['features'])}`",
+              f"- 출력층: L2 {ch['l2']:g} · 리그별 절편 {ch['per_league']}", "",
+              f"실행 {r['seconds']:.0f}초.", ""]
+    return "\n".join(lines)
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -383,8 +563,16 @@ def main(argv=None) -> int:
     r = sub.add_parser("run")
     r.add_argument("--n-random", type=int, default=24)
     r.add_argument("--promote", action="store_true")
-    sub.add_parser("promote")
+    pr = sub.add_parser("promote")
+    pr.add_argument("--extend", action="store_true", help="확장 탐색(extend) 결과로 바꾼다")
     sub.add_parser("export")
+    ff = sub.add_parser("fetch-fotmob")
+    ff.add_argument("--leagues", nargs="*")
+    ff.add_argument("--workers", type=int, default=2)
+    ff.add_argument("--delay", type=float, default=0.4)
+    ff.add_argument("--limit", type=int, default=None)
+    rx = sub.add_parser("extend")
+    rx.add_argument("--max-steps", type=int, default=8)
     args = p.parse_args(argv)
     if args.cmd == "fetch":
         return cmd_fetch(args)
@@ -392,6 +580,10 @@ def main(argv=None) -> int:
         return cmd_run(args)
     if args.cmd == "promote":
         return cmd_promote(args)
+    if args.cmd == "fetch-fotmob":
+        return cmd_fetch_fotmob(args)
+    if args.cmd == "extend":
+        return cmd_extend(args)
     return cmd_export(args)
 
 

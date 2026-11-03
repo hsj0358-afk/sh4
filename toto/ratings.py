@@ -154,7 +154,10 @@ class Engine:
 
     @classmethod
     def from_state(cls, data: dict) -> "Engine":
-        eng = ENGINES[data["kind"]](**data["params"])
+        target = ENGINES[data["kind"]]
+        if cls is Engine and target.from_state.__func__ is not Engine.from_state.__func__:
+            return target.from_state(data)      # 선수·명단을 따로 들고 있는 엔진
+        eng = target(**data["params"])
         eng.teams = {(lg, t): tuple(v) for lg, t, v in data["teams"]}
         for k, v in data["leagues"].items():
             lg = eng._league(k)
@@ -230,8 +233,14 @@ class Pi(Engine):
 
     kind = "pi"
 
-    def __init__(self, lam: float = 0.035, gamma: float = 0.7, carry: float = 1.0):
-        super().__init__(lam=lam, gamma=gamma, carry=carry)
+    def __init__(self, lam: float = 0.035, gamma: float = 0.7, carry: float = 1.0,
+                 mix: float = 0.0):
+        # mix > 0 이면 xG 가 있는 경기에서 득실차 대신 (1−mix)·득실차 + mix·xG 차를
+        # 배운다 (§1-68). 없으면 params 에 남기지 않아 옛 spec·id 가 그대로다.
+        params = dict(lam=lam, gamma=gamma, carry=carry)
+        if mix:
+            params["mix"] = mix
+        super().__init__(**params)
 
     def _init_vec(self, league):
         return (0.0, 0.0)              # (홈 평점, 원정 평점)
@@ -244,7 +253,12 @@ class Pi(Engine):
 
     def _learn(self, m, h, a):
         lam, gamma = self.params["lam"], self.params["gamma"]
-        err = (m.hg - m.ag) - (_pi_goals(h[0]) - _pi_goals(a[1]))
+        margin = m.hg - m.ag
+        mix = self.params.get("mix", 0.0)
+        xh, xa = getattr(m, "hxg", None), getattr(m, "axg", None)
+        if mix and xh is not None and xa is not None:
+            margin = (1 - mix) * margin + mix * (xh - xa)
+        err = margin - (_pi_goals(h[0]) - _pi_goals(a[1]))
         psi = math.copysign(PI_C * math.log10(1.0 + abs(err)), err)
         dh = psi * lam
         da = -psi * lam
@@ -259,6 +273,12 @@ STAT_COLUMNS = {
     "goals": ("hg", "ag", 1.35),
     "sot": ("hst", "ast", 4.4),
     "shots": ("hs", "as_", 12.5),
+    # FotMob 경기 상세 (§1-68) — 2020/21 부터. 값이 없는 경기는 배우지 않는다.
+    "xg": ("hxg", "axg", 1.35),
+    "npxg": ("hnpxg", "anpxg", 1.25),
+    "xgot": ("hxgot", "axgot", 1.3),
+    "bigch": ("hbc", "abc", 2.0),
+    "touch": ("htb", "atb", 25.0),
 }
 
 
@@ -273,8 +293,18 @@ class DynPoisson(Engine):
     kind = "dp"
 
     def __init__(self, stat: str = "goals", eta: float = 0.03,
-                 eta_g: float = 0.002, carry: float = 0.8):
-        super().__init__(stat=stat, eta=eta, eta_g=eta_g, carry=carry)
+                 eta_g: float = 0.002, carry: float = 0.8, mix: float = 0.0,
+                 tag: str = ""):
+        # mix > 0 이면 '득점' 엔진이 xG 가 있는 경기에서 (1−mix)·득점 + mix·xG 를
+        # 배운다 (§1-68). 특징 이름은 그대로라 xG 이전 시즌과 같은 출력층을 쓴다.
+        # tag 가 있으면 특징 이름의 머리를 바꾼다 — 같은 지표를 다른 속도로 도는
+        # 엔진 둘을 함께 쓸 때 이름이 겹치지 않게 한다.
+        params = dict(stat=stat, eta=eta, eta_g=eta_g, carry=carry)
+        if mix:
+            params["mix"] = mix
+        if tag:
+            params["tag"] = tag
+        super().__init__(**params)
 
     def _cols(self):
         return STAT_COLUMNS[self.params["stat"]]
@@ -297,7 +327,7 @@ class DynPoisson(Engine):
 
     def _features(self, league, h, a):
         lh, la = self.rates(league, h, a)
-        p = self.params["stat"]
+        p = self.params.get("tag") or self.params["stat"]
         return {f"{p}_lh": math.log(lh), f"{p}_la": math.log(la)}
 
     def _learn(self, m, h, a):
@@ -305,6 +335,11 @@ class DynPoisson(Engine):
         yh, ya = getattr(m, ch, None), getattr(m, ca, None)
         if yh is None or ya is None:
             return None
+        mix = self.params.get("mix", 0.0)
+        if mix:
+            xh, xa = getattr(m, "hxg", None), getattr(m, "axg", None)
+            if xh is not None and xa is not None:
+                yh, ya = (1 - mix) * yh + mix * xh, (1 - mix) * ya + mix * xa
         lh, la = self.rates(m.league, h, a)
         rh, ra = yh - lh, ya - la
         # 큰 값의 지표(슈팅)일수록 잔차가 커진다 — 기대값으로 나눠 걸음 크기를 맞춘다.
@@ -329,7 +364,279 @@ class DynPoisson(Engine):
         super()._regress(league, teams)
 
 
-ENGINES = {cls.kind: cls for cls in (Elo, Pi, DynPoisson)}
+# --------------------------------------------------------------------------
+# 선형 평점 — 경기별 차이(득실차·xG 차·팀 평점 차)를 직접 배운다
+# --------------------------------------------------------------------------
+LIN_COLUMNS = {
+    "gd": ("hg", "ag"),
+    "xgd": ("hxg", "axg"),
+    "rating": ("hrat", "arat"),     # FotMob 팀 평점 (§1-68)
+}
+
+
+class LinRating(Engine):
+    """r_홈 − r_원정 + 홈이점 ≈ 관측된 차이. 오차만큼 `k` 로 고친다 (Massey 의 온라인판)."""
+
+    kind = "lin"
+
+    def __init__(self, stat: str = "xgd", k: float = 0.05, carry: float = 0.8,
+                 hfa_lr: float = 0.002):
+        super().__init__(stat=stat, k=k, carry=carry, hfa_lr=hfa_lr)
+
+    def _glob(self, league) -> tuple:
+        g = self.globals.get(league)
+        if g is None:
+            g = self.globals[league] = (0.0,)
+        return g
+
+    def _init_vec(self, league):
+        return (0.0,)
+
+    def _strength(self, vec):
+        return vec[0]
+
+    def _features(self, league, h, a):
+        return {f"{self.params['stat']}_m": h[0] - a[0] + self._glob(league)[0]}
+
+    def _learn(self, m, h, a):
+        ch, ca = LIN_COLUMNS[self.params["stat"]]
+        yh, ya = getattr(m, ch, None), getattr(m, ca, None)
+        if yh is None or ya is None:
+            return None
+        hfa = self._glob(m.league)[0]
+        err = (yh - ya) - (h[0] - a[0] + hfa)
+        self.globals[m.league] = (hfa + self.params["hfa_lr"] * err,)
+        k = self.params["k"]
+        return (h[0] + k * err,), (a[0] - k * err,)
+
+
+# --------------------------------------------------------------------------
+# 순위표 — 그 경기에 걸린 것이 있나 (§1-68)
+# --------------------------------------------------------------------------
+def _clip01(x: float) -> float:
+    return 0.0 if x < 0.0 else 1.0 if x > 1.0 else x
+
+
+class Table(Engine):
+    """이번 시즌 순위표를 결과만으로 쌓고, 경기 전에 '걸린 것' 을 잰다.
+
+    우승·유럽대회권·강등권 세 경계마다 그 팀이 경계에서 몇 점 떨어져 있는지를
+    남은 경기로 딸 수 있는 승점(3 × 남은 경기 + slack)에 견준다. 경계에 붙어
+    있으면 1, 남은 경기를 다 이기거나 져도 닿지 않으면 0 이다. 시즌 초에는
+    누구나 1 이고, 시즌 끝으로 갈수록 '아무것도 걸리지 않은 팀' 이 0 이 된다.
+
+    시즌 길이는 지난 시즌 한 팀의 최대 경기 수로 정한다 (처음 시즌은
+    2 × (팀 수 − 1)). 강등·유럽대회 자리 수는 리그마다 다르지만 매개변수
+    하나로 근사한다 — 경계의 정확한 위치보다 '경계 근처인가' 를 본다.
+    팀 상태 = (승점, 경기 수, 득실차) — 이번 시즌 값이다.
+    """
+
+    kind = "tbl"
+
+    def __init__(self, rel: int = 3, eur: int = 4, slack: float = 3.0):
+        super().__init__(rel=rel, eur=eur, slack=slack)
+
+    def _init_vec(self, league):
+        return (0.0, 0.0, 0.0)
+
+    def _strength(self, vec):
+        return vec[0]
+
+    def _regress(self, league, teams) -> None:
+        return None
+
+    def see_season(self, league: str, season: str) -> None:
+        lg = self._league(league)
+        if lg.season == season:
+            return
+        if lg.season is not None:
+            mine = [k for k in self.teams if k[0] == league]
+            longest = max((self.teams[k][1] for k in mine), default=0.0)
+            if longest > 0:
+                self.globals[league] = (float(longest), float(len(mine)))
+            for k in mine:
+                del self.teams[k]
+        lg.prev, lg.season = lg.season, season
+
+    def _team(self, league: str, team: str) -> tuple:
+        return self.teams.get((league, team), (0.0, 0.0, 0.0))
+
+    def _stakes(self, league, team, ranked, length) -> tuple:
+        pts, played, _ = self._team(league, team)
+        n = len(ranked)
+        rank = next((i + 1 for i, (t, _v) in enumerate(ranked) if t == team), n + 1)
+        # 딸 수 있는 승점 + 여유. 마지막 경기(남은 경기 0 · slack 0)에서도 1점은 둔다.
+        cap = max(1.0, 3.0 * max(0.0, length - played) + float(self.params["slack"]))
+
+        def pts_at(pos):
+            if 1 <= pos <= n:
+                return ranked[pos - 1][1][0]
+            return 0.0
+
+        def alive(boundary):            # boundary = 경계 위쪽 마지막 자리
+            if boundary < 1 or boundary >= n:
+                return 0.0
+            other = boundary + 1 if rank <= boundary else boundary
+            return _clip01(1.0 - abs(pts - pts_at(other)) / cap)
+
+        top = alive(1)
+        eur = alive(int(self.params["eur"]))
+        rel = alive(n - int(self.params["rel"]))
+        return top, eur, rel, max(top, eur, rel), (played / length if length else 0.0)
+
+    def features(self, m) -> dict:
+        self.see_season(m.league, m.season)
+        mine = [(k[1], v) for k, v in self.teams.items() if k[0] == m.league]
+        for t in (m.home, m.away):
+            if all(t != x for x, _ in mine):
+                mine.append((t, (0.0, 0.0, 0.0)))
+        g = self.globals.get(m.league)
+        n = max(len(mine), int(g[1]) if g else 0)
+        length = g[0] if g else 2.0 * (n - 1)
+        ranked = sorted(mine, key=lambda kv: (-kv[1][0], -kv[1][2], kv[0]))
+        th, eh, rh, sh, lh = self._stakes(m.league, m.home, ranked, length)
+        ta, ea, ra, sa, la = self._stakes(m.league, m.away, ranked, length)
+        late = 0.5 * (lh + la)
+        return {"tbl_st_h": sh, "tbl_st_a": sa, "tbl_st_diff": sh - sa,
+                "tbl_top_diff": th - ta, "tbl_eur_diff": eh - ea,
+                "tbl_rel_diff": rh - ra, "tbl_late": late,
+                "tbl_dead_sum": late * ((1.0 - sh) + (1.0 - sa)),
+                "tbl_lst_diff": late * (sh - sa)}
+
+    def update(self, m) -> None:
+        self.see_season(m.league, m.season)
+        for team, gf, ga in ((m.home, m.hg, m.ag), (m.away, m.ag, m.hg)):
+            pts, played, gd = self._team(m.league, team)
+            win = 3.0 if gf > ga else 1.0 if gf == ga else 0.0
+            self.teams[(m.league, team)] = (pts + win, played + 1.0, gd + gf - ga)
+        self._mark(m.league, m.home, m.away)
+
+
+# --------------------------------------------------------------------------
+# 선수 — 직전 리그 경기 선발 11명의 힘 (§1-68)
+# --------------------------------------------------------------------------
+class Player(Engine):
+    """선수마다 경기 차이(기본 xG 차)에 대한 기여 r 를 온라인으로 배운다.
+
+        예측 = Σ(홈 출전 선수 w·r) − Σ(원정 출전 선수 w·r) + 홈이점
+        오차만큼 그 경기에 뛴 선수 각자를 w(출전 분 / 90)에 비례해 고친다.
+
+    선수 값은 **팀이 아니라 선수에** 붙어 이적해도 따라간다. 경기 전 특징값은
+    그 팀의 **직전 리그 경기 선발 11명**의 r 합이다. FotMob 경기 평점의
+    지수평균도 함께 낸다. 선발 명단이 없는 경기는 배우지 않는다.
+
+    결장 명단(`unavailable`)은 쓰지 않는다 — 과거 기록의 명단은 경기 **뒤**에
+    정리된 것(실제로 빠진 선수)이라 킥오프 전 명단('Doubtful' 포함)과 다르다.
+    그것으로 맞추면 경기 전에 알 수 없던 정보가 섞인다.
+    """
+
+    kind = "ply"
+
+    def __init__(self, k: float = 0.006, alpha: float = 0.1, prior: float = 0.0,
+                 rk: float = 3.0, target: str = "xgd"):
+        super().__init__(k=k, alpha=alpha, prior=prior, rk=rk, target=target)
+        self.players = {}          # 선수 → [r, 경기 수, 평점 평균]
+        self.lastxi = {}           # (리그, 팀) → [선수]
+
+    def _init_vec(self, league):
+        return (0.0,)
+
+    def _strength(self, vec):
+        return 0.0
+
+    def _regress(self, league, teams) -> None:
+        return None
+
+    def see_season(self, league: str, season: str) -> None:
+        lg = self._league(league)
+        if lg.season != season:
+            lg.prev, lg.season = lg.season, season
+
+    def _side(self, m, team) -> tuple:
+        xi = self.lastxi.get((m.league, team))
+        if not xi:
+            return 0.0, 0.0
+        prior, rk = float(self.params["prior"]), float(self.params["rk"])
+        s = q = 0.0
+        for pid in xi:
+            st = self.players.get(pid)
+            r, n, ema = st if st else (prior, 0, 6.7)
+            s += r
+            q += (n * ema + rk * 6.7) / (n + rk)
+        return s, q / len(xi)
+
+    def features(self, m) -> dict:
+        self.see_season(m.league, m.season)
+        sh, qh = self._side(m, m.home)
+        sa, qa = self._side(m, m.away)
+        both = 1.0 if (self.lastxi.get((m.league, m.home))
+                       and self.lastxi.get((m.league, m.away))) else 0.0
+        return {"ply_diff": both * (sh - sa), "plyq_diff": both * (qh - qa),
+                "ply_has": both}
+
+    @staticmethod
+    def _played(lu) -> dict:
+        out = {}
+        for pid, rating, off, _pos in lu.get("starters") or []:
+            out[str(pid)] = ((off if off else 90) / 90.0, rating)
+        for pid, rating, on, _pos in lu.get("subs") or []:
+            w = max(0.0, 90 - (on if on is not None else 90)) / 90.0
+            if w > 0:
+                out[str(pid)] = (w, rating)
+        return out
+
+    def update(self, m) -> None:
+        self.see_season(m.league, m.season)
+        lineup = getattr(m, "lineup", None) or {}
+        lh, la = lineup.get("home") or {}, lineup.get("away") or {}
+        ph, pa = self._played(lh), self._played(la)
+        if not ph or not pa:
+            return
+        if self.params["target"] == "xgd" and m.hxg is not None and m.axg is not None:
+            y = m.hxg - m.axg
+        else:
+            y = float(m.hg - m.ag)
+        prior = float(self.params["prior"])
+        g = self.globals.get(m.league, (0.0,))[0]
+        def r_of(pid):
+            st = self.players.get(pid)
+            return st[0] if st else prior
+        pred = (sum(w * r_of(p) for p, (w, _) in ph.items())
+                - sum(w * r_of(p) for p, (w, _) in pa.items()) + g)
+        err = y - pred
+        self.globals[m.league] = (g + 0.002 * err,)
+        k, a = float(self.params["k"]), float(self.params["alpha"])
+        for sign, played in ((1.0, ph), (-1.0, pa)):
+            for pid, (w, rating) in played.items():
+                st = self.players.get(pid)
+                if st is None:
+                    st = self.players[pid] = [prior, 0, 6.7]
+                st[0] += k * err * w * sign
+                if isinstance(rating, (int, float)) and rating > 0:
+                    st[2] = rating if st[1] == 0 else (1 - a) * st[2] + a * rating
+                    st[1] += 1
+        for side, team, lu in (("home", m.home, lh), ("away", m.away, la)):
+            xi = [str(r[0]) for r in lu.get("starters") or []]
+            if xi:
+                self.lastxi[(m.league, team)] = xi
+        self._mark(m.league, m.home, m.away)
+
+    def state(self) -> dict:
+        out = super().state()
+        out["players"] = {p: [round(v[0], 5), v[1], round(v[2], 3)]
+                          for p, v in sorted(self.players.items())}
+        out["lastxi"] = [[lg, t, xi] for (lg, t), xi in sorted(self.lastxi.items())]
+        return out
+
+    @classmethod
+    def from_state(cls, data: dict) -> "Engine":
+        eng = Engine.from_state.__func__(cls, data)
+        eng.players = {p: list(v) for p, v in data.get("players", {}).items()}
+        eng.lastxi = {(lg, t): list(xi) for lg, t, xi in data.get("lastxi", [])}
+        return eng
+
+
+ENGINES = {cls.kind: cls for cls in (Elo, Pi, DynPoisson, LinRating, Table, Player)}
 
 
 def make(spec: dict) -> Engine:

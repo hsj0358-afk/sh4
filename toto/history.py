@@ -29,7 +29,7 @@ import csv
 import io
 import logging
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 
@@ -87,8 +87,20 @@ class HistMatch:
     as_: int | None = None
     hst: int | None = None       # 유효슈팅
     ast: int | None = None
-    hxg: float | None = None     # 2026/27 부터 일부
+    hxg: float | None = None     # 2026/27 부터 일부 · 그 전은 FotMob 에서 (§1-68)
     axg: float | None = None
+    hnpxg: float | None = None   # 아래는 FotMob 경기 상세에서만 온다 (§1-68)
+    anpxg: float | None = None
+    hxgot: float | None = None
+    axgot: float | None = None
+    hbc: float | None = None     # 빅찬스
+    abc: float | None = None
+    htb: float | None = None     # 상대 박스 터치
+    atb: float | None = None
+    hrat: float | None = None    # FotMob 팀 평점 (선수 평점 평균 · 경기 후 값)
+    arat: float | None = None
+    fm_id: str = ""              # FotMob 경기 ID (붙였을 때만)
+    lineup: dict | None = field(default=None, compare=False, repr=False)
     odds_open: tuple | None = None    # 피나클 (집계 시점 · 킥오프 전)
     odds_close: tuple | None = None   # 피나클 마감
     odds_avg: tuple | None = None     # 시장 평균

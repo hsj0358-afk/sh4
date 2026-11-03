@@ -1,6 +1,6 @@
 {
  "candidate": {
-  "name": "challenger:stack[l2=100,lg=1,w=0]",
+  "name": "challenger:incumbent+fast0.04+tbl0+sot0.1+pimix1+ply0.03+slow0.008[l2=100,lg=0]",
   "kind": "stack",
   "engines": [
    {
@@ -14,7 +14,8 @@
     "kind": "pi",
     "lam": 0.025,
     "gamma": 1.0,
-    "carry": 0.8
+    "carry": 0.8,
+    "mix": 1.0
    },
    {
     "kind": "dp",
@@ -22,6 +23,41 @@
     "eta": 0.03,
     "eta_g": 0.001,
     "carry": 0.9
+   },
+   {
+    "kind": "dp",
+    "stat": "goals",
+    "eta": 0.04,
+    "eta_g": 0.002,
+    "carry": 0.9,
+    "mix": 1.0,
+    "tag": "gf"
+   },
+   {
+    "kind": "tbl",
+    "rel": 3,
+    "eur": 4,
+    "slack": 0.0
+   },
+   {
+    "kind": "dp",
+    "stat": "sot",
+    "eta": 0.1,
+    "eta_g": 0.002,
+    "carry": 0.9
+   },
+   {
+    "kind": "ply",
+    "k": 0.03
+   },
+   {
+    "kind": "dp",
+    "stat": "goals",
+    "eta": 0.008,
+    "eta_g": 0.002,
+    "carry": 0.95,
+    "mix": 1.0,
+    "tag": "gs"
    }
   ],
   "features": [
@@ -32,49 +68,79 @@
    "abs:pi_gd",
    "shots_diff",
    "shots_sum",
-   "abs:shots_diff"
+   "abs:shots_diff",
+   "gf_diff",
+   "tbl_st_diff",
+   "tbl_lst_diff",
+   "tbl_top_diff",
+   "tbl_eur_diff",
+   "tbl_rel_diff",
+   "tbl_dead_sum",
+   "sot_diff",
+   "sot_sum",
+   "abs:sot_diff",
+   "ply_diff",
+   "gs_diff"
   ],
   "l2": 100.0,
-  "per_league": true,
+  "per_league": false,
   "window": 0,
   "track": "independent",
   "options": {}
  },
- "id": "bdfaf0e2f2cd",
- "promoted_at": "2026-11-03T13:29:35",
+ "id": "ed90cb39d742",
+ "promoted_at": "2026-11-03T15:36:57",
  "holdout": {
-  "n": 15262,
-  "logloss": 0.9943069791501962,
-  "rps": 0.20303010685581663,
-  "brier": 0.5929463649725546,
-  "accuracy": 0.5186083082164854,
+  "n": 7716,
+  "logloss": 0.9971197297343432,
+  "rps": 0.20273079252333837,
+  "brier": 0.5957637788596933,
+  "accuracy": 0.5090720580611716,
   "picks": {
-   "H": 9917,
-   "D": 8,
-   "A": 5337
+   "H": 4971,
+   "D": 11,
+   "A": 2734
   }
  },
  "gate": {
-  "against": "production-statmodel",
+  "against": "incumbent",
   "passed": true,
-  "n": 13867,
-  "days": 1442,
-  "d_logloss": 0.02199818959433362,
+  "n": 7716,
+  "days": 721,
+  "d_logloss": 0.004452653964169775,
   "d_logloss_ci": [
-   0.017969553196661058,
-   0.026398462763518264
+   0.0018300873771701673,
+   0.006998259037907823
   ],
-  "d_rps": 0.0068877168388788105,
+  "d_rps": 0.0014651069236577795,
   "d_rps_ci": [
-   0.005634258195619047,
-   0.008263275898705243
+   0.0006652869419162676,
+   0.002248008131352318
   ],
-  "d_accuracy": 0.01817264008076729,
+  "d_accuracy": 0.00336962156557802,
   "d_accuracy_ci": [
-   0.012532339317610301,
-   0.023967971833571036
+   -0.0021239446658027974,
+   0.009195767703121544
   ],
-  "p_b_better": 1.0
+  "p_b_better": 0.9995
  },
- "history": []
+ "history": [
+  {
+   "id": "bdfaf0e2f2cd",
+   "promoted_at": "2026-11-03T13:29:35",
+   "holdout": {
+    "n": 15262,
+    "logloss": 0.9943069791501962,
+    "rps": 0.20303010685581663,
+    "brier": 0.5929463649725546,
+    "accuracy": 0.5186083082164854,
+    "picks": {
+     "H": 9917,
+     "D": 8,
+     "A": 5337
+    }
+   },
+   "name": "challenger:stack[l2=100,lg=1,w=0]"
+  }
+ ]
 }

@@ -478,8 +478,12 @@ def test_e9_state_from_other_champion_is_ignored():
             assert st is not None
 
 
-def test_e10_update_refreshes_engines_keeps_stacker():
-    """`--model-update` 는 출력층을 다시 맞추지 않고(numpy 없이) 엔진만 굴린다."""
+def test_e10_update_advances_engines_keeps_stacker():
+    """`--model-update` 는 상태 이후 경기만 배운다 — 과거 전체를 다시 받지 않는다.
+
+    출력층은 다시 맞추지 않고(numpy 없이), 결과는 전체를 처음부터 굴린 것과
+    엔진 상태까지 같다.
+    """
     import tempfile
     from toto.arena import Candidate
     rows = synth(seasons=2)
@@ -488,7 +492,8 @@ def test_e10_update_refreshes_engines_keeps_stacker():
                      features=["elo_diff"])
     stack = S.Stacker(features=["elo_diff"], mean=[0.0], std=[1.0], w_home=[0.5],
                       w_away=[-0.5], b_home={"": 0.3}, b_away={"": -0.1})
-    old = rows[: len(rows) // 2]
+    cut_day = rows[len(rows) // 2].date
+    old = [m for m in rows if m.date < cut_day]
     saved = {k: getattr(C, k) for k in ("CHAMPION_FILE", "STATE_FILE", "FRESH_STATE_FILE")}
     saved_h = {k: getattr(H, k) for k in ("fetch", "load")}
     with tempfile.TemporaryDirectory() as tmp:
@@ -501,14 +506,19 @@ def test_e10_update_refreshes_engines_keeps_stacker():
             rec = C.save_champion(cand, {"n": 1}, {"p_b_better": 1.0}, against="x",
                                   path=C.CHAMPION_FILE)
             st, _ = C.build_state(cand, old, stack=stack)
+            st["teams"] = {"epl": {t: t for m in rows for t in (m.home, m.away)}}
             C.save_state(st, C.STATE_FILE)
-            H.fetch = lambda refresh=True: {"ok": 1, "cached": 0, "failed": []}
-            H.load = lambda: (rows, [])
+            calls = []
+            H.fetch = lambda seasons=None, refresh=True: calls.append(seasons) or \
+                {"ok": 1, "cached": 0, "failed": []}
+            H.load = lambda seasons=None: (rows, [])
             line = C.update()
             assert line.startswith("ok (자료 " + rows[-1].date.isoformat()), line
+            assert len(calls) == 1 and len(calls[0]) <= 2          # 진행 중 시즌만
             fresh = json.loads(C.FRESH_STATE_FILE.read_text(encoding="utf-8"))
             assert fresh["stacker"] == st["stacker"] and fresh["champion"] == rec["id"]
-            assert fresh["data_through"] > st["data_through"]
+            full, _ = C.build_state(cand, rows, stack=stack)
+            assert fresh["engines"] == json.loads(json.dumps(full["engines"]))
             got = C.load_state(paths=(C.FRESH_STATE_FILE, C.STATE_FILE))
             assert got["data_through"] == fresh["data_through"]   # 더 최근 것을 쓴다
         finally:
@@ -516,6 +526,13 @@ def test_e10_update_refreshes_engines_keeps_stacker():
                 setattr(C, k, v)
             for k, v in saved_h.items():
                 setattr(H, k, v)
+
+
+def test_e10b_needs_fotmob_only_for_fotmob_columns():
+    assert not C.needs_fotmob({"engines": [{"kind": "dp", "stat": "goals"}, {"kind": "pi"},
+                                           {"kind": "dp", "stat": "xg"}]})
+    assert C.needs_fotmob({"engines": [{"kind": "dp", "stat": "npxg"}]})
+    assert C.needs_fotmob({"engines": [{"kind": "lin", "stat": "rating"}]})
 
 
 def test_e11_committed_champion_is_consistent():

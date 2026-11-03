@@ -194,6 +194,43 @@ def test_b4_state_roundtrip():
     _close(back.features(m), eng.features(m))
 
 
+def test_b5_normalized_update_divides_by_sum_of_squared_weights():
+    """정규화 갱신: 걸음 = μ·오차·w / (1 + Σw²). 꺼진 기본값은 params 에 없다."""
+    assert "norm" not in R.Player(k=0.03).params          # 챔피언 spec·id 그대로
+    h, a = [f"g{j}" for j in range(11)], [f"b{j}" for j in range(11)]
+    m = _m(date(2024, 8, 1), "G", "B", 1, 0, hxg=2.0, axg=0.5, lineup=_lineup(h, a))
+    plain, normed = R.Player(k=0.5), R.Player(k=0.5, norm=1)
+    plain.update(m)
+    normed.update(m)
+    err = 1.5                                          # 처음엔 모두 0 · 홈이점 0
+    s2 = R.NORM_EPS + 22 * 1.0                         # 22명 모두 90분
+    assert abs(plain.players["g0"][0] - 0.5 * err) < 1e-12
+    assert abs(normed.players["g0"][0] - 0.5 * err / s2) < 1e-12
+    assert abs(normed.players["b0"][0] + 0.5 * err / s2) < 1e-12
+    # 정규화된 걸음은 한 경기 오차의 μ·Σw²/(1+Σw²) 배를 고친다 — μ < 2 에서 줄어든다.
+    after = (sum(normed.players[p][0] for p in h) - sum(normed.players[p][0] for p in a))
+    assert abs((err - after) - err * (1 - 0.5 * 22 / s2)) < 1e-9
+
+
+def test_b6_normalized_update_stays_bounded_where_plain_diverges():
+    """같은 큰 걸음이 정규화 없이는 발산하고, 정규화하면 μ < 2 라 남는다."""
+    def run(eng):
+        h, a = [f"g{j}" for j in range(11)], [f"b{j}" for j in range(11)]
+        rows = [_m(date(2024, 8, 1) + timedelta(days=i), "G", "B", 1, 0,
+                   hxg=1.0 + (i % 3) * 0.4, axg=0.6, lineup=_lineup(h, a))
+                for i in range(60)]
+        R.replay(rows, [eng])
+        return max(abs(v[0]) for v in eng.players.values())
+    assert run(R.Player(k=0.3)) > 1e3                      # Σw² 22 → 걸음 6.6배
+    assert run(R.Player(k=1.5, norm=1)) < 1.0
+
+
+def test_b7_normalized_state_roundtrip_keeps_the_flag():
+    eng = R.Player(k=1.0, norm=1)
+    back = R.Engine.from_state(json.loads(json.dumps(eng.state())))
+    assert back.params == eng.params and back.params["norm"] == 1
+
+
 # --------------------------------------------------------------------------
 # C. 시간척도 tag · 확장
 # --------------------------------------------------------------------------
@@ -246,6 +283,11 @@ def test_c2b_extend_swaps_an_engine_in_the_same_slot():
 def test_c2c_player_rate_grid_goes_past_the_first_pick():
     ks = sorted({e[2][0]["k"] for e in A.extend_library() if e[0] == "ply"})
     assert min(ks) <= 0.006 and max(ks) >= 0.2 and 0.03 in ks
+    # 정규화 갱신은 따로 가족을 둔다 — 안정 범위(μ < 2) 안팎을 다 잰다.
+    plyn = [e for e in A.extend_library() if e[0] == "plyn"]
+    assert all(e[2][0].get("norm") == 1 for e in plyn)
+    mus = sorted({e[2][0]["k"] for e in plyn})
+    assert min(mus) <= 0.25 and any(1.9 <= m < 2 for m in mus) and max(mus) > 2
 
 
 def test_c3_library_specs_build_and_features_exist():

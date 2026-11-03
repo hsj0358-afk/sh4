@@ -670,6 +670,14 @@ def extend_library() -> list:
     for k in (0.03, 0.08, 0.2):
         lib.append(("ply", f"ply{k:g}+q", [{"kind": "ply", "k": k}],
                     ["ply_diff", "plyq_diff"], None))
+    # 정규화 갱신 — 걸음을 출전 선수 Σw² 로 나눈다. k 가 μ 이고 2 를 넘으면
+    # 발산한다(정규화 LMS 의 안정 범위). 2 이상은 그 경계를 실물로 보려고 둔다.
+    for mu in (0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.65, 1.8, 1.9, 2.0, 2.5):
+        lib.append(("plyn", f"plyn{mu:g}", [{"kind": "ply", "k": mu, "norm": 1}],
+                    ["ply_diff"], None))
+    for mu in (1.0, 1.5, 1.65, 1.8):
+        lib.append(("plyn", f"plyn{mu:g}+q", [{"kind": "ply", "k": mu, "norm": 1}],
+                    ["ply_diff", "plyq_diff"], None))
     for fam in ("xg", "npxg", "xgot", "bigch", "touch"):
         for eta in (0.02, 0.04, 0.07):
             lib.append((fam, f"{fam}{eta:g}", [_dp(fam, eta)],

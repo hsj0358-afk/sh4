@@ -515,6 +515,9 @@ class Table(Engine):
 # --------------------------------------------------------------------------
 # 선수 — 직전 리그 경기 선발 11명의 힘 (§1-68)
 # --------------------------------------------------------------------------
+NORM_EPS = 1.0                  # 정규화 갱신의 분모에 더하는 값
+
+
 class Player(Engine):
     """선수마다 경기 차이(기본 xG 차)에 대한 기여 r 를 온라인으로 배운다.
 
@@ -533,8 +536,14 @@ class Player(Engine):
     kind = "ply"
 
     def __init__(self, k: float = 0.006, alpha: float = 0.1, prior: float = 0.0,
-                 rk: float = 3.0, target: str = "xgd"):
-        super().__init__(k=k, alpha=alpha, prior=prior, rk=rk, target=target)
+                 rk: float = 3.0, target: str = "xgd", norm: int = 0):
+        # norm 이 켜지면 걸음을 그 경기 출전 선수의 Σw² 로 나눈다 (정규화 LMS).
+        # 그때 k 는 한 경기 오차 중 몇 배를 고치나(μ)이고 0 < μ < 2 에서 발산하지
+        # 않는다. 꺼져 있으면 params 에 남기지 않아 옛 spec·챔피언 id 가 그대로다.
+        params = dict(k=k, alpha=alpha, prior=prior, rk=rk, target=target)
+        if norm:
+            params["norm"] = 1
+        super().__init__(**params)
         self.players = {}          # 선수 → [r, 경기 수, 평점 평균]
         self.lastxi = {}           # (리그, 팀) → [선수]
 
@@ -606,6 +615,10 @@ class Player(Engine):
         err = y - pred
         self.globals[m.league] = (g + 0.002 * err,)
         k, a = float(self.params["k"]), float(self.params["alpha"])
+        if self.params.get("norm"):
+            # 1 을 더해 출전 기록이 거의 없는 경기에서 걸음이 튀지 않게 한다.
+            k /= NORM_EPS + sum(w * w for w, _ in ph.values()) + sum(
+                w * w for w, _ in pa.values())
         for sign, played in ((1.0, ph), (-1.0, pa)):
             for pid, (w, rating) in played.items():
                 st = self.players.get(pid)

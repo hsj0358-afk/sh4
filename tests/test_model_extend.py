@@ -222,6 +222,32 @@ def test_c2_extend_replaces_only_untagged_goals_mix():
     assert "mix" not in R.make({"kind": "pi"}).params
 
 
+def test_c2b_extend_swaps_an_engine_in_the_same_slot():
+    """현 챔피언에 이미 있는 가족은 덧붙이지 않고 바꿔 끼운다 — 같은 이름의
+    특징을 내는 엔진이 둘이면 뒤의 것이 앞의 것을 조용히 덮는다."""
+    base = A.Candidate(name="c", kind="stack",
+                       engines=[{"kind": "dp", "stat": "goals", "eta": 0.02},
+                                {"kind": "dp", "stat": "goals", "eta": 0.04, "tag": "gf"},
+                                {"kind": "ply", "k": 0.03}],
+                       features=["goals_diff", "gf_diff", "ply_diff"])
+    out = A.extend(base, ("ply", "ply0.08", [{"kind": "ply", "k": 0.08}], ["ply_diff"], None))
+    assert [e.get("k") for e in out.engines if e["kind"] == "ply"] == [0.08]
+    assert len(out.engines) == 3 and out.features == base.features
+    fast = A.extend(base, ("fast", "fast0.1", [{"kind": "dp", "stat": "goals", "eta": 0.1,
+                                                "tag": "gf"}], ["gf_diff"], None))
+    assert [e["eta"] for e in fast.engines if e.get("tag") == "gf"] == [0.1]
+    assert fast.engines[0]["eta"] == 0.02                 # 태그 없는 득점 엔진은 그대로
+    xg = A.extend(base, ("xg", "xg0.04", [{"kind": "dp", "stat": "xg", "eta": 0.04}],
+                         ["xg_diff"], None))
+    assert len(xg.engines) == 4                           # 새 자리는 덧붙인다
+    assert base.engines[2]["k"] == 0.03                   # 원래 후보는 그대로
+
+
+def test_c2c_player_rate_grid_goes_past_the_first_pick():
+    ks = sorted({e[2][0]["k"] for e in A.extend_library() if e[0] == "ply"})
+    assert min(ks) <= 0.006 and max(ks) >= 0.2 and 0.03 in ks
+
+
 def test_c3_library_specs_build_and_features_exist():
     rows = synth(seasons=1)
     for fam, label, engines, feats, mix in A.extend_library():

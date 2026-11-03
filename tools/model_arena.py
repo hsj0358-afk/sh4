@@ -40,6 +40,14 @@ REPORT_FILE = ROOT / "docs" / "model_arena.md"
 EXTEND_RESULT_FILE = ROOT / "data" / "model" / "arena_extend_result.json"
 EXTEND_REPORT_FILE = ROOT / "docs" / "model_arena_extend.md"
 
+
+def extend_files(name: str = "extend") -> tuple:
+    """확장 탐색 결과 파일 둘 — 이름마다 따로 남겨 앞선 회차의 기록을 덮지 않는다."""
+    if name == "extend":
+        return EXTEND_RESULT_FILE, EXTEND_REPORT_FILE
+    return (ROOT / "data" / "model" / f"arena_{name}_result.json",
+            ROOT / "docs" / f"model_arena_{name}.md")
+
 RUNTIME_KINDS = ("stack",)            # 리포트 경로(순수 파이썬)에서 돌 수 있는 종류
 
 
@@ -260,8 +268,8 @@ def cmd_promote(args, rows=None) -> int:
     게이팅을 통과했고, 그 `run` 이 견준 현 챔피언이 **지금도** 같을 때만.
     그 사이에 챔피언이 바뀌었으면 결과가 낡았으므로 거부한다.
     """
-    result = C._read_json(EXTEND_RESULT_FILE if getattr(args, "extend", False)
-                          else RESULT_FILE)
+    name = getattr(args, "extend", None)
+    result = C._read_json(extend_files(name)[0] if name else RESULT_FILE)
     if not result:
         log("경기장 결과가 없습니다 — 먼저 run 을 돌리십시오")
         return 2
@@ -319,8 +327,13 @@ def cmd_extend(args) -> int:
         f"{sum(1 for m in rows if m.lineup):,} · 연결 {join}")
 
     log(f"\n[1] 앞으로 고르기 (개발 {dev[0]}~{dev[-1]})")
+    library = A.extend_library()
+    if args.families:
+        library = [e for e in library if e[0] in set(args.families)]
+        log(f"  가족 제한: {sorted({e[0] for e in library})} · 항목 {len(library)}개")
     chosen, steps, tried = A.forward_select(base, store, years=dev,
-                                            max_steps=args.max_steps, log=log)
+                                            max_steps=args.max_steps, log=log,
+                                            library=library)
 
     log("\n[2] 출력층 설정")
     stack_best = None
@@ -393,12 +406,14 @@ def cmd_extend(args) -> int:
         "incumbent_id": incumbent.get("id"),
         "seconds": round(time.time() - t0, 1),
     }
-    EXTEND_RESULT_FILE.write_text(json.dumps(result, ensure_ascii=False, indent=1) + "\n",
-                                  encoding="utf-8", newline="\n")
-    EXTEND_REPORT_FILE.write_text(render_extend_report(result), encoding="utf-8",
-                                  newline="\n")
-    log(f"\n결과 → {EXTEND_RESULT_FILE.relative_to(ROOT)} · "
-        f"{EXTEND_REPORT_FILE.relative_to(ROOT)} · {time.time() - t0:.0f}초")
+    result_file, report_file = extend_files(args.name)
+    result["name"] = args.name
+    result["families"] = sorted(args.families or [])
+    result_file.write_text(json.dumps(result, ensure_ascii=False, indent=1) + "\n",
+                           encoding="utf-8", newline="\n")
+    report_file.write_text(render_extend_report(result), encoding="utf-8", newline="\n")
+    log(f"\n결과 → {result_file.relative_to(ROOT)} · "
+        f"{report_file.relative_to(ROOT)} · {time.time() - t0:.0f}초")
     return 0
 
 
@@ -506,7 +521,7 @@ def render_extend_report(r: dict) -> str:
     h, hm = r["holdout"], r["holdout_on_market"]
     g = r["gate"]
     lines = [
-        "# 예측 모델 경기장 — 확장 탐색 (§1-68)",
+        f"# 예측 모델 경기장 — 확장 탐색 `{r.get('name', 'extend')}` (§1-68)",
         "",
         f"생성 {r['generated_at']} · 경기 {d['matches']:,} ({d['first']} ~ {d['last']}) · "
         f"xG {d['xg_matches']:,} · 명단 {d['lineup_matches']:,}",
@@ -520,6 +535,16 @@ def render_extend_report(r: dict) -> str:
     ]
     for i, st in enumerate(r["steps"]):
         lines.append(f"| {i} | {st['added']} | {st['dev_logloss']:.5f} |")
+    fams = r.get("families") or []
+    if fams:
+        lines[4:4] = [f"가족 제한: {', '.join(fams)} (현 챔피언에 같은 자리의 엔진이 있으면 "
+                      "바꿔 끼운다).", ""]
+    for step in sorted({t["step"] for t in r.get("tried", [])}):
+        rows = sorted((t for t in r["tried"] if t["step"] == step),
+                      key=lambda t: t["dev_logloss"])
+        lines += ["", f"### {step}단계에서 견준 것 (개발 log loss · 낮을수록 좋다)", "",
+                  "| 항목 | 개발 log loss |", "|---|---|"]
+        lines += [f"| {t['entry']} | {t['dev_logloss']:.5f} |" for t in rows[:20]]
     lines += ["", "## 검증 구간", "",
               "| 후보 | log loss | RPS | Brier | 적중률 | n |", "|---|---|---|---|---|---|"]
     for k in ("challenger", "incumbent", "market-pinnacle", "base"):
@@ -564,7 +589,8 @@ def main(argv=None) -> int:
     r.add_argument("--n-random", type=int, default=24)
     r.add_argument("--promote", action="store_true")
     pr = sub.add_parser("promote")
-    pr.add_argument("--extend", action="store_true", help="확장 탐색(extend) 결과로 바꾼다")
+    pr.add_argument("--extend", nargs="?", const="extend", default=None, metavar="NAME",
+                    help="확장 탐색 결과로 바꾼다 (이름을 주면 그 이름의 결과)")
     sub.add_parser("export")
     ff = sub.add_parser("fetch-fotmob")
     ff.add_argument("--leagues", nargs="*")
@@ -573,6 +599,10 @@ def main(argv=None) -> int:
     ff.add_argument("--limit", type=int, default=None)
     rx = sub.add_parser("extend")
     rx.add_argument("--max-steps", type=int, default=8)
+    rx.add_argument("--families", nargs="*", default=None,
+                    help="라이브러리를 이 가족으로 제한한다 (예: ply)")
+    rx.add_argument("--name", default="extend",
+                    help="결과 파일 이름 (기본 extend · 앞선 회차를 덮지 않으려면 바꾼다)")
     args = p.parse_args(argv)
     if args.cmd == "fetch":
         return cmd_fetch(args)

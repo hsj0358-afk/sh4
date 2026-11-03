@@ -8127,7 +8127,30 @@ python tools/model_arena.py fetch-fotmob          # 이어 받기 · 46시즌 14
   · 사용자가 목표로 적은 '53.6%' 는 §1-67 검증 구간(2019/20~)의 피나클 값이다.
     새 챔피언의 53.63% 는 **다른 구간(2023/24~)의 값**이고, 같은 경기에서 피나클은
     54.24% 다 — 숫자가 같아 보여도 따라잡은 것이 아니다.
-  · 선수 엔진의 k 0.03 은 라이브러리의 끝값이다. 더 큰 값은 아직 재지 않았다.
+  · 선수 엔진의 k 0.03 은 라이브러리의 끝값이었다 — 아래 '선수 학습 속도 재탐색'.
+
+#### 선수 학습 속도 재탐색 (`extend --families ply --name extend_ply`)
+
+k 를 0.006~0.3 으로 넓혀 **현 챔피언의 선수 엔진을 바꿔 끼우며** 다시 쟀다.
+`extend()` 가 같은 자리(종류·지표·tag)의 엔진을 덧붙이지 않고 바꿔 끼우게
+고쳤다 — 같은 이름의 특징을 내는 엔진 둘을 두면 뒤의 것이 앞의 것을 조용히
+덮는다. `--families` 로 라이브러리를 줄이고, `--name` 으로 결과 파일을 따로
+남긴다 (`docs/model_arena_extend_ply.md`).
+
+| k | 0.006 | 0.012 | 0.02 | **0.03** | 0.05 | 0.08 | 0.12 | 0.2 | 0.3 |
+|---|---|---|---|---|---|---|---|---|---|
+| 개발 log loss | 0.99568 | 0.99543 | 0.99529 | 0.99518 | 0.99496 | **0.99475** (+q) | 1.03108 | 7.20 | 9.72 |
+
+  · **0.12 부터 발산한다.** 선수 값 갱신이 출전 선수 약 14명에 한꺼번에
+    들어가 팀 단위로는 k × Σw² ≈ 12k 만큼 움직이므로, k 가 0.1 을 넘으면
+    한 걸음이 오차보다 커져 값이 튄다. 개발 구간의 최적(0.08)이 그 절벽 바로
+    앞이다.
+  · 도전자(k 0.08 + 평점 특징 · L2 30)는 **게이팅에 실패했다** — 검증 구간
+    Δlog loss −0.0002 [−0.0009, +0.0006] · P 0.326. 시장 배당이 있는 경기에서
+    0.9680 / 53.79% (현 챔피언 0.9682 / 53.63%) 로 차이가 잡음 안이다.
+    **챔피언은 그대로다** (k 0.03).
+  · 더 큰 k 를 쓰려면 걸음을 Σw² 로 나누는 정규화 갱신이 먼저다 (지금은 하지
+    않았다).
 
 #### 리포트 경로
 
@@ -8141,7 +8164,7 @@ python tools/model_arena.py fetch-fotmob          # 이어 받기 · 46시즌 14
     직전 선발은 마지막으로 받은 FotMob 경기의 것이다.
 
 회귀 테스트: `python tests/test_fotmob_history.py` (17개) ·
-`python tests/test_model_extend.py` (17개).
+`python tests/test_model_extend.py` (19개).
 
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
@@ -8878,9 +8901,10 @@ python -m toto --model-update             # 챔피언 엔진 상태를 최신 �
 python tests/test_model_arena.py          # 경기장·챔피언·미래 차단·시장 격리 §1-67 (38개)
 python tools/model_arena.py fetch-fotmob  # FotMob 과거 경기 상세(xG·명단) 이어 받기 · 7리그 2020/21~ §1-68
 python tools/model_arena.py extend        # 확장 탐색 · 현 챔피언에 엔진을 하나씩 더한다 · 약 9분 · numpy §1-68
-python tools/model_arena.py promote --extend  # 확장 탐색이 게이팅을 통과했을 때만 교체 → 상태 내보내기 §1-68
+python tools/model_arena.py extend --families ply --name extend_ply  # 한 가족만 다시 재기 · 같은 자리 엔진은 바꿔 끼운다 §1-68
+python tools/model_arena.py promote --extend [NAME]  # 그 확장 탐색이 게이팅을 통과했을 때만 교체 → 상태 내보내기 §1-68
 python tests/test_fotmob_history.py       # FotMob 과거 기록 · 잇기 · 빠진 시즌 채우기 §1-68 (17개)
-python tests/test_model_extend.py         # 순위표·선수·tag·앞으로 고르기·리포트 경로 §1-68 (17개)
+python tests/test_model_extend.py         # 순위표·선수·tag·앞으로 고르기·바꿔 끼우기·리포트 경로 §1-68 (19개)
 python tools/backtest_statmodel.py         # 통계 모델 백테스트 · 시즌 색인 walk-forward · 시장과 같은 경기 비교 · 읽기만 §1-66
 python -m pytest -q -rs                    # 전체 — `pytest` 가 아니라 `python -m pytest` (PyYAML 있는 인터프리터)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)

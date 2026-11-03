@@ -664,9 +664,10 @@ def extend_library() -> list:
         lib.append(("tbl", f"tbl{slack:g}",
                     [{"kind": "tbl", "rel": 3, "eur": 4, "slack": slack}],
                     list(TABLE_FEATURES), None))
-    for k in (0.006, 0.012, 0.02, 0.03):
+    # 선수 학습 속도 — 첫 확장 탐색에서 끝값(0.03)이 골라져 위로 넓혔다.
+    for k in (0.006, 0.012, 0.02, 0.03, 0.05, 0.08, 0.12, 0.2, 0.3):
         lib.append(("ply", f"ply{k:g}", [{"kind": "ply", "k": k}], ["ply_diff"], None))
-    for k in (0.012, 0.02):
+    for k in (0.03, 0.08, 0.2):
         lib.append(("ply", f"ply{k:g}+q", [{"kind": "ply", "k": k}],
                     ["ply_diff", "plyq_diff"], None))
     for fam in ("xg", "npxg", "xgot", "bigch", "touch"):
@@ -686,8 +687,20 @@ def extend_library() -> list:
     return lib
 
 
+def engine_slot(spec: dict) -> tuple:
+    """엔진의 자리 — 같은 자리의 엔진은 같은 이름의 특징을 낸다."""
+    kind = spec.get("kind")
+    stat = spec.get("stat", "") if kind in ("dp", "lin") else ""
+    return kind, stat, spec.get("tag", "")
+
+
 def extend(cand: Candidate, entry) -> Candidate:
-    """후보에 라이브러리 항목 하나를 더한 새 후보."""
+    """후보에 라이브러리 항목 하나를 더한 새 후보.
+
+    더할 엔진과 **같은 자리**(종류·지표·tag)의 엔진이 이미 있으면 덧붙이지 않고
+    바꿔 끼운다 — 같은 이름의 특징을 내는 엔진 둘을 두면 뒤의 것이 앞의 것을
+    조용히 덮는다. 그래서 현 챔피언에 이미 있는 가족의 설정을 다시 고를 수 있다.
+    """
     fam, label, engines, feats, mix = entry
     out = Candidate.from_dict(cand.to_dict())
     if mix is not None:
@@ -702,7 +715,15 @@ def extend(cand: Candidate, entry) -> Candidate:
                     spec["mix"] = value
             new.append(spec)
         out.engines = new
-    out.engines = out.engines + [dict(e) for e in engines]
+    engs = list(out.engines)
+    for e in engines:
+        slot = engine_slot(e)
+        at = next((i for i, x in enumerate(engs) if engine_slot(x) == slot), None)
+        if at is None:
+            engs.append(dict(e))
+        else:
+            engs[at] = dict(e)
+    out.engines = engs
     out.features = out.features + [f for f in feats if f not in out.features]
     out.name = f"{cand.name}+{label}"
     return out
@@ -731,9 +752,11 @@ def forward_select(base: Candidate, store: FeatureStore, years=EXTEND_DEV,
             tried.append({"step": step + 1, "entry": entry[1], "dev_logloss": ll})
             if best is None or ll < best[0]:
                 best = (ll, entry, cand)
-        if best is None or best[0] > cur_ll - min_gain:
-            log(f"  {step + 1}단계: 더할 것 없음 (최고 {best[1][1] if best else '-'} "
-                f"{best[0] if best else float('nan'):.5f})")
+        if best is None:
+            log(f"  {step + 1}단계: 견줄 항목이 남지 않았다")
+            break
+        if best[0] > cur_ll - min_gain:
+            log(f"  {step + 1}단계: 더할 것 없음 (최고 {best[1][1]} {best[0]:.5f})")
             break
         cur_ll, current = best[0], best[2]
         used.add(best[1][0])

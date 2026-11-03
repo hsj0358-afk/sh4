@@ -375,6 +375,31 @@ def _market_mode_line(probs) -> str:
             f'시장의 값입니다 · 패널에는 전달되지 않습니다{note}</p>')
 
 
+def _champion_block(match: Match, report) -> str:
+    """경기장 챔피언 예측 모델 (`toto.champion` · §1-67).
+
+    **모델 산출값**이고 시장 확률과 합치지 않는다. 패널에 전달되지 않는다.
+    승/무/패를 고르지 않는다 — 확률과 그 모델의 검증 점수만 적는다 (§1-3).
+    못 만들면(상태 없음 · 다루지 않는 리그 · 사후 정보) 빈 문자열이고, 그때는
+    통계 모델 기준선이 그 자리를 잇는다.
+    """
+    from . import champion
+
+    f, _why = champion.for_match(match, report)
+    if f is None:
+        return ""
+    bar = charts.prob_bar(f.p_home, f.p_draw, f.p_away, None, None, None)
+    h = f.holdout or {}
+    score = (f' · 검증 구간 {h["n"]:,}경기 적중률 {h["accuracy"] * 100:.1f}% · '
+             f'log loss {h["logloss"]:.3f}' if h.get("n") else "")
+    added = f' (+ 시즌 색인 {f.replayed}경기)' if f.replayed else ""
+    return (f'<div class="block"><h4>예측 모델 (경기장 챔피언 · 참고값)</h4>{bar}'
+            f'<p class="meta">과거 시즌을 다시 재생해 겨룬 후보 중 본 적 없는 '
+            f'시즌에서 이긴 모델의 산출값입니다{esc(score)} · 자료 '
+            f'{esc(f.data_through)}까지{esc(added)} · 시장 확률과 합치지 않습니다 · '
+            f'패널에는 전달되지 않습니다 · 추천이 아닙니다</p></div>')
+
+
 def _model_block(match: Match, report=None, settings=None) -> str:
     """통계 모델 기준선 — 득점 기반 독립 포아송 (`toto.statmodel`).
 
@@ -385,6 +410,9 @@ def _model_block(match: Match, report=None, settings=None) -> str:
     """
     if report is None or not getattr(report, "season_matches", None):
         return ""
+    champ = _champion_block(match, report)
+    if champ:
+        return champ
     from . import models, statmodel
 
     f, why = statmodel.for_match(match, report, settings)

@@ -170,6 +170,12 @@ def build_parser() -> argparse.ArgumentParser:
                         "리포트를 쓴 뒤의 자동 배포가 함께 쓴다. 주지 않으면 "
                         "--publish-round 는 저장소 옆 <저장소 이름>-pages, "
                         "자동 배포는 SH4_PAGES_DIR → 저장소 옆 순으로 찾는다")
+    p.add_argument("--model-update", action="store_true",
+                   help="예측 모델(§1-67)의 과거 기록 중 진행 중 시즌을 다시 받고 "
+                        "엔진 상태를 최신으로 굴린다 (football-data.co.uk · "
+                        "수집하지 않는다)")
+    p.add_argument("--skip-model-update", action="store_true",
+                   help="회차 수집 끝의 예측 모델 자료 갱신을 건너뛴다")
     p.add_argument("--market-eval", action="store_true",
                    help="쌓인 회차 기록으로 시장 기준선 캘리브레이션을 잰다 "
                         "(data/round_matches.csv 를 읽기만 한다. 수집하지 "
@@ -848,6 +854,15 @@ def main(argv: list[str] | None = None) -> int:
     # 여기도 **수집 구간 앞**이다. 쌓인 기록을 읽어 재기만 하고 파일을
     # 고치지 않으며, 잰 값을 `predict.py`·`Match.probs` 에 되돌려 넣지
     # 않는다 — 이 단계는 측정 전용이다.
+    # ---- 0-a4. 예측 모델 상태 갱신 (§1-67) -------------------------------
+    # 여기도 **수집 구간 앞**이다. football-data.co.uk 의 진행 중 시즌 파일만
+    # 다시 받아 챔피언의 평점 엔진을 굴린다. 회차 소스를 부르지 않는다.
+    if args.model_update:
+        from . import champion
+        line = champion.update()
+        print(f"예측 모델: {line}")
+        return 0 if not line.startswith("실패") else 1
+
     if args.market_eval:
         from . import marketeval
         print(marketeval.format_summary(
@@ -982,6 +997,19 @@ def main(argv: list[str] | None = None) -> int:
                     if match.away_profile is None:
                         match.away_profile = TeamProfile(team=match.away,
                                                          league=match.league)
+
+        # ---- 4-A. 예측 모델 자료 (§1-67) ------------------------------------
+        # 회차 소스 순서(§1-1) 뒤에 따로 둔다. 실패해도 커밋된 상태와 시즌
+        # 색인으로 리포트가 돈다 — 실행을 죽이지 않는다 (§1-6).
+        if args.skip_model_update:
+            report.source_status["예측모델"] = "생략"
+        else:
+            from . import champion
+            try:
+                report.source_status["예측모델"] = champion.update()
+            except Exception as exc:                    # noqa: BLE001
+                log.warning("예측 모델 자료 갱신 실패: %s", exc)
+                report.source_status["예측모델"] = f"실패 ({type(exc).__name__})"
 
         resolver.save_learned()
         resolver.save_leagues()

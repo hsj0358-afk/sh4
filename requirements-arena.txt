@@ -1,0 +1,13 @@
+# Model arena (tools/model_arena.py) - research only.
+#
+#   pip install -r requirements-arena.txt
+#
+# The report path (toto/champion.py) does NOT need these. It runs in pure
+# Python from data/model/champion_state.json. Only the arena that searches,
+# validates and re-fits models needs numpy. scikit-learn is optional: without
+# it the GBM / MLP challengers are skipped and everything else still runs.
+#
+# NOTE: keep this file ASCII-only (see requirements-toto.txt).
+
+numpy>=1.26
+scikit-learn>=1.4        # optional: GBM / MLP challengers

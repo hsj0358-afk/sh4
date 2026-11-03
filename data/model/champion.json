@@ -1,0 +1,80 @@
+{
+ "candidate": {
+  "name": "challenger:stack[l2=100,lg=1,w=0]",
+  "kind": "stack",
+  "engines": [
+   {
+    "kind": "dp",
+    "stat": "goals",
+    "eta": 0.02,
+    "eta_g": 0.002,
+    "carry": 0.9
+   },
+   {
+    "kind": "pi",
+    "lam": 0.025,
+    "gamma": 1.0,
+    "carry": 0.8
+   },
+   {
+    "kind": "dp",
+    "stat": "shots",
+    "eta": 0.03,
+    "eta_g": 0.001,
+    "carry": 0.9
+   }
+  ],
+  "features": [
+   "goals_diff",
+   "goals_sum",
+   "abs:goals_diff",
+   "pi_gd",
+   "abs:pi_gd",
+   "shots_diff",
+   "shots_sum",
+   "abs:shots_diff"
+  ],
+  "l2": 100.0,
+  "per_league": true,
+  "window": 0,
+  "track": "independent",
+  "options": {}
+ },
+ "id": "bdfaf0e2f2cd",
+ "promoted_at": "2026-11-03T13:29:35",
+ "holdout": {
+  "n": 15262,
+  "logloss": 0.9943069791501962,
+  "rps": 0.20303010685581663,
+  "brier": 0.5929463649725546,
+  "accuracy": 0.5186083082164854,
+  "picks": {
+   "H": 9917,
+   "D": 8,
+   "A": 5337
+  }
+ },
+ "gate": {
+  "against": "production-statmodel",
+  "passed": true,
+  "n": 13867,
+  "days": 1442,
+  "d_logloss": 0.02199818959433362,
+  "d_logloss_ci": [
+   0.017969553196661058,
+   0.026398462763518264
+  ],
+  "d_rps": 0.0068877168388788105,
+  "d_rps_ci": [
+   0.005634258195619047,
+   0.008263275898705243
+  ],
+  "d_accuracy": 0.01817264008076729,
+  "d_accuracy_ci": [
+   0.012532339317610301,
+   0.023967971833571036
+  ],
+  "p_b_better": 1.0
+ },
+ "history": []
+}

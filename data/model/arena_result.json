@@ -1,0 +1,3669 @@
+{
+ "generated_at": "2026-11-03T13:29:00",
+ "data": {
+  "matches": 51814,
+  "first": "2000-07-28",
+  "last": "2026-11-02",
+  "leagues": [
+   "bundesliga",
+   "epl",
+   "jleague",
+   "laliga",
+   "ligue1",
+   "seriea"
+  ],
+  "dev_years": [
+   2005,
+   2018
+  ],
+  "holdout_years": [
+   2019,
+   2026
+  ]
+ },
+ "engine_search": {
+  "elo": [
+   {
+    "dev_logloss": 0.9932029216496784,
+    "spec": {
+     "kind": "elo",
+     "k": 12,
+     "hfa": 0,
+     "carry": 0.9,
+     "gd": "log"
+    }
+   },
+   {
+    "dev_logloss": 0.993248655843007,
+    "spec": {
+     "kind": "elo",
+     "k": 12,
+     "hfa": 30,
+     "carry": 0.9,
+     "gd": "log"
+    }
+   },
+   {
+    "dev_logloss": 0.9932883237656227,
+    "spec": {
+     "kind": "elo",
+     "k": 12,
+     "hfa": 50,
+     "carry": 0.9,
+     "gd": "log"
+    }
+   },
+   {
+    "dev_logloss": 0.993295761762812,
+    "spec": {
+     "kind": "elo",
+     "k": 12,
+     "hfa": 0,
+     "carry": 0.8,
+     "gd": "log"
+    }
+   },
+   {
+    "dev_logloss": 0.9933356411351317,
+    "spec": {
+     "kind": "elo",
+     "k": 12,
+     "hfa": 70,
+     "carry": 0.9,
+     "gd": "log"
+    }
+   },
+   {
+    "dev_logloss": 0.9933357199735998,
+    "spec": {
+     "kind": "elo",
+     "k": 12,
+     "hfa": 30,
+     "carry": 0.8,
+     "gd": "log"
+    }
+   },
+   {
+    "dev_logloss": 0.9933665395874055,
+    "spec": {
+     "kind": "elo",
+     "k": 12,
+     "hfa": 50,
+     "carry": 0.8,
+     "gd": "log"
+    }
+   },
+   {
+    "dev_logloss": 0.9933723982203262,
+    "spec": {
+     "kind": "elo",
+     "k": 12,
+     "hfa": 0,
+     "carry": 0.9,
+     "gd": "wfe"
+    }
+   },
+   {
+    "dev_logloss": 0.9933927492864154,
+    "spec": {
+     "kind": "elo",
+     "k": 12,
+     "hfa": 90,
+     "carry": 0.9,
+     "gd": "log"
+    }
+   },
+   {
+    "dev_logloss": 0.9934008774475155,
+    "spec": {
+     "kind": "elo",
+     "k": 12,
+     "hfa": 70,
+     "carry": 0.8,
+     "gd": "log"
+    }
+   }
+  ],
+  "pi": [
+   {
+    "dev_logloss": 0.9925931122431187,
+    "spec": {
+     "kind": "pi",
+     "lam": 0.025,
+     "gamma": 1.0,
+     "carry": 0.8
+    }
+   },
+   {
+    "dev_logloss": 0.9926044882113368,
+    "spec": {
+     "kind": "pi",
+     "lam": 0.025,
+     "gamma": 1.0,
+     "carry": 0.9
+    }
+   },
+   {
+    "dev_logloss": 0.9926404436162116,
+    "spec": {
+     "kind": "pi",
+     "lam": 0.035,
+     "gamma": 1.0,
+     "carry": 0.9
+    }
+   },
+   {
+    "dev_logloss": 0.9927406831644232,
+    "spec": {
+     "kind": "pi",
+     "lam": 0.035,
+     "gamma": 1.0,
+     "carry": 1.0
+    }
+   },
+   {
+    "dev_logloss": 0.9928697823623723,
+    "spec": {
+     "kind": "pi",
+     "lam": 0.035,
+     "gamma": 1.0,
+     "carry": 0.8
+    }
+   },
+   {
+    "dev_logloss": 0.9929721446476112,
+    "spec": {
+     "kind": "pi",
+     "lam": 0.025,
+     "gamma": 1.0,
+     "carry": 1.0
+    }
+   },
+   {
+    "dev_logloss": 0.9933820389246176,
+    "spec": {
+     "kind": "pi",
+     "lam": 0.045,
+     "gamma": 1.0,
+     "carry": 1.0
+    }
+   },
+   {
+    "dev_logloss": 0.9933908583917588,
+    "spec": {
+     "kind": "pi",
+     "lam": 0.045,
+     "gamma": 1.0,
+     "carry": 0.9
+    }
+   },
+   {
+    "dev_logloss": 0.9934737770086355,
+    "spec": {
+     "kind": "pi",
+     "lam": 0.015,
+     "gamma": 1.0,
+     "carry": 0.8
+    }
+   },
+   {
+    "dev_logloss": 0.9938537434017511,
+    "spec": {
+     "kind": "pi",
+     "lam": 0.025,
+     "gamma": 1.0,
+     "carry": 0.6
+    }
+   }
+  ],
+  "goals": [
+   {
+    "dev_logloss": 0.9923473462720154,
+    "spec": {
+     "kind": "dp",
+     "stat": "goals",
+     "eta": 0.02,
+     "eta_g": 0.002,
+     "carry": 0.9
+    }
+   },
+   {
+    "dev_logloss": 0.9923684959216305,
+    "spec": {
+     "kind": "dp",
+     "stat": "goals",
+     "eta": 0.02,
+     "eta_g": 0.002,
+     "carry": 0.8
+    }
+   },
+   {
+    "dev_logloss": 0.9924461121068117,
+    "spec": {
+     "kind": "dp",
+     "stat": "goals",
+     "eta": 0.02,
+     "eta_g": 0.001,
+     "carry": 0.9
+    }
+   },
+   {
+    "dev_logloss": 0.9924771072048238,
+    "spec": {
+     "kind": "dp",
+     "stat": "goals",
+     "eta": 0.02,
+     "eta_g": 0.005,
+     "carry": 0.9
+    }
+   },
+   {
+    "dev_logloss": 0.9925121347790895,
+    "spec": {
+     "kind": "dp",
+     "stat": "goals",
+     "eta": 0.015,
+     "eta_g": 0.002,
+     "carry": 0.8
+    }
+   },
+   {
+    "dev_logloss": 0.992700996937857,
+    "spec": {
+     "kind": "dp",
+     "stat": "goals",
+     "eta": 0.02,
+     "eta_g": 0.002,
+     "carry": 1.0
+    }
+   },
+   {
+    "dev_logloss": 0.9927594350095865,
+    "spec": {
+     "kind": "dp",
+     "stat": "goals",
+     "eta": 0.015,
+     "eta_g": 0.002,
+     "carry": 0.9
+    }
+   },
+   {
+    "dev_logloss": 0.9927887761948327,
+    "spec": {
+     "kind": "dp",
+     "stat": "goals",
+     "eta": 0.03,
+     "eta_g": 0.002,
+     "carry": 0.9
+    }
+   },
+   {
+    "dev_logloss": 0.9928627941655462,
+    "spec": {
+     "kind": "dp",
+     "stat": "goals",
+     "eta": 0.015,
+     "eta_g": 0.001,
+     "carry": 0.9
+    }
+   },
+   {
+    "dev_logloss": 0.9929400854097366,
+    "spec": {
+     "kind": "dp",
+     "stat": "goals",
+     "eta": 0.015,
+     "eta_g": 0.005,
+     "carry": 0.9
+    }
+   }
+  ],
+  "sot": [
+   {
+    "dev_logloss": 0.998588579076433,
+    "spec": {
+     "kind": "dp",
+     "stat": "sot",
+     "eta": 0.03,
+     "eta_g": 0.001,
+     "carry": 0.9
+    }
+   },
+   {
+    "dev_logloss": 0.9985888702178901,
+    "spec": {
+     "kind": "dp",
+     "stat": "sot",
+     "eta": 0.03,
+     "eta_g": 0.001,
+     "carry": 0.8
+    }
+   },
+   {
+    "dev_logloss": 0.9986166116694399,
+    "spec": {
+     "kind": "dp",
+     "stat": "sot",
+     "eta": 0.03,
+     "eta_g": 0.002,
+     "carry": 0.9
+    }
+   },
+   {
+    "dev_logloss": 0.9986372385023861,
+    "spec": {
+     "kind": "dp",
+     "stat": "sot",
+     "eta": 0.03,
+     "eta_g": 0.002,
+     "carry": 0.8
+    }
+   },
+   {
+    "dev_logloss": 0.9986806205299671,
+    "spec": {
+     "kind": "dp",
+     "stat": "sot",
+     "eta": 0.03,
+     "eta_g": 0.0,
+     "carry": 0.8
+    }
+   },
+   {
+    "dev_logloss": 0.9988438822906622,
+    "spec": {
+     "kind": "dp",
+     "stat": "sot",
+     "eta": 0.03,
+     "eta_g": 0.001,
+     "carry": 0.7
+    }
+   },
+   {
+    "dev_logloss": 0.9988850626289939,
+    "spec": {
+     "kind": "dp",
+     "stat": "sot",
+     "eta": 0.03,
+     "eta_g": 0.005,
+     "carry": 0.8
+    }
+   },
+   {
+    "dev_logloss": 0.9989136819041328,
+    "spec": {
+     "kind": "dp",
+     "stat": "sot",
+     "eta": 0.03,
+     "eta_g": 0.002,
+     "carry": 0.7
+    }
+   },
+   {
+    "dev_logloss": 0.9989151592377484,
+    "spec": {
+     "kind": "dp",
+     "stat": "sot",
+     "eta": 0.03,
+     "eta_g": 0.0,
+     "carry": 1.0
+    }
+   },
+   {
+    "dev_logloss": 0.9989707634888552,
+    "spec": {
+     "kind": "dp",
+     "stat": "sot",
+     "eta": 0.03,
+     "eta_g": 0.005,
+     "carry": 1.0
+    }
+   }
+  ],
+  "shots": [
+   {
+    "dev_logloss": 1.0047802906202417,
+    "spec": {
+     "kind": "dp",
+     "stat": "shots",
+     "eta": 0.03,
+     "eta_g": 0.001,
+     "carry": 0.9
+    }
+   },
+   {
+    "dev_logloss": 1.0047903600689687,
+    "spec": {
+     "kind": "dp",
+     "stat": "shots",
+     "eta": 0.03,
+     "eta_g": 0.002,
+     "carry": 0.9
+    }
+   },
+   {
+    "dev_logloss": 1.004849065906333,
+    "spec": {
+     "kind": "dp",
+     "stat": "shots",
+     "eta": 0.03,
+     "eta_g": 0.001,
+     "carry": 0.8
+    }
+   },
+   {
+    "dev_logloss": 1.0048715219256703,
+    "spec": {
+     "kind": "dp",
+     "stat": "shots",
+     "eta": 0.03,
+     "eta_g": 0.002,
+     "carry": 0.8
+    }
+   },
+   {
+    "dev_logloss": 1.004900401499804,
+    "spec": {
+     "kind": "dp",
+     "stat": "shots",
+     "eta": 0.03,
+     "eta_g": 0.005,
+     "carry": 0.9
+    }
+   },
+   {
+    "dev_logloss": 1.0049256466500132,
+    "spec": {
+     "kind": "dp",
+     "stat": "shots",
+     "eta": 0.03,
+     "eta_g": 0.002,
+     "carry": 1.0
+    }
+   },
+   {
+    "dev_logloss": 1.004931294287611,
+    "spec": {
+     "kind": "dp",
+     "stat": "shots",
+     "eta": 0.03,
+     "eta_g": 0.001,
+     "carry": 1.0
+    }
+   },
+   {
+    "dev_logloss": 1.0049654363001865,
+    "spec": {
+     "kind": "dp",
+     "stat": "shots",
+     "eta": 0.03,
+     "eta_g": 0.0,
+     "carry": 0.9
+    }
+   },
+   {
+    "dev_logloss": 1.005021232022647,
+    "spec": {
+     "kind": "dp",
+     "stat": "shots",
+     "eta": 0.03,
+     "eta_g": 0.005,
+     "carry": 0.8
+    }
+   },
+   {
+    "dev_logloss": 1.0050344990138382,
+    "spec": {
+     "kind": "dp",
+     "stat": "shots",
+     "eta": 0.03,
+     "eta_g": 0.0,
+     "carry": 0.8
+    }
+   }
+  ]
+ },
+ "best_engines": {
+  "elo": {
+   "kind": "elo",
+   "k": 12,
+   "hfa": 0,
+   "carry": 0.9,
+   "gd": "log"
+  },
+  "pi": {
+   "kind": "pi",
+   "lam": 0.025,
+   "gamma": 1.0,
+   "carry": 0.8
+  },
+  "goals": {
+   "kind": "dp",
+   "stat": "goals",
+   "eta": 0.02,
+   "eta_g": 0.002,
+   "carry": 0.9
+  },
+  "sot": {
+   "kind": "dp",
+   "stat": "sot",
+   "eta": 0.03,
+   "eta_g": 0.001,
+   "carry": 0.8
+  },
+  "shots": {
+   "kind": "dp",
+   "stat": "shots",
+   "eta": 0.03,
+   "eta_g": 0.001,
+   "carry": 0.9
+  }
+ },
+ "combos": [
+  {
+   "dev_logloss": 0.9901978568589158,
+   "engines": [
+    "goals",
+    "pi",
+    "shots"
+   ]
+  },
+  {
+   "dev_logloss": 0.990213775309728,
+   "engines": [
+    "goals",
+    "pi",
+    "shots",
+    "sot"
+   ]
+  },
+  {
+   "dev_logloss": 0.9903517417385892,
+   "engines": [
+    "goals",
+    "shots",
+    "sot"
+   ]
+  },
+  {
+   "dev_logloss": 0.9903546410726195,
+   "engines": [
+    "goals",
+    "pi",
+    "sot"
+   ]
+  },
+  {
+   "dev_logloss": 0.9903710735047602,
+   "engines": [
+    "elo",
+    "goals",
+    "shots",
+    "sot"
+   ]
+  },
+  {
+   "dev_logloss": 0.9903731870931005,
+   "engines": [
+    "elo",
+    "goals",
+    "pi",
+    "shots",
+    "sot"
+   ]
+  },
+  {
+   "dev_logloss": 0.990377296069523,
+   "engines": [
+    "elo",
+    "goals",
+    "pi",
+    "shots"
+   ]
+  },
+  {
+   "dev_logloss": 0.9903894832410252,
+   "engines": [
+    "elo",
+    "goals",
+    "shots"
+   ]
+  },
+  {
+   "dev_logloss": 0.9904198121385004,
+   "engines": [
+    "goals",
+    "shots"
+   ]
+  },
+  {
+   "dev_logloss": 0.990466339518366,
+   "engines": [
+    "elo",
+    "pi",
+    "shots",
+    "sot"
+   ]
+  },
+  {
+   "dev_logloss": 0.9904730779336856,
+   "engines": [
+    "pi",
+    "shots",
+    "sot"
+   ]
+  },
+  {
+   "dev_logloss": 0.9904830769184525,
+   "engines": [
+    "elo",
+    "goals",
+    "sot"
+   ]
+  },
+  {
+   "dev_logloss": 0.9905040902960335,
+   "engines": [
+    "pi",
+    "shots"
+   ]
+  },
+  {
+   "dev_logloss": 0.9905062300675308,
+   "engines": [
+    "elo",
+    "pi",
+    "shots"
+   ]
+  },
+  {
+   "dev_logloss": 0.99051426126231,
+   "engines": [
+    "elo",
+    "goals",
+    "pi",
+    "sot"
+   ]
+  },
+  {
+   "dev_logloss": 0.990533940536942,
+   "engines": [
+    "goals",
+    "sot"
+   ]
+  },
+  {
+   "dev_logloss": 0.9906721961679651,
+   "engines": [
+    "elo",
+    "shots",
+    "sot"
+   ]
+  },
+  {
+   "dev_logloss": 0.9906833216157457,
+   "engines": [
+    "elo",
+    "pi",
+    "sot"
+   ]
+  },
+  {
+   "dev_logloss": 0.9907052312283904,
+   "engines": [
+    "pi",
+    "sot"
+   ]
+  },
+  {
+   "dev_logloss": 0.9907298404064137,
+   "engines": [
+    "elo",
+    "shots"
+   ]
+  },
+  {
+   "dev_logloss": 0.990812579345666,
+   "engines": [
+    "elo",
+    "sot"
+   ]
+  },
+  {
+   "dev_logloss": 0.9919880733888633,
+   "engines": [
+    "goals",
+    "pi"
+   ]
+  },
+  {
+   "dev_logloss": 0.9921688207316315,
+   "engines": [
+    "elo",
+    "goals",
+    "pi"
+   ]
+  },
+  {
+   "dev_logloss": 0.992224535518425,
+   "engines": [
+    "elo",
+    "goals"
+   ]
+  },
+  {
+   "dev_logloss": 0.992621232131502,
+   "engines": [
+    "elo",
+    "pi"
+   ]
+  },
+  {
+   "dev_logloss": 0.9991453477991925,
+   "engines": [
+    "shots",
+    "sot"
+   ]
+  }
+ ],
+ "dev_board": [
+  {
+   "candidate": {
+    "name": "base",
+    "kind": "base",
+    "engines": [],
+    "features": [],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27722,
+    "logloss": 1.0640462981401384,
+    "rps": 0.22604863716866141,
+    "brier": 0.6426202074746901,
+    "accuracy": 0.4579034701680975,
+    "picks": {
+     "H": 27722,
+     "D": 0,
+     "A": 0
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "elo-solo",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "elo",
+      "k": 12,
+      "hfa": 0,
+      "carry": 0.9,
+      "gd": "log"
+     }
+    ],
+    "features": [
+     "elo_diff",
+     "abs:elo_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.9932029216496784,
+    "rps": 0.20242305523761717,
+    "brier": 0.5932773389086882,
+    "accuracy": 0.5140314361587598,
+    "picks": {
+     "H": 20857,
+     "D": 58,
+     "A": 6951
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "pi-solo",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "pi",
+      "lam": 0.025,
+      "gamma": 1.0,
+      "carry": 0.8
+     }
+    ],
+    "features": [
+     "pi_gd",
+     "abs:pi_gd"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.9925931122431187,
+    "rps": 0.2022500831249162,
+    "brier": 0.5928914132126254,
+    "accuracy": 0.5156463073279265,
+    "picks": {
+     "H": 20961,
+     "D": 40,
+     "A": 6865
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "goals-solo",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "dp",
+      "stat": "goals",
+      "eta": 0.02,
+      "eta_g": 0.002,
+      "carry": 0.9
+     }
+    ],
+    "features": [
+     "goals_diff",
+     "goals_sum",
+     "abs:goals_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.9923473462720154,
+    "rps": 0.20217479965911075,
+    "brier": 0.5927481327282629,
+    "accuracy": 0.5154309911720376,
+    "picks": {
+     "H": 20663,
+     "D": 150,
+     "A": 7053
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "sot-solo",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "dp",
+      "stat": "sot",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.8
+     }
+    ],
+    "features": [
+     "sot_diff",
+     "sot_sum",
+     "abs:sot_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.9985888702178901,
+    "rps": 0.20414748421761122,
+    "brier": 0.5969736657311631,
+    "accuracy": 0.5096892270150004,
+    "picks": {
+     "H": 21400,
+     "D": 0,
+     "A": 6466
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "shots-solo",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "dp",
+      "stat": "shots",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.9
+     }
+    ],
+    "features": [
+     "shots_diff",
+     "shots_sum",
+     "abs:shots_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 1.0047802906202417,
+    "rps": 0.20607762449723627,
+    "brier": 0.6009761086561302,
+    "accuracy": 0.5061723964688151,
+    "picks": {
+     "H": 21456,
+     "D": 24,
+     "A": 6386
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "poisson",
+    "kind": "poisson",
+    "engines": [
+     {
+      "kind": "dp",
+      "stat": "goals",
+      "eta": 0.02,
+      "eta_g": 0.002,
+      "carry": 0.9
+     }
+    ],
+    "features": [],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.9931388537069779,
+    "rps": 0.20216727860904712,
+    "brier": 0.5929055648573784,
+    "accuracy": 0.5161487116916673,
+    "picks": {
+     "H": 20733,
+     "D": 2,
+     "A": 7131
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "poisson-dc",
+    "kind": "poisson",
+    "engines": [
+     {
+      "kind": "dp",
+      "stat": "goals",
+      "eta": 0.02,
+      "eta_g": 0.002,
+      "carry": 0.9
+     }
+    ],
+    "features": [],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {
+     "dc": true
+    }
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.9925416205899981,
+    "rps": 0.20214294317879766,
+    "brier": 0.5927595522758836,
+    "accuracy": 0.5162563697696118,
+    "picks": {
+     "H": 20679,
+     "D": 88,
+     "A": 7099
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "stack:elo+goals",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "elo",
+      "k": 12,
+      "hfa": 0,
+      "carry": 0.9,
+      "gd": "log"
+     },
+     {
+      "kind": "dp",
+      "stat": "goals",
+      "eta": 0.02,
+      "eta_g": 0.002,
+      "carry": 0.9
+     }
+    ],
+    "features": [
+     "elo_diff",
+     "abs:elo_diff",
+     "goals_diff",
+     "goals_sum",
+     "abs:goals_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.992224535518425,
+    "rps": 0.20214581531946,
+    "brier": 0.5926820666296222,
+    "accuracy": 0.516722888107371,
+    "picks": {
+     "H": 21335,
+     "D": 38,
+     "A": 6493
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "stack:elo+pi",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "elo",
+      "k": 12,
+      "hfa": 0,
+      "carry": 0.9,
+      "gd": "log"
+     },
+     {
+      "kind": "pi",
+      "lam": 0.025,
+      "gamma": 1.0,
+      "carry": 0.8
+     }
+    ],
+    "features": [
+     "elo_diff",
+     "abs:elo_diff",
+     "pi_gd",
+     "abs:pi_gd"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.992621232131502,
+    "rps": 0.20223750664949483,
+    "brier": 0.5928922164821345,
+    "accuracy": 0.5154309911720376,
+    "picks": {
+     "H": 20895,
+     "D": 56,
+     "A": 6915
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "stack:goals+pi",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "dp",
+      "stat": "goals",
+      "eta": 0.02,
+      "eta_g": 0.002,
+      "carry": 0.9
+     },
+     {
+      "kind": "pi",
+      "lam": 0.025,
+      "gamma": 1.0,
+      "carry": 0.8
+     }
+    ],
+    "features": [
+     "goals_diff",
+     "goals_sum",
+     "abs:goals_diff",
+     "pi_gd",
+     "abs:pi_gd"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.9919880733888633,
+    "rps": 0.20209512834398957,
+    "brier": 0.5925388256548734,
+    "accuracy": 0.516722888107371,
+    "picks": {
+     "H": 21267,
+     "D": 45,
+     "A": 6554
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "stack:elo+goals+pi",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "elo",
+      "k": 12,
+      "hfa": 0,
+      "carry": 0.9,
+      "gd": "log"
+     },
+     {
+      "kind": "dp",
+      "stat": "goals",
+      "eta": 0.02,
+      "eta_g": 0.002,
+      "carry": 0.9
+     },
+     {
+      "kind": "pi",
+      "lam": 0.025,
+      "gamma": 1.0,
+      "carry": 0.8
+     }
+    ],
+    "features": [
+     "elo_diff",
+     "abs:elo_diff",
+     "goals_diff",
+     "goals_sum",
+     "abs:goals_diff",
+     "pi_gd",
+     "abs:pi_gd"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.9921688207316315,
+    "rps": 0.2021186374253689,
+    "brier": 0.5926281315369003,
+    "accuracy": 0.5163281418215747,
+    "picks": {
+     "H": 21306,
+     "D": 55,
+     "A": 6505
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "stack:elo+shots",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "elo",
+      "k": 12,
+      "hfa": 0,
+      "carry": 0.9,
+      "gd": "log"
+     },
+     {
+      "kind": "dp",
+      "stat": "shots",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.9
+     }
+    ],
+    "features": [
+     "elo_diff",
+     "abs:elo_diff",
+     "shots_diff",
+     "shots_sum",
+     "abs:shots_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.9907298404064137,
+    "rps": 0.20161893848806098,
+    "brier": 0.5915259419316466,
+    "accuracy": 0.5169740902892414,
+    "picks": {
+     "H": 20386,
+     "D": 142,
+     "A": 7338
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "stack:goals+shots",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "dp",
+      "stat": "goals",
+      "eta": 0.02,
+      "eta_g": 0.002,
+      "carry": 0.9
+     },
+     {
+      "kind": "dp",
+      "stat": "shots",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.9
+     }
+    ],
+    "features": [
+     "goals_diff",
+     "goals_sum",
+     "abs:goals_diff",
+     "shots_diff",
+     "shots_sum",
+     "abs:shots_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.9904198121385004,
+    "rps": 0.20153727540921107,
+    "brier": 0.5913398001862337,
+    "accuracy": 0.5165434579774636,
+    "picks": {
+     "H": 20222,
+     "D": 212,
+     "A": 7432
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "stack:elo+goals+shots",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "elo",
+      "k": 12,
+      "hfa": 0,
+      "carry": 0.9,
+      "gd": "log"
+     },
+     {
+      "kind": "dp",
+      "stat": "goals",
+      "eta": 0.02,
+      "eta_g": 0.002,
+      "carry": 0.9
+     },
+     {
+      "kind": "dp",
+      "stat": "shots",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.9
+     }
+    ],
+    "features": [
+     "elo_diff",
+     "abs:elo_diff",
+     "goals_diff",
+     "goals_sum",
+     "abs:goals_diff",
+     "shots_diff",
+     "shots_sum",
+     "abs:shots_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.9903894832410252,
+    "rps": 0.20151149469559207,
+    "brier": 0.5913172194626586,
+    "accuracy": 0.5175841527309266,
+    "picks": {
+     "H": 20795,
+     "D": 112,
+     "A": 6959
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "stack:pi+shots",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "pi",
+      "lam": 0.025,
+      "gamma": 1.0,
+      "carry": 0.8
+     },
+     {
+      "kind": "dp",
+      "stat": "shots",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.9
+     }
+    ],
+    "features": [
+     "pi_gd",
+     "abs:pi_gd",
+     "shots_diff",
+     "shots_sum",
+     "abs:shots_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.9905040902960335,
+    "rps": 0.20155549104929582,
+    "brier": 0.5913773283558841,
+    "accuracy": 0.5179788990167229,
+    "picks": {
+     "H": 20503,
+     "D": 124,
+     "A": 7239
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "stack:elo+pi+shots",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "elo",
+      "k": 12,
+      "hfa": 0,
+      "carry": 0.9,
+      "gd": "log"
+     },
+     {
+      "kind": "pi",
+      "lam": 0.025,
+      "gamma": 1.0,
+      "carry": 0.8
+     },
+     {
+      "kind": "dp",
+      "stat": "shots",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.9
+     }
+    ],
+    "features": [
+     "elo_diff",
+     "abs:elo_diff",
+     "pi_gd",
+     "abs:pi_gd",
+     "shots_diff",
+     "shots_sum",
+     "abs:shots_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.9905062300675308,
+    "rps": 0.20153875396439036,
+    "brier": 0.591363464653994,
+    "accuracy": 0.5172970645230747,
+    "picks": {
+     "H": 20443,
+     "D": 117,
+     "A": 7306
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "stack:goals+pi+shots",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "dp",
+      "stat": "goals",
+      "eta": 0.02,
+      "eta_g": 0.002,
+      "carry": 0.9
+     },
+     {
+      "kind": "pi",
+      "lam": 0.025,
+      "gamma": 1.0,
+      "carry": 0.8
+     },
+     {
+      "kind": "dp",
+      "stat": "shots",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.9
+     }
+    ],
+    "features": [
+     "goals_diff",
+     "goals_sum",
+     "abs:goals_diff",
+     "pi_gd",
+     "abs:pi_gd",
+     "shots_diff",
+     "shots_sum",
+     "abs:shots_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.9901978568589158,
+    "rps": 0.20147825230765432,
+    "brier": 0.591204566651781,
+    "accuracy": 0.5175123806789637,
+    "picks": {
+     "H": 20733,
+     "D": 110,
+     "A": 7023
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "stack:elo+goals+pi+shots",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "elo",
+      "k": 12,
+      "hfa": 0,
+      "carry": 0.9,
+      "gd": "log"
+     },
+     {
+      "kind": "dp",
+      "stat": "goals",
+      "eta": 0.02,
+      "eta_g": 0.002,
+      "carry": 0.9
+     },
+     {
+      "kind": "pi",
+      "lam": 0.025,
+      "gamma": 1.0,
+      "carry": 0.8
+     },
+     {
+      "kind": "dp",
+      "stat": "shots",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.9
+     }
+    ],
+    "features": [
+     "elo_diff",
+     "abs:elo_diff",
+     "goals_diff",
+     "goals_sum",
+     "abs:goals_diff",
+     "pi_gd",
+     "abs:pi_gd",
+     "shots_diff",
+     "shots_sum",
+     "abs:shots_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.990377296069523,
+    "rps": 0.20149855854652593,
+    "brier": 0.5912882191397618,
+    "accuracy": 0.5172252924711117,
+    "picks": {
+     "H": 20790,
+     "D": 112,
+     "A": 6964
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "stack:elo+sot",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "elo",
+      "k": 12,
+      "hfa": 0,
+      "carry": 0.9,
+      "gd": "log"
+     },
+     {
+      "kind": "dp",
+      "stat": "sot",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.8
+     }
+    ],
+    "features": [
+     "elo_diff",
+     "abs:elo_diff",
+     "sot_diff",
+     "sot_sum",
+     "abs:sot_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.990812579345666,
+    "rps": 0.20164354186408276,
+    "brier": 0.5916441785331403,
+    "accuracy": 0.5165434579774636,
+    "picks": {
+     "H": 20328,
+     "D": 47,
+     "A": 7491
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "stack:goals+sot",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "dp",
+      "stat": "goals",
+      "eta": 0.02,
+      "eta_g": 0.002,
+      "carry": 0.9
+     },
+     {
+      "kind": "dp",
+      "stat": "sot",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.8
+     }
+    ],
+    "features": [
+     "goals_diff",
+     "goals_sum",
+     "abs:goals_diff",
+     "sot_diff",
+     "sot_sum",
+     "abs:sot_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.990533940536942,
+    "rps": 0.2015837671711966,
+    "brier": 0.5914676951611199,
+    "accuracy": 0.5181583291466303,
+    "picks": {
+     "H": 20247,
+     "D": 90,
+     "A": 7529
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "stack:elo+goals+sot",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "elo",
+      "k": 12,
+      "hfa": 0,
+      "carry": 0.9,
+      "gd": "log"
+     },
+     {
+      "kind": "dp",
+      "stat": "goals",
+      "eta": 0.02,
+      "eta_g": 0.002,
+      "carry": 0.9
+     },
+     {
+      "kind": "dp",
+      "stat": "sot",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.8
+     }
+    ],
+    "features": [
+     "elo_diff",
+     "abs:elo_diff",
+     "goals_diff",
+     "goals_sum",
+     "abs:goals_diff",
+     "sot_diff",
+     "sot_sum",
+     "abs:sot_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.9904830769184525,
+    "rps": 0.20155094022300551,
+    "brier": 0.591429581654973,
+    "accuracy": 0.5179071269647599,
+    "picks": {
+     "H": 20823,
+     "D": 27,
+     "A": 7016
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "stack:pi+sot",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "pi",
+      "lam": 0.025,
+      "gamma": 1.0,
+      "carry": 0.8
+     },
+     {
+      "kind": "dp",
+      "stat": "sot",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.8
+     }
+    ],
+    "features": [
+     "pi_gd",
+     "abs:pi_gd",
+     "sot_diff",
+     "sot_sum",
+     "abs:sot_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.9907052312283904,
+    "rps": 0.20161553010060204,
+    "brier": 0.5915722435658085,
+    "accuracy": 0.5175841527309266,
+    "picks": {
+     "H": 20319,
+     "D": 37,
+     "A": 7510
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "stack:elo+pi+sot",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "elo",
+      "k": 12,
+      "hfa": 0,
+      "carry": 0.9,
+      "gd": "log"
+     },
+     {
+      "kind": "pi",
+      "lam": 0.025,
+      "gamma": 1.0,
+      "carry": 0.8
+     },
+     {
+      "kind": "dp",
+      "stat": "sot",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.8
+     }
+    ],
+    "features": [
+     "elo_diff",
+     "abs:elo_diff",
+     "pi_gd",
+     "abs:pi_gd",
+     "sot_diff",
+     "sot_sum",
+     "abs:sot_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.9906833216157457,
+    "rps": 0.20159113185770797,
+    "brier": 0.5915419874175423,
+    "accuracy": 0.5175841527309266,
+    "picks": {
+     "H": 20293,
+     "D": 48,
+     "A": 7525
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "stack:goals+pi+sot",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "dp",
+      "stat": "goals",
+      "eta": 0.02,
+      "eta_g": 0.002,
+      "carry": 0.9
+     },
+     {
+      "kind": "pi",
+      "lam": 0.025,
+      "gamma": 1.0,
+      "carry": 0.8
+     },
+     {
+      "kind": "dp",
+      "stat": "sot",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.8
+     }
+    ],
+    "features": [
+     "goals_diff",
+     "goals_sum",
+     "abs:goals_diff",
+     "pi_gd",
+     "abs:pi_gd",
+     "sot_diff",
+     "sot_sum",
+     "abs:sot_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.9903546410726195,
+    "rps": 0.20153152597378235,
+    "brier": 0.5913572391522112,
+    "accuracy": 0.517835354912797,
+    "picks": {
+     "H": 20710,
+     "D": 31,
+     "A": 7125
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "stack:elo+goals+pi+sot",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "elo",
+      "k": 12,
+      "hfa": 0,
+      "carry": 0.9,
+      "gd": "log"
+     },
+     {
+      "kind": "dp",
+      "stat": "goals",
+      "eta": 0.02,
+      "eta_g": 0.002,
+      "carry": 0.9
+     },
+     {
+      "kind": "pi",
+      "lam": 0.025,
+      "gamma": 1.0,
+      "carry": 0.8
+     },
+     {
+      "kind": "dp",
+      "stat": "sot",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.8
+     }
+    ],
+    "features": [
+     "elo_diff",
+     "abs:elo_diff",
+     "goals_diff",
+     "goals_sum",
+     "abs:goals_diff",
+     "pi_gd",
+     "abs:pi_gd",
+     "sot_diff",
+     "sot_sum",
+     "abs:sot_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.99051426126231,
+    "rps": 0.20154814176206867,
+    "brier": 0.591430213642628,
+    "accuracy": 0.5179788990167229,
+    "picks": {
+     "H": 20786,
+     "D": 31,
+     "A": 7049
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "stack:shots+sot",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "dp",
+      "stat": "shots",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.9
+     },
+     {
+      "kind": "dp",
+      "stat": "sot",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.8
+     }
+    ],
+    "features": [
+     "shots_diff",
+     "shots_sum",
+     "abs:shots_diff",
+     "sot_diff",
+     "sot_sum",
+     "abs:sot_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.9991453477991925,
+    "rps": 0.2043207154526043,
+    "brier": 0.5972844117926117,
+    "accuracy": 0.5097609990669634,
+    "picks": {
+     "H": 21081,
+     "D": 130,
+     "A": 6655
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "stack:elo+shots+sot",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "elo",
+      "k": 12,
+      "hfa": 0,
+      "carry": 0.9,
+      "gd": "log"
+     },
+     {
+      "kind": "dp",
+      "stat": "shots",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.9
+     },
+     {
+      "kind": "dp",
+      "stat": "sot",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.8
+     }
+    ],
+    "features": [
+     "elo_diff",
+     "abs:elo_diff",
+     "shots_diff",
+     "shots_sum",
+     "abs:shots_diff",
+     "sot_diff",
+     "sot_sum",
+     "abs:sot_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.9906721961679651,
+    "rps": 0.2015970960177839,
+    "brier": 0.591544015384411,
+    "accuracy": 0.5171894064451302,
+    "picks": {
+     "H": 20106,
+     "D": 244,
+     "A": 7516
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "stack:goals+shots+sot",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "dp",
+      "stat": "goals",
+      "eta": 0.02,
+      "eta_g": 0.002,
+      "carry": 0.9
+     },
+     {
+      "kind": "dp",
+      "stat": "shots",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.9
+     },
+     {
+      "kind": "dp",
+      "stat": "sot",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.8
+     }
+    ],
+    "features": [
+     "goals_diff",
+     "goals_sum",
+     "abs:goals_diff",
+     "shots_diff",
+     "shots_sum",
+     "abs:shots_diff",
+     "sot_diff",
+     "sot_sum",
+     "abs:sot_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.9903517417385892,
+    "rps": 0.20151178624495744,
+    "brier": 0.5913261653325872,
+    "accuracy": 0.5181583291466303,
+    "picks": {
+     "H": 20066,
+     "D": 271,
+     "A": 7529
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "stack:elo+goals+shots+sot",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "elo",
+      "k": 12,
+      "hfa": 0,
+      "carry": 0.9,
+      "gd": "log"
+     },
+     {
+      "kind": "dp",
+      "stat": "goals",
+      "eta": 0.02,
+      "eta_g": 0.002,
+      "carry": 0.9
+     },
+     {
+      "kind": "dp",
+      "stat": "shots",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.9
+     },
+     {
+      "kind": "dp",
+      "stat": "sot",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.8
+     }
+    ],
+    "features": [
+     "elo_diff",
+     "abs:elo_diff",
+     "goals_diff",
+     "goals_sum",
+     "abs:goals_diff",
+     "shots_diff",
+     "shots_sum",
+     "abs:shots_diff",
+     "sot_diff",
+     "sot_sum",
+     "abs:sot_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.9903710735047602,
+    "rps": 0.20149093936174825,
+    "brier": 0.5913355562492122,
+    "accuracy": 0.5182301011985933,
+    "picks": {
+     "H": 20567,
+     "D": 220,
+     "A": 7079
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "stack:pi+shots+sot",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "pi",
+      "lam": 0.025,
+      "gamma": 1.0,
+      "carry": 0.8
+     },
+     {
+      "kind": "dp",
+      "stat": "shots",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.9
+     },
+     {
+      "kind": "dp",
+      "stat": "sot",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.8
+     }
+    ],
+    "features": [
+     "pi_gd",
+     "abs:pi_gd",
+     "shots_diff",
+     "shots_sum",
+     "abs:shots_diff",
+     "sot_diff",
+     "sot_sum",
+     "abs:sot_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.9904730779336856,
+    "rps": 0.20154261023729336,
+    "brier": 0.5914211798668803,
+    "accuracy": 0.5181224431206488,
+    "picks": {
+     "H": 20140,
+     "D": 238,
+     "A": 7488
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "stack:elo+pi+shots+sot",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "elo",
+      "k": 12,
+      "hfa": 0,
+      "carry": 0.9,
+      "gd": "log"
+     },
+     {
+      "kind": "pi",
+      "lam": 0.025,
+      "gamma": 1.0,
+      "carry": 0.8
+     },
+     {
+      "kind": "dp",
+      "stat": "shots",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.9
+     },
+     {
+      "kind": "dp",
+      "stat": "sot",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.8
+     }
+    ],
+    "features": [
+     "elo_diff",
+     "abs:elo_diff",
+     "pi_gd",
+     "abs:pi_gd",
+     "shots_diff",
+     "shots_sum",
+     "abs:shots_diff",
+     "sot_diff",
+     "sot_sum",
+     "abs:sot_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.990466339518366,
+    "rps": 0.20152550788619522,
+    "brier": 0.591399927817716,
+    "accuracy": 0.5169023182372784,
+    "picks": {
+     "H": 20073,
+     "D": 253,
+     "A": 7540
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "stack:goals+pi+shots+sot",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "dp",
+      "stat": "goals",
+      "eta": 0.02,
+      "eta_g": 0.002,
+      "carry": 0.9
+     },
+     {
+      "kind": "pi",
+      "lam": 0.025,
+      "gamma": 1.0,
+      "carry": 0.8
+     },
+     {
+      "kind": "dp",
+      "stat": "shots",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.9
+     },
+     {
+      "kind": "dp",
+      "stat": "sot",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.8
+     }
+    ],
+    "features": [
+     "goals_diff",
+     "goals_sum",
+     "abs:goals_diff",
+     "pi_gd",
+     "abs:pi_gd",
+     "shots_diff",
+     "shots_sum",
+     "abs:shots_diff",
+     "sot_diff",
+     "sot_sum",
+     "abs:sot_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.990213775309728,
+    "rps": 0.2014644378016778,
+    "brier": 0.5912433901306329,
+    "accuracy": 0.5179788990167229,
+    "picks": {
+     "H": 20523,
+     "D": 212,
+     "A": 7131
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "stack:elo+goals+pi+shots+sot",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "elo",
+      "k": 12,
+      "hfa": 0,
+      "carry": 0.9,
+      "gd": "log"
+     },
+     {
+      "kind": "dp",
+      "stat": "goals",
+      "eta": 0.02,
+      "eta_g": 0.002,
+      "carry": 0.9
+     },
+     {
+      "kind": "pi",
+      "lam": 0.025,
+      "gamma": 1.0,
+      "carry": 0.8
+     },
+     {
+      "kind": "dp",
+      "stat": "shots",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.9
+     },
+     {
+      "kind": "dp",
+      "stat": "sot",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.8
+     }
+    ],
+    "features": [
+     "elo_diff",
+     "abs:elo_diff",
+     "goals_diff",
+     "goals_sum",
+     "abs:goals_diff",
+     "pi_gd",
+     "abs:pi_gd",
+     "shots_diff",
+     "shots_sum",
+     "abs:shots_diff",
+     "sot_diff",
+     "sot_sum",
+     "abs:sot_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.9903731870931005,
+    "rps": 0.2014819056605269,
+    "brier": 0.5913202289063226,
+    "accuracy": 0.5176559247828896,
+    "picks": {
+     "H": 20551,
+     "D": 218,
+     "A": 7097
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "stack[l2=100,lg=1,w=0]",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "dp",
+      "stat": "goals",
+      "eta": 0.02,
+      "eta_g": 0.002,
+      "carry": 0.9
+     },
+     {
+      "kind": "pi",
+      "lam": 0.025,
+      "gamma": 1.0,
+      "carry": 0.8
+     },
+     {
+      "kind": "dp",
+      "stat": "shots",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.9
+     }
+    ],
+    "features": [
+     "goals_diff",
+     "goals_sum",
+     "abs:goals_diff",
+     "pi_gd",
+     "abs:pi_gd",
+     "shots_diff",
+     "shots_sum",
+     "abs:shots_diff"
+    ],
+    "l2": 100.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {}
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.9900185131671538,
+    "rps": 0.20143919411007083,
+    "brier": 0.5911031248287357,
+    "accuracy": 0.5174406086270007,
+    "picks": {
+     "H": 20570,
+     "D": 68,
+     "A": 7228
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "gbm[0.05,150,15]",
+    "kind": "gbm",
+    "engines": [
+     {
+      "kind": "dp",
+      "stat": "goals",
+      "eta": 0.02,
+      "eta_g": 0.002,
+      "carry": 0.9
+     },
+     {
+      "kind": "pi",
+      "lam": 0.025,
+      "gamma": 1.0,
+      "carry": 0.8
+     },
+     {
+      "kind": "dp",
+      "stat": "shots",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.9
+     }
+    ],
+    "features": [
+     "goals_diff",
+     "goals_sum",
+     "abs:goals_diff",
+     "pi_gd",
+     "abs:pi_gd",
+     "shots_diff",
+     "shots_sum",
+     "abs:shots_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {
+     "lr": 0.05,
+     "iters": 150,
+     "leaves": 15,
+     "min_leaf": 300
+    }
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 1.0009894614864847,
+    "rps": 0.2034101046284143,
+    "brier": 0.5971310635662731,
+    "accuracy": 0.5116629584439819,
+    "picks": {
+     "H": 19603,
+     "D": 1076,
+     "A": 7187
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "gbm[0.03,300,7]",
+    "kind": "gbm",
+    "engines": [
+     {
+      "kind": "dp",
+      "stat": "goals",
+      "eta": 0.02,
+      "eta_g": 0.002,
+      "carry": 0.9
+     },
+     {
+      "kind": "pi",
+      "lam": 0.025,
+      "gamma": 1.0,
+      "carry": 0.8
+     },
+     {
+      "kind": "dp",
+      "stat": "shots",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.9
+     }
+    ],
+    "features": [
+     "goals_diff",
+     "goals_sum",
+     "abs:goals_diff",
+     "pi_gd",
+     "abs:pi_gd",
+     "shots_diff",
+     "shots_sum",
+     "abs:shots_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {
+     "lr": 0.03,
+     "iters": 300,
+     "leaves": 7,
+     "min_leaf": 500
+    }
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.9962519334729438,
+    "rps": 0.2025079941944882,
+    "brier": 0.5944218577608061,
+    "accuracy": 0.515538649249982,
+    "picks": {
+     "H": 20183,
+     "D": 606,
+     "A": 7077
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "mlp[16]",
+    "kind": "mlp",
+    "engines": [
+     {
+      "kind": "dp",
+      "stat": "goals",
+      "eta": 0.02,
+      "eta_g": 0.002,
+      "carry": 0.9
+     },
+     {
+      "kind": "pi",
+      "lam": 0.025,
+      "gamma": 1.0,
+      "carry": 0.8
+     },
+     {
+      "kind": "dp",
+      "stat": "shots",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.9
+     }
+    ],
+    "features": [
+     "goals_diff",
+     "goals_sum",
+     "abs:goals_diff",
+     "pi_gd",
+     "abs:pi_gd",
+     "shots_diff",
+     "shots_sum",
+     "abs:shots_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {
+     "hidden": [
+      16
+     ],
+     "alpha": 1.0
+    }
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.9959052107261549,
+    "rps": 0.20264810312417827,
+    "brier": 0.5950425502790354,
+    "accuracy": 0.5114117562621115,
+    "picks": {
+     "H": 19765,
+     "D": 819,
+     "A": 7282
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "mlp[32, 16]",
+    "kind": "mlp",
+    "engines": [
+     {
+      "kind": "dp",
+      "stat": "goals",
+      "eta": 0.02,
+      "eta_g": 0.002,
+      "carry": 0.9
+     },
+     {
+      "kind": "pi",
+      "lam": 0.025,
+      "gamma": 1.0,
+      "carry": 0.8
+     },
+     {
+      "kind": "dp",
+      "stat": "shots",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.9
+     }
+    ],
+    "features": [
+     "goals_diff",
+     "goals_sum",
+     "abs:goals_diff",
+     "pi_gd",
+     "abs:pi_gd",
+     "shots_diff",
+     "shots_sum",
+     "abs:shots_diff"
+    ],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "independent",
+    "options": {
+     "hidden": [
+      32,
+      16
+     ],
+     "alpha": 3.0
+    }
+   },
+   "dev": {
+    "n": 27866,
+    "logloss": 0.9927098104448826,
+    "rps": 0.2022295427388155,
+    "brier": 0.5927819629114636,
+    "accuracy": 0.5164716859255006,
+    "picks": {
+     "H": 20662,
+     "D": 0,
+     "A": 7204
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "market-pinnacle",
+    "kind": "market",
+    "engines": [],
+    "features": [],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "market",
+    "options": {
+     "odds": "open"
+    }
+   },
+   "dev": {
+    "n": 12763,
+    "logloss": 0.9601003777795465,
+    "rps": 0.19337430321415816,
+    "brier": 0.5699453494511598,
+    "accuracy": 0.5410170022721931,
+    "picks": {
+     "H": 9066,
+     "D": 6,
+     "A": 3691
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "market+model-stack",
+    "kind": "stack",
+    "engines": [
+     {
+      "kind": "dp",
+      "stat": "goals",
+      "eta": 0.02,
+      "eta_g": 0.002,
+      "carry": 0.9
+     },
+     {
+      "kind": "pi",
+      "lam": 0.025,
+      "gamma": 1.0,
+      "carry": 0.8
+     },
+     {
+      "kind": "dp",
+      "stat": "shots",
+      "eta": 0.03,
+      "eta_g": 0.001,
+      "carry": 0.9
+     }
+    ],
+    "features": [
+     "mkt_h",
+     "mkt_a",
+     "goals_diff",
+     "goals_sum",
+     "abs:goals_diff",
+     "pi_gd",
+     "abs:pi_gd",
+     "shots_diff",
+     "shots_sum",
+     "abs:shots_diff"
+    ],
+    "l2": 100.0,
+    "per_league": true,
+    "window": 0,
+    "track": "market",
+    "options": {}
+   },
+   "dev": {
+    "n": 10941,
+    "logloss": 0.9611123049074681,
+    "rps": 0.19376535152417,
+    "brier": 0.5706934367504181,
+    "accuracy": 0.5398958047710447,
+    "picks": {
+     "H": 7623,
+     "D": 44,
+     "A": 3274
+    }
+   }
+  },
+  {
+   "candidate": {
+    "name": "market+model-blend",
+    "kind": "blend",
+    "engines": [],
+    "features": [],
+    "l2": 1.0,
+    "per_league": true,
+    "window": 0,
+    "track": "market",
+    "options": {
+     "members": [
+      {
+       "name": "challenger:stack[l2=100,lg=1,w=0]",
+       "kind": "stack",
+       "engines": [
+        {
+         "kind": "dp",
+         "stat": "goals",
+         "eta": 0.02,
+         "eta_g": 0.002,
+         "carry": 0.9
+        },
+        {
+         "kind": "pi",
+         "lam": 0.025,
+         "gamma": 1.0,
+         "carry": 0.8
+        },
+        {
+         "kind": "dp",
+         "stat": "shots",
+         "eta": 0.03,
+         "eta_g": 0.001,
+         "carry": 0.9
+        }
+       ],
+       "features": [
+        "goals_diff",
+        "goals_sum",
+        "abs:goals_diff",
+        "pi_gd",
+        "abs:pi_gd",
+        "shots_diff",
+        "shots_sum",
+        "abs:shots_diff"
+       ],
+       "l2": 100.0,
+       "per_league": true,
+       "window": 0,
+       "track": "independent",
+       "options": {}
+      },
+      {
+       "name": "market-pinnacle",
+       "kind": "market",
+       "engines": [],
+       "features": [],
+       "l2": 1.0,
+       "per_league": true,
+       "window": 0,
+       "track": "market",
+       "options": {
+        "odds": "open"
+       }
+      }
+     ]
+    }
+   },
+   "dev": {
+    "n": 10941,
+    "logloss": 0.9580617169454223,
+    "rps": 0.1930633912553593,
+    "brier": 0.5686508429997401,
+    "accuracy": 0.5425463851567498,
+    "picks": {
+     "H": 7724,
+     "D": 3,
+     "A": 3214
+    }
+   }
+  }
+ ],
+ "challenger": {
+  "name": "challenger:stack[l2=100,lg=1,w=0]",
+  "kind": "stack",
+  "engines": [
+   {
+    "kind": "dp",
+    "stat": "goals",
+    "eta": 0.02,
+    "eta_g": 0.002,
+    "carry": 0.9
+   },
+   {
+    "kind": "pi",
+    "lam": 0.025,
+    "gamma": 1.0,
+    "carry": 0.8
+   },
+   {
+    "kind": "dp",
+    "stat": "shots",
+    "eta": 0.03,
+    "eta_g": 0.001,
+    "carry": 0.9
+   }
+  ],
+  "features": [
+   "goals_diff",
+   "goals_sum",
+   "abs:goals_diff",
+   "pi_gd",
+   "abs:pi_gd",
+   "shots_diff",
+   "shots_sum",
+   "abs:shots_diff"
+  ],
+  "l2": 100.0,
+  "per_league": true,
+  "window": 0,
+  "track": "independent",
+  "options": {}
+ },
+ "holdout": {
+  "challenger": {
+   "n": 15262,
+   "logloss": 0.9943069791501962,
+   "rps": 0.20303010685581663,
+   "brier": 0.5929463649725546,
+   "accuracy": 0.5186083082164854,
+   "picks": {
+    "H": 9917,
+    "D": 8,
+    "A": 5337
+   }
+  },
+  "production-statmodel": {
+   "n": 13867,
+   "logloss": 1.0161147044600687,
+   "rps": 0.21001262757389816,
+   "brier": 0.6082858819766594,
+   "accuracy": 0.5011177615922694,
+   "picks": {
+    "H": 8680,
+    "D": 73,
+    "A": 5114
+   }
+  },
+  "base": {
+   "n": 15262,
+   "logloss": 1.0783909146855837,
+   "rps": 0.23179731231226516,
+   "brier": 0.652911828343117,
+   "accuracy": 0.4283187000393133,
+   "picks": {
+    "H": 15262,
+    "D": 0,
+    "A": 0
+   }
+  },
+  "poisson-dc": {
+   "n": 15262,
+   "logloss": 0.9963728007867504,
+   "rps": 0.20375242172969363,
+   "brier": 0.5946012592577362,
+   "accuracy": 0.5179530860961866,
+   "picks": {
+    "H": 9958,
+    "D": 22,
+    "A": 5282
+   }
+  },
+  "elo-solo": {
+   "n": 15262,
+   "logloss": 0.9998675525472022,
+   "rps": 0.20468854476867154,
+   "brier": 0.5967945004772888,
+   "accuracy": 0.5167736862796488,
+   "picks": {
+    "H": 10387,
+    "D": 0,
+    "A": 4875
+   }
+  },
+  "pi-solo": {
+   "n": 15262,
+   "logloss": 0.9996450410619508,
+   "rps": 0.2045668114605956,
+   "brier": 0.5964523113734481,
+   "accuracy": 0.5148080199187525,
+   "picks": {
+    "H": 10534,
+    "D": 0,
+    "A": 4728
+   }
+  },
+  "goals-solo": {
+   "n": 15262,
+   "logloss": 0.9962273555587845,
+   "rps": 0.20367641446557105,
+   "brier": 0.5944342514576888,
+   "accuracy": 0.5184117415803957,
+   "picks": {
+    "H": 9727,
+    "D": 20,
+    "A": 5515
+   }
+  },
+  "sot-solo": {
+   "n": 15262,
+   "logloss": 1.0041090975071205,
+   "rps": 0.20625855079126326,
+   "brier": 0.5998767376743909,
+   "accuracy": 0.5049796881142707,
+   "picks": {
+    "H": 10897,
+    "D": 0,
+    "A": 4365
+   }
+  },
+  "shots-solo": {
+   "n": 15262,
+   "logloss": 1.0091732330405818,
+   "rps": 0.2079430429356463,
+   "brier": 0.6033224712738052,
+   "accuracy": 0.5009173109684183,
+   "picks": {
+    "H": 11215,
+    "D": 14,
+    "A": 4033
+   }
+  },
+  "gbm[0.05,150,15]": {
+   "n": 15262,
+   "logloss": 0.9995381517953144,
+   "rps": 0.2041710951745099,
+   "brier": 0.5959574318311278,
+   "accuracy": 0.5154632420390513,
+   "picks": {
+    "H": 9984,
+    "D": 154,
+    "A": 5124
+   }
+  },
+  "gbm[0.03,300,7]": {
+   "n": 15262,
+   "logloss": 0.9973732128065645,
+   "rps": 0.20369577495560215,
+   "brier": 0.5946602570747428,
+   "accuracy": 0.5163150307954396,
+   "picks": {
+    "H": 10032,
+    "D": 85,
+    "A": 5145
+   }
+  },
+  "mlp[16]": {
+   "n": 15262,
+   "logloss": 0.9959564943143883,
+   "rps": 0.20344387725882412,
+   "brier": 0.594075319980562,
+   "accuracy": 0.5163150307954396,
+   "picks": {
+    "H": 9917,
+    "D": 12,
+    "A": 5333
+   }
+  },
+  "mlp[32, 16]": {
+   "n": 15262,
+   "logloss": 0.9961999165348668,
+   "rps": 0.2036978607904452,
+   "brier": 0.5944399403967672,
+   "accuracy": 0.5189359192766347,
+   "picks": {
+    "H": 9796,
+    "D": 0,
+    "A": 5466
+   }
+  },
+  "market-pinnacle": {
+   "n": 11601,
+   "logloss": 0.9709751122559952,
+   "rps": 0.19569439351557533,
+   "brier": 0.5771050578454515,
+   "accuracy": 0.53590207740712,
+   "picks": {
+    "H": 7473,
+    "D": 15,
+    "A": 4113
+   }
+  },
+  "market+model-stack": {
+   "n": 11601,
+   "logloss": 0.9716925096548156,
+   "rps": 0.19592467785750242,
+   "brier": 0.5775639160188876,
+   "accuracy": 0.5351262822170503,
+   "picks": {
+    "H": 7455,
+    "D": 10,
+    "A": 4136
+   }
+  },
+  "market+model-blend": {
+   "n": 11601,
+   "logloss": 0.9709751122559952,
+   "rps": 0.19569439351557533,
+   "brier": 0.5771050578454515,
+   "accuracy": 0.53590207740712,
+   "picks": {
+    "H": 7473,
+    "D": 15,
+    "A": 4113
+   }
+  }
+ },
+ "holdout_per_league": {
+  "bundesliga": {
+   "challenger": {
+    "n": 2214,
+    "logloss": 0.9888436772114858,
+    "rps": 0.20256374384885237,
+    "brier": 0.5892988196076968,
+    "accuracy": 0.521680216802168,
+    "picks": {
+     "H": 1443,
+     "D": 0,
+     "A": 771
+    }
+   },
+   "production-statmodel": {
+    "n": 1998,
+    "logloss": 1.0223429339787884,
+    "rps": 0.21201646005081465,
+    "brier": 0.611931166192598,
+    "accuracy": 0.506006006006006,
+    "picks": {
+     "H": 1266,
+     "D": 0,
+     "A": 732
+    }
+   },
+   "market-pinnacle": {
+    "n": 1986,
+    "logloss": 0.9760998032973046,
+    "rps": 0.19840939936501248,
+    "brier": 0.5801165927224534,
+    "accuracy": 0.526183282980866,
+    "picks": {
+     "H": 1290,
+     "D": 0,
+     "A": 696
+    }
+   },
+   "base": {
+    "n": 2214,
+    "logloss": 1.0737600257235655,
+    "rps": 0.23211330009298164,
+    "brier": 0.6500350516489514,
+    "accuracy": 0.4340560072267389,
+    "picks": {
+     "H": 2214,
+     "D": 0,
+     "A": 0
+    }
+   }
+  },
+  "epl": {
+   "challenger": {
+    "n": 2750,
+    "logloss": 0.9844652070806442,
+    "rps": 0.20300760130987563,
+    "brier": 0.5854850177173239,
+    "accuracy": 0.5301818181818182,
+    "picks": {
+     "H": 1740,
+     "D": 0,
+     "A": 1010
+    }
+   },
+   "production-statmodel": {
+    "n": 2507,
+    "logloss": 1.0028033339626246,
+    "rps": 0.20906824933664442,
+    "brier": 0.5995584812112219,
+    "accuracy": 0.5153570003988831,
+    "picks": {
+     "H": 1540,
+     "D": 4,
+     "A": 963
+    }
+   },
+   "market-pinnacle": {
+    "n": 2490,
+    "logloss": 0.9624273969028899,
+    "rps": 0.19706405929819426,
+    "brier": 0.5705685471687904,
+    "accuracy": 0.5485943775100401,
+    "picks": {
+     "H": 1547,
+     "D": 0,
+     "A": 943
+    }
+   },
+   "base": {
+    "n": 2750,
+    "logloss": 1.0735914645839213,
+    "rps": 0.2343679279809232,
+    "brier": 0.6501406538101836,
+    "accuracy": 0.4330909090909091,
+    "picks": {
+     "H": 2750,
+     "D": 0,
+     "A": 0
+    }
+   }
+  },
+  "jleague": {
+   "challenger": {
+    "n": 2351,
+    "logloss": 1.0458284601218084,
+    "rps": 0.21810838311644837,
+    "brier": 0.6288739221118432,
+    "accuracy": 0.4768183751595066,
+    "picks": {
+     "H": 1387,
+     "D": 0,
+     "A": 964
+    }
+   },
+   "production-statmodel": {
+    "n": 2133,
+    "logloss": 1.0583968773593413,
+    "rps": 0.2233053618962333,
+    "brier": 0.6379928399431634,
+    "accuracy": 0.4542897327707454,
+    "picks": {
+     "H": 1242,
+     "D": 33,
+     "A": 858
+    }
+   },
+   "market-pinnacle": {
+    "n": 0
+   },
+   "base": {
+    "n": 2351,
+    "logloss": 1.0833234075200686,
+    "rps": 0.2315052252437582,
+    "brier": 0.6563697557881577,
+    "accuracy": 0.4096129306678009,
+    "picks": {
+     "H": 2351,
+     "D": 0,
+     "A": 0
+    }
+   }
+  },
+  "laliga": {
+   "challenger": {
+    "n": 2769,
+    "logloss": 0.978673528486498,
+    "rps": 0.19542298489526816,
+    "brier": 0.5822951548127999,
+    "accuracy": 0.5229324665944384,
+    "picks": {
+     "H": 1978,
+     "D": 0,
+     "A": 791
+    }
+   },
+   "production-statmodel": {
+    "n": 2523,
+    "logloss": 1.0073068579957458,
+    "rps": 0.20497969116549933,
+    "brier": 0.6020854277658224,
+    "accuracy": 0.5053507728894173,
+    "picks": {
+     "H": 1729,
+     "D": 24,
+     "A": 770
+    }
+   },
+   "market-pinnacle": {
+    "n": 2466,
+    "logloss": 0.9696974224307952,
+    "rps": 0.1916030521796412,
+    "brier": 0.576637603938236,
+    "accuracy": 0.5381184103811841,
+    "picks": {
+     "H": 1656,
+     "D": 13,
+     "A": 797
+    }
+   },
+   "base": {
+    "n": 2769,
+    "logloss": 1.0695379772696634,
+    "rps": 0.2252385105493747,
+    "brier": 0.6463477770370086,
+    "accuracy": 0.4517876489707476,
+    "picks": {
+     "H": 2769,
+     "D": 0,
+     "A": 0
+    }
+   }
+  },
+  "ligue1": {
+   "challenger": {
+    "n": 2418,
+    "logloss": 1.0018112100114767,
+    "rps": 0.2068685533199248,
+    "brier": 0.5978491252581882,
+    "accuracy": 0.5173697270471465,
+    "picks": {
+     "H": 1621,
+     "D": 0,
+     "A": 797
+    }
+   },
+   "production-statmodel": {
+    "n": 2188,
+    "logloss": 1.0167643357508853,
+    "rps": 0.21216388016142482,
+    "brier": 0.6086188169629646,
+    "accuracy": 0.5059414990859232,
+    "picks": {
+     "H": 1416,
+     "D": 6,
+     "A": 766
+    }
+   },
+   "market-pinnacle": {
+    "n": 2182,
+    "logloss": 0.9862505597114244,
+    "rps": 0.20246413025830445,
+    "brier": 0.5875532384575347,
+    "accuracy": 0.5215398716773603,
+    "picks": {
+     "H": 1455,
+     "D": 1,
+     "A": 726
+    }
+   },
+   "base": {
+    "n": 2418,
+    "logloss": 1.0811132419752227,
+    "rps": 0.23364284305639996,
+    "brier": 0.6542092118361573,
+    "accuracy": 0.4317617866004963,
+    "picks": {
+     "H": 2418,
+     "D": 0,
+     "A": 0
+    }
+   }
+  },
+  "seriea": {
+   "challenger": {
+    "n": 2760,
+    "logloss": 0.973719086608365,
+    "rps": 0.19485189947124112,
+    "brier": 0.5790938324061989,
+    "accuracy": 0.5369565217391304,
+    "picks": {
+     "H": 1748,
+     "D": 8,
+     "A": 1004
+    }
+   },
+   "production-statmodel": {
+    "n": 2518,
+    "logloss": 0.9968694827880138,
+    "rps": 0.20127619172769867,
+    "brier": 0.5948413461294912,
+    "accuracy": 0.5142970611596506,
+    "picks": {
+     "H": 1487,
+     "D": 6,
+     "A": 1025
+    }
+   },
+   "market-pinnacle": {
+    "n": 2477,
+    "logloss": 0.9632746405492459,
+    "rps": 0.19025039381678022,
+    "brier": 0.5725228271465429,
+    "accuracy": 0.5413807024626565,
+    "picks": {
+     "H": 1525,
+     "D": 1,
+     "A": 951
+    }
+   },
+   "base": {
+    "n": 2760,
+    "logloss": 1.0891830094706563,
+    "rps": 0.23419468021261755,
+    "brier": 0.6604839699821654,
+    "accuracy": 0.4083333333333333,
+    "picks": {
+     "H": 2760,
+     "D": 0,
+     "A": 0
+    }
+   }
+  }
+ },
+ "comparisons": {
+  "production-statmodel → challenger": {
+   "n": 13867,
+   "days": 1442,
+   "d_logloss": 0.02199818959433362,
+   "d_logloss_ci": [
+    0.017969553196661058,
+    0.026398462763518264
+   ],
+   "d_rps": 0.0068877168388788105,
+   "d_rps_ci": [
+    0.005634258195619047,
+    0.008263275898705243
+   ],
+   "d_accuracy": 0.01817264008076729,
+   "d_accuracy_ci": [
+    0.012532339317610301,
+    0.023967971833571036
+   ],
+   "p_b_better": 1.0
+  },
+  "base → challenger": {
+   "n": 15262,
+   "days": 1508,
+   "d_logloss": 0.08408393553543675,
+   "d_logloss_ci": [
+    0.07745224079769342,
+    0.09012625156330212
+   ],
+   "d_rps": 0.028767205456453393,
+   "d_rps_ci": [
+    0.026659286153394208,
+    0.03074512995796289
+   ],
+   "d_accuracy": 0.09028960817717206,
+   "d_accuracy_ci": [
+    0.0818547707166743,
+    0.09846619177628364
+   ],
+   "p_b_better": 1.0
+  },
+  "market-pinnacle → challenger": {
+   "n": 11601,
+   "days": 1212,
+   "d_logloss": -0.013293671990650324,
+   "d_logloss_ci": [
+    -0.01583534190781717,
+    -0.01063176439160532
+   ],
+   "d_rps": -0.004174024916115497,
+   "d_rps_ci": [
+    -0.004961390538947022,
+    -0.003339075142931627
+   ],
+   "d_accuracy": -0.009137143349711233,
+   "d_accuracy_ci": [
+    -0.013611720332519325,
+    -0.004659621128426736
+   ],
+   "p_b_better": 0.0
+  },
+  "market-pinnacle → market+model-stack": {
+   "n": 11601,
+   "days": 1212,
+   "d_logloss": -0.000717397398820832,
+   "d_logloss_ci": [
+    -0.0015252515421415801,
+    0.00015150542674645753
+   ],
+   "d_rps": -0.00023028434192693133,
+   "d_rps_ci": [
+    -0.000398299398844364,
+    -5.125775875830706e-05
+   ],
+   "d_accuracy": -0.0007757951900698216,
+   "d_accuracy_ci": [
+    -0.0029035657510684872,
+    0.0013039646679274797
+   ],
+   "p_b_better": 0.0475
+  },
+  "market-pinnacle → market+model-blend": {
+   "n": 11601,
+   "days": 1212,
+   "d_logloss": 0.0,
+   "d_logloss_ci": [
+    0.0,
+    0.0
+   ],
+   "d_rps": 0.0,
+   "d_rps_ci": [
+    0.0,
+    0.0
+   ],
+   "d_accuracy": 0.0,
+   "d_accuracy_ci": [
+    0.0,
+    0.0
+   ],
+   "p_b_better": 0.0
+  },
+  "elo-solo → challenger": {
+   "n": 15262,
+   "days": 1508,
+   "d_logloss": 0.005560573397005912,
+   "d_logloss_ci": [
+    0.004163430332582466,
+    0.00698351940632519
+   ],
+   "d_rps": 0.0016584379128537622,
+   "d_rps_ci": [
+    0.0012230990852722641,
+    0.00210301556309475
+   ],
+   "d_accuracy": 0.0018346219368365875,
+   "d_accuracy_ci": [
+    -0.0013344580509028609,
+    0.0048530707794325586
+   ],
+   "p_b_better": 1.0
+  },
+  "pi-solo → challenger": {
+   "n": 15262,
+   "days": 1508,
+   "d_logloss": 0.005338061911752599,
+   "d_logloss_ci": [
+    0.003977383431250483,
+    0.006722873665608203
+   ],
+   "d_rps": 0.0015367046047789286,
+   "d_rps_ci": [
+    0.0011273298770902536,
+    0.0019561917927778272
+   ],
+   "d_accuracy": 0.0038002882977329314,
+   "d_accuracy_ci": [
+    0.0006604999237703127,
+    0.006827041495326639
+   ],
+   "p_b_better": 1.0
+  },
+  "goals-solo → challenger": {
+   "n": 15262,
+   "days": 1508,
+   "d_logloss": 0.0019203764085878594,
+   "d_logloss_ci": [
+    0.0007750861283379424,
+    0.003080357209751402
+   ],
+   "d_rps": 0.000646307609752874,
+   "d_rps_ci": [
+    0.00031206043425807033,
+    0.0009818902953087157
+   ],
+   "d_accuracy": 0.00019656663608963438,
+   "d_accuracy_ci": [
+    -0.00236526226680034,
+    0.002838840089089873
+   ],
+   "p_b_better": 1.0
+  },
+  "sot-solo → challenger": {
+   "n": 15262,
+   "days": 1508,
+   "d_logloss": 0.009802118356921508,
+   "d_logloss_ci": [
+    0.007161222810881029,
+    0.012344141476929985
+   ],
+   "d_rps": 0.0032284439354465606,
+   "d_rps_ci": [
+    0.002372267916342463,
+    0.004054184293834647
+   ],
+   "d_accuracy": 0.013628620102214651,
+   "d_accuracy_ci": [
+    0.008348282493066968,
+    0.018736108741695904
+   ],
+   "p_b_better": 1.0
+  },
+  "shots-solo → challenger": {
+   "n": 15262,
+   "days": 1508,
+   "d_logloss": 0.014866253890381594,
+   "d_logloss_ci": [
+    0.01171936597289726,
+    0.017754244422284154
+   ],
+   "d_rps": 0.004912936079829241,
+   "d_rps_ci": [
+    0.0039050761455819713,
+    0.005861065407058939
+   ],
+   "d_accuracy": 0.017690997248067095,
+   "d_accuracy_ci": [
+    0.012143769388331931,
+    0.023219537362054215
+   ],
+   "p_b_better": 1.0
+  }
+ },
+ "gate": {
+  "against": "production-statmodel",
+  "passed": true,
+  "n": 13867,
+  "days": 1442,
+  "d_logloss": 0.02199818959433362,
+  "d_logloss_ci": [
+   0.017969553196661058,
+   0.026398462763518264
+  ],
+  "d_rps": 0.0068877168388788105,
+  "d_rps_ci": [
+   0.005634258195619047,
+   0.008263275898705243
+  ],
+  "d_accuracy": 0.01817264008076729,
+  "d_accuracy_ci": [
+   0.012532339317610301,
+   0.023967971833571036
+  ],
+  "p_b_better": 1.0
+ },
+ "seconds": 734.9,
+ "incumbent_id": null
+}

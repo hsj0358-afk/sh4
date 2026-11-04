@@ -10,9 +10,18 @@
      경기마다 **그 경기 킥오프 이전 경기만으로** 모델을 맞춰 예측한다
      (`statmodel.forecast` → `models.matches_before`). 시즌 색인은 최종
      스코어와 킥오프를 갖고 있어 과거 시점으로 잘린다 (§1-13 HISTORICAL_AS_OF).
-  2. 안마다 승무패 방향 적중 · Brier · log loss 를 **같은 경기 집합**에서 잰다.
+  2. 안마다 승무패 방향 적중 · Brier · RPS · log loss 를 **같은 경기 집합**에서
+     잰다.
   3. `data/round_matches.csv` 에 킥오프 전 시장 확률이 있는 경기는 시장과
      같은 경기에서 견준다 (경기 ID 로 잇는다).
+  4. 같은 경기에서 **시장 확률과 모델 확률을 섞은 예측**이 시장만 쓴 것보다
+     나은지 본다 — 모델이 시장에 **더할 정보**가 있는지를 묻는다. 섞는 비율은
+     **회차 하나를 빼고 나머지 회차로 고른 뒤** 뺀 회차에 쓴다(교차검증).
+     같은 경기로 고르고 같은 경기로 채점하면 언제나 좋아 보인다. 시장과의
+     차이는 경기별 짝 차이의 평균 ± 표준오차로 적는다.
+
+**운영 확률과 섞지 않는다.** 혼합은 이 도구 안의 비교일 뿐이고
+`Match.probs`·리포트·패널 어디에도 가지 않는다 (§1-27).
 
 **쓰지 않는다.** 저장본·CSV·캐시 어느 것도 바꾸지 않는다. `--json` 을 주면
 그 경로에만 쓰고, 저장소 안이면 거부한다.
@@ -38,6 +47,36 @@ from toto.settings import load_settings                      # noqa: E402
 
 OUTCOMES = statmodel.OUTCOMES
 LOG_EPS = 1e-15
+BLEND_WEIGHTS = (0.0, 0.1, 0.2, 0.3, 0.4, 0.5)   # 모델 쪽 비중. 0 = 시장만
+
+
+def normalized(probs: dict) -> dict:
+    """합을 1 로 맞춘 승/무/패 (모델의 0~9골 절단분 · 시장의 반올림을 나눠 맞춘다)."""
+    total = sum(probs[o] for o in OUTCOMES)
+    return {o: probs[o] / total for o in OUTCOMES}
+
+
+def brier_of(p: dict, actual: str) -> float:
+    return sum((p[o] - (1.0 if o == actual else 0.0)) ** 2 for o in OUTCOMES)
+
+
+def rps_of(p: dict, actual: str) -> float:
+    """Ranked Probability Score (승→무→패 순서를 반영). 0~1, 낮을수록 좋음.
+
+    `(1/(r−1)) Σ_{i<r} (누적 예측_i − 누적 실제_i)²`, r=3.
+    """
+    cum_p = cum_y = total = 0.0
+    for o in OUTCOMES[:-1]:
+        cum_p += p[o]
+        cum_y += 1.0 if o == actual else 0.0
+        total += (cum_p - cum_y) ** 2
+    return total / (len(OUTCOMES) - 1)
+
+
+def blend(market: dict, model: dict, w: float) -> dict:
+    """선형 혼합 `(1−w)·시장 + w·모델`. 둘 다 합 1 로 맞춘 뒤 섞는다."""
+    m, f = normalized(market), normalized(model)
+    return {o: (1.0 - w) * m[o] + w * f[o] for o in OUTCOMES}
 
 
 def actual_of(m) -> str:
@@ -94,20 +133,20 @@ class Score:
     n: int = 0
     hits: int = 0
     brier: float = 0.0
+    rps: float = 0.0
     logloss: float = 0.0
     fav: Counter = field(default_factory=Counter)
     fav_hits: Counter = field(default_factory=Counter)
 
     def add(self, probs: dict, actual: str) -> None:
-        total = sum(probs.values())
-        p = {o: probs[o] / total for o in OUTCOMES}      # 0~9골 절단분을 나눠 맞춘다
+        p = normalized(probs)                            # 0~9골 절단분을 나눠 맞춘다
         fav = max(OUTCOMES, key=lambda o: p[o])
         self.n += 1
         self.hits += int(fav == actual)
         self.fav[fav] += 1
         self.fav_hits[fav] += int(fav == actual)
-        self.brier += sum((p[o] - (1.0 if o == actual else 0.0)) ** 2
-                          for o in OUTCOMES)
+        self.brier += brier_of(p, actual)
+        self.rps += rps_of(p, actual)
         self.logloss -= math.log(max(p[actual], LOG_EPS))
 
     def line(self, name: str) -> str:
@@ -118,7 +157,90 @@ class Score:
         favs = " ".join(f"{o}{self.fav[o]}({self.fav_hits[o]})" for o in OUTCOMES)
         return (f"{name:<22}{self.hits:>4}/{self.n:<4} {acc * 100:5.1f}% "
                 f"±{se * 100:4.1f} · Brier {self.brier / self.n:.4f} · "
+                f"RPS {self.rps / self.n:.4f} · "
                 f"log {self.logloss / self.n:.4f} · 고른 결과 {favs}")
+
+
+# --------------------------------------------------------------------------
+# 시장 + 모델 혼합 — 모델이 시장에 더할 정보가 있나
+# --------------------------------------------------------------------------
+def paired(diffs: list) -> tuple:
+    """경기별 짝 차이 → (평균, 표준오차, 경기 수). 경기가 2 미만이면 표준오차 None."""
+    n = len(diffs)
+    if not n:
+        return None, None, 0
+    mean = sum(diffs) / n
+    if n < 2:
+        return mean, None, n
+    var = sum((d - mean) ** 2 for d in diffs) / (n - 1)
+    return mean, math.sqrt(var / n), n
+
+
+def verdict(mean, se) -> str:
+    """짝 차이(혼합 − 시장)의 판정. 낮을수록 좋은 지표 기준. 2 표준오차로만 가른다."""
+    if mean is None or not se:
+        return "판정 불가 (표본 부족)"
+    if mean + 2 * se < 0:
+        return "시장보다 낮다 (2 표준오차 밖)"
+    if mean - 2 * se > 0:
+        return "시장보다 높다 (2 표준오차 밖)"
+    return "시장과 구별되지 않는다"
+
+
+def blend_study(rows: list, weights=BLEND_WEIGHTS) -> dict:
+    """rows = [(회차, 시장 확률, 모델 확률, 실제)] → 혼합 비교.
+
+      · in_sample — 비중마다 같은 경기에서 잰 평균 Brier·RPS. **고르는 데 쓴
+        경기로 채점한 값이라 낙관적이다.** 곡선 모양만 본다.
+      · cv — 회차 하나를 빼고 나머지 회차의 Brier 가 가장 낮은 비중을 골라
+        뺀 회차에 쓴다(동점이면 작은 비중 = 시장 쪽). 회차가 둘 미만이면 없다.
+      · vs_market — 교차검증 혼합 − 시장, 모델만 − 시장의 경기별 짝 차이.
+    """
+    out = {"n": len(rows), "weights": list(weights), "in_sample": {},
+           "cv": None, "chosen": {}, "model_only": None}
+    if not rows:
+        return out
+    for w in weights:
+        b = [brier_of(blend(m, f, w), y) for _r, m, f, y in rows]
+        r = [rps_of(blend(m, f, w), y) for _r, m, f, y in rows]
+        out["in_sample"][w] = (sum(b) / len(b), sum(r) / len(r))
+    base_b = [brier_of(normalized(m), y) for _r, m, f, y in rows]
+    base_r = [rps_of(normalized(m), y) for _r, m, f, y in rows]
+    only_b = [brier_of(normalized(f), y) for _r, m, f, y in rows]
+    only_r = [rps_of(normalized(f), y) for _r, m, f, y in rows]
+    out["model_only"] = {
+        "brier": paired([a - b for a, b in zip(only_b, base_b)]),
+        "rps": paired([a - b for a, b in zip(only_r, base_r)])}
+    rounds = sorted({r for r, *_ in rows})
+    if len(rounds) < 2:
+        return out
+    cv_b, cv_r = [0.0] * len(rows), [0.0] * len(rows)
+    for held in rounds:
+        train = [row for row in rows if row[0] != held]
+
+        def train_brier(w, train=train):
+            return sum(brier_of(blend(m, f, w), y)
+                       for _r, m, f, y in train) / len(train)
+        best = min(weights, key=lambda w: (train_brier(w), w))
+        out["chosen"][held] = best
+        for i, (r, m, f, y) in enumerate(rows):
+            if r == held:
+                p = blend(m, f, best)
+                cv_b[i], cv_r[i] = brier_of(p, y), rps_of(p, y)
+    out["cv"] = {
+        "brier": sum(cv_b) / len(cv_b), "rps": sum(cv_r) / len(cv_r),
+        "market_brier": sum(base_b) / len(base_b),
+        "market_rps": sum(base_r) / len(base_r),
+        "diff_brier": paired([a - b for a, b in zip(cv_b, base_b)]),
+        "diff_rps": paired([a - b for a, b in zip(cv_r, base_r)])}
+    return out
+
+
+def _diff_text(d) -> str:
+    mean, se, _n = d
+    if mean is None:
+        return "—"
+    return f"{mean:+.4f}" + (f" ±{se:.4f}" if se else "")
 
 
 def configs(half_lives, shrinks, venue: str) -> list:
@@ -133,7 +255,8 @@ def configs(half_lives, shrinks, venue: str) -> list:
     return out
 
 
-def run(season, settings, cfgs, market: dict | None = None) -> dict:
+def run(season, settings, cfgs, market: dict | None = None,
+        weights=BLEND_WEIGHTS) -> dict:
     domestic = sorted({m.competition for m in season
                        if m.competition and settings.owns_team_league(m.competition)})
     targets = [m for m in season if m.competition in domestic
@@ -203,6 +326,11 @@ def run(season, settings, cfgs, market: dict | None = None) -> dict:
             vs_market[name] = scored(ids, lambda mid, p=p: p[mid].probs)
         unmatched = sorted({market[mid][0] for mid in market if mid not in by_id})
         vs_market["not_in_index_rounds"] = unmatched
+        vs_market["blend"] = {
+            name: blend_study([(market[mid][0], market[mid][2], p[mid].probs,
+                                actual_of(by_id[mid])) for mid in sorted(ids)],
+                              weights)
+            for name, p in preds.items()}
     return {"domestic": domestic, "targets": len(targets), "common": len(common),
             "table": table, "diffs": diffs, "first": first,
             "per_comp": per_comp, "vs_market": vs_market,
@@ -244,6 +372,7 @@ def lines(result: dict, read, failed, season) -> list:
         if vm.get("not_in_index_rounds"):
             out.append(f"  색인에서 경기 ID 를 못 찾은 시장 회차: "
                        f"{', '.join(vm['not_in_index_rounds'])}")
+        out.extend(blend_lines(vm.get("blend") or {}))
     if result["skipped"]:
         out.append("")
         out.append("예측하지 못한 경기 (안별 사유)")
@@ -253,6 +382,46 @@ def lines(result: dict, read, failed, season) -> list:
     out.append("안을 여럿 견주면 그중 하나는 운으로 좋아 보입니다 — 표준오차와 "
                "갈린 경기 수를 함께 보십시오. 이 결과는 운영용 기준을 정하는 "
                "재료이지 검증이 아닙니다.")
+    return out
+
+
+def blend_lines(blends: dict) -> list:
+    """혼합 비교의 출력. 판정은 교차검증 값으로만 한다."""
+    if not blends or not any(b["n"] for b in blends.values()):
+        return []
+    n = next(b["n"] for b in blends.values())
+    out = ["", f"시장 + 모델 혼합 — 모델이 시장에 더할 정보가 있나 (같은 {n}경기 · "
+               "혼합 = (1−w)·시장 + w·모델)",
+           "  ① 같은 경기에서 잰 Brier (w 를 고른 경기로 채점 → 낙관적, 모양만 본다)"]
+    for name, b in blends.items():
+        cells = " · ".join(f"{w:.1f} {v[0]:.4f}" for w, v in b["in_sample"].items())
+        out.append(f"    {name:<20}{cells}")
+    out.append("  ② 회차 하나를 빼고 고른 w 를 뺀 회차에 씀 (교차검증) — "
+               "혼합 − 시장의 경기별 짝 차이 평균 ±표준오차 (음수 = 혼합이 나음)")
+    any_cv = False
+    for name, b in blends.items():
+        cv = b["cv"]
+        if cv is None:
+            continue
+        any_cv = True
+        chosen = ", ".join(f"{r}:{w:.1f}" for r, w in b["chosen"].items())
+        out.append(f"    {name:<20}Brier {cv['brier']:.4f} (시장 "
+                   f"{cv['market_brier']:.4f}) {_diff_text(cv['diff_brier'])} → "
+                   f"{verdict(*cv['diff_brier'][:2])}")
+        out.append(f"    {'':<20}RPS   {cv['rps']:.4f} (시장 "
+                   f"{cv['market_rps']:.4f}) {_diff_text(cv['diff_rps'])} → "
+                   f"{verdict(*cv['diff_rps'][:2])} · 고른 w {chosen}")
+    if not any_cv:
+        out.append("    회차가 둘 이상이어야 교차검증을 합니다")
+    out.append("  ③ 모델만 − 시장 (짝 차이)")
+    for name, b in blends.items():
+        mo = b["model_only"]
+        if mo:
+            out.append(f"    {name:<20}Brier {_diff_text(mo['brier'])} · "
+                       f"RPS {_diff_text(mo['rps'])}")
+    out.append("  고른 w 가 대부분 0 이거나 ②가 '구별되지 않는다' 면 모델은 시장에 "
+               "더할 정보를 보여 주지 못한 것입니다. 이 비교는 도구 안에서만 "
+               "하고 운영 확률에 섞지 않습니다.")
     return out
 
 
@@ -268,6 +437,9 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--min-team", type=int, default=3)
     p.add_argument("--matches-csv", default=None,
                    help="시장 확률 CSV (기본 data/round_matches.csv)")
+    p.add_argument("--blend-weights", nargs="*", type=float,
+                   default=list(BLEND_WEIGHTS),
+                   help="시장+모델 혼합에서 모델 쪽 비중 후보 (0~1)")
     p.add_argument("--json", default=None, help="요약 JSON 을 쓸 경로 (저장소 밖)")
     return p
 
@@ -295,7 +467,9 @@ def main(argv=None) -> int:
                                   min_team_matches=args.min_team)
             for c in configs(args.half_lives, args.shrinks, args.venue)]
     market = market_by_match_id(Path(args.matches_csv) if args.matches_csv else None)
-    result = run(season, load_settings(), cfgs, market)
+    weights = tuple(sorted({min(max(w, 0.0), 1.0) for w in args.blend_weights}
+                           | {0.0}))
+    result = run(season, load_settings(), cfgs, market, weights)
     text = lines(result, read, failed, season)
     print("\n".join(text))
     if args.json:

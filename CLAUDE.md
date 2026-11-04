@@ -7798,12 +7798,24 @@ python tools/backtest_statmodel.py --half-lives 0 60 30 --shrinks 3 5 10
     안을 여럿 견주면 하나는 운으로 좋아 보인다.
   · `data/round_matches.csv` 의 킥오프 전 시장 확률을 **경기 ID** 로 이어
     같은 경기에서 시장과 견준다.
+  · **RPS** 를 함께 잰다 — 승→무→패 순서를 반영하는 이 분야 표준 지표다
+    (0~1, 낮을수록 좋음).
+  · **시장 + 모델 혼합** (`(1−w)·시장 + w·모델`, w 후보 `--blend-weights`
+    기본 0~0.5). 묻는 것은 '모델이 시장보다 잘 맞히나' 가 아니라 **'모델이
+    시장에 더할 정보가 있나'** 다 — 세 번째 패널(§1-66 다음 단계)을 넣을지가
+    이 답에 달렸다.
+    - w 는 **회차 하나를 빼고 나머지 회차로 고른 뒤** 뺀 회차에 쓴다. 같은
+      경기로 고르고 채점하면 언제나 좋아 보이므로, 같은 경기 곡선은 모양만
+      본다.
+    - 판정은 경기별 짝 차이(혼합 − 시장)의 평균 ± 표준오차이고 **2 표준오차**
+      로만 가른다 — `시장보다 낮다 / 높다 / 구별되지 않는다`.
+    - 도구 안의 비교일 뿐이다. `Match.probs`·리포트·패널에 섞지 않는다 (§1-27).
   · `--json` 은 저장소 밖에만 쓴다.
 
 **실물로는 아직 돌리지 않았다** — 저장본과 CSV 가 사용자 PC 에만 있다 (§2-1).
 합성 시즌(20팀 × 2리그 × 10라운드)으로 도구가 끝까지 도는 것만 확인했다.
 
-회귀 테스트: `python tests/test_statmodel.py` (17개) ·
+회귀 테스트: `python tests/test_statmodel.py` (21개) ·
 `tests/test_panel_replay.py` 의 `test_f8` (방향 적중).
 
 **실물 백테스트 결과 (PC · 2026-10-31).** 시즌 색인 128경기(미래 정보 없음)에서
@@ -8563,8 +8575,8 @@ python tools/replay_panel.py score --rounds 260054 260059 260061 --variants base
 python tests/test_panel_replay.py          # 패널 오프라인 재생 · 운영 자리 무변경 · 사후 스냅샷 거부 · 기대 적중 §1-63 · 방향 안 dir1 §1-66 (38개)
 python tests/test_market_score.py          # 시장 기준 가장 그럴듯한 스코어 · 패널에 안 감 · 라벨 없음 · 로그 없음 §1-64 (15개)
 python tests/test_schedule_competitions.py # 휴식·경기 밀도에 유럽대회 경기 · teamId 연결 · 분석 모집단 불변 §1-65 (15개)
-python tests/test_statmodel.py             # 통계 모델 기준선 · 시점 · 모집단 · 패널 격리 · 백테스트 §1-66 (17개)
-python tools/backtest_statmodel.py         # 통계 모델 백테스트 · 시즌 색인 walk-forward · 시장과 같은 경기 비교 · 읽기만 §1-66
+python tests/test_statmodel.py             # 통계 모델 기준선 · 시점 · 모집단 · 패널 격리 · 백테스트 · RPS · 시장 혼합 §1-66 (21개)
+python tools/backtest_statmodel.py         # 통계 모델 백테스트 · 시즌 색인 walk-forward · 시장과 같은 경기 비교 · 시장+모델 혼합 교차검증 · 읽기만 §1-66
 python -m pytest -q -rs                    # 전체 — `pytest` 가 아니라 `python -m pytest` (PyYAML 있는 인터프리터)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)
 python -m toto --serve             # 리포트를 같은 와이파이에 공개

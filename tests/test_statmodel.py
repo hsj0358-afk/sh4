@@ -293,6 +293,88 @@ def test_c4_json_inside_repo_is_refused_and_nothing_is_written():
         assert bad not in src
 
 
+def test_c5_rps_matches_hand_calculation():
+    sure_h = {"H": 1.0, "D": 0.0, "A": 0.0}
+    assert BT.rps_of(sure_h, "H") == 0.0
+    assert BT.rps_of(sure_h, "A") == 1.0
+    assert abs(BT.rps_of(sure_h, "D") - 0.5) < 1e-12
+    third = {o: 1 / 3 for o in "HDA"}
+    assert abs(BT.rps_of(third, "D") - 1 / 9) < 1e-12
+    # 순서를 반영한다 — 홈승을 확신했는데 무승부가 원정승보다 덜 나쁘다
+    assert BT.rps_of(sure_h, "D") < BT.rps_of(sure_h, "A")
+    s = BT.Score()
+    s.add({"H": 0.5, "D": 0.3, "A": 0.2}, "H")
+    assert abs(s.rps - BT.rps_of({"H": 0.5, "D": 0.3, "A": 0.2}, "H")) < 1e-12
+    assert "RPS" in s.line("x")
+
+
+def test_c6_blend_is_linear_and_zero_weight_is_market():
+    m = {"H": 0.5, "D": 0.3, "A": 0.2}
+    f = {"H": 0.2, "D": 0.3, "A": 0.4}            # 합 0.9 — 절단분처럼 맞춘다
+    assert BT.blend(m, f, 0.0) == BT.normalized(m)
+    assert all(abs(v - BT.normalized(f)[o]) < 1e-12
+               for o, v in BT.blend(m, f, 1.0).items())
+    half = BT.blend(m, f, 0.5)
+    assert abs(sum(half.values()) - 1.0) < 1e-12
+    assert abs(half["H"] - (0.5 * 0.5 + 0.5 * 0.2 / 0.9)) < 1e-12
+
+
+def _rows(model_good: bool, rounds=("1", "2", "3"), per=6):
+    rows = []
+    for r in rounds:
+        for i in range(per):
+            actual = "HDA"[i % 3]
+            market = {"H": 0.45, "D": 0.28, "A": 0.27}
+            model = ({o: (0.8 if o == actual else 0.1) for o in "HDA"}
+                     if model_good else dict(market))
+            rows.append((r, market, model, actual))
+    return rows
+
+
+def test_c7_cross_validation_picks_weight_from_other_rounds_only():
+    good = BT.blend_study(_rows(True))
+    assert set(good["chosen"]) == {"1", "2", "3"}
+    assert all(w == max(BT.BLEND_WEIGHTS) for w in good["chosen"].values())
+    assert good["cv"]["diff_brier"][0] < 0
+    assert BT.verdict(*good["cv"]["diff_brier"][:2]).startswith("시장보다 낮다")
+    # 모델이 시장과 같으면 비중은 동점 → 시장 쪽(0)을 고르고 차이는 0
+    same = BT.blend_study(_rows(False))
+    assert set(same["chosen"].values()) == {0.0}
+    assert same["cv"]["diff_brier"][0] == 0.0
+    assert BT.verdict(*same["cv"]["diff_brier"][:2]).startswith("판정 불가") \
+        or "구별되지" in BT.verdict(*same["cv"]["diff_brier"][:2])
+    # 뺀 회차의 모델 값을 바꿔도 그 회차에 고른 비중은 바뀌지 않는다
+    rows = _rows(True)
+    spoiled = [(r, m, ({"H": 0.0, "D": 0.0, "A": 1.0} if r == "2" else f), y)
+               for r, m, f, y in rows]
+    assert BT.blend_study(spoiled)["chosen"]["2"] == good["chosen"]["2"]
+    # 회차가 하나면 교차검증을 하지 않는다
+    one = BT.blend_study(_rows(True, rounds=("1",)))
+    assert one["cv"] is None and one["in_sample"]
+
+
+def test_c8_blend_section_runs_end_to_end_and_stays_in_the_tool():
+    season = _season(rounds=10)
+    last = [m for m in season if m.kickoff >= season[-1].kickoff - timedelta(days=7)]
+    market = {m.match_id: ("R1" if m.kickoff < season[-1].kickoff else "R2", i,
+                           {"H": 0.45, "D": 0.28, "A": 0.27})
+              for i, m in enumerate(last, 1)}
+    result = BT.run(season, load_settings(), [S.ModelConfig()], market)
+    b = result["vs_market"]["blend"][S.ModelConfig().name]
+    assert b["n"] == result["vs_market"]["ids"] > 0
+    assert set(b["chosen"]) == {"R1", "R2"}
+    text = "\n".join(BT.lines(result, ["x"], [], season))
+    assert "시장 + 모델 혼합" in text and "교차검증" in text
+    # 혼합은 도구 안에서만 — 운영 모듈은 이 도구를 모른다
+    for path in (ROOT / "toto").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        names = {a.name for n in ast.walk(tree) if isinstance(n, ast.Import)
+                 for a in n.names}
+        names |= {n.module or "" for n in ast.walk(tree)
+                  if isinstance(n, ast.ImportFrom)}
+        assert not any("backtest_statmodel" in x for x in names), path
+
+
 def main() -> int:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from _runner import run_tests

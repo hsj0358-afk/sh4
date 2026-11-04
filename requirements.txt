@@ -1,4 +1,7 @@
-# 신문 브리핑 자동화 의존성
+# Dependencies for the morning newspaper briefing tool.
+# Keep this file ASCII-only: pip decodes requirements files with the system
+# locale encoding (cp949 on Korean Windows) when no BOM is present, so
+# non-ASCII comments here break the install with UnicodeDecodeError.
 anthropic>=0.40.0
 playwright>=1.40.0
 requests>=2.31.0

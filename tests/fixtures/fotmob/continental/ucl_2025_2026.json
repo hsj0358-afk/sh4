@@ -1,0 +1,586 @@
+{
+ "_note": "실물 FotMob 리그 응답에서 잘라낸 최소 fixture. 구조를 지어내지 않았고, 값은 관측된 그대로다.",
+ "details": {
+  "selectedSeason": "2025/2026",
+  "latestSeason": "2026/2027",
+  "name": "Champions League"
+ },
+ "fixtures": {
+  "allMatches": [
+   {
+    "round": "1",
+    "roundName": 1,
+    "pageUrl": "/matches/athletic-club-vs-arsenal/2pyul3#4947178",
+    "id": "4947178",
+    "home": {
+     "name": "Athletic Club",
+     "shortName": "Athletic Club",
+     "id": "8315"
+    },
+    "away": {
+     "name": "Arsenal",
+     "shortName": "Arsenal",
+     "id": "9825"
+    },
+    "status": {
+     "utcTime": "2025-09-16T16:45:00Z",
+     "timezone": "",
+     "finished": true,
+     "started": true,
+     "cancelled": false,
+     "awarded": false,
+     "scoreStr": "0 - 2",
+     "reason": {
+      "short": "FT",
+      "shortKey": "fulltime_short",
+      "long": "Full-Time",
+      "longKey": "finished"
+     }
+    }
+   },
+   {
+    "round": "1",
+    "roundName": 1,
+    "pageUrl": "/matches/union-stgilloise-vs-psv-eindhoven/2a7vhj#4947237",
+    "id": "4947237",
+    "home": {
+     "name": "PSV Eindhoven",
+     "shortName": "PSV Eindhoven",
+     "id": "8640"
+    },
+    "away": {
+     "name": "Union St.Gilloise",
+     "shortName": "Union St.Gilloise",
+     "id": "7978"
+    },
+    "status": {
+     "utcTime": "2025-09-16T16:45:00Z",
+     "timezone": "",
+     "finished": true,
+     "started": true,
+     "cancelled": false,
+     "awarded": false,
+     "scoreStr": "1 - 3",
+     "reason": {
+      "short": "FT",
+      "shortKey": "fulltime_short",
+      "long": "Full-Time",
+      "longKey": "finished"
+     }
+    }
+   },
+   {
+    "round": "1",
+    "roundName": 1,
+    "pageUrl": "/matches/qarabag-fk-vs-benfica/2ltzdd#4947188",
+    "id": "4947188",
+    "home": {
+     "name": "Benfica",
+     "shortName": "Benfica",
+     "id": "9772"
+    },
+    "away": {
+     "name": "Qarabağ FK",
+     "shortName": "Qarabağ FK",
+     "id": "7981"
+    },
+    "status": {
+     "utcTime": "2025-09-16T19:00:00Z",
+     "timezone": "",
+     "finished": true,
+     "started": true,
+     "cancelled": false,
+     "awarded": false,
+     "scoreStr": "2 - 3",
+     "reason": {
+      "short": "FT",
+      "shortKey": "fulltime_short",
+      "long": "Full-Time",
+      "longKey": "finished"
+     }
+    }
+   },
+   {
+    "round": "1",
+    "roundName": 1,
+    "pageUrl": "/matches/borussia-dortmund-vs-juventus/378icc#4947134",
+    "id": "4947134",
+    "home": {
+     "name": "Juventus",
+     "shortName": "Juventus",
+     "id": "9885"
+    },
+    "away": {
+     "name": "Borussia Dortmund",
+     "shortName": "Dortmund",
+     "id": "9789"
+    },
+    "status": {
+     "utcTime": "2025-09-16T19:00:00Z",
+     "timezone": "",
+     "finished": true,
+     "started": true,
+     "cancelled": false,
+     "awarded": false,
+     "scoreStr": "4 - 4",
+     "reason": {
+      "short": "FT",
+      "shortKey": "fulltime_short",
+      "long": "Full-Time",
+      "longKey": "finished"
+     }
+    }
+   },
+   {
+    "round": "1",
+    "roundName": 1,
+    "pageUrl": "/matches/marseille-vs-real-madrid/2gc152#4947120",
+    "id": "4947120",
+    "home": {
+     "name": "Real Madrid",
+     "shortName": "Real Madrid",
+     "id": "8633"
+    },
+    "away": {
+     "name": "Marseille",
+     "shortName": "Marseille",
+     "id": "8592"
+    },
+    "status": {
+     "utcTime": "2025-09-16T19:00:00Z",
+     "timezone": "",
+     "finished": true,
+     "started": true,
+     "cancelled": false,
+     "awarded": false,
+     "scoreStr": "2 - 1",
+     "reason": {
+      "short": "FT",
+      "shortKey": "fulltime_short",
+      "long": "Full-Time",
+      "longKey": "finished"
+     }
+    }
+   },
+   {
+    "round": "1",
+    "roundName": 1,
+    "pageUrl": "/matches/tottenham-hotspur-vs-villarreal/2x4hdi#4947209",
+    "id": "4947209",
+    "home": {
+     "name": "Tottenham Hotspur",
+     "shortName": "Tottenham",
+     "id": "8586"
+    },
+    "away": {
+     "name": "Villarreal",
+     "shortName": "Villarreal",
+     "id": "10205"
+    },
+    "status": {
+     "utcTime": "2025-09-16T19:00:00Z",
+     "timezone": "",
+     "finished": true,
+     "started": true,
+     "cancelled": false,
+     "awarded": false,
+     "scoreStr": "1 - 0",
+     "reason": {
+      "short": "FT",
+      "shortKey": "fulltime_short",
+      "long": "Full-Time",
+      "longKey": "finished"
+     }
+    }
+   },
+   {
+    "round": "playoff",
+    "roundName": "playoff",
+    "pageUrl": "/matches/galatasaray-vs-juventus/2u4xwc#5161867",
+    "id": "5161867",
+    "home": {
+     "name": "Galatasaray",
+     "shortName": "Galatasaray",
+     "id": "8637"
+    },
+    "away": {
+     "name": "Juventus",
+     "shortName": "Juventus",
+     "id": "9885"
+    },
+    "status": {
+     "utcTime": "2026-02-17T17:45:00Z",
+     "timezone": "",
+     "finished": true,
+     "started": true,
+     "cancelled": false,
+     "awarded": false,
+     "scoreStr": "5 - 2",
+     "reason": {
+      "short": "FT",
+      "shortKey": "fulltime_short",
+      "long": "Full-Time",
+      "longKey": "finished"
+     }
+    }
+   },
+   {
+    "round": "playoff",
+    "roundName": "playoff",
+    "pageUrl": "/matches/real-madrid-vs-benfica/2sumx7#5161859",
+    "id": "5161859",
+    "home": {
+     "name": "Benfica",
+     "shortName": "Benfica",
+     "id": "9772"
+    },
+    "away": {
+     "name": "Real Madrid",
+     "shortName": "Real Madrid",
+     "id": "8633"
+    },
+    "status": {
+     "utcTime": "2026-02-17T20:00:00Z",
+     "timezone": "",
+     "finished": true,
+     "started": true,
+     "cancelled": false,
+     "awarded": false,
+     "scoreStr": "0 - 1",
+     "reason": {
+      "short": "FT",
+      "shortKey": "fulltime_short",
+      "long": "Full-Time",
+      "longKey": "finished"
+     }
+    }
+   },
+   {
+    "round": "playoff",
+    "roundName": "playoff",
+    "pageUrl": "/matches/monaco-vs-paris-saint-germain/379cod#5161863",
+    "id": "5161863",
+    "home": {
+     "name": "Monaco",
+     "shortName": "Monaco",
+     "id": "9829"
+    },
+    "away": {
+     "name": "Paris Saint-Germain",
+     "shortName": "PSG",
+     "id": "9847"
+    },
+    "status": {
+     "utcTime": "2026-02-17T20:00:00Z",
+     "timezone": "",
+     "finished": true,
+     "started": true,
+     "cancelled": false,
+     "awarded": false,
+     "scoreStr": "2 - 3",
+     "reason": {
+      "short": "FT",
+      "shortKey": "fulltime_short",
+      "long": "Full-Time",
+      "longKey": "finished"
+     }
+    }
+   },
+   {
+    "round": "playoff",
+    "roundName": "playoff",
+    "pageUrl": "/matches/atalanta-vs-borussia-dortmund/2rufmy#5161871",
+    "id": "5161871",
+    "home": {
+     "name": "Borussia Dortmund",
+     "shortName": "Dortmund",
+     "id": "9789"
+    },
+    "away": {
+     "name": "Atalanta",
+     "shortName": "Atalanta",
+     "id": "8524"
+    },
+    "status": {
+     "utcTime": "2026-02-17T20:15:00Z",
+     "timezone": "",
+     "finished": true,
+     "started": true,
+     "cancelled": false,
+     "awarded": false,
+     "scoreStr": "2 - 0",
+     "reason": {
+      "short": "FT",
+      "shortKey": "fulltime_short",
+      "long": "Full-Time",
+      "longKey": "finished"
+     }
+    }
+   }
+  ]
+ },
+ "playoff": {
+  "rounds": [
+   {
+    "matches": [
+     {
+      "matchId": 5161863,
+      "home": {
+       "id": 9829,
+       "name": "Monaco",
+       "shortName": "ASM",
+       "score": 2,
+       "winner": false
+      },
+      "away": {
+       "id": 9847,
+       "name": "PSG",
+       "shortName": "PSG",
+       "score": 3,
+       "winner": true
+      },
+      "pageUrl": "/matches/monaco-vs-paris-saint-germain/379cod#5161863",
+      "status": {
+       "utcTime": "2026-02-17T19:00:00.000Z",
+       "finished": true,
+       "started": true,
+       "cancelled": false,
+       "awarded": false,
+       "scoreStr": "2 - 3",
+       "reason": {
+        "short": "FT",
+        "shortKey": "fulltime_short",
+        "long": "Full-Time",
+        "longKey": "finished"
+       }
+      }
+     },
+     {
+      "matchId": 5161867,
+      "home": {
+       "id": 8637,
+       "name": "Galatasaray",
+       "shortName": "GAL",
+       "score": 5,
+       "winner": true
+      },
+      "away": {
+       "id": 9885,
+       "name": "Juventus",
+       "shortName": "JUV",
+       "score": 2,
+       "winner": false
+      },
+      "pageUrl": "/matches/galatasaray-vs-juventus/2u4xwc#5161867",
+      "status": {
+       "utcTime": "2026-02-17T16:45:00.000Z",
+       "finished": true,
+       "started": true,
+       "cancelled": false,
+       "awarded": false,
+       "scoreStr": "5 - 2",
+       "reason": {
+        "short": "FT",
+        "shortKey": "fulltime_short",
+        "long": "Full-Time",
+        "longKey": "finished"
+       }
+      }
+     },
+     {
+      "matchId": 5161859,
+      "home": {
+       "id": 9772,
+       "name": "Benfica",
+       "shortName": "BEN",
+       "score": 0,
+       "winner": false
+      },
+      "away": {
+       "id": 8633,
+       "name": "Real Madrid",
+       "shortName": "RMA",
+       "score": 1,
+       "winner": true
+      },
+      "pageUrl": "/matches/real-madrid-vs-benfica/2sumx7#5161859",
+      "status": {
+       "utcTime": "2026-02-17T19:00:00.000Z",
+       "finished": true,
+       "started": true,
+       "cancelled": false,
+       "awarded": false,
+       "scoreStr": "0 - 1",
+       "reason": {
+        "short": "FT",
+        "shortKey": "fulltime_short",
+        "long": "Full-Time",
+        "longKey": "finished"
+       }
+      }
+     },
+     {
+      "matchId": 5161871,
+      "home": {
+       "id": 9789,
+       "name": "Dortmund",
+       "shortName": "BVB",
+       "score": 2,
+       "winner": true
+      },
+      "away": {
+       "id": 8524,
+       "name": "Atalanta",
+       "shortName": "ATA",
+       "score": 0,
+       "winner": false
+      },
+      "pageUrl": "/matches/atalanta-vs-borussia-dortmund/2rufmy#5161871",
+      "status": {
+       "utcTime": "2026-02-17T19:15:00.000Z",
+       "finished": true,
+       "started": true,
+       "cancelled": false,
+       "awarded": false,
+       "scoreStr": "2 - 0",
+       "reason": {
+        "short": "FT",
+        "shortKey": "fulltime_short",
+        "long": "Full-Time",
+        "longKey": "finished"
+       }
+      }
+     },
+     {
+      "matchId": 5161863,
+      "home": {
+       "id": 9829,
+       "name": "Monaco",
+       "shortName": "ASM",
+       "score": 2,
+       "winner": false
+      },
+      "away": {
+       "id": 9847,
+       "name": "PSG",
+       "shortName": "PSG",
+       "score": 3,
+       "winner": true
+      },
+      "pageUrl": "/matches/monaco-vs-paris-saint-germain/379cod#5161863",
+      "status": {
+       "utcTime": "2026-02-17T19:00:00.000Z",
+       "finished": true,
+       "started": true,
+       "cancelled": false,
+       "awarded": false,
+       "scoreStr": "2 - 3",
+       "reason": {
+        "short": "FT",
+        "shortKey": "fulltime_short",
+        "long": "Full-Time",
+        "longKey": "finished"
+       }
+      }
+     },
+     {
+      "matchId": 5161867,
+      "home": {
+       "id": 8637,
+       "name": "Galatasaray",
+       "shortName": "GAL",
+       "score": 5,
+       "winner": true
+      },
+      "away": {
+       "id": 9885,
+       "name": "Juventus",
+       "shortName": "JUV",
+       "score": 2,
+       "winner": false
+      },
+      "pageUrl": "/matches/galatasaray-vs-juventus/2u4xwc#5161867",
+      "status": {
+       "utcTime": "2026-02-17T16:45:00.000Z",
+       "finished": true,
+       "started": true,
+       "cancelled": false,
+       "awarded": false,
+       "scoreStr": "5 - 2",
+       "reason": {
+        "short": "FT",
+        "shortKey": "fulltime_short",
+        "long": "Full-Time",
+        "longKey": "finished"
+       }
+      }
+     },
+     {
+      "matchId": 5161859,
+      "home": {
+       "id": 9772,
+       "name": "Benfica",
+       "shortName": "BEN",
+       "score": 0,
+       "winner": false
+      },
+      "away": {
+       "id": 8633,
+       "name": "Real Madrid",
+       "shortName": "RMA",
+       "score": 1,
+       "winner": true
+      },
+      "pageUrl": "/matches/real-madrid-vs-benfica/2sumx7#5161859",
+      "status": {
+       "utcTime": "2026-02-17T19:00:00.000Z",
+       "finished": true,
+       "started": true,
+       "cancelled": false,
+       "awarded": false,
+       "scoreStr": "0 - 1",
+       "reason": {
+        "short": "FT",
+        "shortKey": "fulltime_short",
+        "long": "Full-Time",
+        "longKey": "finished"
+       }
+      }
+     },
+     {
+      "matchId": 5161871,
+      "home": {
+       "id": 9789,
+       "name": "Dortmund",
+       "shortName": "BVB",
+       "score": 2,
+       "winner": true
+      },
+      "away": {
+       "id": 8524,
+       "name": "Atalanta",
+       "shortName": "ATA",
+       "score": 0,
+       "winner": false
+      },
+      "pageUrl": "/matches/atalanta-vs-borussia-dortmund/2rufmy#5161871",
+      "status": {
+       "utcTime": "2026-02-17T19:15:00.000Z",
+       "finished": true,
+       "started": true,
+       "cancelled": false,
+       "awarded": false,
+       "scoreStr": "2 - 0",
+       "reason": {
+        "short": "FT",
+        "shortKey": "fulltime_short",
+        "long": "Full-Time",
+        "longKey": "finished"
+       }
+      }
+     }
+    ]
+   }
+  ]
+ }
+}

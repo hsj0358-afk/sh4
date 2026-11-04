@@ -1,0 +1,586 @@
+{
+ "_note": "실물 FotMob 리그 응답에서 잘라낸 최소 fixture. 구조를 지어내지 않았고, 값은 관측된 그대로다.",
+ "details": {
+  "selectedSeason": "2025/2026",
+  "latestSeason": "2026/2027",
+  "name": "Conference League"
+ },
+ "fixtures": {
+  "allMatches": [
+   {
+    "round": "1",
+    "roundName": 1,
+    "pageUrl": "/matches/dynamo-kyiv-vs-crystal-palace/2u1rjh#4947960",
+    "id": "4947960",
+    "home": {
+     "name": "Dynamo Kyiv",
+     "shortName": "Dynamo Kyiv",
+     "id": "8688"
+    },
+    "away": {
+     "name": "Crystal Palace",
+     "shortName": "Crystal Palace",
+     "id": "9826"
+    },
+    "status": {
+     "utcTime": "2025-10-02T16:45:00Z",
+     "timezone": "",
+     "finished": true,
+     "started": true,
+     "cancelled": false,
+     "awarded": false,
+     "scoreStr": "0 - 2",
+     "reason": {
+      "short": "FT",
+      "shortKey": "fulltime_short",
+      "long": "Full-Time",
+      "longKey": "finished"
+     }
+    }
+   },
+   {
+    "round": "1",
+    "roundName": 1,
+    "pageUrl": "/matches/rijeka-vs-fc-noah/4wdh3yg8#4948067",
+    "id": "4948067",
+    "home": {
+     "name": "FC Noah",
+     "shortName": "FC Noah",
+     "id": "866111"
+    },
+    "away": {
+     "name": "Rijeka",
+     "shortName": "Rijeka",
+     "id": "10162"
+    },
+    "status": {
+     "utcTime": "2025-10-02T16:45:00Z",
+     "timezone": "",
+     "finished": true,
+     "started": true,
+     "cancelled": false,
+     "awarded": false,
+     "scoreStr": "1 - 0",
+     "reason": {
+      "short": "FT",
+      "shortKey": "fulltime_short",
+      "long": "Full-Time",
+      "longKey": "finished"
+     }
+    }
+   },
+   {
+    "round": "1",
+    "roundName": 1,
+    "pageUrl": "/matches/jagiellonia-biaystok-vs-hamrun-spartans/civ07#4948007",
+    "id": "4948007",
+    "home": {
+     "name": "Jagiellonia Białystok",
+     "shortName": "Jagiellonia Białystok",
+     "id": "1957"
+    },
+    "away": {
+     "name": "Hamrun Spartans",
+     "shortName": "Hamrun Spartans",
+     "id": "4528"
+    },
+    "status": {
+     "utcTime": "2025-10-02T16:45:00Z",
+     "timezone": "",
+     "finished": true,
+     "started": true,
+     "cancelled": false,
+     "awarded": false,
+     "scoreStr": "1 - 0",
+     "reason": {
+      "short": "FT",
+      "shortKey": "fulltime_short",
+      "long": "Full-Time",
+      "longKey": "finished"
+     }
+    }
+   },
+   {
+    "round": "1",
+    "roundName": 1,
+    "pageUrl": "/matches/kups-vs-drita/3y2nsln7#4948021",
+    "id": "4948021",
+    "home": {
+     "name": "KuPS",
+     "shortName": "KuPS",
+     "id": "1693"
+    },
+    "away": {
+     "name": "Drita",
+     "shortName": "Drita",
+     "id": "784771"
+    },
+    "status": {
+     "utcTime": "2025-10-02T16:45:00Z",
+     "timezone": "",
+     "finished": true,
+     "started": true,
+     "cancelled": false,
+     "awarded": false,
+     "scoreStr": "1 - 1",
+     "reason": {
+      "short": "FT",
+      "shortKey": "fulltime_short",
+      "long": "Full-Time",
+      "longKey": "finished"
+     }
+    }
+   },
+   {
+    "round": "1",
+    "roundName": 1,
+    "pageUrl": "/matches/lausanne-vs-breiablik/24t4z1#4948059",
+    "id": "4948059",
+    "home": {
+     "name": "Lausanne",
+     "shortName": "Lausanne",
+     "id": "7730"
+    },
+    "away": {
+     "name": "Breiðablik",
+     "shortName": "Breiðablik",
+     "id": "8332"
+    },
+    "status": {
+     "utcTime": "2025-10-02T16:45:00Z",
+     "timezone": "",
+     "finished": true,
+     "started": true,
+     "cancelled": false,
+     "awarded": false,
+     "scoreStr": "3 - 0",
+     "reason": {
+      "short": "FT",
+      "shortKey": "fulltime_short",
+      "long": "Full-Time",
+      "longKey": "finished"
+     }
+    }
+   },
+   {
+    "round": "1",
+    "roundName": 1,
+    "pageUrl": "/matches/lech-poznan-vs-rapid-wien/18agzp#4947966",
+    "id": "4947966",
+    "home": {
+     "name": "Lech Poznań",
+     "shortName": "Lech Poznań",
+     "id": "2182"
+    },
+    "away": {
+     "name": "Rapid Wien",
+     "shortName": "Rapid Wien",
+     "id": "10015"
+    },
+    "status": {
+     "utcTime": "2025-10-02T16:45:00Z",
+     "timezone": "",
+     "finished": true,
+     "started": true,
+     "cancelled": false,
+     "awarded": false,
+     "scoreStr": "4 - 1",
+     "reason": {
+      "short": "FT",
+      "shortKey": "fulltime_short",
+      "long": "Full-Time",
+      "longKey": "finished"
+     }
+    }
+   },
+   {
+    "round": "playoff",
+    "roundName": "playoff",
+    "pageUrl": "/matches/az-alkmaar-vs-fc-noah/4weg2dcx#5141720",
+    "id": "5141720",
+    "home": {
+     "name": "FC Noah",
+     "shortName": "FC Noah",
+     "id": "866111"
+    },
+    "away": {
+     "name": "AZ Alkmaar",
+     "shortName": "AZ Alkmaar",
+     "id": "10229"
+    },
+    "status": {
+     "utcTime": "2026-02-19T17:45:00Z",
+     "timezone": "",
+     "finished": true,
+     "started": true,
+     "cancelled": false,
+     "awarded": false,
+     "scoreStr": "1 - 0",
+     "reason": {
+      "short": "FT",
+      "shortKey": "fulltime_short",
+      "long": "Full-Time",
+      "longKey": "finished"
+     }
+    }
+   },
+   {
+    "round": "playoff",
+    "roundName": "playoff",
+    "pageUrl": "/matches/kups-vs-lech-poznan/4h08s#5141718",
+    "id": "5141718",
+    "home": {
+     "name": "KuPS",
+     "shortName": "KuPS",
+     "id": "1693"
+    },
+    "away": {
+     "name": "Lech Poznań",
+     "shortName": "Lech Poznań",
+     "id": "2182"
+    },
+    "status": {
+     "utcTime": "2026-02-19T17:45:00Z",
+     "timezone": "",
+     "finished": true,
+     "started": true,
+     "cancelled": false,
+     "awarded": false,
+     "scoreStr": "0 - 2",
+     "reason": {
+      "short": "FT",
+      "shortKey": "fulltime_short",
+      "long": "Full-Time",
+      "longKey": "finished"
+     }
+    }
+   },
+   {
+    "round": "playoff",
+    "roundName": "playoff",
+    "pageUrl": "/matches/sigma-olomouc-vs-lausanne/1nyi2i#5141717",
+    "id": "5141717",
+    "home": {
+     "name": "Sigma Olomouc",
+     "shortName": "Sigma Olomouc",
+     "id": "6461"
+    },
+    "away": {
+     "name": "Lausanne",
+     "shortName": "Lausanne",
+     "id": "7730"
+    },
+    "status": {
+     "utcTime": "2026-02-19T17:45:00Z",
+     "timezone": "",
+     "finished": true,
+     "started": true,
+     "cancelled": false,
+     "awarded": false,
+     "scoreStr": "1 - 1",
+     "reason": {
+      "short": "FT",
+      "shortKey": "fulltime_short",
+      "long": "Full-Time",
+      "longKey": "finished"
+     }
+    }
+   },
+   {
+    "round": "playoff",
+    "roundName": "playoff",
+    "pageUrl": "/matches/crystal-palace-vs-zrinjski-mostar/3aag1h#5141716",
+    "id": "5141716",
+    "home": {
+     "name": "Zrinjski Mostar",
+     "shortName": "Zrinjski Mostar",
+     "id": "10107"
+    },
+    "away": {
+     "name": "Crystal Palace",
+     "shortName": "Crystal Palace",
+     "id": "9826"
+    },
+    "status": {
+     "utcTime": "2026-02-19T17:45:00Z",
+     "timezone": "",
+     "finished": true,
+     "started": true,
+     "cancelled": false,
+     "awarded": false,
+     "scoreStr": "1 - 1",
+     "reason": {
+      "short": "FT",
+      "shortKey": "fulltime_short",
+      "long": "Full-Time",
+      "longKey": "finished"
+     }
+    }
+   }
+  ]
+ },
+ "playoff": {
+  "rounds": [
+   {
+    "matches": [
+     {
+      "matchId": 5141718,
+      "home": {
+       "id": 1693,
+       "name": "KuPS",
+       "shortName": "KUP",
+       "score": 0,
+       "winner": false
+      },
+      "away": {
+       "id": 2182,
+       "name": "Lech Poznań",
+       "shortName": "LCH",
+       "score": 2,
+       "winner": true
+      },
+      "pageUrl": "/matches/kups-vs-lech-poznan/4h08s#5141718",
+      "status": {
+       "utcTime": "2026-02-19T16:45:00.000Z",
+       "finished": true,
+       "started": true,
+       "cancelled": false,
+       "awarded": false,
+       "scoreStr": "0 - 2",
+       "reason": {
+        "short": "FT",
+        "shortKey": "fulltime_short",
+        "long": "Full-Time",
+        "longKey": "finished"
+       }
+      }
+     },
+     {
+      "matchId": 5141720,
+      "home": {
+       "id": 866111,
+       "name": "FC Noah",
+       "shortName": "ART",
+       "score": 1,
+       "winner": true
+      },
+      "away": {
+       "id": 10229,
+       "name": "AZ Alkmaar",
+       "shortName": "AZ",
+       "score": 0,
+       "winner": false
+      },
+      "pageUrl": "/matches/az-alkmaar-vs-fc-noah/4weg2dcx#5141720",
+      "status": {
+       "utcTime": "2026-02-19T16:45:00.000Z",
+       "finished": true,
+       "started": true,
+       "cancelled": false,
+       "awarded": false,
+       "scoreStr": "1 - 0",
+       "reason": {
+        "short": "FT",
+        "shortKey": "fulltime_short",
+        "long": "Full-Time",
+        "longKey": "finished"
+       }
+      }
+     },
+     {
+      "matchId": 5141716,
+      "home": {
+       "id": 10107,
+       "name": "Zrinjski Mostar",
+       "shortName": "ZRI",
+       "score": 1,
+       "winner": false
+      },
+      "away": {
+       "id": 9826,
+       "name": "Crystal Palace",
+       "shortName": "CRY",
+       "score": 1,
+       "winner": false
+      },
+      "pageUrl": "/matches/crystal-palace-vs-zrinjski-mostar/3aag1h#5141716",
+      "status": {
+       "utcTime": "2026-02-19T16:45:00.000Z",
+       "finished": true,
+       "started": true,
+       "cancelled": false,
+       "awarded": false,
+       "scoreStr": "1 - 1",
+       "reason": {
+        "short": "FT",
+        "shortKey": "fulltime_short",
+        "long": "Full-Time",
+        "longKey": "finished"
+       }
+      }
+     },
+     {
+      "matchId": 5141717,
+      "home": {
+       "id": 6461,
+       "name": "Sigma Olomouc",
+       "shortName": "SOL",
+       "score": 1,
+       "winner": false
+      },
+      "away": {
+       "id": 7730,
+       "name": "Lausanne",
+       "shortName": "LAU",
+       "score": 1,
+       "winner": false
+      },
+      "pageUrl": "/matches/sigma-olomouc-vs-lausanne/1nyi2i#5141717",
+      "status": {
+       "utcTime": "2026-02-19T16:45:00.000Z",
+       "finished": true,
+       "started": true,
+       "cancelled": false,
+       "awarded": false,
+       "scoreStr": "1 - 1",
+       "reason": {
+        "short": "FT",
+        "shortKey": "fulltime_short",
+        "long": "Full-Time",
+        "longKey": "finished"
+       }
+      }
+     },
+     {
+      "matchId": 5141718,
+      "home": {
+       "id": 1693,
+       "name": "KuPS",
+       "shortName": "KUP",
+       "score": 0,
+       "winner": false
+      },
+      "away": {
+       "id": 2182,
+       "name": "Lech Poznań",
+       "shortName": "LCH",
+       "score": 2,
+       "winner": true
+      },
+      "pageUrl": "/matches/kups-vs-lech-poznan/4h08s#5141718",
+      "status": {
+       "utcTime": "2026-02-19T16:45:00.000Z",
+       "finished": true,
+       "started": true,
+       "cancelled": false,
+       "awarded": false,
+       "scoreStr": "0 - 2",
+       "reason": {
+        "short": "FT",
+        "shortKey": "fulltime_short",
+        "long": "Full-Time",
+        "longKey": "finished"
+       }
+      }
+     },
+     {
+      "matchId": 5141720,
+      "home": {
+       "id": 866111,
+       "name": "FC Noah",
+       "shortName": "ART",
+       "score": 1,
+       "winner": true
+      },
+      "away": {
+       "id": 10229,
+       "name": "AZ Alkmaar",
+       "shortName": "AZ",
+       "score": 0,
+       "winner": false
+      },
+      "pageUrl": "/matches/az-alkmaar-vs-fc-noah/4weg2dcx#5141720",
+      "status": {
+       "utcTime": "2026-02-19T16:45:00.000Z",
+       "finished": true,
+       "started": true,
+       "cancelled": false,
+       "awarded": false,
+       "scoreStr": "1 - 0",
+       "reason": {
+        "short": "FT",
+        "shortKey": "fulltime_short",
+        "long": "Full-Time",
+        "longKey": "finished"
+       }
+      }
+     },
+     {
+      "matchId": 5141716,
+      "home": {
+       "id": 10107,
+       "name": "Zrinjski Mostar",
+       "shortName": "ZRI",
+       "score": 1,
+       "winner": false
+      },
+      "away": {
+       "id": 9826,
+       "name": "Crystal Palace",
+       "shortName": "CRY",
+       "score": 1,
+       "winner": false
+      },
+      "pageUrl": "/matches/crystal-palace-vs-zrinjski-mostar/3aag1h#5141716",
+      "status": {
+       "utcTime": "2026-02-19T16:45:00.000Z",
+       "finished": true,
+       "started": true,
+       "cancelled": false,
+       "awarded": false,
+       "scoreStr": "1 - 1",
+       "reason": {
+        "short": "FT",
+        "shortKey": "fulltime_short",
+        "long": "Full-Time",
+        "longKey": "finished"
+       }
+      }
+     },
+     {
+      "matchId": 5141717,
+      "home": {
+       "id": 6461,
+       "name": "Sigma Olomouc",
+       "shortName": "SOL",
+       "score": 1,
+       "winner": false
+      },
+      "away": {
+       "id": 7730,
+       "name": "Lausanne",
+       "shortName": "LAU",
+       "score": 1,
+       "winner": false
+      },
+      "pageUrl": "/matches/sigma-olomouc-vs-lausanne/1nyi2i#5141717",
+      "status": {
+       "utcTime": "2026-02-19T16:45:00.000Z",
+       "finished": true,
+       "started": true,
+       "cancelled": false,
+       "awarded": false,
+       "scoreStr": "1 - 1",
+       "reason": {
+        "short": "FT",
+        "shortKey": "fulltime_short",
+        "long": "Full-Time",
+        "longKey": "finished"
+       }
+      }
+     }
+    ]
+   }
+  ]
+ }
+}

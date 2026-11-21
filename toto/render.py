@@ -411,7 +411,10 @@ def _model_block(match: Match, report=None, settings=None) -> str:
             f'<p class="meta">그 경기 이전의 최종 스코어만으로 맞춘 모델 산출값입니다 '
             f'({esc(f.config)}) · 시장 확률과 합치지 않습니다 · 패널에는 '
             f'전달되지 않습니다 · 무승부 보정이 없어 무승부 확률이 낮게 나올 수 '
-            f'있습니다 · 운영용 기준이며 아직 검증되지 않았습니다</p></div>')
+            f'있습니다 · 운영용 기준이며 아직 검증되지 않았습니다</p>'
+            f'<p class="meta">백테스트(시장 확률이 있는 70경기 · 2026-11)에서 '
+            f'시장 확률에 더할 정보를 보이지 못했습니다 — 시장과 섞을수록 '
+            f'Brier 가 나빠졌습니다</p></div>')
 
 
 def _standing_row(match: Match) -> str:

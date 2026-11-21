@@ -213,6 +213,8 @@ def test_b4_report_block_shows_probabilities_and_samples():
     html = render._model_block(m, rep, Settings())
     assert "통계 모델 기준선" in html and "기대 득점" in html
     assert "패널에는 전달되지 않습니다" in html and "<svg" in html
+    # 백테스트 결과(시장에 더할 정보 없음)를 블록이 스스로 밝힌다
+    assert "시장 확률에 더할 정보를 보이지 못했습니다" in html
     for bad in ("추천", "픽", "홈승", "원정승"):
         assert bad not in html
 

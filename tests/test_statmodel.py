@@ -341,8 +341,10 @@ def test_c7_cross_validation_picks_weight_from_other_rounds_only():
     same = BT.blend_study(_rows(False))
     assert set(same["chosen"].values()) == {0.0}
     assert same["cv"]["diff_brier"][0] == 0.0
-    assert BT.verdict(*same["cv"]["diff_brier"][:2]).startswith("판정 불가") \
-        or "구별되지" in BT.verdict(*same["cv"]["diff_brier"][:2])
+    # 차이가 전부 0 이면 '표본 부족' 이 아니라 '시장과 같다' 다 (PC 실측에서 틀렸다)
+    assert BT.verdict(*same["cv"]["diff_brier"][:2]).startswith("시장과 같다")
+    assert BT.verdict(None, None).startswith("판정 불가")
+    assert BT.verdict(0.1, None).startswith("판정 불가")
     # 뺀 회차의 모델 값을 바꿔도 그 회차에 고른 비중은 바뀌지 않는다
     rows = _rows(True)
     spoiled = [(r, m, ({"H": 0.0, "D": 0.0, "A": 1.0} if r == "2" else f), y)

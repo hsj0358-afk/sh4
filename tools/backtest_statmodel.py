@@ -178,8 +178,14 @@ def paired(diffs: list) -> tuple:
 
 def verdict(mean, se) -> str:
     """짝 차이(혼합 − 시장)의 판정. 낮을수록 좋은 지표 기준. 2 표준오차로만 가른다."""
-    if mean is None or not se:
+    if mean is None or se is None:
         return "판정 불가 (표본 부족)"
+    if se == 0:
+        # 모든 경기의 차이가 같다 — 교차검증이 모든 회차에서 w=0 을 고르면
+        # 혼합이 곧 시장이라 차이가 전부 0 이다. 표본 부족과 다른 상태다.
+        if mean == 0:
+            return "시장과 같다 (모든 회차에서 시장만 골랐다)"
+        return "시장보다 낮다" if mean < 0 else "시장보다 높다"
     if mean + 2 * se < 0:
         return "시장보다 낮다 (2 표준오차 밖)"
     if mean - 2 * se > 0:

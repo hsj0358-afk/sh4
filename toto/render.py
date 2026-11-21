@@ -350,6 +350,54 @@ def _odds_block(match: Match, report=None) -> str:
             f'<div class="kv">{"".join(f"<span>{e}</span>" for e in extra)}</div></div>')
 
 
+def _any_votes(matches) -> bool:
+    return any(getattr(getattr(m, "votes", None), "available", False)
+               for m in matches or [])
+
+
+def _pct3(values) -> str:
+    h, d, a = (v * 100 for v in values)
+    return f'홈 <b>{h:.1f}%</b> · 무 <b>{d:.1f}%</b> · 원정 <b>{a:.1f}%</b>'
+
+
+def _votes_block(match: Match, report=None) -> str:
+    """베트맨 투표 현황 (§1-68). 시장 기준선 바로 아래.
+
+    **다른 구매자들이 고른 비중**이지 확률이 아니다. 시장과의 차이는 방향
+    낱말 없이 %p 로만 적는다 — 몰렸다고 그 결과가 틀린다는 뜻도 맞는다는
+    뜻도 아니다. 패널에 전달되지 않는다.
+
+    회차에 투표율이 하나도 없으면(데모 이전 저장본·`--matches-file`) 블록을
+    내지 않는다 — 카드마다 같은 빈 줄을 늘어놓지 않는다. 다른 경기에는
+    있는데 이 경기만 없으면 그렇다고 적는다.
+    """
+    from . import votes as votes_mod
+
+    v = getattr(match, "votes", None)
+    s = votes_mod.shares(match)
+    if s is None:
+        if v is not None and v.available:
+            return ('<div class="block"><h4>베트맨 투표 현황</h4>'
+                    '<p class="nodata">아직 투표가 없습니다 (0표)</p></div>')
+        if report is not None and _any_votes(report.matches):
+            return ('<div class="block"><h4>베트맨 투표 현황</h4>'
+                    '<p class="nodata">이 경기의 투표율을 읽지 못했습니다</p></div>')
+        return ""
+    when = f' · {esc(v.captured_at)} 기준' if v.captured_at else ""
+    rows = [f'<span>투표 {_pct3(s)}</span>'
+            f'<span>경기당 {v.total:,}표{when}</span>']
+    diff = votes_mod.diff_pp(match)
+    diffline = ""
+    if diff is not None:
+        dh, dd, da = diff
+        diffline = (f'<div class="kv"><span>투표 − 시장 홈 <b>{dh:+.1f}%p</b> · '
+                    f'무 <b>{dd:+.1f}%p</b> · 원정 <b>{da:+.1f}%p</b></span></div>')
+    return ('<div class="block"><h4>베트맨 투표 현황 (다른 구매자들이 고른 비중)</h4>'
+            f'<div class="kv">{"".join(rows)}</div>{diffline}'
+            '<p class="meta">확률이 아니라 구매자들의 선택 비중입니다 · 마감까지 '
+            '바뀝니다 · 패널에는 전달되지 않습니다</p></div>')
+
+
 # 맞춤 오차가 이보다 크면 그 사실을 적는다 — 독립 포아송이 이 시장의
 # 승/무/패를 잘 재현하지 못했다는 뜻이다.
 MARKET_MODE_FIT_NOTE = 0.01
@@ -1782,6 +1830,7 @@ def _match_card(match: Match, settings: Settings, report=None,
             f'{_standing_row(match)}'
             f'{notes}'
             f'{_odds_block(match, report)}'
+            f'{_votes_block(match, report)}'
             f'{_model_block(match, report, settings)}'
             # **요약 블록은 Phase 5-D 에서 뺐다.** 4-D 가 그것을 맨 위에 둔
             # 이유는 "무엇이 있고 무엇이 없는지" 를 먼저 보이려는 것이었는데,
@@ -1957,6 +2006,57 @@ def _summary_market(match: Match) -> str:
             f'<span>무 {pd:.1f}%</span><span>원정 {pa:.1f}%</span></div>')
 
 
+def _summary_votes(match: Match, show: bool) -> str:
+    """요약 카드의 투표 한 줄 (§1-68). 회차에 투표율이 없으면 줄이 없다."""
+    if not show:
+        return ""
+    from . import votes as votes_mod
+
+    s = votes_mod.shares(match)
+    if s is None:
+        return '<div class="pv"><span>투표 정보 없음</span></div>'
+    h, d, a = (x * 100 for x in s)
+    return (f'<div class="pv"><span>투표</span><span>홈 {h:.1f}%</span>'
+            f'<span>무 {d:.1f}%</span><span>원정 {a:.1f}%</span></div>')
+
+
+def _round_votes_block(matches: list[Match]) -> str:
+    """회차 전체 투표 요약 한 덩어리 (§1-68). 투표율이 없으면 빈 문자열.
+
+    **조합을 제안하지 않는다.** '투표 1위 결과로만 채운 조합' 은 대중이 가장
+    많이 고른 표의 모양을 설명하려는 기준점이다 — 그것이 흔할수록 그 조합이
+    맞았을 때 나눠 가질 사람이 많다.
+    """
+    from . import votes as votes_mod
+
+    rv = votes_mod.round_votes(matches)
+    if not rv.with_votes:
+        return ""
+    when = f' · {esc(rv.captured_at)} 기준' if rv.captured_at else ""
+    lines = [f'투표율 {rv.with_votes}/{rv.matches}경기'
+             + (f' · 경기당 {rv.total:,}표' if rv.total else '') + when]
+    if rv.top_share is not None:
+        part = f'투표 1위 결과로만 채운 조합의 비중 <b>{rv.top_share * 100:.4f}%</b>'
+        if rv.top_copies is not None:
+            part += f' (같은 조합 약 <b>{rv.top_copies:,.0f}</b>개)'
+        if rv.top_market is not None:
+            part += (f' · 그 조합이 시장 기준으로 모두 맞을 확률 '
+                     f'<b>{rv.top_market * 100:.4f}%</b>')
+        lines.append(part)
+    if rv.differ:
+        lines.append('투표 1위와 시장 1위가 다른 경기: '
+                     + ", ".join(f"{n}번" for n in rv.differ))
+    if rv.ties:
+        lines.append('투표 1위가 동률인 경기: '
+                     + ", ".join(f"{n}번" for n in rv.ties))
+    items = "".join(f"<li>{x}</li>" for x in lines)
+    return ('<div class="block"><h4>베트맨 투표 현황 · 회차 전체</h4>'
+            f'<ul class="mnotes">{items}</ul>'
+            '<p class="meta">조합의 비중은 경기마다 투표 비중을 곱한 값입니다 · '
+            '사람들의 표는 서로 닮아 있어 실제로는 같은 조합이 이보다 더 많이 '
+            '겹칩니다 · 조합을 고르거나 제안하지 않습니다</p></div>')
+
+
 def _summary_intro(matches: list[Match]) -> str:
     """요약 그리드 위의 설명 한 줄. **있는 것만 약속한다.**
 
@@ -1966,13 +2066,20 @@ def _summary_intro(matches: list[Match]) -> str:
     if not any(getattr(m, "panel", None) is not None for m in matches):
         return ('카드를 누르면 상세로 이동합니다 · 이 실행에는 Panel 분석이 '
                 '없어 종합 예상 스코어가 없습니다 · 작은 줄은 Pinnacle 시장 '
-                '확률이고 지표는 각 경기의 상세에 있습니다')
+                f'확률이고 지표는 각 경기의 상세에 있습니다{_intro_votes(matches)}')
     return ('큰 숫자는 <b>Panel 종합 예상 스코어</b>(사회자가 토론 분포에서 '
             '채택한 값)입니다 · 아래 작은 줄이 있으면 1·2단계 분석가가 '
             '<b>처음</b> 낸 예상 스코어입니다 · <b>승/무/패로 바꾸지 '
-            '않습니다</b> · 맨 아래 줄은 <b>Pinnacle 시장 확률</b>이고 자세한 '
-            '것은 각 경기의 시장 기준선에 있습니다 · 카드를 누르면 상세로 '
-            '이동합니다')
+            '않습니다</b> · 그 아래 줄은 <b>Pinnacle 시장 확률</b>이고 자세한 '
+            f'것은 각 경기의 시장 기준선에 있습니다{_intro_votes(matches)}'
+            ' · 카드를 누르면 상세로 이동합니다')
+
+
+def _intro_votes(matches: list[Match]) -> str:
+    if not _any_votes(matches):
+        return ""
+    return (' · <b>투표</b> 줄은 베트맨 구매자들이 고른 비중이고 확률이 '
+            '아닙니다')
 
 
 def _summary_grid(matches: list[Match]) -> str:
@@ -1983,6 +2090,7 @@ def _summary_grid(matches: list[Match]) -> str:
     Panel 종합 예상 스코어다. §1-67 에서 막대 없이 **숫자 한 줄**만
     되살렸다 (`_summary_market`).
     """
+    show_votes = _any_votes(matches)
     cards = []
     for m in matches:
         cards.append(
@@ -1990,8 +2098,10 @@ def _summary_grid(matches: list[Match]) -> str:
             f'<div class="hd"><span>{m.no}. {esc(m.league_ko or m.league)}</span>'
             f'<span>{esc(m.kickoff_kst)}</span></div>'
             f'<div class="tm">{esc(m.home.display)} vs {esc(m.away.display)}</div>'
-            f'{_summary_panel(m)}{_summary_market(m)}</a>')
-    return f'<div class="summary">{"".join(cards)}</div>'
+            f'{_summary_panel(m)}{_summary_market(m)}'
+            f'{_summary_votes(m, show_votes)}</a>')
+    return (f'<div class="summary">{"".join(cards)}</div>'
+            f'{_round_votes_block(matches)}')
 
 
 # --------------------------------------------------------------------------

@@ -641,6 +641,44 @@ class Odds:
         return None not in (self.home, self.draw, self.away)
 
 
+@dataclass
+class Votes:
+    """베트맨 승무패 투표 현황 — 다른 구매자들이 고른 결과의 수 (§1-68).
+
+    **시장 확률이 아니다.** 사람들이 승·무·패 중 무엇을 찍었는지를 센 값이고,
+    승무패는 같은 등수에 맞힌 사람끼리 상금을 나누므로 정확도와 별개로
+    '얼마나 겹치나' 를 알려 준다.
+
+    값은 베트맨 게임슬립의 투표수 원값이다 (`(2,448,704)`). 비율은 이 수에서
+    만든다 — 화면에 찍힌 반올림 비율(`56.8%`)은 파싱 검증에만 쓴다. 실측
+    260055 에서 경기마다 세 수의 합이 같았다(4,308,828) — 팔린 조합 수로 보인다.
+
+    마감까지 계속 바뀌므로 `captured_at`(KST, 수집 시각)을 함께 둔다.
+    읽지 못한 경기는 셋 다 `None` 이다 — 0 으로 채우지 않는다 (§1-5).
+    """
+    home: int | None = None
+    draw: int | None = None
+    away: int | None = None
+    captured_at: str = ""         # "2026-11-21 14:30" (KST)
+
+    @property
+    def available(self) -> bool:
+        return None not in (self.home, self.draw, self.away)
+
+    @property
+    def total(self) -> int | None:
+        if not self.available:
+            return None
+        return self.home + self.draw + self.away
+
+    def shares(self) -> tuple[float, float, float] | None:
+        """(홈, 무, 원정) 비중. 표가 없거나 합이 0 이면 None."""
+        total = self.total
+        if not total:
+            return None
+        return (self.home / total, self.draw / total, self.away / total)
+
+
 # --------------------------------------------------------------------------
 # 상대전적
 # --------------------------------------------------------------------------
@@ -1290,6 +1328,9 @@ class Match:
     # 보호와 준비 상태 판정에만 쓰고 **저장본에는 싣지 않는다**
     # (`artifact.DROPPED` — 저장 형식을 바꾸지 않는다).
     league_basis: str = ""
+    # 베트맨 투표 현황 (§1-68). 시장 확률과 다른 것이고 패널에 주지 않는다.
+    # 새 칸은 뒤에만 붙인다 — 기존 필드의 자리를 밀지 않는다.
+    votes: Votes = field(default_factory=Votes)
 
     @property
     def title(self) -> str:
@@ -1509,6 +1550,12 @@ def revive_match(d: Any) -> Match | None:
     out.odds = Odds(**odds) if isinstance(odds, dict) else Odds()
     probs = d.get("probs")
     out.probs = MatchProb(**probs) if isinstance(probs, dict) else None
+    # §1-68 이전 저장본에는 이 칸이 없다 — 없으면 빈 채로 되살린다(§1-5).
+    votes = d.get("votes")
+    if isinstance(votes, dict):
+        out.votes = Votes(**{k: votes.get(k) for k in
+                             ("home", "draw", "away")},
+                          captured_at=votes.get("captured_at") or "")
     for side in ("home_profile", "away_profile"):
         setattr(out, side, _revive_profile(d.get(side)))
     h2h = d.get("h2h")

@@ -2,8 +2,8 @@
  "_about": "tests/test_golden_regression.py 의 기대값. 손으로 고치지 말고 TOTO_GOLDEN_UPDATE=1 로 다시 쓴다.",
  "entries": {
   "demo/artifact.json": {
-   "sha256": "8f4eeaa4ad8193a4ff2a62c755d74cefe5303e21f48ead5e90fe1e5d785be0d6",
-   "bytes": 855715
+   "sha256": "40124e6fe320a08ead6344ba0a99f6598c248c88e41dd85de9c9407be3b90ff9",
+   "bytes": 857469
   },
   "demo/chat_export_all/00_프로젝트_지침.md": {
    "sha256": "29eea0e8ebaaaeb7ec67e7ae2edfdc36d112561809d6920f23889bc6117ec4ec",
@@ -42,8 +42,8 @@
    "bytes": 370520
   },
   "demo/report.html": {
-   "sha256": "db6fd02d5267652daaabed99f5bc588a8d4d3b53bd556d7e181deec116e88c2f",
-   "bytes": 670725
+   "sha256": "0e945c5833bfe43f0f1d6c7d6a03201c724246cb3755c832b86d23ff4b81ee29",
+   "bytes": 680348
   },
   "demo/round_data.txt": {
    "sha256": "8b1521141d46467ef2dc1834c1ee59370af0b0baf3c15e92a75f6935d69ea8fc",
@@ -110,8 +110,8 @@
    "bytes": 19048
   },
   "panel/report.html": {
-   "sha256": "c998c18325df18e4d097fbb2e729615f2d8214f0a5a26cc3db6b6ccd66d8c5aa",
-   "bytes": 741583
+   "sha256": "2922c68fbea70af0616129269402be5bc0da4d507dd9f1d5d0ab1074248dda6a",
+   "bytes": 751206
   },
   "prompt/analyst_task.txt": {
    "sha256": "119b54a0f3a58618118003485439266a9372a551fd6bc0c95b9a12ecdd4e15a1",

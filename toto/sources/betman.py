@@ -29,11 +29,12 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from .. import competition
-from ..models import Match, TeamRef
+from ..models import KST, Match, TeamRef, Votes
 from ..settings import ROOT, Settings, load_yaml
 
 log = logging.getLogger(__name__)
@@ -59,6 +60,14 @@ _HEADER_HINTS = ("홈팀", "원정팀", "대상경기", "개최시간", "경기�
 # 경기 번호 셀: "1경기" ~ "14경기". **셀 전체가 이 모양**이어야 한다 —
 # 마지막 셀 "1경기 브라이턴 : 아스널 상세정보 열기" 는 번호 셀이 아니다.
 _MATCH_NO_RE = re.compile(r"(\d{1,2})\s*경기")
+
+# 투표율 칸: "투표율\n56.8%\n(2,448,704)" — 실측 260055. 경기 행에 이 칸이
+# **승·무·패 순서로 셋** 있다 (머리글 아래 줄이 '승','무','패'). 비율은 반올림된
+# 표시값이고 괄호 안이 투표수다.
+_VOTE_RE = re.compile(r"투표율\s*(\d{1,3}(?:\.\d+)?)\s*%\s*\(\s*([\d,]+)\s*\)")
+# 화면 비율과 투표수에서 다시 만든 비율의 허용 차이 (%p). 표시가 소수 첫째
+# 자리 반올림이므로 0.05 가 이론값이고, 여유를 조금 둔다.
+_VOTE_PCT_TOLERANCE = 0.15
 
 
 # --------------------------------------------------------------------------
@@ -132,6 +141,9 @@ class MatchRows:
     unreadable: list[int] = field(default_factory=list)  # 번호는 있는데 vs 셀이 없다
     ignored: int = 0          # 경기 행이 아닌 행 (빈 행·머리글·UI 행)
     repeated: int = 0         # 번호·팀·시각까지 같은 행이 다시 나온 수 (프레임 중복)
+    # 투표율을 읽지 못한 경기 → 사유 (§1-68). 회차 계약과 무관하다 — 투표율이
+    # 없어도 경기 목록은 통과한다.
+    vote_issues: dict[int, str] = field(default_factory=dict)
 
 
 def _match_no(cells: list[str]) -> int | None:
@@ -154,6 +166,29 @@ def _teams(cells: list[str]) -> tuple[str, str]:
         if home and away:
             return home, away
     return "", ""
+
+
+def _votes(cells: list[str]) -> tuple[Votes, str]:
+    """투표율 칸 셋 → (Votes, 못 읽은 사유). 읽었으면 사유는 빈 문자열.
+
+    **승·무·패 순서로 정확히 셋**이어야 한다. 그보다 적거나 많으면 어느 칸이
+    어느 결과인지 알 수 없으므로 읽지 않는다. 투표수로 다시 만든 비율이 화면
+    비율과 어긋나도 읽지 않는다 — 칸 해석이 틀렸다는 뜻이다.
+    """
+    found = [m for m in (_VOTE_RE.fullmatch(c) for c in cells) if m]
+    if not found:
+        return Votes(), "투표율 칸 없음"
+    if len(found) != 3:
+        return Votes(), f"투표율 칸 {len(found)}개 (기대 3개)"
+    counts = [int(m.group(2).replace(",", "")) for m in found]
+    shown = [float(m.group(1)) for m in found]
+    total = sum(counts)
+    if total > 0:
+        for c, pct in zip(counts, shown):
+            if abs(c / total * 100 - pct) > _VOTE_PCT_TOLERANCE:
+                return Votes(), (f"투표수와 비율이 맞지 않음 "
+                                 f"({counts} · {shown})")
+    return Votes(home=counts[0], draw=counts[1], away=counts[2]), ""
 
 
 def read_match_rows(rows: list[dict]) -> MatchRows:
@@ -185,9 +220,12 @@ def read_match_rows(rows: list[dict]) -> MatchRows:
             out.repeated += 1
             continue
         seen.add(key)
+        votes, issue = _votes(cells)
+        if issue:
+            out.vote_issues[no] = issue
         out.matches.append(Match(no=no, home=TeamRef(name_ko=home),
                                  away=TeamRef(name_ko=away),
-                                 kickoff_kst=kickoff))
+                                 kickoff_kst=kickoff, votes=votes))
     return out
 
 
@@ -239,7 +277,31 @@ def match_list(rows: list[dict], expected: int,
     problems = round_problems(parsed, expected)
     if problems:
         raise MatchListError(round_id, problems)
-    return sorted(parsed.matches, key=lambda m: m.no)
+    matches = sorted(parsed.matches, key=lambda m: m.no)
+    _log_votes(matches, parsed.vote_issues)
+    return matches
+
+
+def _log_votes(matches: list[Match], issues: dict[int, str]) -> None:
+    """투표율을 몇 경기 읽었나 · 경기마다 투표 합이 같은가 (§1-68).
+
+    조용히 비우지 않는다 (§1-6-1). 합이 경기마다 다르면 칸 해석을 의심해야
+    하므로 그 사실을 적는다 — 값은 그대로 둔다.
+    """
+    have = [m for m in matches if m.votes.available]
+    if issues:
+        log.warning("베트맨 투표율을 읽지 못한 경기 %d개: %s", len(issues),
+                    "; ".join(f"{n}번 {why}" for n, why in sorted(issues.items())))
+    if not have:
+        return
+    totals = sorted({m.votes.total for m in have})
+    if len(totals) == 1:
+        log.info("베트맨 투표율 %d/%d경기 · 경기당 투표 %s표", len(have),
+                 len(matches), f"{totals[0]:,}")
+    else:
+        log.warning("베트맨 투표율 %d/%d경기 · 경기마다 투표 합이 다릅니다 "
+                    "(%s) — 칸 해석을 확인하십시오", len(have), len(matches),
+                    ", ".join(f"{t:,}" for t in totals))
 
 
 def _parse_rows(rows: list[dict], settings: Settings | None = None) -> list[Match]:
@@ -330,6 +392,11 @@ def fetch_matches(settings: Settings, round_id: str | None = None,
         raise
 
     log.info("베트맨 %s회차 — %d경기 수집", resolved_round, len(matches))
+    # 투표율은 마감까지 바뀌므로 읽은 시각을 함께 둔다 (§1-68).
+    stamp = datetime.now(KST).strftime("%Y-%m-%d %H:%M")
+    for m in matches:
+        if m.votes.available:
+            m.votes.captured_at = stamp
     # 다음 실행에서 회차를 자동 탐지할 때의 출발점으로 남긴다.
     _remember_round(resolved_round)
     return matches, resolved_round

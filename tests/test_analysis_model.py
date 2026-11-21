@@ -319,8 +319,10 @@ def test_existing_match_fields_unchanged():
                 "radar", "matchup_notes", "notes"]
     assert names[:len(original)] == original, "기존 필드의 자리가 바뀌었다"
     assert names[len(original)] == "analysis", "analysis 자리가 바뀌었다"
-    # 뒤에 붙인 필드: Phase 2 `analysis` · 3-B `panel` · 6-C `league_basis`
-    assert names[len(original):] == ["analysis", "panel", "league_basis"], \
+    # 뒤에 붙인 필드: Phase 2 `analysis` · 3-B `panel` · 6-C `league_basis` ·
+    # §1-68 `votes`
+    assert names[len(original):] == ["analysis", "panel", "league_basis",
+                                     "votes"], \
         names[len(original):]
     m = Match(no=3, league="epl")
     assert m.no == 3 and m.league == "epl" and m.radar == {}

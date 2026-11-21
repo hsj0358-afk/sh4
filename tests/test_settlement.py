@@ -294,7 +294,9 @@ def test_c7_real_artifact_67_finished_matches_still_self_match():
 _FROZEN = ("round", "no", "recorded_at", "league", "kickoff_kst",
            "home", "away", "home_canon", "away_canon",
            "odds_home", "odds_draw", "odds_away",
-           "p_home", "p_draw", "p_away", "pick", "p_pick", "gap", "toss_up")
+           "p_home", "p_draw", "p_away", "pick", "p_pick", "gap", "toss_up",
+           # §1-68 베트맨 투표수 — 경기 전 관측이라 정산이 바꾸지 않는다
+           "vote_home", "vote_draw", "vote_away", "votes_at")
 
 
 def test_d1_settlement_changes_only_the_result_fields():

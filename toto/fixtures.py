@@ -230,4 +230,25 @@ def build_demo_matches() -> list[Match]:
             match.notes.append("데모: 원정팀 상세 데이터 수집 실패 상황을 재현한 경기입니다.")
 
         matches.append(match)
+    _demo_votes(matches)
     return matches
+
+
+# 데모 투표 현황 (§1-68). 실물처럼 **경기마다 투표 합이 같고**, 대중이 시장보다
+# 정배당 쪽으로 더 몰리는 모양으로 만든다. 난수 흐름을 따로 써서 위의 배당·
+# 지표 값이 한 자리도 바뀌지 않게 한다.
+_DEMO_VOTES_TOTAL = 3_861_204
+
+
+def _demo_votes(matches: list[Match]) -> None:
+    rng = random.Random("demo-votes-20260808")
+    for m in matches:
+        odds = (m.odds.home, m.odds.draw, m.odds.away)
+        if None in odds:
+            continue
+        raw = [(1 / o) ** rng.uniform(1.3, 1.8) for o in odds]
+        total = sum(raw)
+        counts = [int(_DEMO_VOTES_TOTAL * x / total) for x in raw]
+        counts[0] += _DEMO_VOTES_TOTAL - sum(counts)
+        m.votes.home, m.votes.draw, m.votes.away = counts
+        m.votes.captured_at = "2026-08-08 18:00"

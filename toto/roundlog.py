@@ -71,6 +71,9 @@ MATCH_FIELDS = (
     "home", "away", "home_canon", "away_canon", "match_id",
     "odds_home", "odds_draw", "odds_away",
     "p_home", "p_draw", "p_away", "pick", "p_pick", "gap", "toss_up",
+    # 베트맨 투표수 원값과 읽은 시각 (§1-68). 비율이 아니라 수를 남긴다 —
+    # 비율은 언제든 다시 만들 수 있고, 반올림된 비율에서 수는 되살릴 수 없다.
+    "vote_home", "vote_draw", "vote_away", "votes_at",
     "home_goals", "away_goals", "result", "pick_hit", "settled_at",
 )
 
@@ -236,6 +239,10 @@ def _match_rows(report: Report) -> list[dict]:
             "p_pick": _fmt(getattr(probs, "p_pick", None), ".4f"),
             "gap": _fmt(getattr(probs, "gap", None), ".4f"),
             "toss_up": ("1" if probs.toss_up else "0") if probs else "",
+            "vote_home": _fmt(getattr(m.votes, "home", None)),
+            "vote_draw": _fmt(getattr(m.votes, "draw", None)),
+            "vote_away": _fmt(getattr(m.votes, "away", None)),
+            "votes_at": (m.votes.captured_at or "") if m.votes.available else "",
             "home_goals": "", "away_goals": "", "result": "",
             "pick_hit": "", "settled_at": "",
         })

@@ -115,66 +115,25 @@ def test_a6_unknown_variant_is_refused():
     assert R.check_variant("nope")
 
 
-def _adopted_score_rules() -> str:
-    text = panel.SYSTEM_COMMON
-    start = text.index("예상 스코어(`predicted_home`·`predicted_away`)를 정하는 법:")
-    return text[start:text.index(_COMMON_ANCHOR)]
-
-
-def test_a7_adopted_v1_does_not_invent_numbers_or_outcomes():
-    """운영에 들어간 v1 문단이 새 확률·공식을 요구하거나 승무패를 말하지
-    않는다 (§1-3·§1-9)."""
-    from toto import moderator
-    rules = _adopted_score_rules()
-    assert "가장 나올 법한 정확한 스코어 하나" in rules
-    assert "번갈아" in moderator.SYSTEM
-    assert "가장 나올 법한 정확한 스코어 하나" in moderator.SYSTEM
-    for word in ("확률을 계산", "%", "홈승", "원정승", "추천", "베팅", "픽"):
-        assert word not in rules, word
-
-
-def test_a8_v1_is_production_and_versions_moved():
-    """v1 은 운영 프롬프트가 됐다 — 판 번호와 지침 지문이 함께 움직였다."""
+def test_a7_production_is_back_to_pre_v1_prompts():
+    """§1-67 — 운영 프롬프트가 v1 이전 글자로 돌아왔다. v1 의 스코어 규칙과
+    사회자의 발언 순서 교대가 없고, 판 번호는 올라가 옛 캐시를 쓰지 않는다."""
     from toto import moderator, panelexport
-    assert panel.PANEL_PROMPT_VERSION == "6"
-    assert moderator.MODERATOR_PROMPT_VERSION == "7"
-    assert panelexport.instructions_fingerprint() == "d1212e24"
-    assert "v1" not in R.VARIANTS          # 다시 끼워 넣으면 두 번 들어간다
+    assert "예상 스코어(`predicted_home`·`predicted_away`)를 정하는 법" \
+        not in panel.SYSTEM_COMMON
+    assert "내림" not in panel.SYSTEM_COMMON
+    assert "번갈아" not in moderator.SYSTEM
+    assert "가장 나올 법한 정확한 스코어 하나" not in moderator.SYSTEM
+    assert panel.PANEL_PROMPT_VERSION == "7"
+    assert moderator.MODERATOR_PROMPT_VERSION == "8"
+    assert panelexport.instructions_fingerprint() == "71163a6f"
 
 
-def test_a9_dir1_changes_only_the_score_rules():
-    """dir1 (방향 목표, §1-66) — 두 분석가는 같은 공통 규칙을 받고 역할 규칙은
-    그대로이며, 사회자는 역할 지침만 바뀐다. 운영 프롬프트는 그대로다."""
-    from toto import moderator
-    a_common, a_role = R.prompt_parts(A, "dir1")
-    b_common, b_role = R.prompt_parts(B, "dir1")
-    assert a_common == b_common != panel.SYSTEM_COMMON
-    assert a_role == panel.ROLE_PROMPTS[A] and b_role == panel.ROLE_PROMPTS[B]
-    _c_common, c_role = R.prompt_parts(C, "dir1")
-    assert c_role != moderator.system_prompt(30)
-    # 운영 글자는 바뀌지 않았다 — 안은 재생에만 있다
-    assert "실제로 비슷할 때만" not in panel.SYSTEM_COMMON
-    assert "실제로 비슷할 때만" not in moderator.SYSTEM
-    assert "실제로 비슷할 때만" in a_common
-    assert "절충으로 삼지 마십시오" in c_role
-
-
-def test_a10_dir1_keeps_the_guards():
-    """방향을 담게 했어도 승무패 낱말·추천·새 확률이 들어오지 않고, 분포 밖
-    스코어 금지와 '승무패에서 역산하지 않는다' 가 그대로 남는다."""
-    a_common, _ = R.prompt_parts(A, "dir1")
-    _c, c_role = R.prompt_parts(C, "dir1")
-    added = R._DIR1_COMMON_SCORE_NEW + R._DIR1_COMMON_FLOOR_NEW + \
-        R._DIR1_MOD_ROUND_NEW + R._DIR1_MOD_PICK_NEW
-    for word in ("확률을 계산", "%", "홈승", "원정승", "추천", "베팅", "픽"):
-        assert word not in added, word
-    assert "새 지표·확률·공식을 계산하지 마십시오" in a_common
-    assert "승/무/패를 먼저 정하고 스코어를 맞추는 것이 아닙니다" in a_common
-    assert "분포 밖의 값은 여전히 고를 수 없습니다" in c_role
-    assert "실제로 나타난 스코어 중에서만" in c_role
-    assert "시장 확률이 어느 쪽에 가깝다는 이유로 고르지 마십시오" in c_role
-    # 맞대결 분석가의 역산 금지도 그대로다
-    assert "승무패에서 스코어를 역산하지 마십시오" in R.prompt_parts(B, "dir1")[1]
+def test_a8_rejected_variants_are_not_kept():
+    """기각된 안(v1·dir1)은 운영 글자에 기대므로 남겨 두면 깨진다."""
+    assert "v1" not in R.VARIANTS and "dir1" not in R.VARIANTS
+    assert R.VARIANTS["baseline"] == ()
+    assert not [n for n in dir(R) if n.startswith("_DIR1")]
 
 
 # ==========================================================================

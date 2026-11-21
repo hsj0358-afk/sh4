@@ -629,8 +629,8 @@ def test_g5_instructions_fingerprint_changed():
     assert fp != "e99bf42f", "지문이 그대로면 지침이 낡은 줄 모른다"
     # 6-E-4 `b389d4f0` → 6-E-6 `fe098456` → 6-F-11 `4a54e7ad` (B 예상 스코어
     # 규칙) → 리팩터링 Phase 4 후속 `71163a6f` (`경기별/` 안내 삭제)
-    # → §1-63 `d1212e24` (v1 채택).
-    assert fp == "d1212e24", fp
+    # → §1-63 `d1212e24` (v1 채택) → §1-67 `71163a6f` (v1 되돌림).
+    assert fp == "71163a6f", fp
 
 
 def test_g6_prompt_forbids_scoring_the_intensities():

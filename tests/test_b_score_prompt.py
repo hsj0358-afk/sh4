@@ -279,8 +279,9 @@ def test_instructions_fingerprint_changed():
     fp = panelexport.instructions_fingerprint()
     assert fp != "fe098456", "지문이 그대로면 지침이 낡은 줄 모른다"
     # 6-F-11 에서 `4a54e7ad` 가 됐고, 리팩터링 Phase 4 후속이 `경기별/` 안내를
-    # 지우며 `71163a6f` 가 됐고, v1 채택(§1-63)으로 `d1212e24` 가 됐다.
-    assert fp == "d1212e24", fp
+    # 지우며 `71163a6f` 가 됐고, v1 채택(§1-63)으로 `d1212e24` 가 됐다가,
+    # v1 을 되돌려(§1-67) 글자가 같아진 `71163a6f` 로 돌아왔다.
+    assert fp == "71163a6f", fp
 
 
 def test_scope_untouched_modules():

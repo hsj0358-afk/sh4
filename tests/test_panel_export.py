@@ -750,11 +750,14 @@ def test_t10_guide_does_not_change_the_instructions_fingerprint():
     규칙에 예상 스코어를 고르는 법이, 사회자에 발언 순서 교대가 들어갔다.
     **다시 붙여넣어야 한다.**
 
+    §1-67 에서 v1 을 되돌려 글자가 v1 이전과 같아졌다 (`d1212e24` →
+    `71163a6f`). **다시 붙여넣어야 한다.**
+
     Phase 6-E-6 에서 바뀌었다 (`b389d4f0` → `fe098456`). 맞대결 분석가에
     `style_of_play` 조건과 정량/정성 분리·일치 여부가, 사회자에 '정성 원문을
     받지 않았다' 는 규칙이 들어갔다. **다시 붙여넣어야 한다.**
     """
-    assert panelexport.instructions_fingerprint() == "d1212e24"
+    assert panelexport.instructions_fingerprint() == "71163a6f"
 
 
 def test_s3_conclusion_is_the_first_field_in_the_schema():

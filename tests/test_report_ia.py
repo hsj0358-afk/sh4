@@ -265,12 +265,21 @@ def test_a11_the_field_rides_the_artifact_round_trip():
 # B. 회차 요약 카드
 # ==========================================================================
 def test_b12_summary_has_no_market_probability_bars():
-    """§29-11 — 시장 확률 막대·백분율이 카드에서 빠졌다."""
+    """§29-11 — 시장 확률 **막대**는 카드에서 빠졌다. §1-67 에서 숫자 한 줄만
+    되살렸다 — 막대·강조·승무패 판정 낱말 없이, 상세와 같은 자리수로."""
     report, _res = _imported(FIXTURE_A)
     grid = render._summary_grid(report.matches)
     assert "<svg" not in grid
-    assert "%" not in grid
-    for banned in ("승 ", "무 ", "패 "):
+    for m in report.matches:
+        line = render._summary_market(m)
+        if m.probs is None:
+            assert "시장 확률 없음" in line
+            continue
+        for value in m.probs.pct():
+            assert f"{value:.1f}%" in line, (m.no, value)
+        assert "<b>" not in line and "<svg" not in line   # 가장 높은 값을 고르지 않는다
+        assert line in grid
+    for banned in ("승 ", "패 ", "홈승", "원정승", "추천", "유력"):
         assert banned not in _text(grid), banned
 
 

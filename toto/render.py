@@ -84,8 +84,9 @@ h2.sec{font-size:18px;margin:36px 0 12px;letter-spacing:-.01em}
   color:var(--text-muted);margin-bottom:4px}
 .sumcard .tm{font-size:14px;font-weight:600;margin-bottom:7px;
   overflow-wrap:anywhere}
-.sumcard .pv{display:flex;gap:10px;font-size:11.5px;color:var(--text-secondary);
-  margin-top:5px;font-variant-numeric:tabular-nums}
+.sumcard .pv{display:flex;justify-content:center;flex-wrap:wrap;gap:10px;
+  font-size:11.5px;color:var(--text-secondary);margin-top:6px;
+  font-variant-numeric:tabular-nums}
 /* 회차 요약의 중심은 Panel 종합 예상 스코어다 (Phase 4-G). 폰에서도 이것이
    카드의 첫 시각적 초점이 되도록 가장 크게 둔다. */
 .sumcard .sumscore{font-size:30px;font-weight:700;text-align:center;margin:10px 0 2px;
@@ -1940,6 +1941,22 @@ def _summary_panel(match: Match) -> str:
             f'<p class="sumlab">종합 예상 스코어</p>{tail}')
 
 
+def _summary_market(match: Match) -> str:
+    """요약 카드의 시장 확률 한 줄 (§1-67).
+
+    패널을 해석 계층으로 두기로 하면서, 측정상 방향 정보가 가장 정확한
+    시장 확률을 카드에 숫자 한 줄로 되살렸다 (4-G 가 내렸던 것). 막대도
+    강조도 없고 가장 높은 값을 고르지 않는다 — 값은 경기 상세의 `Pinnacle
+    시장 기준선` 과 **같은 자리수**다. 카드의 중심은 그대로 패널 스코어다.
+    """
+    probs = getattr(match, "probs", None)
+    if probs is None:
+        return '<div class="pv"><span>시장 확률 없음</span></div>'
+    ph, pd, pa = probs.pct()
+    return (f'<div class="pv"><span>시장</span><span>홈 {ph:.1f}%</span>'
+            f'<span>무 {pd:.1f}%</span><span>원정 {pa:.1f}%</span></div>')
+
+
 def _summary_intro(matches: list[Match]) -> str:
     """요약 그리드 위의 설명 한 줄. **있는 것만 약속한다.**
 
@@ -1948,13 +1965,14 @@ def _summary_intro(matches: list[Match]) -> str:
     """
     if not any(getattr(m, "panel", None) is not None for m in matches):
         return ('카드를 누르면 상세로 이동합니다 · 이 실행에는 Panel 분석이 '
-                '없어 종합 예상 스코어가 없습니다 · 시장 확률·지표는 각 '
-                '경기의 상세에 있습니다')
+                '없어 종합 예상 스코어가 없습니다 · 작은 줄은 Pinnacle 시장 '
+                '확률이고 지표는 각 경기의 상세에 있습니다')
     return ('큰 숫자는 <b>Panel 종합 예상 스코어</b>(사회자가 토론 분포에서 '
             '채택한 값)입니다 · 아래 작은 줄이 있으면 1·2단계 분석가가 '
             '<b>처음</b> 낸 예상 스코어입니다 · <b>승/무/패로 바꾸지 '
-            '않습니다</b> · 시장 확률은 각 경기의 <b>Pinnacle 시장 기준선</b>'
-            '에 있습니다 · 카드를 누르면 상세로 이동합니다')
+            '않습니다</b> · 맨 아래 줄은 <b>Pinnacle 시장 확률</b>이고 자세한 '
+            '것은 각 경기의 시장 기준선에 있습니다 · 카드를 누르면 상세로 '
+            '이동합니다')
 
 
 def _summary_grid(matches: list[Match]) -> str:
@@ -1962,7 +1980,8 @@ def _summary_grid(matches: list[Match]) -> str:
 
     **시장 확률 막대를 여기서 내렸다.** 같은 값이 경기 상세의
     `Pinnacle 시장 기준선` 에 그대로 있고, 회차를 훑는 첫 화면의 중심은
-    Panel 종합 예상 스코어다.
+    Panel 종합 예상 스코어다. §1-67 에서 막대 없이 **숫자 한 줄**만
+    되살렸다 (`_summary_market`).
     """
     cards = []
     for m in matches:
@@ -1971,7 +1990,7 @@ def _summary_grid(matches: list[Match]) -> str:
             f'<div class="hd"><span>{m.no}. {esc(m.league_ko or m.league)}</span>'
             f'<span>{esc(m.kickoff_kst)}</span></div>'
             f'<div class="tm">{esc(m.home.display)} vs {esc(m.away.display)}</div>'
-            f'{_summary_panel(m)}</a>')
+            f'{_summary_panel(m)}{_summary_market(m)}</a>')
     return f'<div class="summary">{"".join(cards)}</div>'
 
 

@@ -1,0 +1,650 @@
+[
+ {
+  "match_no": 1,
+  "initial_scores": {
+   "data_analyst": {
+    "home": 2,
+    "away": 1
+   },
+   "matchup_tactical_analyst": {
+    "home": 1,
+    "away": 1
+   }
+  },
+  "simulations": 30,
+  "distribution": [
+   {
+    "home": 0,
+    "away": 1,
+    "count": 20,
+    "origin": "data_analyst"
+   },
+   {
+    "home": 1,
+    "away": 1,
+    "count": 6,
+    "origin": "compromise"
+   },
+   {
+    "home": 0,
+    "away": 0,
+    "count": 4,
+    "origin": "compromise"
+   }
+  ],
+  "adopted_home": 0,
+  "adopted_away": 1,
+  "adopted_from": [
+   "data_analyst",
+   "matchup_tactical_analyst"
+  ],
+  "conclusion": "토론 결과 1번 경기의 예상 스코어는 0-1 입니다. 원정의 기회 창출이 앞섰습니다. 표본이 좁습니다.",
+  "common_points": [
+   "원정의 기회 창출이 앞선다"
+  ],
+  "differences": [
+   "홈 수비의 평가가 갈린다"
+  ],
+  "counterpoints": [
+   "홈의 최근 실점이 줄었다"
+  ],
+  "market_relation": "시장 기준선과 방향은 같고 폭은 더 좁다.",
+  "uncertainty": [
+   "표본이 6경기로 좁다"
+  ],
+  "evidence_ids": [
+   "E001"
+  ]
+ },
+ {
+  "match_no": 2,
+  "initial_scores": {
+   "data_analyst": {
+    "home": 0,
+    "away": 1
+   },
+   "matchup_tactical_analyst": {
+    "home": null,
+    "away": null
+   }
+  },
+  "simulations": 30,
+  "distribution": [
+   {
+    "home": 0,
+    "away": 1,
+    "count": 20,
+    "origin": "data_analyst"
+   },
+   {
+    "home": 1,
+    "away": 1,
+    "count": 6,
+    "origin": "compromise"
+   },
+   {
+    "home": 0,
+    "away": 0,
+    "count": 4,
+    "origin": "compromise"
+   }
+  ],
+  "adopted_home": 0,
+  "adopted_away": 1,
+  "adopted_from": [
+   "data_analyst",
+   "matchup_tactical_analyst"
+  ],
+  "conclusion": "토론 결과 2번 경기의 예상 스코어는 0-1 입니다. 원정의 기회 창출이 앞섰습니다. 표본이 좁습니다.",
+  "common_points": [
+   "원정의 기회 창출이 앞선다"
+  ],
+  "differences": [
+   "홈 수비의 평가가 갈린다"
+  ],
+  "counterpoints": [
+   "홈의 최근 실점이 줄었다"
+  ],
+  "market_relation": "시장 기준선과 방향은 같고 폭은 더 좁다.",
+  "uncertainty": [
+   "표본이 6경기로 좁다"
+  ],
+  "evidence_ids": [
+   "E001"
+  ]
+ },
+ {
+  "match_no": 3,
+  "initial_scores": {
+   "data_analyst": {
+    "home": 1,
+    "away": 1
+   },
+   "matchup_tactical_analyst": {
+    "home": 1,
+    "away": 1
+   }
+  },
+  "simulations": 30,
+  "distribution": [
+   {
+    "home": 0,
+    "away": 1,
+    "count": 20,
+    "origin": "data_analyst"
+   },
+   {
+    "home": 1,
+    "away": 1,
+    "count": 6,
+    "origin": "compromise"
+   },
+   {
+    "home": 0,
+    "away": 0,
+    "count": 4,
+    "origin": "compromise"
+   }
+  ],
+  "adopted_home": 0,
+  "adopted_away": 1,
+  "adopted_from": [
+   "data_analyst",
+   "matchup_tactical_analyst"
+  ],
+  "conclusion": "토론 결과 3번 경기의 예상 스코어는 0-1 입니다. 원정의 기회 창출이 앞섰습니다. 표본이 좁습니다.",
+  "common_points": [
+   "원정의 기회 창출이 앞선다"
+  ],
+  "differences": [
+   "홈 수비의 평가가 갈린다"
+  ],
+  "counterpoints": [
+   "홈의 최근 실점이 줄었다"
+  ],
+  "market_relation": "시장 기준선과 방향은 같고 폭은 더 좁다.",
+  "uncertainty": [
+   "표본이 6경기로 좁다"
+  ],
+  "evidence_ids": [
+   "E001"
+  ]
+ },
+ {
+  "match_no": 4,
+  "initial_scores": {
+   "data_analyst": {
+    "home": 2,
+    "away": 1
+   },
+   "matchup_tactical_analyst": {
+    "home": 1,
+    "away": 1
+   }
+  },
+  "simulations": 30,
+  "distribution": [
+   {
+    "home": 0,
+    "away": 1,
+    "count": 20,
+    "origin": "data_analyst"
+   },
+   {
+    "home": 1,
+    "away": 1,
+    "count": 6,
+    "origin": "compromise"
+   },
+   {
+    "home": 0,
+    "away": 0,
+    "count": 4,
+    "origin": "compromise"
+   }
+  ],
+  "adopted_home": 0,
+  "adopted_away": 1,
+  "adopted_from": [
+   "data_analyst",
+   "matchup_tactical_analyst"
+  ],
+  "conclusion": "토론 결과 4번 경기의 예상 스코어는 0-1 입니다. 원정의 기회 창출이 앞섰습니다. 표본이 좁습니다.",
+  "common_points": [
+   "원정의 기회 창출이 앞선다"
+  ],
+  "differences": [
+   "홈 수비의 평가가 갈린다"
+  ],
+  "counterpoints": [
+   "홈의 최근 실점이 줄었다"
+  ],
+  "market_relation": "시장 기준선과 방향은 같고 폭은 더 좁다.",
+  "uncertainty": [
+   "표본이 6경기로 좁다"
+  ],
+  "evidence_ids": [
+   "E001"
+  ]
+ },
+ {
+  "match_no": 5,
+  "initial_scores": {
+   "data_analyst": {
+    "home": 0,
+    "away": 1
+   },
+   "matchup_tactical_analyst": {
+    "home": null,
+    "away": null
+   }
+  },
+  "simulations": 30,
+  "distribution": [
+   {
+    "home": 0,
+    "away": 1,
+    "count": 20,
+    "origin": "data_analyst"
+   },
+   {
+    "home": 1,
+    "away": 1,
+    "count": 6,
+    "origin": "compromise"
+   },
+   {
+    "home": 0,
+    "away": 0,
+    "count": 4,
+    "origin": "compromise"
+   }
+  ],
+  "adopted_home": 0,
+  "adopted_away": 1,
+  "adopted_from": [
+   "data_analyst",
+   "matchup_tactical_analyst"
+  ],
+  "conclusion": "토론 결과 5번 경기의 예상 스코어는 0-1 입니다. 원정의 기회 창출이 앞섰습니다. 표본이 좁습니다.",
+  "common_points": [
+   "원정의 기회 창출이 앞선다"
+  ],
+  "differences": [
+   "홈 수비의 평가가 갈린다"
+  ],
+  "counterpoints": [
+   "홈의 최근 실점이 줄었다"
+  ],
+  "market_relation": "시장 기준선과 방향은 같고 폭은 더 좁다.",
+  "uncertainty": [
+   "표본이 6경기로 좁다"
+  ],
+  "evidence_ids": [
+   "E001"
+  ]
+ },
+ {
+  "match_no": 6,
+  "initial_scores": {
+   "data_analyst": {
+    "home": 1,
+    "away": 1
+   },
+   "matchup_tactical_analyst": {
+    "home": 1,
+    "away": 1
+   }
+  },
+  "simulations": 30,
+  "distribution": [
+   {
+    "home": 0,
+    "away": 1,
+    "count": 20,
+    "origin": "data_analyst"
+   },
+   {
+    "home": 1,
+    "away": 1,
+    "count": 6,
+    "origin": "compromise"
+   },
+   {
+    "home": 0,
+    "away": 0,
+    "count": 4,
+    "origin": "compromise"
+   }
+  ],
+  "adopted_home": 0,
+  "adopted_away": 1,
+  "adopted_from": [
+   "data_analyst",
+   "matchup_tactical_analyst"
+  ],
+  "conclusion": "토론 결과 6번 경기의 예상 스코어는 0-1 입니다. 원정의 기회 창출이 앞섰습니다. 표본이 좁습니다.",
+  "common_points": [
+   "원정의 기회 창출이 앞선다"
+  ],
+  "differences": [
+   "홈 수비의 평가가 갈린다"
+  ],
+  "counterpoints": [
+   "홈의 최근 실점이 줄었다"
+  ],
+  "market_relation": "시장 기준선과 방향은 같고 폭은 더 좁다.",
+  "uncertainty": [
+   "표본이 6경기로 좁다"
+  ],
+  "evidence_ids": [
+   "E001"
+  ]
+ },
+ {
+  "match_no": 7,
+  "initial_scores": {
+   "data_analyst": {
+    "home": 2,
+    "away": 1
+   },
+   "matchup_tactical_analyst": {
+    "home": 1,
+    "away": 1
+   }
+  },
+  "simulations": 30,
+  "distribution": [
+   {
+    "home": 0,
+    "away": 1,
+    "count": 20,
+    "origin": "data_analyst"
+   },
+   {
+    "home": 1,
+    "away": 1,
+    "count": 6,
+    "origin": "compromise"
+   },
+   {
+    "home": 0,
+    "away": 0,
+    "count": 4,
+    "origin": "compromise"
+   }
+  ],
+  "adopted_home": 0,
+  "adopted_away": 1,
+  "adopted_from": [
+   "data_analyst",
+   "matchup_tactical_analyst"
+  ],
+  "conclusion": "토론 결과 7번 경기의 예상 스코어는 0-1 입니다. 원정의 기회 창출이 앞섰습니다. 표본이 좁습니다.",
+  "common_points": [
+   "원정의 기회 창출이 앞선다"
+  ],
+  "differences": [
+   "홈 수비의 평가가 갈린다"
+  ],
+  "counterpoints": [
+   "홈의 최근 실점이 줄었다"
+  ],
+  "market_relation": "시장 기준선과 방향은 같고 폭은 더 좁다.",
+  "uncertainty": [
+   "표본이 6경기로 좁다"
+  ],
+  "evidence_ids": [
+   "E001"
+  ]
+ },
+ {
+  "match_no": 8,
+  "initial_scores": {
+   "data_analyst": {
+    "home": 0,
+    "away": 1
+   },
+   "matchup_tactical_analyst": {
+    "home": null,
+    "away": null
+   }
+  },
+  "simulations": 30,
+  "distribution": [
+   {
+    "home": 0,
+    "away": 1,
+    "count": 20,
+    "origin": "data_analyst"
+   },
+   {
+    "home": 1,
+    "away": 1,
+    "count": 6,
+    "origin": "compromise"
+   },
+   {
+    "home": 0,
+    "away": 0,
+    "count": 4,
+    "origin": "compromise"
+   }
+  ],
+  "adopted_home": 0,
+  "adopted_away": 1,
+  "adopted_from": [
+   "data_analyst",
+   "matchup_tactical_analyst"
+  ],
+  "conclusion": "토론 결과 8번 경기의 예상 스코어는 0-1 입니다. 원정의 기회 창출이 앞섰습니다. 표본이 좁습니다.",
+  "common_points": [
+   "원정의 기회 창출이 앞선다"
+  ],
+  "differences": [
+   "홈 수비의 평가가 갈린다"
+  ],
+  "counterpoints": [
+   "홈의 최근 실점이 줄었다"
+  ],
+  "market_relation": "시장 기준선과 방향은 같고 폭은 더 좁다.",
+  "uncertainty": [
+   "표본이 6경기로 좁다"
+  ],
+  "evidence_ids": [
+   "E001"
+  ]
+ },
+ {
+  "match_no": 9,
+  "simulations": 0,
+  "distribution": [],
+  "adopted_home": null,
+  "adopted_away": null
+ },
+ {
+  "match_no": 10,
+  "initial_scores": {
+   "data_analyst": {
+    "home": 2,
+    "away": 1
+   },
+   "matchup_tactical_analyst": {
+    "home": 1,
+    "away": 1
+   }
+  },
+  "simulations": 30,
+  "distribution": [
+   {
+    "home": 0,
+    "away": 1,
+    "count": 20,
+    "origin": "data_analyst"
+   },
+   {
+    "home": 1,
+    "away": 1,
+    "count": 6,
+    "origin": "compromise"
+   },
+   {
+    "home": 0,
+    "away": 0,
+    "count": 4,
+    "origin": "compromise"
+   }
+  ],
+  "adopted_home": 0,
+  "adopted_away": 1,
+  "adopted_from": [
+   "data_analyst",
+   "matchup_tactical_analyst"
+  ],
+  "conclusion": "토론 결과 10번 경기의 예상 스코어는 0-1 입니다. 원정의 기회 창출이 앞섰습니다. 표본이 좁습니다.",
+  "common_points": [
+   "원정의 기회 창출이 앞선다"
+  ],
+  "differences": [
+   "홈 수비의 평가가 갈린다"
+  ],
+  "counterpoints": [
+   "홈의 최근 실점이 줄었다"
+  ],
+  "market_relation": "시장 기준선과 방향은 같고 폭은 더 좁다.",
+  "uncertainty": [
+   "표본이 6경기로 좁다"
+  ],
+  "evidence_ids": [
+   "E001"
+  ]
+ },
+ {
+  "match_no": 11,
+  "initial_scores": {
+   "data_analyst": {
+    "home": 0,
+    "away": 1
+   },
+   "matchup_tactical_analyst": {
+    "home": null,
+    "away": null
+   }
+  },
+  "simulations": 30,
+  "distribution": [
+   {
+    "home": 0,
+    "away": 1,
+    "count": 20,
+    "origin": "data_analyst"
+   },
+   {
+    "home": 1,
+    "away": 1,
+    "count": 6,
+    "origin": "compromise"
+   },
+   {
+    "home": 0,
+    "away": 0,
+    "count": 4,
+    "origin": "compromise"
+   }
+  ],
+  "adopted_home": 0,
+  "adopted_away": 1,
+  "adopted_from": [
+   "data_analyst",
+   "matchup_tactical_analyst"
+  ],
+  "conclusion": "토론 결과 11번 경기의 예상 스코어는 0-1 입니다. 원정의 기회 창출이 앞섰습니다. 표본이 좁습니다.",
+  "common_points": [
+   "원정의 기회 창출이 앞선다"
+  ],
+  "differences": [
+   "홈 수비의 평가가 갈린다"
+  ],
+  "counterpoints": [
+   "홈의 최근 실점이 줄었다"
+  ],
+  "market_relation": "시장 기준선과 방향은 같고 폭은 더 좁다.",
+  "uncertainty": [
+   "표본이 6경기로 좁다"
+  ],
+  "evidence_ids": [
+   "E001"
+  ]
+ },
+ {
+  "match_no": 12,
+  "initial_scores": {
+   "data_analyst": {
+    "home": 1,
+    "away": 1
+   },
+   "matchup_tactical_analyst": {
+    "home": 1,
+    "away": 1
+   }
+  },
+  "simulations": 30,
+  "distribution": [
+   {
+    "home": 0,
+    "away": 1,
+    "count": 20,
+    "origin": "data_analyst"
+   },
+   {
+    "home": 1,
+    "away": 1,
+    "count": 6,
+    "origin": "compromise"
+   },
+   {
+    "home": 0,
+    "away": 0,
+    "count": 4,
+    "origin": "compromise"
+   }
+  ],
+  "adopted_home": 0,
+  "adopted_away": 1,
+  "adopted_from": [
+   "data_analyst",
+   "matchup_tactical_analyst"
+  ],
+  "conclusion": "토론 결과 12번 경기의 예상 스코어는 0-1 입니다. 원정의 기회 창출이 앞섰습니다. 표본이 좁습니다.",
+  "common_points": [
+   "원정의 기회 창출이 앞선다"
+  ],
+  "differences": [
+   "홈 수비의 평가가 갈린다"
+  ],
+  "counterpoints": [
+   "홈의 최근 실점이 줄었다"
+  ],
+  "market_relation": "시장 기준선과 방향은 같고 폭은 더 좁다.",
+  "uncertainty": [
+   "표본이 6경기로 좁다"
+  ],
+  "evidence_ids": [
+   "E001"
+  ]
+ },
+ {
+  "match_no": 13,
+  "simulations": 0,
+  "distribution": [],
+  "adopted_home": null,
+  "adopted_away": null
+ },
+ {
+  "match_no": 14,
+  "simulations": 0,
+  "distribution": [],
+  "adopted_home": null,
+  "adopted_away": null
+ }
+]

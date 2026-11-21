@@ -1,0 +1,21 @@
+# Dependencies for the soccer toto (Korean sports lottery) analysis tool.
+#
+#   pip install -r requirements-toto.txt
+#   playwright install chromium
+#
+# Charts are generated as inline SVG by hand, so no pandas/matplotlib/plotly.
+#
+# NOTE: keep this file ASCII-only. pip decodes requirements files using the
+# system locale encoding (cp949 on Korean Windows) unless a BOM is present,
+# so non-ASCII comments here crash the install with UnicodeDecodeError.
+# Korean documentation lives in docs/toto_usage.md instead.
+
+playwright>=1.40.0        # Betman / WhoScored: JS rendering + bot protection
+requests>=2.31.0          # Pinnacle guest API
+beautifulsoup4>=4.12.0    # WhoScored HTML parsing
+lxml>=5.0.0               # parser backend for bs4
+PyYAML>=6.0               # config_toto.yaml / teams.yaml / matches.yaml
+
+# Optional: only the --panel feature (dual expert panel) needs this.
+# It is imported lazily at call time, so the analysis pipeline runs without it.
+anthropic>=0.40.0         # Claude API for the two analyst panels

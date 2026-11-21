@@ -1,0 +1,689 @@
+{
+ "schema_version": "1.1",
+ "round": "260052",
+ "source": "moderator-paste",
+ "matches": [
+  {
+   "match_number": 1,
+   "home_team": "A빌라",
+   "away_team": "노팅엄F",
+   "panel_status": "부분",
+   "panel_status_reason": "3단계 Moderator 결과만 붙여넣었습니다 (1·2단계 원문 없음)",
+   "moderator": {
+    "simulations": 30,
+    "distribution": [
+     {
+      "home": 0,
+      "away": 1,
+      "count": 30,
+      "origin": "data_analyst"
+     }
+    ],
+    "adopted_home": 0,
+    "adopted_away": 1,
+    "adopted_from": [
+     "data_analyst",
+     "matchup_tactical_analyst"
+    ],
+    "conclusion": "30회 토론 결과 예상 스코어는 0-1 입니다(30회). 공격 산출(A빌라 xG 낮음)·수비 허용(npxGA 1.79)·실제 득점(A빌라 0) 등 거의 모든 축에서 두 분석가가 동일한 결론에 도달했습니다. 표본이 3경기로 매우 작다는 점이 이 결론을 약하게 만듭니다.",
+    "common_points": [
+     "A빌라의 공격 산출과 수비 모두 열세로 관찰됨",
+     "두 분석가 모두 동일한 근거(E001,E005,E014)를 사용함"
+    ],
+    "differences": [
+     "전술 분석가만 노팅엄F의 공중볼 강점이라는 정성적 관계를 추가로 언급함"
+    ],
+    "counterpoints": [
+     "표본 수가 3경기로 매우 작아 신뢰도에 한계가 있음"
+    ],
+    "market_relation": "시장은 A빌라 홈 승 확률(0.42)을 가장 높게 보지만 두 의견 모두 원정 우세를 관찰해 시장과 다른 방향을 가리킴.",
+    "uncertainty": [
+     "표본 n=3으로 매우 제한적",
+     "sustainability_gap은 상태 관찰일 뿐 향후 회귀를 의미하지 않음"
+    ],
+    "evidence_ids": [
+     "E001",
+     "E005",
+     "E014"
+    ]
+   }
+  },
+  {
+   "match_number": 2,
+   "home_team": "본머스",
+   "away_team": "브렌트퍼",
+   "panel_status": "부분",
+   "panel_status_reason": "3단계 Moderator 결과만 붙여넣었습니다 (1·2단계 원문 없음)",
+   "moderator": {
+    "simulations": 30,
+    "distribution": [
+     {
+      "home": 1,
+      "away": 2,
+      "count": 30,
+      "origin": "data_analyst"
+     }
+    ],
+    "adopted_home": 1,
+    "adopted_away": 2,
+    "adopted_from": [
+     "data_analyst",
+     "matchup_tactical_analyst"
+    ],
+    "conclusion": "30회 토론 결과 예상 스코어는 1-2 입니다(30회). 브렌트퍼드의 높은 xG와 본머스의 수비 허용(npxGA 1.61)이라는 축에서 두 분석가가 동일하게 수렴했습니다. 표본이 작다는 점이 이 결론을 약하게 만듭니다.",
+    "common_points": [
+     "브렌트퍼드의 공격 산출이 높다는 점에 동의",
+     "본머스 수비가 상대에게 질 높은 기회를 허용한다는 점에 동의"
+    ],
+    "differences": [
+     "전술 분석가는 정성 자료(스루패스·세트피스 강점 매칭)를 추가 근거로 제시"
+    ],
+    "counterpoints": [
+     "표본 수 3경기로 작음"
+    ],
+    "market_relation": "시장은 홈 우세(0.376) 근소 우위로 보나 두 의견은 원정 우세로 시장과 다소 다른 방향.",
+    "uncertainty": [
+     "양 팀 xG-득점 괴리 방향이 반대로 나타남"
+    ],
+    "evidence_ids": [
+     "E001",
+     "E014",
+     "E018"
+    ]
+   }
+  },
+  {
+   "match_number": 3,
+   "home_team": "크리스털",
+   "away_team": "입스위치",
+   "panel_status": "부분",
+   "panel_status_reason": "3단계 Moderator 결과만 붙여넣었습니다 (1·2단계 원문 없음)",
+   "moderator": {
+    "simulations": 30,
+    "distribution": [
+     {
+      "home": 1,
+      "away": 1,
+      "count": 17,
+      "origin": "matchup_tactical_analyst"
+     },
+     {
+      "home": 2,
+      "away": 2,
+      "count": 10,
+      "origin": "data_analyst"
+     },
+     {
+      "home": 1,
+      "away": 2,
+      "count": 3,
+      "origin": "compromise"
+     }
+    ],
+    "adopted_home": 1,
+    "adopted_away": 1,
+    "adopted_from": [
+     "matchup_tactical_analyst"
+    ],
+    "conclusion": "30회 토론 결과 예상 스코어는 1-1 입니다(17회). 실제 득점 평균(양 팀 모두 1.33)에서 출발한 라운드들이 1-1로 모인 반면, xG 수준(양 팀 모두 1.53)에서 출발한 라운드들은 2-2로 흩어져 결론이 완전히 모이지 않았습니다. 두 분석가가 사실상 동일한 근거를 다른 지표(xG vs 실제 득점)로 해석해 갈린 사례입니다.",
+    "common_points": [
+     "양 팀 수비 모두 상대에게 질 높은 기회를 다수 허용",
+     "양 팀 xG·실제 득점 수준이 각각 서로 유사"
+    ],
+    "differences": [
+     "데이터 분석가는 xG 동일 수준(1.53)을 근거로 2-2",
+     "전술 분석가는 실제 득점 동일 수준(1.33)을 근거로 1-1"
+    ],
+    "counterpoints": [
+     "표본 수 3경기로 작아 두 지표 중 어느 쪽이 더 신뢰할 만한지 판단하기 어려움"
+    ],
+    "market_relation": "시장은 크리스털 홈 승 확률(0.51)을 가장 높게 보지만 두 의견 모두 무승부 계열 스코어로 수렴해 시장과 다른 방향.",
+    "uncertainty": [
+     "표본 n=3",
+     "xG와 실제 득점이라는 서로 다른 지표가 다른 결론을 유도함"
+    ],
+    "evidence_ids": [
+     "E005",
+     "E009",
+     "E018",
+     "E022"
+    ]
+   }
+  },
+  {
+   "match_number": 4,
+   "home_team": "리버풀",
+   "away_team": "풀럼",
+   "panel_status": "부분",
+   "panel_status_reason": "3단계 Moderator 결과만 붙여넣었습니다 (1·2단계 원문 없음)",
+   "moderator": {
+    "simulations": 30,
+    "distribution": [
+     {
+      "home": 2,
+      "away": 1,
+      "count": 20,
+      "origin": "data_analyst"
+     },
+     {
+      "home": 2,
+      "away": 0,
+      "count": 10,
+      "origin": "matchup_tactical_analyst"
+     }
+    ],
+    "adopted_home": 2,
+    "adopted_away": 1,
+    "adopted_from": [
+     "data_analyst"
+    ],
+    "conclusion": "30회 토론 결과 예상 스코어는 2-1 입니다(20회). 풀럼의 시즌 실제 득점 수준(1.33)이 0보다 크다는 점에서 출발한 라운드들이 실점 허용 쪽으로 모였고, 풀럼의 최근 폼 저조(pts-xpts -1.20)에서 출발한 라운드만 클린시트(2-0)로 갔습니다. 풀럼의 실제 공격 xG 수치 자체가 제공되지 않아 추정에 의존한다는 한계가 있습니다.",
+    "common_points": [
+     "리버풀의 공격 우위와 풀럼의 수비 취약(npxGA 2.08)에 동의",
+     "리버풀이 xG 대비 득점을 초과한다는 점에 동의"
+    ],
+    "differences": [
+     "데이터 분석가는 풀럼의 시즌 실제 득점(1.33)을 근거로 1실점 예상",
+     "전술 분석가는 풀럼의 최근 폼 저조(E007)를 근거로 클린시트 예상"
+    ],
+    "counterpoints": [
+     "풀럼의 실제 공격 xG 수치가 evidence에 직접 제공되지 않음"
+    ],
+    "market_relation": "시장은 리버풀 홈 승 확률(0.67)을 매우 높게 보며, 두 의견 모두 리버풀 승리로 방향은 일치.",
+    "uncertainty": [
+     "표본 n=3",
+     "풀럼 수비 지표와 공격 지표가 다른 소스(shotmap vs derived)에서 옴"
+    ],
+    "evidence_ids": [
+     "E001",
+     "E005",
+     "E007",
+     "E018"
+    ]
+   }
+  },
+  {
+   "match_number": 5,
+   "home_team": "오사수나",
+   "away_team": "에스파뇰",
+   "panel_status": "부분",
+   "panel_status_reason": "3단계 Moderator 결과만 붙여넣었습니다 (1·2단계 원문 없음)",
+   "moderator": {
+    "simulations": 30,
+    "distribution": [
+     {
+      "home": 1,
+      "away": 2,
+      "count": 17,
+      "origin": "matchup_tactical_analyst"
+     },
+     {
+      "home": 1,
+      "away": 1,
+      "count": 13,
+      "origin": "data_analyst"
+     }
+    ],
+    "adopted_home": 1,
+    "adopted_away": 2,
+    "adopted_from": [
+     "matchup_tactical_analyst"
+    ],
+    "conclusion": "30회 토론 결과 예상 스코어는 1-2 입니다(17회). 에스파뇰의 시즌 실제 득점(2.0)이 오사수나(1.25)보다 높고 오사수나의 최근 실점이 허용 기대치를 초과한다는 축에서 다수 라운드가 원정 우세로 모였으나, 명시적으로 확인된 에스파뇰의 goals_vs_xg 방향 불일치(conflicts) 때문에 균형점(1-1)으로 수렴한 라운드도 상당수 있어 결론이 완전히 모이지는 않았습니다.",
+    "common_points": [
+     "오사수나의 수비 지표와 에스파뇰의 득점 지표 모두 표본이 작다는 점에 동의",
+     "두 분석가 모두 오사수나 실점 관련 불안정성을 인지"
+    ],
+    "differences": [
+     "데이터 분석가는 균형 잡힌 1-1을 제시",
+     "전술 분석가는 에스파뇰의 시즌 실제 득점 우위와 오사수나의 실점 초과 관찰(E013)을 근거로 1-2를 제시"
+    ],
+    "counterpoints": [
+     "에스파뇰의 goals_vs_xg 방향이 시즌(+0.37)과 최근 3경기(-0.03) 사이에서 명시적으로 불일치함"
+    ],
+    "market_relation": "시장은 오사수나 홈 승 확률(0.44)을 가장 높게 보나 두 의견 모두 무승부 또는 원정 우세로 시장과 다소 다름.",
+    "uncertainty": [
+     "표본 n=3~4",
+     "명시된 방향 불일치(conflicts)로 신뢰도 저하"
+    ],
+    "evidence_ids": [
+     "E001",
+     "E002",
+     "E009",
+     "E013",
+     "E016",
+     "E017"
+    ]
+   }
+  },
+  {
+   "match_number": 6,
+   "home_team": "토트넘",
+   "away_team": "에버턴",
+   "panel_status": "부분",
+   "panel_status_reason": "3단계 Moderator 결과만 붙여넣었습니다 (1·2단계 원문 없음)",
+   "moderator": {
+    "simulations": 30,
+    "distribution": [
+     {
+      "home": 0,
+      "away": 2,
+      "count": 30,
+      "origin": "data_analyst"
+     }
+    ],
+    "adopted_home": 0,
+    "adopted_away": 2,
+    "adopted_from": [
+     "data_analyst",
+     "matchup_tactical_analyst"
+    ],
+    "conclusion": "30회 토론 결과 예상 스코어는 0-2 입니다(30회). 토트넘의 극심한 득점 부진(시즌 실제 득점 0)과 에버턴의 xG 초과 득점(+0.34)이라는 축에서 두 분석가가 완전히 동일한 결론에 도달했습니다. 표본이 3경기로 작다는 점이 이 결론을 약하게 만듭니다.",
+    "common_points": [
+     "토트넘의 심각한 득점 부진에 동의",
+     "에버턴의 xG 대비 득점 초과에 동의"
+    ],
+    "differences": [
+     "전술 분석가만 에버턴의 세트피스 강점과 토트넘의 세트피스 수비 약점이라는 정성적 관계를 추가"
+    ],
+    "counterpoints": [
+     "표본 수 3경기로 작음"
+    ],
+    "market_relation": "시장은 토트넘 홈 승 확률(0.47)을 가장 높게 보나 두 의견 모두 에버턴 우세로 시장과 다른 방향.",
+    "uncertainty": [
+     "sustainability_gap은 관찰된 상태일 뿐 회귀를 의미하지 않음(A 명시)"
+    ],
+    "evidence_ids": [
+     "E005",
+     "E014"
+    ]
+   }
+  },
+  {
+   "match_number": 7,
+   "home_team": "A빌바오",
+   "away_team": "엘체",
+   "panel_status": "부분",
+   "panel_status_reason": "3단계 Moderator 결과만 붙여넣었습니다 (1·2단계 원문 없음)",
+   "moderator": {
+    "simulations": 30,
+    "distribution": [
+     {
+      "home": 2,
+      "away": 1,
+      "count": 30,
+      "origin": "data_analyst"
+     }
+    ],
+    "adopted_home": 2,
+    "adopted_away": 1,
+    "adopted_from": [
+     "data_analyst",
+     "matchup_tactical_analyst"
+    ],
+    "conclusion": "30회 토론 결과 예상 스코어는 2-1 입니다(30회). A빌바오의 시즌 실제 득점 우위와 엘체의 지속적 득점 전환 저조라는 축에서 두 분석가가 동일한 결론에 도달했습니다. 두 팀 모두 표본이 작다는 점이 이 결론을 약하게 만듭니다.",
+    "common_points": [
+     "두 팀 모두 수비에서 상대에게 상당한 기대 기회를 허용한다는 점에 동의",
+     "A빌바오가 시즌 실제 득점에서 근소 우위라는 점에 동의"
+    ],
+    "differences": [
+     "전술 분석가만 A빌바오의 스루패스·공중볼 강점과 엘체 약점의 정성적 매칭을 추가"
+    ],
+    "counterpoints": [
+     "표본 수 3~4경기로 작음"
+    ],
+    "market_relation": "시장은 A빌바오 홈 승 확률(0.69)을 매우 높게 보며 두 의견의 방향과 일치.",
+    "uncertainty": [
+     "표본 n=3~4"
+    ],
+    "evidence_ids": [
+     "E001",
+     "E004",
+     "E005",
+     "E014",
+     "E018"
+    ]
+   }
+  },
+  {
+   "match_number": 8,
+   "home_team": "선덜랜드",
+   "away_team": "아스널",
+   "panel_status": "부분",
+   "panel_status_reason": "3단계 Moderator 결과만 붙여넣었습니다 (1·2단계 원문 없음)",
+   "moderator": {
+    "simulations": 30,
+    "distribution": [
+     {
+      "home": 1,
+      "away": 2,
+      "count": 17,
+      "origin": "matchup_tactical_analyst"
+     },
+     {
+      "home": 0,
+      "away": 2,
+      "count": 13,
+      "origin": "data_analyst"
+     }
+    ],
+    "adopted_home": 1,
+    "adopted_away": 2,
+    "adopted_from": [
+     "matchup_tactical_analyst"
+    ],
+    "conclusion": "30회 토론 결과 예상 스코어는 1-2 입니다(17회). 선덜랜드의 시즌 실제 득점 수준(1.0)과 정성적 공중볼 강점에서 출발한 라운드들이 1실점 허용 쪽으로 모였으나, 아스널의 매우 낮은 npxGA(0.31)에서 출발한 라운드는 클린시트(0-2)로 갈려 결론이 완전히 모이지 않았습니다.",
+    "common_points": [
+     "아스널의 공격 우위(xG 대비 득점 초과)에 동의",
+     "선덜랜드의 공격 산출 저조에 동의"
+    ],
+    "differences": [
+     "데이터 분석가는 아스널 수비 지표(npxGA 0.31)를 근거로 클린시트 예상",
+     "전술 분석가는 선덜랜드의 공중볼 강점(정성)과 실제 득점 평균을 근거로 1실점 허용 예상"
+    ],
+    "counterpoints": [
+     "아스널 수비 지표와 선덜랜드 정성적 강점이 서로 다른 종류(정량 vs 정성)의 근거임"
+    ],
+    "market_relation": "시장은 아스널 원정 승 확률(0.66)을 매우 높게 보나 홈팀 득점 여부는 시장이 알려주지 않음.",
+    "uncertainty": [
+     "표본 n=3"
+    ],
+    "evidence_ids": [
+     "E001",
+     "E005",
+     "E014"
+    ]
+   }
+  },
+  {
+   "match_number": 9,
+   "home_team": "셀타비고",
+   "away_team": "말라가",
+   "panel_status": "부분",
+   "panel_status_reason": "3단계 Moderator 결과만 붙여넣었습니다 (1·2단계 원문 없음)",
+   "moderator": {
+    "simulations": 30,
+    "distribution": [
+     {
+      "home": 0,
+      "away": 0,
+      "count": 16,
+      "origin": "matchup_tactical_analyst"
+     },
+     {
+      "home": 1,
+      "away": 0,
+      "count": 14,
+      "origin": "data_analyst"
+     }
+    ],
+    "adopted_home": 0,
+    "adopted_away": 0,
+    "adopted_from": [
+     "matchup_tactical_analyst"
+    ],
+    "conclusion": "30회 토론 결과 예상 스코어는 0-0 입니다(16회). 양 팀 모두 시즌 실제 득점이 매우 낮다는 축(셀타비고 0.4, 말라가 0.25)에서 출발한 라운드들이 0-0으로 모였으나, 홈 이점을 반영한 라운드는 1-0으로 갈려 근소한 차이로 결론이 나뉘었습니다.",
+    "common_points": [
+     "양 팀 모두 시즌 실제 득점이 매우 낮다는 점에 동의",
+     "말라가의 xG 대비 득점 괴리가 특히 크다는 점에 동의"
+    ],
+    "differences": [
+     "데이터 분석가는 홈 이점을 반영해 1-0 예상",
+     "전술 분석가는 양 팀 공통의 공중볼 약점(정성)을 근거로 0-0 예상"
+    ],
+    "counterpoints": [
+     "표본 4~5경기로 제한적"
+    ],
+    "market_relation": "시장은 셀타비고 홈 승 확률(0.57)을 가장 높게 보나 두 의견 모두 저득점 시나리오에 무게를 둠.",
+    "uncertainty": [
+     "표본 n=4~5"
+    ],
+    "evidence_ids": [
+     "E002",
+     "E012"
+    ]
+   }
+  },
+  {
+   "match_number": 10,
+   "home_team": "코번트리",
+   "away_team": "브라이턴",
+   "panel_status": "부분",
+   "panel_status_reason": "3단계 Moderator 결과만 붙여넣었습니다 (1·2단계 원문 없음)",
+   "moderator": {
+    "simulations": 30,
+    "distribution": [
+     {
+      "home": 0,
+      "away": 3,
+      "count": 30,
+      "origin": "data_analyst"
+     }
+    ],
+    "adopted_home": 0,
+    "adopted_away": 3,
+    "adopted_from": [
+     "data_analyst",
+     "matchup_tactical_analyst"
+    ],
+    "conclusion": "30회 토론 결과 예상 스코어는 0-3 입니다(30회). 코번트리의 극심한 득점 부진(시즌 실제 득점 0)과 브라이턴의 높은 xG·실제 득점(2.67)이라는 축에서 두 분석가가 완전히 동일한 결론에 도달했습니다. 표본이 작다는 점이 이 결론을 약하게 만듭니다.",
+    "common_points": [
+     "코번트리의 심각한 득점 부진에 동의",
+     "브라이턴의 공격 산출이 매우 높다는 점에 동의"
+    ],
+    "differences": [
+     "전술 분석가만 세트피스가 양 팀 모두 강점(강점 충돌)이라는 정성 관계를 언급"
+    ],
+    "counterpoints": [
+     "표본 수 3경기로 작음"
+    ],
+    "market_relation": "시장은 브라이턴 원정 승 확률(0.52)을 가장 높게 보며 두 의견의 방향과 일치.",
+    "uncertainty": [
+     "코번트리의 승점-기대승점 괴리(-1.00)도 저조한 상태를 뒷받침"
+    ],
+    "evidence_ids": [
+     "E001",
+     "E009",
+     "E018",
+     "E022"
+    ]
+   }
+  },
+  {
+   "match_number": 11,
+   "home_team": "레반테",
+   "away_team": "바르셀로",
+   "panel_status": "부분",
+   "panel_status_reason": "3단계 Moderator 결과만 붙여넣었습니다 (1·2단계 원문 없음)",
+   "moderator": {
+    "simulations": 30,
+    "distribution": [
+     {
+      "home": 1,
+      "away": 4,
+      "count": 30,
+      "origin": "data_analyst"
+     }
+    ],
+    "adopted_home": 1,
+    "adopted_away": 4,
+    "adopted_from": [
+     "data_analyst",
+     "matchup_tactical_analyst"
+    ],
+    "conclusion": "30회 토론 결과 예상 스코어는 1-4 입니다(30회). 바르셀로나의 압도적 xG(3.94)·실제 득점(4.25)과 레반테의 소폭 저조라는 축에서 두 분석가가 동일한 결론에 도달했습니다. 레반테의 표본 지표 간 방향 불일치가 이 결론을 다소 약하게 만듭니다.",
+    "common_points": [
+     "바르셀로나의 압도적 공격력에 동의",
+     "레반테의 xG 대비 득점이 소폭 낮다는 점에 동의"
+    ],
+    "differences": [
+     "전술 분석가만 바르셀로나 세트피스 강점과 레반테 세트피스 약점의 정성적 매칭을 추가"
+    ],
+    "counterpoints": [
+     "레반테의 points_vs_xpts 방향이 최근 3경기(+0.07)와 최근 10경기(-0.04) 사이에서 명시적으로 불일치함"
+    ],
+    "market_relation": "시장은 바르셀로나 원정 승 확률(0.85)을 압도적으로 높게 보며 두 의견의 방향과 일치.",
+    "uncertainty": [
+     "표본 n=3~4",
+     "레반테 지표의 방향 불일치(conflicts)"
+    ],
+    "evidence_ids": [
+     "E001",
+     "E005",
+     "E015",
+     "E016"
+    ]
+   }
+  },
+  {
+   "match_number": 12,
+   "home_team": "맨체스U",
+   "away_team": "맨체스C",
+   "panel_status": "부분",
+   "panel_status_reason": "3단계 Moderator 결과만 붙여넣었습니다 (1·2단계 원문 없음)",
+   "moderator": {
+    "simulations": 30,
+    "distribution": [
+     {
+      "home": 2,
+      "away": 2,
+      "count": 16,
+      "origin": "matchup_tactical_analyst"
+     },
+     {
+      "home": 1,
+      "away": 2,
+      "count": 14,
+      "origin": "data_analyst"
+     }
+    ],
+    "adopted_home": 2,
+    "adopted_away": 2,
+    "adopted_from": [
+     "matchup_tactical_analyst"
+    ],
+    "conclusion": "30회 토론 결과 예상 스코어는 2-2 입니다(16회). 양 팀의 동일한 시즌 실제 득점 수준(2.33)과 양방향 상대 약점 공략 관계에서 출발한 라운드들이 2-2로 모였으나, 맨체스터 시티의 매우 낮은 npxGA(0.31)에서 출발한 라운드는 1-2로 갈려 근소한 차이로 결론이 나뉘었습니다.",
+    "common_points": [
+     "양 팀 모두 최근 표본에서 높은 xG(2.20/2.55)를 보인다는 점에 동의",
+     "양 팀 시즌 실제 득점 수준이 동일(2.33)하다는 점에 동의"
+    ],
+    "differences": [
+     "데이터 분석가는 맨체스터 시티의 견고한 수비(npxGA 0.31)를 근거로 1-2 예상",
+     "전술 분석가는 양방향 상대 약점 공략 관계와 동일 득점 수준을 근거로 2-2 예상"
+    ],
+    "counterpoints": [
+     "맨체스터 유나이티드의 xG는 높지만 실제 득점은 xG보다 적어(-0.22) 해석이 엇갈림"
+    ],
+    "market_relation": "시장은 맨체스터 시티 원정 승 확률(0.46)을 다소 높게 보나 두 의견 모두 균형에 가까운 스코어를 제시.",
+    "uncertainty": [
+     "표본 n=3"
+    ],
+    "evidence_ids": [
+     "E001",
+     "E005",
+     "E014",
+     "E018"
+    ]
+   }
+  },
+  {
+   "match_number": 13,
+   "home_team": "헤타페",
+   "away_team": "데포아코",
+   "panel_status": "부분",
+   "panel_status_reason": "3단계 Moderator 결과만 붙여넣었습니다 (1·2단계 원문 없음)",
+   "moderator": {
+    "simulations": 30,
+    "distribution": [
+     {
+      "home": 1,
+      "away": 2,
+      "count": 18,
+      "origin": "matchup_tactical_analyst"
+     },
+     {
+      "home": 1,
+      "away": 1,
+      "count": 12,
+      "origin": "data_analyst"
+     }
+    ],
+    "adopted_home": 1,
+    "adopted_away": 2,
+    "adopted_from": [
+     "matchup_tactical_analyst"
+    ],
+    "conclusion": "30회 토론 결과 예상 스코어는 1-2 입니다(18회). 데포아코의 시즌 실제 득점(2.0)이 헤타페(0.5)보다 크게 높고 정성적 볼 탈취-간수 매치업에서 출발한 라운드들이 원정 우세로 모였으나, 데포아코의 지표가 표본 4경기에 불과하다는 축에서 출발한 라운드는 균형(1-1)으로 갈렸습니다.",
+    "common_points": [
+     "헤타페의 공격 산출이 저조하다는 점에 동의",
+     "데포아코의 xG 대비 득점 괴리가 매우 크다는 점에 동의"
+    ],
+    "differences": [
+     "데이터 분석가는 표본이 극히 작다는 점(n=4)을 이유로 균형 1-1 제시",
+     "전술 분석가는 정성적 매치업과 실제 득점 수준 차이를 근거로 1-2 제시"
+    ],
+    "counterpoints": [
+     "데포아코의 괴리(+1.07)는 표본 4경기로 지속가능성이 불확실함"
+    ],
+    "market_relation": "시장은 헤타페 홈 승 확률(0.40)과 무승부(0.34)가 근접해 균형적인 시각을 보이며, 두 의견 모두 원정 우세 또는 균형 쪽에 가까움.",
+    "uncertainty": [
+     "표본 n=3~4로 극히 제한적"
+    ],
+    "evidence_ids": [
+     "E002",
+     "E011"
+    ]
+   }
+  },
+  {
+   "match_number": 14,
+   "home_team": "소시에다",
+   "away_team": "AT마드",
+   "panel_status": "부분",
+   "panel_status_reason": "3단계 Moderator 결과만 붙여넣었습니다 (1·2단계 원문 없음)",
+   "moderator": {
+    "simulations": 30,
+    "distribution": [
+     {
+      "home": 1,
+      "away": 2,
+      "count": 18,
+      "origin": "matchup_tactical_analyst"
+     },
+     {
+      "home": 1,
+      "away": 1,
+      "count": 12,
+      "origin": "data_analyst"
+     }
+    ],
+    "adopted_home": 1,
+    "adopted_away": 2,
+    "adopted_from": [
+     "matchup_tactical_analyst"
+    ],
+    "conclusion": "30회 토론 결과 예상 스코어는 1-2 입니다(18회). AT마드리드의 xG 대비 큰 폭의 득점 초과(+0.84)와 소시에다의 수비 허용(npxGA 1.60)이라는 축에서 출발한 라운드들이 원정 우세로 모였으나, AT마드리드 지표의 작은 표본(n=3~4)에서 출발한 라운드는 균형(1-1)으로 갈렸습니다.",
+    "common_points": [
+     "소시에다는 xG와 실제 득점이 대체로 일치한다는 점에 동의",
+     "AT마드리드의 xG 대비 득점 초과가 크다는 점에 동의"
+    ],
+    "differences": [
+     "데이터 분석가는 AT마드리드 지표의 작은 표본을 이유로 균형 1-1 제시",
+     "전술 분석가는 소시에다 수비 허용과 정성적 측면 강점 매칭을 근거로 1-2 제시"
+    ],
+    "counterpoints": [
+     "AT마드리드의 괴리(+0.84)는 표본 3~4경기로 지속가능성이 불확실함"
+    ],
+    "market_relation": "시장은 소시에다 홈 승 확률(0.32)보다 AT마드리드 원정 승 확률(0.41)을 다소 높게 보며 두 의견의 방향과 대체로 일치.",
+    "uncertainty": [
+     "표본 n=3~5로 팀 간 표본 크기 차이가 있음"
+    ],
+    "evidence_ids": [
+     "E005",
+     "E015",
+     "E018"
+    ]
+   }
+  }
+ ]
+}

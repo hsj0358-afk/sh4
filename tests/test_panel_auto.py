@@ -256,7 +256,8 @@ class patched:
     def __enter__(self):
         from toto import panelexport
         for name in ("run_agent", "find_claude_cli", "cli_probe",
-                     "auth_status", "run_existing_cli"):
+                     "auth_status", "run_existing_cli",
+                     "cli_supports_setting_sources", "user_settings_routes"):
             self.saved[name] = getattr(panelauto, name)
         if self.run_agent is not None:
             panelauto.run_agent = self.run_agent
@@ -270,12 +271,22 @@ class patched:
             panelauto.cli_probe = lambda exe, timeout=60: (True, "2.1.278", "")
             panelauto.auth_status = lambda exe, timeout=60: \
                 panelauto.AuthStatus(state=panelauto.AUTH_OK, message="oauth")
+            # §1-69 — 실제 CLI 처럼 `--setting-sources` 를 알고, 사용자 설정
+            # 파일은 보지 않는다 (이 컨테이너의 ~/.claude 에 기대지 않는다).
+            panelauto.cli_supports_setting_sources = \
+                lambda exe, timeout=60: True
+            panelauto.user_settings_routes = lambda config_dir=None: ([], "")
+        # 요청 경로 환경변수도 비운다 — 클라우드 컨테이너는 자기 경로를
+        # `ANTHROPIC_BASE_URL` 로 갖고 있어, 그대로 두면 경고 수가 달라진다.
+        self.saved_env = {k: os.environ.pop(k)
+                          for k in panelauto.ROUTE_ENV_KEYS if k in os.environ}
         return self
 
     def __exit__(self, *exc):
         from toto import panelexport
         for name, value in self.saved.items():
             setattr(panelauto, name, value)
+        os.environ.update(getattr(self, "saved_env", {}))
         if self.saved_round_dir is not None:
             panelexport.round_dir = self.saved_round_dir
         return False
@@ -959,7 +970,7 @@ def test_g5_sequential_not_parallel():
 
 def test_g6_no_new_third_party_dependency():
     """표준 라이브러리만 쓴다 (§43)."""
-    std = {"json", "os", "shutil", "signal", "subprocess", "tempfile", "uuid",
+    std = {"json", "os", "re", "shutil", "signal", "subprocess", "tempfile", "uuid",
            "dataclasses", "pathlib", "__future__", "toto", "models",
            "moderator", "panel", "panelexport", "panelpacket", "panelwork",
            "artifact",
@@ -981,6 +992,11 @@ _FAKE_CLI_BODY = '''\
 import subprocess, sys, time
 if SPEC["version"] is not None and sys.argv[1:2] == ["--version"]:
     sys.stdout.buffer.write(SPEC["version"].encode("utf-8"))
+    sys.stdout.flush()
+    sys.exit(0)
+if sys.argv[1:2] == ["--help"]:
+    # 실제 CLI 의 도움말처럼 패널이 쓰는 옵션을 적는다 (§1-69).
+    sys.stdout.buffer.write(b"Usage: claude [options]\\n  --setting-sources <sources>\\n")
     sys.stdout.flush()
     sys.exit(0)
 if SPEC["grandchild_pidfile"]:

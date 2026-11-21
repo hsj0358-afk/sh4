@@ -4830,6 +4830,7 @@ CLI 인자는 둘만 늘었다 — `--save-moderator-result` · `--panel-workflo
 | `ANTHROPIC_API_KEY` 감지 | **preflight 에서 시작 자체를 막는다.** 키가 있으면 구독이 아니라 API 로 과금된다(공식 문서 경고) |
 | `build_agent_env()` | 자식 env 에서 `ANTHROPIC_API_KEY`·`ANTHROPIC_AUTH_TOKEN` 제거 (이중 방어) |
 | `--bare` 금지 | 그 모드는 **구독 로그인을 읽지 않고** API 키를 요구한다 |
+| `--setting-sources project,local` | 사용자 설정 `env` 의 중계·다른 공급자 경로를 읽지 않는다. 설정 파일은 고치지 않는다 (§1-69) |
 | 사용량 한도 | `WORKFLOW_STOPPED_USAGE_LIMIT` 로 **멈춘다.** 크레딧 전환·결제·Console 자격증명 추가를 하지 않는다 |
 
 **구독 로그인 정보까지 지우지는 않는다** — `SCRUB_API`·`SCRUB_SESSION` 에
@@ -6770,6 +6771,12 @@ Pages index 공백 · Panel Result 출처 표시 · 640px `.meta` · 720px 카�
 전부 잡는다. 표의 가로 스크롤을 끄는 변형은 **잡지 않는 것이 맞다** — 400px
 에서 표 84개가 원래 다 들어간다(실측).
 
+**골든은 파이썬 판에 따라 달라진다 (2026-11-21 관찰).** 같은 커밋이 3.11 에서
+9/9 이고 3.13 에서는 패널 자료(PanelPayload·packet·사회자 시트) 12개가 **1
+byte 씩** 짧아져 실패한다 — 한 값의 표기가 판마다 다른 것으로 보이고, 어느
+값인지는 아직 찾지 않았다. 리포트 HTML 은 같다. 기준값은 3.11 로 만든 것이다.
+`test_panel_work.test_l1` 도 같은 이유로 3.13 에서만 깨진다.
+
 ### 1-56. 죽은 코드 제거 (리팩터링 Phase 2)
 
 **부르는 곳이 없는 정의만** 지웠다. 삭제 조건은 넷 — 호출 0 · 대체가 있다 ·
@@ -8025,6 +8032,68 @@ python tools/backtest_statmodel.py --half-lives 0 60 30 --shrinks 3 5 10
 
 회귀 테스트: `python tests/test_betman_votes.py` (25개).
 
+### 1-69. 패널 호출은 사용자 설정을 읽지 않는다 — `--setting-sources project,local`
+
+PC 의 `[2] 패널 자동 분석` 이 A 단계 첫 호출에서 `API Error: Connection
+refused (ECONNREFUSED)` 로 멈췄다 (2026-11-21 · 260070). 원인은 **사용자 수준
+Claude Code 설정**이었다.
+
+```
+~/.claude/settings.json  "env": { ANTHROPIC_BASE_URL   = http://localhost:31415
+                                  ANTHROPIC_AUTH_TOKEN = …
+                                  ANTHROPIC_MODEL      = auto  (DEFAULT_* 도 auto) }
+```
+
+사용자가 다른 작업의 토큰 비용을 줄이려고 쓰는 **로컬 중계** 설정이고, 중계가
+떠 있지 않으면 `claude -p` 가 거기로 가다 연결을 거부당한다. 프로세스 환경변수
+에는 이 칸들이 없었다 — 그래서 `build_agent_env()`(§1-42)의 환경변수 제거가
+닿지 않았다. `claude auth status --json` 도 여전히 `oauth_token · firstParty`
+를 말해 준비 점검이 통과했다.
+
+**설정은 그대로 두고 패널 호출만 비켜 간다** (사용자 결정 — 중계 설정 유지).
+
+  · `agent_argv` 가 모든 호출에 `--setting-sources project,local` 를 붙인다
+    (`AGENT_SETTING_SOURCES`). 사용자 설정(`user`)을 읽지 않으니 그 `env` 도
+    적용되지 않는다. 작업 폴더가 저장소 밖 임시 폴더라(§1-45) project·local
+    설정은 실제로 비어 있다.
+  · **로그인 정보는 설정 파일이 아니다.** 구독 OAuth 는 따로 저장되므로 이
+    옵션으로 사라지지 않는다 — 이것은 **PC 에서 확인해야 한다** (아래).
+  · `--bare` 와 다르다. `--bare` 는 구독 로그인 자체를 읽지 않는다 (§1-42).
+  · **사용자 설정 파일을 고치지 않는다.** 프로그램은 읽기만 한다(테스트로 고정 —
+    바이트·수정 시각 비교).
+  · 재생 도구(§1-63)도 같은 `agent_argv` 를 탄다.
+
+**준비 점검 ②-c (`--panel-auto-check`·`[2]`).**
+
+| 상황 | 결과 |
+|---|---|
+| 사용자 설정에 경로·인증 칸이 있다 | **경고** — 무엇이 있는지와 "패널 호출은 이 설정을 읽지 않는다" |
+| CLI 가 `--setting-sources` 를 모른다 (`--help` 에 없다) | **시작하지 않는다** — 업데이트하라고 적는다 |
+| `--help` 를 받지 못했다 | 막지 않는다 · notes 에 적는다 (§1-6 의 `unknown`) |
+| 프로세스 **환경변수**에 경로 칸이 있다 | **경고** — 환경변수는 이 옵션으로 비켜 가지 않는다 |
+| 설정 파일이 깨졌다 | notes 에 사유 · 막지 않는다 |
+
+  · 보는 칸은 `ROUTE_ENV_KEYS`(`ANTHROPIC_BASE_URL`·`ANTHROPIC_AUTH_TOKEN`·
+    `ANTHROPIC_API_KEY`·`CLAUDE_CODE_USE_BEDROCK|VERTEX|FOUNDRY`)와 최상위
+    `apiKeyHelper` 다. `ANTHROPIC_MODEL` 은 경로가 아니라 보지 않는다 — 패널은
+    `--model` 을 직접 넘긴다 (§1-43 E).
+  · 파일은 `settings.json`·`settings.local.json`, 폴더는 `CLAUDE_CONFIG_DIR`
+    이 있으면 그것이다.
+  · **값을 화면에 내지 않는다.** 주소 칸만 계정 정보(`//user:pw@`)를 가리고
+    보여 주고, 토큰·키는 `값 있음` 이다.
+  · `--help` 확인은 모델 호출이 아니다 — 점검은 여전히 $0 이다.
+
+**아직 확인하지 못한 것.** 이 클라우드 컨테이너는 호스트가 자기 경로를
+`ANTHROPIC_BASE_URL` **환경변수**로 넣어 두어, 사용자 설정을 비켜 가는 효과를
+여기서는 재현할 수 없다. 2.1.330 의 `--help` 에 옵션이 있다는 것까지 확인했다.
+PC 에서 중계를 끈 채로 저장소 밖 폴더에서 다음이 `ok` 를 돌려주면 확인된다.
+
+```
+claude -p "ok 라고만 답하세요" --output-format text --setting-sources project,local
+```
+
+회귀 테스트: `python tests/test_panel_setting_sources.py` (14개).
+
 ### 1-26. 경고 다섯 건 중 하나만 고쳤다 (Phase 5-E2)
 
 260052 실행이 남긴 것은 후스코어드 `팀명 매칭 실패` 5건과 `강점 0개` 3팀이다.
@@ -8752,6 +8821,7 @@ python tests/test_schedule_competitions.py # 휴식·경기 밀도에 유럽대�
 python tests/test_statmodel.py             # 통계 모델 기준선 · 시점 · 모집단 · 패널 격리 · 백테스트 · RPS · 시장 혼합 §1-66 (21개)
 python tools/backtest_statmodel.py         # 통계 모델 백테스트 · 시즌 색인 walk-forward · 시장과 같은 경기 비교 · 시장+모델 혼합 교차검증 · 읽기만 §1-66
 python tests/test_betman_votes.py          # 베트맨 투표 현황 · 파싱 · 저장 · CSV · 화면 · 패널 격리 §1-68 (25개)
+python tests/test_panel_setting_sources.py # 패널 호출은 사용자 설정(중계)을 읽지 않는다 · 준비 점검 ②-c §1-69 (14개)
 python tools/probe_betman_votes.py         # 베트맨 투표율 셀 점검 · 기본은 읽기만 · --live R 은 cache/probe/ 에만 저장 §1-68
 python -m pytest -q -rs                    # 전체 — `pytest` 가 아니라 `python -m pytest` (PyYAML 있는 인터프리터)
 python tools/probe_fotmob_season.py        # 과거 시즌 요청 진단 · production path (6-D-6A · 답은 §1-33)

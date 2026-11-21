@@ -100,6 +100,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -162,6 +163,19 @@ MODERATOR_AGENT_TIMEOUT = 3600      # 사회자 (회차 전체를 한 번에)
 #   · 세션 식별 — 물려주면 자식이 **부모와 같은 세션 ID** 를 쓴다
 #                 (6-F-5 POC-B 에서 실제로 그랬다)
 SCRUB_API = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
+
+# 패널 호출이 읽는 설정 출처 (§1-69). **사용자 설정(`user`)을 뺀다** — 사용자
+# 수준 `settings.json` 의 `env` 가 요청을 다른 곳(로컬 중계·다른 공급자)으로
+# 보내도 패널은 구독 로그인으로 직접 간다. 작업 폴더는 저장소 밖 임시
+# 폴더라(§1-45) project·local 설정은 실제로 비어 있다.
+AGENT_SETTING_SOURCES = "project,local"
+
+# 사용자 설정에 있으면 요청 경로·인증이 바뀌는 칸 (§1-69). 값은 화면에 내지
+# 않는다 — 주소 칸만 계정 정보를 가린 채 보여 준다.
+ROUTE_ENV_KEYS = ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN",
+                  "ANTHROPIC_API_KEY", "CLAUDE_CODE_USE_BEDROCK",
+                  "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY")
+ROUTE_TOP_KEYS = ("apiKeyHelper",)
 SCRUB_SESSION = ("CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_REMOTE_SESSION_ID",
                  "CLAUDE_CODE_CHILD_SESSION", "CLAUDECODE",
                  "CLAUDE_CODE_ENTRYPOINT")
@@ -603,6 +617,65 @@ def auth_status(exe: str, timeout: int = 60) -> AuthStatus:
     return out
 
 
+def claude_config_dir() -> Path:
+    """Claude Code 의 사용자 설정 폴더. `CLAUDE_CONFIG_DIR` 이 있으면 그것이다."""
+    custom = os.environ.get("CLAUDE_CONFIG_DIR", "").strip()
+    return Path(custom).expanduser() if custom else Path.home() / ".claude"
+
+
+def _mask_url(value: str) -> str:
+    return re.sub(r"//[^/@\s]+@", "//***@", value)
+
+
+def user_settings_routes(config_dir: Path | None = None) -> tuple[list, str]:
+    """사용자 설정 파일에서 요청 경로·인증을 바꾸는 칸을 찾는다 (§1-69).
+
+    → ([(파일 이름, 칸, 보여 줄 값)], 읽지 못한 사유). **읽기만 한다.**
+    주소 칸(`…URL`)만 값을 보여 주고(계정 정보는 가린다), 토큰·키는 '값 있음'
+    으로만 적는다. 파일이 없으면 ([], "") 다 — 없는 것이 기본이다.
+    """
+    folder = config_dir or claude_config_dir()
+    found: list = []
+    reasons: list = []
+    for name in ("settings.json", "settings.local.json"):
+        path = folder / name
+        if not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8-sig") or "{}")
+        except (OSError, UnicodeDecodeError, ValueError) as exc:
+            reasons.append(f"{path} 를 읽지 못했습니다 ({type(exc).__name__})")
+            continue
+        if not isinstance(data, dict):
+            continue
+        env = data.get("env") if isinstance(data.get("env"), dict) else {}
+        for key in ROUTE_ENV_KEYS:
+            value = env.get(key)
+            if value in (None, ""):
+                continue
+            shown = (_mask_url(str(value)) if key.endswith("URL")
+                     else "값 있음")
+            found.append((name, key, shown))
+        for key in ROUTE_TOP_KEYS:
+            if data.get(key):
+                found.append((name, key, "값 있음"))
+    return found, "; ".join(reasons)
+
+
+def cli_supports_setting_sources(exe: str, timeout: int = 60) -> bool | None:
+    """CLI 가 `--setting-sources` 를 아는가. `--help` 만 본다 — 모델 호출 0회.
+
+    모르면 None 이다 (도움말을 받지 못했다).
+    """
+    proc, _why = _probe([exe, "--help"], timeout)
+    if proc is None:
+        return None
+    text = (proc.stdout or "") + (proc.stderr or "")
+    if not text.strip():
+        return None
+    return "--setting-sources" in text
+
+
 def resolve_model(choice: str | None) -> str:
     """`--auto-model` 해석. **주지 않으면 검증된 기본 모델이다** (§5).
 
@@ -756,6 +829,40 @@ def preflight(report: Report | None, round_id: str,
                 out.notes.append(f"인증 상태 확인 못 함 — {auth.message}")
             else:
                 out.notes.append(f"인증 {auth.message}")
+
+            # ②-c 요청 경로 (§1-69) — 사용자 설정이 요청을 다른 곳으로
+            # 보내도 패널 호출은 그 설정을 읽지 않는다(`--setting-sources`).
+            # 그 옵션을 모르는 CLI 라면 비켜 갈 수 없으니 시작하지 않는다.
+            routes, unreadable = user_settings_routes()
+            if unreadable:
+                out.notes.append(f"Claude Code 사용자 설정 — {unreadable}")
+            supported = cli_supports_setting_sources(cli)
+            if supported is False:
+                out.problems.append(
+                    "이 Claude Code 는 --setting-sources 를 모릅니다 — 패널 "
+                    "호출이 사용자 설정을 비켜 갈 수 없습니다. Claude Code 를 "
+                    "업데이트한 뒤 다시 실행하십시오")
+            elif routes:
+                where = " · ".join(f"{key} {shown}" for _n, key, shown
+                                   in routes)
+                folder = claude_config_dir()
+                out.warnings.append(
+                    f"Claude Code 사용자 설정({folder})에 요청 경로·인증을 "
+                    f"바꾸는 항목이 있습니다 — {where}. 패널 호출은 이 설정을 "
+                    f"읽지 않고(--setting-sources {AGENT_SETTING_SOURCES}) "
+                    f"구독 로그인으로 Anthropic 에 직접 연결합니다. 설정 "
+                    f"파일은 바꾸지 않습니다")
+                if supported is None:
+                    out.notes.append(
+                        "--setting-sources 지원 여부를 확인하지 못했습니다 "
+                        "(도움말을 받지 못함)")
+            env_route = [k for k in ROUTE_ENV_KEYS
+                         if k not in SCRUB_API and os.environ.get(k)]
+            if env_route:
+                out.warnings.append(
+                    f"환경변수 {' · '.join(env_route)} 가 설정되어 있습니다 — "
+                    f"환경변수는 --setting-sources 로 비켜 가지 않으므로 패널 "
+                    f"호출도 그 경로로 나갑니다")
 
     # ③ 회차 자료
     if not out.round_id:
@@ -911,6 +1018,11 @@ def agent_argv(exe: str, prompt: str, system_file, workspace: Path,
     """
     argv = [exe, "-p", one_line(prompt),
             "--output-format", "json",
+            # **사용자 설정 파일을 읽지 않는다** (§1-69). 사용자가 다른 작업에
+            # 쓰는 중계 설정(`ANTHROPIC_BASE_URL`·`ANTHROPIC_AUTH_TOKEN`)이
+            # 거기 있으면 패널이 구독이 아닌 경로로 나간다. 설정은 그대로
+            # 두고 이 호출만 비켜 간다 — 로그인 정보는 설정 파일이 아니다.
+            "--setting-sources", AGENT_SETTING_SOURCES,
             "--session-id", session_id,      # 호출마다 새 세션 (§8·§17)
             "--append-system-prompt-file", str(system_file),
             "--add-dir", str(workspace),     # 작업 폴더 바깥은 보지 않는다

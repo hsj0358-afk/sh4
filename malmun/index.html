@@ -711,7 +711,7 @@ const Store = {
   },
   writeLocal() {
     try { localStorage.setItem(LS_KEY, JSON.stringify({ profile:S.profile, sessions:S.sessions.slice(0, 80) })); }
-    catch (e) { if (this.mode === 'local') this.mode = 'none'; }
+    catch (e) { if (this.mode === 'local') { this.mode = 'none'; toast('이 화면에서는 기록을 저장할 수 없어요. 수업은 계속할 수 있어요.'); if (S.view === 'home') render(); } }
   },
   async connect(db, user) {
     let uid = null;
@@ -725,7 +725,7 @@ const Store = {
       const snap = await timeout(profRef.collection('sessions').orderBy('startedAt', 'desc').limit(80).get(), 9000);
       mergeSessions(snap.docs.map(d => d.data()).filter(validSession));
       const rv = await timeout(revRef.get(), 9000);
-      if (rv.exists) mergeReview(rv.data()?.items);
+      if (rv.exists) { mergeReview(rv.data()?.items); trimReview(); }
       this.db = db; this.profRef = profRef; this.revRef = revRef; this.mode = 'db';
       this.writeLocal();
       try { localStorage.setItem(REVIEW_KEY, JSON.stringify(S.review)); } catch (e) {}
@@ -745,13 +745,7 @@ const Store = {
     if (!this.db) return;
     clearTimeout(this.revTimer);
     this.revTimer = setTimeout(() => {
-      let items = JSON.parse(JSON.stringify(S.review));
-      const size = a => new TextEncoder().encode(JSON.stringify(a)).length;
-      if (size(items) > 200000) {             // keep the most recently used cards under the document size limit
-        items.sort((a, b) => (b.u || 0) - (a.u || 0));
-        while (items.length > 20 && size(items) > 200000) items = items.slice(0, Math.floor(items.length * 0.9));
-      }
-      const body = { items, updatedAt:Date.now() };
+      const body = { items:JSON.parse(JSON.stringify(S.review)), updatedAt:Date.now() };
       this.revQ = this.revQ.then(() => this.revRef.set(body)).catch(e => { if (e?.code !== 'invalid_argument') this.writeFailed(e); });
     }, 900);
   },
@@ -819,12 +813,21 @@ function addReviewItems(items) {
     if (!k || known.has(k)) continue;
     known.add(k); S.review.push(it); added++;
   }
-  if (S.review.length > REVIEW_CAP) {        // drop the best-learned, oldest items first
-    S.review.sort((a, b) => (b.box - a.box) || (a.added - b.added));
-    S.review = S.review.slice(S.review.length - REVIEW_CAP);
-  }
-  if (added) Store.saveReview();
+  if (trimReview() || added) Store.saveReview();
   return added;
+}
+// Keeps the deck within REVIEW_CAP cards and REVIEW_BYTES, so this browser and the synced copy hold the same cards.
+// The best-learned, oldest cards go first.
+const REVIEW_BYTES = 200000;
+const jsonBytes = v => new TextEncoder().encode(JSON.stringify(v)).length;
+function trimReview() {
+  let bytes = jsonBytes(S.review);
+  if (S.review.length <= REVIEW_CAP && bytes <= REVIEW_BYTES) return false;
+  S.review.sort((a, b) => (b.box - a.box) || (a.added - b.added));
+  let drop = 0;
+  while (S.review.length - drop > REVIEW_CAP || (bytes > REVIEW_BYTES && S.review.length - drop > 1)) bytes -= jsonBytes(S.review[drop++]) + 1;
+  S.review = S.review.slice(drop);
+  return true;
 }
 function newItem(sessId, n, kind, cue, target, ko, tip, topicId) {
   const now = Date.now();
@@ -1135,7 +1138,13 @@ Reply with only this JSON object:
 {"summary_ko": "2-3 sentences of overall feedback", "strengths_ko": ["one or two specific things they did well"], "focus_ko": ["one or two specific things to practice next"], "expressions": [{"en": "a useful English sentence or phrase from this lesson, usually a corrected one", "ko": "its meaning in Korean"}]}
 Give 3 to 5 expressions.`;
 }
+const summaryBusy = new Set();
 async function requestSummary(sess) {
+  if (summaryBusy.has(sess.id)) return;
+  summaryBusy.add(sess.id);
+  try { await summaryRun(sess); } finally { summaryBusy.delete(sess.id); }
+}
+async function summaryRun(sess) {
   await S.capsReady;
   const sample = S.caps.sample;
   if (!sample) { sess.summaryState = 'failed'; Store.saveSession(sess); if (S.view === 'report' && S.reportId === sess.id) render(); return; }
@@ -1538,6 +1547,8 @@ function viewHome() {
           h('p', { class:'today-big num' }, `${mins}분`, h('small', {}, ` / ${goal}분`)),
           st ? h('p', { class:'streak', html:icon('flame', 15) + `<span>${st}일 연속 공부 중</span>` })
              : h('p', { class:'meta' }, '오늘 첫 수업을 시작해 보세요'))),
+      Store.mode === 'none' ? h('p', { class:'note' }, h('b', {}, '이 화면에서는 기록이 저장되지 않아요. '),
+        '브라우저 저장 공간을 쓸 수 없어요. 수업은 할 수 있지만 리포트와 복습 카드는 화면을 닫으면 사라져요.') : null,
       S.resume ? resumeCard() : null,
       reviewCard(),
       h('button', { class:'coach-card', onclick:() => { S.coachPick = null; go('coach'); }, 'aria-label':`코치 변경, 지금은 ${c.ko}` },
@@ -1556,7 +1567,7 @@ function viewHome() {
         h('button', { class:'topic t' + (i % 3), onclick:() => startLesson(t.id) },
           h('span', { class:'t-en' }, t.en),
           h('span', { class:'t-ko' }, t.ko),
-          h('span', { class:'t-blurb' }, t.blurb),
+          h('span', { class:'t-blurb' }, S.aiState === 'off' && !t.qs ? '여러 주제의 준비된 질문으로 연습해요' : t.blurb),
           t.badge ? h('span', { class:'t-badge' }, t.badge) : null))),
       recordsCard(),
       h('div', { class:'sec-head' },
@@ -1677,7 +1688,7 @@ function viewTalk() {
     R.ctl = h('footer', { class:'controls' }));
 }
 const inputMode = () => (T.input === 'voice' && Mic.ok) ? 'voice' : 'text';
-const MOBILE_VOICE_TIP = '말로 하고 싶다면 휴대폰 키보드를 영어로 바꾸고 키보드의 마이크를 눌러 보세요. 그대로 받아 적혀요.';
+const MOBILE_VOICE_TIP = '말로 하고 싶다면 휴대폰 키보드를 영어로 바꾸고 키보드의 마이크를 눌러 보세요. 그대로 받아 적혀요. 마이크가 없는 키보드라면 적어서 대답해도 수업은 똑같이 진행돼요.';
 function paintTalk() {
   if (!T || !R || S.view !== 'talk') return;
   R.count.textContent = `${Math.min(T.turns.length, T.target)}/${T.target}`;
@@ -1780,12 +1791,14 @@ function paintCard() {
   } else if (P === 'repeat-result' && T.repeat) {
     const sc = T.repeat.score;
     if (T.repeat.self) {
-      C.append(h('p', { class:'rc-title good' }, '스스로 고쳤어요! 코치가 생각한 문장과 같아요.'),
+      C.append(h('p', { class:'rc-title good' }, sc === 1 ? '스스로 고쳤어요! 코치가 생각한 문장과 같아요.' : '스스로 고쳤어요! 코치 문장과 거의 같아요.'),
+        sc < 1 ? h('p', { class:'rc-text' }, diffView(T.repeat.text, cur.corrected, 'b')) : null,
         cur.tip_ko || cur.tip_en ? h('p', { class:'rc-sub' }, cur.tip_ko || cur.tip_en) : null);
     } else {
       C.append(h('p', { class:'rc-title' + (sc >= 0.85 ? ' good' : '') },
-        sc >= 0.85 ? '완벽해요! 교정된 문장 그대로 말했어요.' : sc >= 0.6 ? '거의 맞았어요. 표시한 단어를 확인해 보세요.' : '한 번 더 들어 보고 따라 해 볼까요?'));
-      if (sc < 0.85) C.append(h('p', { class:'rc-sub' }, '표시한 단어가 빠졌거나 다르게 들렸어요'),
+        sc === 1 ? '완벽해요! 교정된 문장 그대로 말했어요.' : sc >= 0.85 ? '거의 그대로 말했어요. 표시한 단어만 확인해 보세요.'
+          : sc >= 0.6 ? '거의 맞았어요. 표시한 단어를 확인해 보세요.' : '한 번 더 들어 보고 따라 해 볼까요?'));
+      if (sc < 1) C.append(h('p', { class:'rc-sub' }, '표시한 단어가 빠졌거나 다르게 들렸어요'),
         h('p', { class:'rc-text' }, diffView(T.repeat.text, cur.corrected, 'b')));
     }
   } else if (P === 'error') {
@@ -1942,7 +1955,7 @@ function viewReport() {
         (t.correction.tip_en || t.correction.tip_ko) ? h('p', { class:'fb-tip' }, t.correction.tip_en || t.correction.tip_ko,
           t.correction.tip_en && t.correction.tip_ko ? h('span', {}, t.correction.tip_ko) : null) : null,
         t.selfFix && !t.selfFix.skipped ? h('p', { class:'fb-rep' }, `스스로 고치기 · ${t.selfFix.ok ? '혼자서 고쳤어요' : '코치 문장으로 확인했어요'}`) : null,
-        t.repeat && !(t.selfFix && t.selfFix.ok) ? h('p', { class:'fb-rep' }, `따라 말하기 · ${t.repeat.score >= 0.85 ? '정확하게 따라 했어요' : t.repeat.score >= 0.6 ? '거의 맞았어요' : '다시 연습해 보세요'}`) : null)),
+        t.repeat && !(t.selfFix && t.selfFix.ok) ? h('p', { class:'fb-rep' }, `따라 말하기 · ${t.repeat.score === 1 ? '그대로 따라 했어요' : t.repeat.score >= 0.85 ? '거의 그대로 따라 했어요' : t.repeat.score >= 0.6 ? '거의 맞았어요' : '다시 연습해 보세요'}`) : null)),
       cards ? h('p', { class:'note' }, h('b', {}, `복습 카드 ${cards}개를 만들었어요. `), '교정한 문장과 표현이 내일부터 홈의 ‘오늘 복습할 문장’에 다시 나와요.') : null,
       goods.length ? h('section', { class:'card' },
         h('h2', {}, '자연스럽게 말한 문장'),
@@ -2085,9 +2098,10 @@ function paintReview() {
       const r = RV.result;
       if (r.text) B.append(h('div', { class:'bubble', style:'align-self:center' }, r.text));
       B.append(h('div', { class:'rcard' },
-        h('p', { class:'rc-title' + (r.ok ? ' good' : '') }, r.ok ? '정확해요!' : r.text ? '거의 다 왔어요. 표시한 부분을 확인해 보세요.' : '이렇게 말하면 돼요'),
+        h('p', { class:'rc-title' + (r.ok ? ' good' : '') }, r.own ? '내 문장도 맞은 것으로 했어요'
+          : r.ok ? (r.score === 1 ? '정확해요!' : '거의 같아요! 표시한 단어만 확인해 보세요.') : r.text ? '거의 다 왔어요. 표시한 부분을 확인해 보세요.' : '이렇게 말하면 돼요'),
         h('p', { class:'rc-lbl' }, '정답'),
-        h('p', { class:'rc-text' }, r.text && !r.ok ? diffView(r.text, it.target, 'b') : it.target),
+        h('p', { class:'rc-text' }, r.text && r.score < 1 && !r.own ? diffView(r.text, it.target, 'b') : it.target),
         it.tip ? h('p', { class:'rc-sub' }, it.tip) : null,
         h('p', { class:'rc-sub' }, r.ok ? `${r.days}일 뒤에 다시 나와요` : '내일 다시 나와요'),
         Voice.on() ? h('div', {}, h('button', { class:'chip', html:iconLabel('vol', '들어 보기'), onclick:() => Voice.speak(it.target) }),
@@ -2261,20 +2275,51 @@ function viewOnboard() {
 
 /* sheets */
 function openSheet(title, bodyFn) {
+  const opener = S.sheet ? S.sheet.opener : document.activeElement;
   closeSheet(true);
   const body = h('div', { class:'sheet-body' });
   const el = h('div', { class:'sheet-back', onclick:e => { if (e.target === el) closeSheet(); } },
     h('div', { class:'sheet', role:'dialog', 'aria-modal':'true', 'aria-label':title },
       h('div', { class:'sheet-head' }, h('h2', {}, title), h('button', { class:'iconbtn', 'aria-label':'닫기', html:icon('close'), onclick:() => closeSheet() })),
       body));
-  S.sheet = { el, body, bodyFn };
+  S.sheet = { el, body, bodyFn, opener };
   paintSheet();
   $('#app').append(el);
   requestAnimationFrame(() => el.querySelector('.sheet button')?.focus());
 }
 function paintSheet() { if (S.sheet) S.sheet.body.replaceChildren(...[].concat(S.sheet.bodyFn()).flat(Infinity).filter(Boolean)); }
-function closeSheet(silent) { if (!S.sheet) return; S.sheet.el.remove(); S.sheet = null; }
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && S.sheet) { e.preventDefault(); closeSheet(); } });
+function closeSheet(silent) {
+  if (!S.sheet) return;
+  const opener = S.sheet.opener;
+  S.sheet.el.remove(); S.sheet = null;
+  if (silent || !opener) return;
+  // The screen may have been redrawn while the sheet was open; fall back to the same-named button.
+  const label = opener.getAttribute && opener.getAttribute('aria-label');
+  const back = opener.isConnected ? opener : label ? document.querySelector(`[aria-label="${CSS.escape(label)}"]`) : null;
+  if (back) back.focus();
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && S.sheet) { e.preventDefault(); closeSheet(); return; }
+  if (e.key === 'Tab' && S.sheet) {                       // keep Tab inside the open sheet
+    const f = [...S.sheet.el.querySelectorAll('button, textarea, [href], [tabindex]:not([tabindex="-1"])')].filter(x => !x.disabled);
+    if (!f.length) return;
+    const i = f.indexOf(document.activeElement);
+    if (e.shiftKey && i <= 0) { e.preventDefault(); f[f.length - 1].focus(); }
+    else if (!e.shiftKey && (i === -1 || i === f.length - 1)) { e.preventDefault(); f[0].focus(); }
+    return;
+  }
+  // C10: arrow keys move between options of a radio group
+  const d = { ArrowRight:1, ArrowDown:1, ArrowLeft:-1, ArrowUp:-1 }[e.key];
+  const r = d && e.target.closest && e.target.closest('[role="radio"]');
+  const g = r && r.closest('[role="radiogroup"]');
+  if (!g) return;
+  e.preventDefault();
+  const list = [...g.querySelectorAll('[role="radio"]')];
+  const i = (list.indexOf(r) + d + list.length) % list.length;
+  const key = g.id ? '#' + g.id : g.getAttribute('aria-label') ? `[role="radiogroup"][aria-label="${g.getAttribute('aria-label')}"]` : null;
+  list[i].click();
+  requestAnimationFrame(() => { const ng = key && document.querySelector(key); ((ng && ng.querySelectorAll('[role="radio"]')[i]) || list[i]).focus(); });
+});
 
 function openSettings() {
   openSheet('설정', () => {
@@ -2288,7 +2333,7 @@ function openSettings() {
     const st = Store.mode === 'db' ? [true, '내 Claude 계정 · 다른 기기에서도 보여요'] : Store.mode === 'local' ? [true, '이 브라우저에만 저장돼요'] : [false, '저장할 수 없어 기록이 남지 않아요'];
     const row = (k, [ok, v]) => h('li', {}, h('span', {}, k), h('span', {}, h('i', { class:ok ? 'ok-dot' : 'off-dot' }), v));
     return [
-      h('div', { class:'grp' }, h('h3', {}, '내 레벨'), LEVELS.map(L =>
+      h('div', { class:'grp', role:'radiogroup', 'aria-label':'내 레벨' }, h('h3', {}, '내 레벨'), LEVELS.map(L =>
         h('button', { class:'opt' + (P.level === L.id ? ' sel' : ''), role:'radio', 'aria-checked':String(P.level === L.id), onclick:() => setProfile({ level:L.id }) },
           h('span', { class:'dot' }), h('span', {}, h('b', {}, `${L.ko} · ${L.en}`), h('span', {}, L.desc))))),
       h('div', { class:'grp' }, h('h3', {}, '한 수업의 질문 수'), seg('lessonLen', [5, 8, 12], P.lessonLen, v => `${v}문답`, v => setProfile({ lessonLen:v }))),

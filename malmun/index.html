@@ -857,7 +857,7 @@ function lessonSnapshot() {
   return { v:1, savedAt:Date.now(), id:T.id, topicId:T.topicId, coachId:T.coachId, level:T.level, mode:T.mode,
     startedAt:T.startedAt, activeMs:elapsed(), target:T.target, bank:T.bank, bankPos:T.bankPos, turns:T.turns,
     cur:T.cur, next:T.next, phase, showKo:T.showKo, ansLang:T.ansLang, draft:draft || '', repeat:T.repeat,
-    selfMiss:T.selfMiss || null, lastAnswer:!!T.lastAnswer };
+    selfMiss:T.selfMiss || null, lastAnswer:!!T.lastAnswer, asked:T.asked || null };
 }
 function saveLessonDraft() {
   if (!T) return;
@@ -1019,7 +1019,7 @@ const Mic = {
 };
 function onMicText() { if (S.view === 'talk') paintBubble(); else if (S.view === 'review') paintReview(); }
 function routeMicText(target, text) {
-  if (target === 'answer') submitAnswer(text);
+  if (target === 'answer') submitAnswer(text, 'voice');
   else if (target === 'repeat') checkRepeat(text);
   else if (target === 'self') checkSelfFix(text);
   else if (target === 'review') checkReview(text);
@@ -1248,16 +1248,16 @@ function endPaused(silent) {
   finishLesson(silent);
 }
 
-function newTurn(answer) {
-  return { q_en:T.cur.q_en, q_ko:T.cur.q_ko || '', answer, correction:null, reaction_en:'', reaction_ko:'', repeat:null, selfFix:null,
+function newTurn(answer, via) {
+  return { q_en:T.cur.q_en, q_ko:T.cur.q_ko || '', answer, via:via === 'voice' ? 'voice' : 'text', correction:null, reaction_en:'', reaction_ko:'', repeat:null, selfFix:null,
     model:T.cur.model || null, hint:T.cur.model ? null : (T.cur.hint || null) };
 }
-async function submitAnswer(text) {
+async function submitAnswer(text, via) {
   if (!T) return;
   text = String(text || '').trim();
   if (!text || !['await', 'listening', 'error'].includes(T.phase)) return;
   Voice.stop();
-  const turn = newTurn(text);
+  const turn = newTurn(text, via);
   T.draft = ''; T.showHint = false; T.error = null; T.notice = '';
   const isLast = T.turns.length + 1 >= T.target;
   if (T.mode === 'practice') { practiceAnswer(turn, isLast); return; }
@@ -1285,6 +1285,7 @@ function applyTurn(turn, r, isLast) {
     hint:r.hint_en, hintLabel:'이렇게 시작해 보세요', model:null };
   if (turn.correction) {
     const c = turn.correction, self = wantsSelfFix(turn, c);
+    T.asked = T.cur;
     T.cur = { kind:'correction', corrected:c.corrected, corrected_ko:c.corrected_ko || '', tip_en:c.tip_en, tip_ko:c.tip_ko,
       hint_ko:c.hint_ko || '', category:c.category || '', original:turn.answer, q_en:turn.q_en, revealed:!self };
     T.phase = self ? 'selffix' : 'correction'; T.repeat = null; T.repeatDraft = ''; T.selfMiss = null;
@@ -1295,7 +1296,7 @@ function applyTurn(turn, r, isLast) {
 function advance() {
   if (!T || !T.next) return;
   Mic.cancel();
-  T.cur = T.next; T.next = null; T.repeat = null; T.repeatDraft = ''; T.selfMiss = null;
+  T.cur = T.next; T.next = null; T.repeat = null; T.repeatDraft = ''; T.selfMiss = null; T.asked = null;
   T.phase = T.cur.kind === 'closing' ? 'done' : 'await';
   paintTalk();
   Voice.speak(lineEn(T.cur));
@@ -1342,7 +1343,7 @@ function skipFailed() {
 function retryFailed() {
   if (!T || T.phase !== 'error') return;
   const t = T.failed; T.failed = null; T.phase = 'await';
-  submitAnswer(t ? t.answer : '');
+  submitAnswer(t ? t.answer : '', t && t.via);
 }
 async function askEasier() {
   if (!T || T.phase !== 'await' || T.mode !== 'ai') return;
@@ -1400,6 +1401,27 @@ function revealCorrection() {
   T.cur.revealed = true; T.phase = 'correction'; T.repeatDraft = ''; T.selfMiss = null;
   paintTalk();
   Voice.speak(lineEn(T.cur));
+}
+
+// Speech recognition can mishear. Answers go straight to the coach; only when the learner sees that
+// what was heard is not what they said can they drop that answer (and its correction) and answer again.
+function canMisheard() {
+  if (!T) return false;
+  const last = T.turns[T.turns.length - 1];
+  if (!last || last.via !== 'voice') return false;
+  if (T.phase === 'model') return true;
+  return (T.phase === 'selffix' || T.phase === 'correction') && T.cur.kind === 'correction' && !!T.asked;
+}
+function misheard() {
+  if (!canMisheard()) return;
+  Mic.cancel(); Voice.stop();
+  T.turns.pop();
+  if (T.cur.kind === 'correction') T.cur = T.asked;
+  T.asked = null; T.next = null; T.repeat = null; T.repeatDraft = ''; T.selfMiss = null; T.lastAnswer = false;
+  T.draft = ''; T.showHint = false; T.phase = 'await';
+  paintTalk();
+  toast('잘못 들은 대답을 지웠어요. 같은 질문에 다시 대답해 보세요.');
+  Voice.speak(T.cur.q_en);
 }
 
 /* mic orb */
@@ -1684,6 +1706,7 @@ function viewTalk() {
       R.ava = h('div', { class:'ava-wrap ava-live', html:avatarSVG(c) }),
       R.cap = h('p', { class:'stage-cap', 'aria-live':'polite' }),
       R.bubble = h('div', { class:'bubble', hidden:true }),
+      R.mis = h('button', { class:'link', hidden:true, onclick:misheard }, '잘못 들었어요 · 다시 말하기'),
       R.card = h('div', { class:'rcard', hidden:true })),
     R.ctl = h('footer', { class:'controls' }));
 }
@@ -1767,6 +1790,7 @@ function paintBubble() {
   else if (P === 'model') B.append(T.turns[T.turns.length - 1]?.answer || '');
   else show = false;
   B.hidden = !show;
+  R.mis.hidden = !(show && canMisheard());
 }
 function paintCard() {
   const C = R.card, P = T.phase, cur = T.cur;

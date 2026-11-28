@@ -3,6 +3,7 @@
 AI 코치와 1:1로 영어회화를 연습하는 모바일 웹앱. Claude 아티팩트로 게시돼 있다.
 
 - 앱 주소: https://claude.ai/artifact/3ZXyr5ctuNwMHs9Q29LMQ9 (기본 비공개 · 공유 메뉴에서 공개 범위를 정한다)
+- 휴대폰 바로가기: https://hsj0358-afk.github.io/sh4/malmun/ — 크롬에서 열어 홈 화면에 추가한다. claude.ai 는 설치형 웹앱이라 앱 페이지에서 바로 "홈 화면에 추가" 하면 Claude 첫 화면이 열리기 때문에, 별도 주소의 이 페이지가 한 번 설정 뒤 앱으로 곧장 넘겨준다. 소스는 `gh-pages` 브랜치의 `malmun/` (토토 리포트와 따로 둔다).
 - 소스: `index.html` 한 파일. 아티팩트 게시 형식이라 `<!doctype>`·`<head>` 가 없다 (게시할 때 붙는다).
 
 `toto/`·`briefing/` 과 코드·설정·의존성을 하나도 공유하지 않는 별개 프로젝트다.

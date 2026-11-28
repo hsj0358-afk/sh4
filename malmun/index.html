@@ -286,6 +286,44 @@ details.transcript summary{cursor:pointer;min-height:46px;display:flex;align-ite
 .toast{position:fixed;left:50%;bottom:calc(110px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:60;max-width:min(420px,calc(100% - 32px));
   background:var(--ink);color:var(--surface);padding:10px 16px;border-radius:14px;font-size:14px;box-shadow:var(--shadow);animation:up .2s ease-out}
 
+/* resume · review · records */
+.resume{display:flex;flex-direction:column;gap:10px;padding:14px 16px;border-radius:18px;background:var(--accent-soft)}
+.resume .btn-row .btn{min-height:44px;font-size:15px}
+.review-card{display:flex;align-items:center;gap:14px;width:100%;text-align:left;padding:14px 16px;border-radius:18px;border:1.5px solid var(--coach)}
+.review-card .rv-n{font-family:var(--f-display);font-size:30px;font-weight:800;color:var(--coach);line-height:1;min-width:40px;text-align:center}
+.review-card .rv-text{flex:1;min-width:0}
+.review-card .rv-text b{display:block;font-size:15px}
+.review-card.quiet{border-color:var(--line)}
+.review-card.quiet .rv-n{color:var(--muted)}
+.records{display:flex;flex-direction:column;gap:10px}
+.rec-row{display:flex;justify-content:space-between;gap:12px;font-size:14px;padding:2px 0}
+.rec-row span:first-child{color:var(--muted)}
+.rec-row span:last-child{text-align:right;font-weight:600}
+.tags{display:flex;flex-wrap:wrap;gap:6px}
+.tag{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:600;padding:3px 10px;border-radius:999px;background:var(--surface-2);color:var(--ink-2)}
+.tag b{color:var(--accent);font-variant-numeric:tabular-nums}
+.suggest{background:var(--coach-soft);border-radius:16px;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+.suggest b{font-size:15px}
+.stats.s4{grid-template-columns:repeat(2,minmax(0,1fr))}
+.rv-cue{border:1px solid var(--line);border-radius:20px;padding:18px;display:flex;flex-direction:column;gap:8px}
+.rv-cue .rv-lbl{font-size:12.5px;font-weight:700;color:var(--muted)}
+.rv-cue .rv-q{font-family:var(--f-display);font-size:22px;font-weight:650;line-height:1.32;overflow-wrap:anywhere}
+.rv-cue .rv-q.ko{font-family:var(--f-body);font-size:19px;font-weight:600}
+.rv-body{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding-block:8px}
+/* onboarding */
+.ob-steps{display:flex;gap:6px}
+.ob-steps i{flex:1;height:4px;border-radius:99px;background:var(--line)}
+.ob-steps i.on{background:var(--coach)}
+.ob-title{font-size:22px;font-weight:700;line-height:1.3;text-wrap:balance}
+.how{display:flex;flex-direction:column;gap:9px;background:var(--surface-2);border-radius:16px;padding:14px 16px}
+.how li{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--ink-2)}
+.how li span{flex:none;width:22px;height:22px;border-radius:50%;background:var(--coach);color:var(--surface);font-size:12px;font-weight:700;display:grid;place-items:center;margin-top:1px}
+.ob-coach{display:flex;align-items:center;gap:14px;padding:14px;border-radius:18px;border:1.5px solid var(--coach)}
+.ob-coach .ava-sm{width:64px;height:64px;flex:none}
+.ob-coach .ava-sm svg{width:100%;height:100%;display:block}
+.ob-coach p{font-size:13px;color:var(--ink-2)}
+.ob-coach b{display:block;font-size:17px}
+
 /* avatar animation */
 .ava .ava-eyes{transform-box:fill-box;transform-origin:center;animation:blink 5s infinite}
 @keyframes blink{0%,95%,100%{transform:scaleY(1)}97%{transform:scaleY(.12)}}
@@ -455,17 +493,19 @@ const EXAMPLE = {
       {en:'I always pack a portable charger.', ko:'저는 항상 보조배터리를 챙겨요.'} ] },
   turns:[
     { q_en:"What's the best trip you've ever taken?", q_ko:'지금까지 가 본 여행 중 최고는 어디였어요?', answer:'I go to Jeju last summer with my family.',
-      correction:{corrected:'I went to Jeju last summer with my family.', tip_en:"Use the past tense 'went' for a trip that is finished.", tip_ko:'지난여름처럼 이미 끝난 일에는 과거형 went를 써요.'},
-      reaction_en:'Jeju is lovely in the summer!', reaction_ko:'여름의 제주는 정말 멋지죠!', repeat:{text:'I went to Jeju last summer with my family', score:1} },
+      correction:{corrected:'I went to Jeju last summer with my family.', corrected_ko:'지난여름에 가족과 제주에 갔어요.', category:'tense', hint_ko:'지난여름에 있었던 일이에요. 동사의 시제를 볼까요?', tip_en:"Use the past tense 'went' for a trip that is finished.", tip_ko:'지난여름처럼 이미 끝난 일에는 과거형 went를 써요.'},
+      reaction_en:'Jeju is lovely in the summer!', reaction_ko:'여름의 제주는 정말 멋지죠!', repeat:{text:'I went to Jeju last summer with my family', score:1},
+      selfFix:{text:'I went to Jeju last summer with my family', score:1, ok:true} },
     { q_en:'What was the best part of the trip?', q_ko:'그 여행에서 가장 좋았던 건 뭐예요?', answer:'We ride horses on the beach. It was very good experience.',
-      correction:{corrected:'We rode horses on the beach. It was a really good experience.', tip_en:"'Rode' is the past tense of 'ride', and 'experience' here needs 'a'.", tip_ko:'ride의 과거형은 rode이고, 하나의 경험을 말할 때는 a experience가 아니라 a good experience처럼 a를 붙여요.'},
-      reaction_en:'Riding horses on the beach sounds amazing!', reaction_ko:'해변에서 말을 타다니 정말 멋지네요!', repeat:{text:'We rode horses on the beach it was a good experience', score:0.84} },
+      correction:{corrected:'We rode horses on the beach. It was a really good experience.', corrected_ko:'해변에서 말을 탔어요. 정말 좋은 경험이었어요.', category:'tense', hint_ko:'이것도 지난 일이에요. 동사 두 개를 확인해 보세요.', tip_en:"'Rode' is the past tense of 'ride', and 'experience' here needs 'a'.", tip_ko:'ride의 과거형은 rode이고, 하나의 경험을 말할 때는 a experience가 아니라 a good experience처럼 a를 붙여요.'},
+      reaction_en:'Riding horses on the beach sounds amazing!', reaction_ko:'해변에서 말을 타다니 정말 멋지네요!', repeat:{text:'We rode horses on the beach it was a good experience', score:0.84},
+      selfFix:{text:'We rode horses on the beach. It was very good experience.', score:0.78, ok:false} },
     { q_en:'Do you like to plan everything, or go with the flow?', q_ko:'다 계획하는 편이에요, 흘러가는 대로 하는 편이에요?', answer:'I plan the big things, but I like some free time too.',
       correction:null, reaction_en:"That's a smart balance.", reaction_ko:'균형이 딱 좋네요.', repeat:null },
     { q_en:'What do you always pack for a trip?', q_ko:'여행 갈 때 꼭 챙기는 건 뭐예요?', answer:'I always pack a portable charger.',
       correction:null, reaction_en:'Good idea. A dead phone is the worst!', reaction_ko:'좋은 생각이에요. 휴대폰 배터리가 꺼지면 최악이죠!', repeat:null },
     { q_en:'Where would you like to travel next?', q_ko:'다음엔 어디로 여행 가고 싶어요?', answer:'I want to go Portugal next.',
-      correction:{corrected:'I want to go to Portugal next.', tip_en:"Use 'go to' before a place.", tip_ko:'장소 앞에서는 go to처럼 to를 함께 써요.'},
+      correction:{corrected:'I want to go to Portugal next.', corrected_ko:'다음엔 포르투갈에 가고 싶어요.', category:'preposition', hint_ko:'장소 앞에 빠진 단어가 있어요.', tip_en:"Use 'go to' before a place.", tip_ko:'장소 앞에서는 go to처럼 to를 함께 써요.'},
       reaction_en:"Portugal is beautiful. I hope you get to go soon!", reaction_ko:'포르투갈 정말 아름다워요. 곧 가게 되면 좋겠네요!', repeat:null } ],
 };
 
@@ -500,7 +540,11 @@ const ICONS = {
   mute:'<path d="M4 9.5v5h3.5L12 18V6L7.5 9.5z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>',
   bulb:'<path d="M9.5 18h5M10.5 21h3M12 3a6 6 0 0 0-3.6 10.8c.7.5 1.1 1.3 1.1 2.2h5c0-.9.4-1.7 1.1-2.2A6 6 0 0 0 12 3z"/>',
   flame:'<path d="M12 3c.8 2.8 5 4.8 5 10a5 5 0 0 1-10 0c0-2.6 1.4-4.2 2.4-5.2.3 1.5 1 2.4 2 2.9-.4-2.7.1-5.4.6-7.7z"/>',
-  next:'<path d="M5 12h13M13 6l6 6-6 6"/>', retry:'<path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v5h5"/>',
+  next:'<path d="M5 12h13M13 6l6 6-6 6"/>',
+  eye:'<path d="M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>',
+  slow:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  list:'<path d="M8 6.5h12M8 12h12M8 17.5h12M4 6.5h.01M4 12h.01M4 17.5h.01"/>',
+  cards:'<rect x="3.5" y="7" width="13" height="13" rx="2.5"/><path d="M8 4h10a2.5 2.5 0 0 1 2.5 2.5V16"/>', retry:'<path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v5h5"/>',
 };
 const icon = (n, s = 22) => `<svg class="ic" viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
 const iconLabel = (n, text, s = 16) => icon(n, s) + `<span>${text}</span>`;   // text: static copy only
@@ -623,14 +667,15 @@ function avatarSVG(c) {
 
 /* ───────────────────────── state ───────────────────────── */
 
-const DEFAULT_PROFILE = { coachId:'hannah', level:'basic', lessonLen:8, goalMin:15, showKo:true, voiceOn:true };
+const DEFAULT_PROFILE = { coachId:'hannah', level:'basic', lessonLen:8, goalMin:15, showKo:true, voiceOn:true, selfFix:true, onboarded:false };
 const S = {
   view:'home', profile:{ ...DEFAULT_PROFILE }, sessions:[], reportId:null, reportFrom:'home', coachPick:null,
-  aiState:'unknown', caps:{ sample:null }, sheet:null,
+  aiState:'unknown', caps:{ sample:null }, sheet:null, review:[], resume:null,
 };
 let capsResolve; S.capsReady = new Promise(r => (capsResolve = r));
 let T = null;    // the lesson in progress
-let R = null;    // talk view element refs
+let R = null;    // talk / review view element refs
+let RV = null;   // the review session in progress
 let clock = null;
 
 function sanitizeProfile(p) {
@@ -642,6 +687,8 @@ function sanitizeProfile(p) {
   if ([10, 15, 20, 30].includes(p.goalMin)) o.goalMin = p.goalMin;
   if (typeof p.showKo === 'boolean') o.showKo = p.showKo;
   if (typeof p.voiceOn === 'boolean') o.voiceOn = p.voiceOn;
+  if (typeof p.selfFix === 'boolean') o.selfFix = p.selfFix;
+  if (typeof p.onboarded === 'boolean') o.onboarded = p.onboarded;
   return o;
 }
 const validSession = s => s && typeof s === 'object' && typeof s.id === 'string' && Array.isArray(s.turns) && typeof s.startedAt === 'number';
@@ -651,12 +698,16 @@ const validSession = s => s && typeof s === 'object' && typeof s.id === 'string'
    learner's profile and reports also go to their private data/users/<id>/ space, so they follow
    them to other devices. */
 
-const LS_KEY = 'malmun.v1';
+const LS_KEY = 'malmun.v1', REVIEW_KEY = 'malmun.review.v1', LESSON_KEY = 'malmun.lesson.v1';
 const Store = {
-  mode:'local', db:null, profRef:null, profQ:Promise.resolve(), sessQ:new Map(), timer:null,
+  mode:'local', db:null, profRef:null, revRef:null, profQ:Promise.resolve(), revQ:Promise.resolve(), sessQ:new Map(), timer:null, revTimer:null,
   loadLocal() {
     try { const o = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); return o && typeof o === 'object' ? o : {}; }
     catch (e) { this.mode = 'none'; return {}; }
+  },
+  loadReview() {
+    try { const a = JSON.parse(localStorage.getItem(REVIEW_KEY) || '[]'); return Array.isArray(a) ? a.filter(validItem) : []; }
+    catch (e) { return []; }
   },
   writeLocal() {
     try { localStorage.setItem(LS_KEY, JSON.stringify({ profile:S.profile, sessions:S.sessions.slice(0, 80) })); }
@@ -668,12 +719,16 @@ const Store = {
     if (!uid) return;
     try {
       const profRef = db.doc('data/users/' + uid + '/profile');
+      const revRef = db.doc('data/users/' + uid + '/review');
       const p = await timeout(profRef.get(), 9000);
       if (p.exists) S.profile = { ...S.profile, ...sanitizeProfile(p.data()?.profile) };
       const snap = await timeout(profRef.collection('sessions').orderBy('startedAt', 'desc').limit(80).get(), 9000);
       mergeSessions(snap.docs.map(d => d.data()).filter(validSession));
-      this.db = db; this.profRef = profRef; this.mode = 'db';
+      const rv = await timeout(revRef.get(), 9000);
+      if (rv.exists) mergeReview(rv.data()?.items);
+      this.db = db; this.profRef = profRef; this.revRef = revRef; this.mode = 'db';
       this.writeLocal();
+      try { localStorage.setItem(REVIEW_KEY, JSON.stringify(S.review)); } catch (e) {}
     } catch (e) { /* stays local */ }
   },
   saveProfile() {
@@ -685,6 +740,21 @@ const Store = {
       this.profQ = this.profQ.then(() => this.profRef.set(body)).catch(e => this.writeFailed(e));
     }, 700);
   },
+  saveReview() {
+    try { localStorage.setItem(REVIEW_KEY, JSON.stringify(S.review)); } catch (e) {}
+    if (!this.db) return;
+    clearTimeout(this.revTimer);
+    this.revTimer = setTimeout(() => {
+      let items = JSON.parse(JSON.stringify(S.review));
+      const size = a => new TextEncoder().encode(JSON.stringify(a)).length;
+      if (size(items) > 200000) {             // keep the most recently used cards under the document size limit
+        items.sort((a, b) => (b.u || 0) - (a.u || 0));
+        while (items.length > 20 && size(items) > 200000) items = items.slice(0, Math.floor(items.length * 0.9));
+      }
+      const body = { items, updatedAt:Date.now() };
+      this.revQ = this.revQ.then(() => this.revRef.set(body)).catch(e => { if (e?.code !== 'invalid_argument') this.writeFailed(e); });
+    }, 900);
+  },
   saveSession(sess) {
     const i = S.sessions.findIndex(s => s.id === sess.id);
     if (i >= 0) S.sessions[i] = sess; else S.sessions.unshift(sess);
@@ -695,6 +765,14 @@ const Store = {
     const body = JSON.parse(JSON.stringify(sess));
     const q = (this.sessQ.get(sess.id) || Promise.resolve()).then(() => ref.set(body)).catch(e => this.writeFailed(e));
     this.sessQ.set(sess.id, q);
+  },
+  deleteSession(id) {
+    S.sessions = S.sessions.filter(s => s.id !== id);
+    this.writeLocal();
+    if (!this.db) return;
+    const ref = this.profRef.collection('sessions').doc(id);
+    const q = (this.sessQ.get(id) || Promise.resolve()).then(() => ref.delete()).catch(e => this.writeFailed(e));
+    this.sessQ.set(id, q);
   },
   writeFailed(e) {
     if (['invalid_argument', 'revoked', 'not_granted', 'capability_disabled'].includes(e?.code)) { this.db = null; this.mode = 'local'; }
@@ -712,14 +790,101 @@ function setProfile(patch) {
   S.profile = { ...S.profile, ...patch };
   Store.saveProfile();
   if (S.sheet) paintSheet();
-  if (S.view !== 'talk') render();
+  if (S.view !== 'talk' && S.view !== 'review') render();
+}
+
+/* ───────────────────────── review deck ─────────────────────────
+   Corrected sentences and key expressions come back after 1, 3, 7, 14 and 30 days.
+   A miss sends the sentence back to tomorrow. */
+
+const REVIEW_CAP = 250, INTERVALS = [1, 3, 7, 14, 30], DAY = 86400000;
+const startOfDay = ts => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime(); };
+const reviewKey = t => tokens(t).map(nk).filter(Boolean).join(' ');
+const validItem = i => i && typeof i === 'object' && typeof i.id === 'string' && typeof i.target === 'string' && i.target
+  && typeof i.cue === 'string' && typeof i.due === 'number' && typeof i.box === 'number';
+function mergeReview(list) {
+  if (!Array.isArray(list)) return;
+  const byId = new Map(S.review.map(i => [i.id, i]));
+  for (const it of list.filter(validItem)) {
+    const mine = byId.get(it.id);
+    if (!mine || (it.u || 0) > (mine.u || 0)) byId.set(it.id, it);
+  }
+  S.review = [...byId.values()];
+}
+function addReviewItems(items) {
+  const known = new Set(S.review.map(i => reviewKey(i.target)));
+  let added = 0;
+  for (const it of items) {
+    const k = reviewKey(it.target);
+    if (!k || known.has(k)) continue;
+    known.add(k); S.review.push(it); added++;
+  }
+  if (S.review.length > REVIEW_CAP) {        // drop the best-learned, oldest items first
+    S.review.sort((a, b) => (b.box - a.box) || (a.added - b.added));
+    S.review = S.review.slice(S.review.length - REVIEW_CAP);
+  }
+  if (added) Store.saveReview();
+  return added;
+}
+function newItem(sessId, n, kind, cue, target, ko, tip, topicId) {
+  const now = Date.now();
+  const cut = (v, n) => String(v || '').slice(0, n);
+  return { id:`r${sessId}_${n}`, kind, cue:cut(cue, 300), target:cut(target, 300), ko:cut(ko, 200), tip:cut(tip, 200), topicId, box:0,
+    due:startOfDay(now) + DAY, seen:0, right:0, added:now, u:now };
+}
+const dueItems = (now = Date.now()) => S.review.filter(i => i.due <= now).sort((a, b) => (a.due - b.due) || (a.box - b.box));
+function scheduleReview(item, ok) {
+  const now = Date.now();
+  item.seen = (item.seen || 0) + 1;
+  if (ok) { item.right = (item.right || 0) + 1; item.box = Math.min(item.box + 1, INTERVALS.length); }
+  else item.box = 0;
+  const days = item.box >= INTERVALS.length ? 60 : INTERVALS[item.box];
+  item.due = startOfDay(now) + days * DAY;
+  item.u = now;
+  return days;
+}
+
+/* ───────────────────────── lesson draft (resume after reload) ───────────────────────── */
+
+const elapsed = () => T ? T.activeMs + (Date.now() - T.resumedAt) : 0;
+function lessonSnapshot() {
+  const P = T.phase;
+  const phase = { listening:'await', thinking:'await', error:'await', 'repeat-listen':'correction', 'self-listen':'selffix' }[P] || P;
+  const draft = (P === 'thinking' && T.pending) ? T.pending.answer : (P === 'error' && T.failed) ? T.failed.answer : T.draft;
+  return { v:1, savedAt:Date.now(), id:T.id, topicId:T.topicId, coachId:T.coachId, level:T.level, mode:T.mode,
+    startedAt:T.startedAt, activeMs:elapsed(), target:T.target, bank:T.bank, bankPos:T.bankPos, turns:T.turns,
+    cur:T.cur, next:T.next, phase, showKo:T.showKo, ansLang:T.ansLang, draft:draft || '', repeat:T.repeat,
+    selfMiss:T.selfMiss || null, lastAnswer:!!T.lastAnswer };
+}
+function saveLessonDraft() {
+  if (!T) return;
+  try { localStorage.setItem(LESSON_KEY, JSON.stringify(lessonSnapshot())); } catch (e) {}
+}
+function clearLessonDraft() {
+  try { localStorage.removeItem(LESSON_KEY); } catch (e) {}
+  S.resume = null;
+}
+function loadLessonDraft() {
+  try {
+    const o = JSON.parse(localStorage.getItem(LESSON_KEY) || 'null');
+    if (o && o.v === 1 && Array.isArray(o.turns) && o.cur && Array.isArray(o.bank) && Date.now() - o.savedAt < 12 * 3600e3) return o;
+  } catch (e) {}
+  return null;
 }
 
 /* stats */
+const englishWords = text => tokens(text).filter(w => /[a-z]/i.test(w)).length;
+function sessionNumbers(sess) {
+  const answers = sess.turns.length;
+  const words = sess.turns.reduce((n, t) => n + englishWords(t.answer), 0);
+  const ko = sess.turns.filter(t => !hasLatin(t.answer)).length;
+  const fixes = sess.turns.filter(t => t.correction).length;
+  return { answers, words, ko, fixes, avg:answers ? words / answers : 0 };
+}
 function todayMinutes() {
   const k = dayKey(Date.now());
   let sec = S.sessions.filter(s => dayKey(s.startedAt) === k).reduce((n, s) => n + (s.durationSec || 0), 0);
-  if (T) sec += (Date.now() - T.startedAt) / 1000;
+  if (T) sec += elapsed() / 1000;
   return Math.round(sec / 60);
 }
 function streak() {
@@ -757,10 +922,10 @@ const Voice = {
     document.querySelectorAll('.ava-live').forEach(el => el.classList.toggle('speaking', v));
     if (S.view === 'talk') paintCaption();
   },
-  speak(text, coach, levelId) {
+  speak(text, coach, levelId, slow) {
     if (!text || !this.on()) return;
     coach = coach || coachById(T ? T.coachId : S.profile.coachId);
-    const rate = clamp(levelById(levelId || (T ? T.level : S.profile.level)).rate * coach.rate, 0.7, 1.5);
+    const rate = clamp(levelById(levelId || (T ? T.level : S.profile.level)).rate * coach.rate * (slow ? 0.75 : 1), 0.7, 1.5);
     if (this.mode === 'claude') {
       this.t.speak(text, { voice:coach.voice, rate, language:coach.lang }).catch(e => {
         if (e?.code === 'not_granted') { this.blocked = true; toast('이 앱의 소리 읽기가 꺼져 있어요. 아티팩트의 권한 메뉴에서 켤 수 있어요.'); refreshLight(); }
@@ -793,21 +958,22 @@ const Mic = {
   d:null, ok:false, final:'', partial:'', target:null, stopping:false, langOK:true,
   init(d) {
     this.d = d; this.ok = true;
-    d.onPartial(e => { this.partial = e.text || ''; if (S.view === 'talk') paintBubble(); });
+    d.onPartial(e => { this.partial = e.text || ''; onMicText(); });
     d.onFinal(e => {
       let t = e.text || '';
       if (!this.final) t = t.replace(/^\s+/, '');
       this.final += t; this.partial = '';
-      if (S.view === 'talk') paintBubble();
+      onMicText();
     });
     d.onState(e => { if (e.state === 'idle') this.ended(e.reason); });
   },
   text() { return (this.final + (this.partial ? ' ' + this.partial : '')).trim(); },
-  // Must run synchronously inside the click handler.
+  // Must run synchronously inside the click handler. target: answer | repeat | self | review.
+  // Only a lesson answer may be spoken in Korean; repeating a correction and review are always English.
   start(target) {
     this.final = ''; this.partial = ''; this.target = target; this.stopping = false;
     Voice.stop();
-    const lang = T && T.ansLang === 'ko' ? 'ko' : (this.langOK ? 'en' : null);
+    const lang = (target === 'answer' && T && T.ansLang === 'ko') ? 'ko' : (this.langOK ? 'en' : null);
     this.d.start(lang ? { language:lang } : undefined).catch(err => this.failed(err, lang));
   },
   async finish() {
@@ -825,7 +991,7 @@ const Mic = {
     const code = err?.code;
     if (this.stopping || code === 'stopped') return;
     if (code === 'unavailable' && lang === 'en') { this.langOK = false; toast('영어 받아쓰기를 쓸 수 없어 기본 언어로 받아요. 마이크를 다시 눌러 주세요.'); }
-    else if (code === 'not_granted' || code === 'unavailable') { this.ok = false; if (T) T.input = 'text'; toast('이 화면에서는 마이크를 쓸 수 없어 키보드 입력으로 바꿨어요.'); }
+    else if (code === 'not_granted' || code === 'unavailable') { this.ok = false; if (T) T.input = 'text'; if (RV) RV.input = 'text'; toast('이 화면에서는 마이크를 쓸 수 없어 키보드 입력으로 바꿨어요.'); }
     else if (code === 'dismissed') toast('마이크 사용을 허락하면 말로 대답할 수 있어요.');
     else if (code === 'rate_limited') toast('음성 입력이 잠시 붐벼요. 조금 뒤에 다시 눌러 주세요.');
     else toast('마이크를 켜지 못했어요. 다시 눌러 주세요.');
@@ -836,19 +1002,31 @@ const Mic = {
     if (this.stopping || !this.target) return;            // our own finish() handles it
     const target = this.target, text = this.text();
     this.target = null;
-    if (reason === 'viewer_stopped' && text) { target === 'answer' ? submitAnswer(text) : checkRepeat(text); return; }
-    if (reason === 'not_granted' || reason === 'unavailable') { this.ok = false; if (T) T.input = 'text'; }
-    if (text && T) { if (target === 'answer') T.draft = text; else T.repeatDraft = text; T.input = 'text'; }
+    if (reason === 'viewer_stopped' && text) { routeMicText(target, text); return; }
+    if (reason === 'not_granted' || reason === 'unavailable') { this.ok = false; if (T) T.input = 'text'; if (RV) RV.input = 'text'; }
+    if (text) {
+      if (target === 'review' && RV) { RV.draft = text; RV.input = 'text'; }
+      else if (T) { if (target === 'answer') T.draft = text; else T.repeatDraft = text; T.input = 'text'; }
+    }
     if (reason === 'hidden') toast('화면을 벗어나 듣기를 멈췄어요.');
     else if (reason === 'rate_limited') toast('음성 입력이 잠시 붐벼요. 조금 뒤에 다시 눌러 주세요.');
     else if (reason === 'upstream_error') toast('음성 입력이 끊겼어요. 다시 눌러 주세요.');
     backFromListening();
   },
 };
+function onMicText() { if (S.view === 'talk') paintBubble(); else if (S.view === 'review') paintReview(); }
+function routeMicText(target, text) {
+  if (target === 'answer') submitAnswer(text);
+  else if (target === 'repeat') checkRepeat(text);
+  else if (target === 'self') checkSelfFix(text);
+  else if (target === 'review') checkReview(text);
+}
 function backFromListening() {
+  if (S.view === 'review' && RV) { if (RV.phase === 'listening') RV.phase = 'ask'; paintReview(); return; }
   if (!T) return;
   if (T.phase === 'listening') T.phase = 'await';
   else if (T.phase === 'repeat-listen') T.phase = 'correction';
+  else if (T.phase === 'self-listen') T.phase = 'selffix';
   paintTalk();
 }
 
@@ -868,12 +1046,21 @@ async function initCaps() {
     if (S.aiState === 'off' && T.mode === 'ai') toPractice(false);
   }
   refreshLight();
-  if (db && user) { await Store.connect(db, user); if (S.view !== 'talk') render(); }
+  if (db && user) {
+    await Store.connect(db, user);
+    if (S.view === 'onboard' && (S.profile.onboarded || S.sessions.length)) { S.profile.onboarded = true; S.ob = null; S.view = 'home'; Store.saveProfile(); }
+    if (S.view !== 'talk' && S.view !== 'review') render();
+  }
 }
-function refreshLight() { if (S.view === 'talk') paintTalk(); else render(); if (S.sheet) paintSheet(); }
+function refreshLight() { if (S.view === 'talk') paintTalk(); else if (S.view === 'review') paintReview(); else render(); if (S.sheet) paintSheet(); }
 
 /* ───────────────────────── AI calls ───────────────────────── */
 
+const CATEGORIES = {
+  tense:'시제', article:'관사 (a/the)', preposition:'전치사', word_choice:'단어 선택', word_order:'어순',
+  agreement:'주어-동사 일치', plural:'단수·복수', missing_word:'빠진 단어', structure:'문장 구조',
+  naturalness:'더 자연스러운 표현', korean:'한국어를 영어로', fragment:'완전한 문장으로', other:'기타',
+};
 const PERMANENT = ['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'];
 const str = v => (typeof v === 'string' ? v.trim() : '');
 
@@ -905,13 +1092,14 @@ Reply with only this JSON object:
 ${isLast ? "This is the learner's last answer in this lesson.\n" : ''}
 Do the following:
 1. correction: If the answer has a grammar mistake, a wrong or unnatural word, is in Korean, or is only a few words or a fragment, write ONE corrected, natural English version (one or two short sentences) that keeps the learner's own meaning and fits their level. Change only what is needed. Ignore capitalization, punctuation and small speech-recognition slips. If the answer is already correct and natural, use null.
+   With a correction also give: category (the single main issue, one of: ${Object.keys(CATEGORIES).join(', ')}), hint_ko (a short Korean hint that points to what to fix WITHOUT giving the corrected words, e.g. "동사의 시제를 다시 볼까요?"), and corrected_ko (a natural Korean translation of the corrected sentence).
 2. reaction: one short, warm, specific sentence about what they said, in your own voice. Do not repeat the correction.
-3. ${isLast ? 'question: instead of a new question, one or two short sentences that close the lesson warmly and say their report is ready.' : 'question: exactly one new question that follows naturally from their answer and stays on the topic. Keep it short for their level.'}
+3. ${isLast ? 'question: instead of a new question, one or two short sentences that close the lesson warmly and say their report is ready.' : 'question: exactly one new question that follows naturally from their answer and stays on the topic. Keep it short for their level.' + (T.level !== 'starter' ? ' If their answer was very short (four English words or fewer), make the question invite one more detail, such as why, how or an example.' : '')}
 4. hint: ${isLast ? 'an empty string.' : 'the first 4-8 words of a possible answer to your new question, ending with "...".'}
 Write every Korean field in natural, friendly Korean (해요체), not word for word.
 
 Reply with only this JSON object:
-{"correction": null or {"corrected": "...", "tip_en": "why, in one short sentence", "tip_ko": "the same tip in Korean"}, "reaction_en": "...", "reaction_ko": "...", "question_en": "...", "question_ko": "...", "hint_en": "..."}`;
+{"correction": null or {"corrected": "...", "corrected_ko": "...", "category": "...", "hint_ko": "...", "tip_en": "why, in one short sentence", "tip_ko": "the same tip in Korean"}, "reaction_en": "...", "reaction_ko": "...", "question_en": "...", "question_ko": "...", "hint_en": "..."}`;
 }
 async function askTurn(turn, isLast, easier) {
   await S.capsReady;
@@ -923,7 +1111,9 @@ async function askTurn(turn, isLast, easier) {
   if (!r || typeof r !== 'object') throw { code:'invalid_json' };
   let correction = null;
   if (!easier && r.correction && typeof r.correction === 'object' && str(r.correction.corrected)) {
-    correction = { corrected:str(r.correction.corrected), tip_en:str(r.correction.tip_en), tip_ko:str(r.correction.tip_ko) };
+    const c = r.correction, cat = str(c.category);
+    correction = { corrected:str(c.corrected), corrected_ko:str(c.corrected_ko), category:CATEGORIES[cat] ? cat : 'other',
+      hint_ko:str(c.hint_ko), tip_en:str(c.tip_en), tip_ko:str(c.tip_ko) };
     if (hasLatin(turn.answer) && tokens(correction.corrected).map(nk).join(' ') === tokens(turn.answer).map(nk).join(' ')) correction = null;
   }
   const out = { correction, reaction_en:str(r.reaction_en), reaction_ko:str(r.reaction_ko),
@@ -958,6 +1148,7 @@ async function requestSummary(sess) {
     sess.summary = { summary_ko:str(r.summary_ko), strengths_ko:arr(r.strengths_ko), focus_ko:arr(r.focus_ko),
       expressions:(Array.isArray(r.expressions) ? r.expressions : []).map(x => ({ en:str(x && x.en), ko:str(x && x.ko) })).filter(x => x.en).slice(0, 6) };
     sess.summaryState = 'ok';
+    addReviewItems(sess.summary.expressions.filter(x => x.ko).map((x, j) => newItem(sess.id, 'x' + j, 'expr', x.ko, x.en, x.ko, '', sess.topicId)));
   } catch (e) {
     sess.summaryState = 'failed';
     sess.summaryError = e?.code === 'rate_limited' ? '요청이 많아 총평을 만들지 못했어요. 조금 뒤에 다시 시도해 주세요.'
@@ -981,29 +1172,75 @@ function questionBank(tp) {
   const pool = TOPICS.filter(t => ['intro', 'hobby', 'travel', 'food', 'daily', 'movies'].includes(t.id)).flatMap(t => t.qs);
   return shuffle(pool).slice(0, 12);
 }
+const SELF_LINE = ['Almost! Can you fix one part and say it again?', '거의 맞았어요! 한 군데만 고쳐서 다시 말해 볼까요?'];
+const SELF_OK = ["That's it! You fixed it yourself.", '바로 그거예요! 스스로 고쳤어요.'];
 const bankQ = (q, pre_en, pre_ko) => ({ kind:'question', pre_en, pre_ko, q_en:q[0], q_ko:q[1], hint:q[2], hintLabel:'예시 답변', model:q[2] });
-const lineEn = cur => !cur ? '' : cur.kind === 'correction' ? `You should say, "${cur.corrected}"` : [cur.pre_en, cur.q_en].filter(Boolean).join(' ');
+const lineEn = cur => !cur ? '' : cur.kind === 'correction'
+  ? (cur.revealed === false ? SELF_LINE[0] : `You should say, "${cur.corrected}"`)
+  : [cur.pre_en, cur.q_en].filter(Boolean).join(' ');
 
-function startLesson(topicId, coachId) {
+function startClock() {
+  clearInterval(clock);
+  clock = setInterval(() => { if (T && R && R.time) R.time.textContent = fmtClock(elapsed()); }, 1000);
+}
+function startLesson(topicId, coachId, force) {
+  if (!force && S.resume && !S.resume.turns.length) clearLessonDraft();
+  if (!force && S.resume) {                 // never overwrite a paused lesson with answers without asking
+    const o = S.resume, tp0 = topicById(o.topicId);
+    openSheet('멈춘 수업이 있어요', () => [
+      h('p', { class:'meta' }, `${tp0.ko} 수업에서 ${o.turns.length}번 대답하고 멈췄어요. 새 수업을 시작하면 멈춘 수업은 ${o.turns.length ? '지금까지의 대답으로 리포트를 만들고 끝내요' : '사라져요'}.`),
+      h('div', { class:'btn-col' },
+        h('button', { class:'btn btn-primary btn-block', onclick:() => { closeSheet(); resumeLesson(); } }, '멈춘 수업 이어 하기'),
+        h('button', { class:'btn btn-ghost btn-block', onclick:() => { closeSheet(); endPaused(true); startLesson(topicId, coachId, true); } }, '새 수업 시작하기')),
+    ]);
+    return;
+  }
   const tp = topicById(topicId), c = coachById(coachId || S.profile.coachId), L = levelById(S.profile.level);
   const bank = questionBank(tp);
   const mode = S.aiState === 'off' ? 'practice' : 'ai';
   const pre_en = c.greet[0] + ' ' + (tp.intro ? tp.intro[0] : c.greet[2].replace('{t}', tp.about));
   const pre_ko = c.greet[1] + ' ' + (tp.intro ? tp.intro[1] : c.greet[3].replace('{t}', tp.aboutKo));
-  T = { id:newId(), topicId:tp.id, coachId:c.id, level:L.id, mode, startedAt:Date.now(),
+  T = { id:newId(), topicId:tp.id, coachId:c.id, level:L.id, mode, startedAt:Date.now(), activeMs:0, resumedAt:Date.now(),
     target: mode === 'practice' ? Math.min(S.profile.lessonLen, bank.length) : S.profile.lessonLen,
     bank, bankPos:1, turns:[], cur:bankQ(bank[0], pre_en, pre_ko), next:null,
     phase:'await', showKo:S.profile.showKo, showHint:false, input:Mic.ok ? 'voice' : 'text', inputAuto:true,
-    ansLang:'en', draft:'', repeatDraft:'', repeat:null, error:null, failed:null, notice:'', ctl:null };
+    ansLang:'en', draft:'', repeatDraft:'', repeat:null, selfMiss:null, error:null, failed:null, pending:null, notice:'', ctl:null };
+  S.resume = null;
   S.view = 'talk';
   render();
   Voice.speak(lineEn(T.cur), c, L.id);            // inside the tap, so browser voices are allowed to start
-  clearInterval(clock);
-  clock = setInterval(() => { if (T && R) R.time.textContent = fmtClock(Date.now() - T.startedAt); }, 1000);
+  startClock();
+}
+// A lesson saved in this browser (after a reload or an app switch) comes back where it stopped.
+function restoreLesson(o) {
+  const t = { ...o, activeMs:o.activeMs || 0, resumedAt:Date.now(), input:Mic.ok ? 'voice' : 'text', inputAuto:true, showHint:false,
+    repeatDraft:'', error:null, failed:null, pending:null, notice:'', ctl:null };
+  delete t.v; delete t.savedAt;
+  if (t.draft) { t.input = 'text'; t.inputAuto = false; }   // a half-written answer must stay visible
+  return t;
+}
+function resumeLesson() {
+  const o = S.resume || loadLessonDraft();
+  if (!o) return;
+  T = restoreLesson(o);
+  S.resume = null;
+  if (T.mode === 'ai' && S.aiState === 'off') toPractice(true);
+  S.view = 'talk';
+  render();
+  if (T.phase !== 'done') Voice.speak(lineEn(T.cur));
+  startClock();
+}
+// Close a paused lesson without opening it: answers become a report, an empty one is dropped.
+function endPaused(silent) {
+  const o = S.resume;
+  if (!o) return;
+  if (!o.turns.length) { clearLessonDraft(); if (!silent) render(); return; }
+  T = restoreLesson(o);
+  finishLesson(silent);
 }
 
 function newTurn(answer) {
-  return { q_en:T.cur.q_en, q_ko:T.cur.q_ko || '', answer, correction:null, reaction_en:'', reaction_ko:'', repeat:null,
+  return { q_en:T.cur.q_en, q_ko:T.cur.q_ko || '', answer, correction:null, reaction_en:'', reaction_ko:'', repeat:null, selfFix:null,
     model:T.cur.model || null, hint:T.cur.model ? null : (T.cur.hint || null) };
 }
 async function submitAnswer(text) {
@@ -1024,27 +1261,32 @@ async function submitAnswer(text) {
     applyTurn(turn, r, isLast);
   } catch (e) {
     if (T !== lesson || e?.code === 'cancelled') return;
+    T.pending = null;
     if (PERMANENT.includes(e?.code)) { S.aiState = 'off'; toPractice(true); practiceAnswer(turn, isLast); return; }
     T.phase = 'error'; T.failed = turn; T.error = aiErrorText(e?.code);
     paintTalk();
   }
 }
+// Self-repair first (prompt, then the answer if needed) for learners past the starter level.
+const wantsSelfFix = (turn, c) => S.profile.selfFix && T.level !== 'starter' && hasLatin(turn.answer) && !['korean', 'fragment'].includes(c.category);
 function applyTurn(turn, r, isLast) {
   turn.correction = r.correction; turn.reaction_en = r.reaction_en; turn.reaction_ko = r.reaction_ko;
   T.turns.push(turn); T.pending = null;
   T.next = { kind:isLast ? 'closing' : 'question', pre_en:r.reaction_en, pre_ko:r.reaction_ko, q_en:r.question_en, q_ko:r.question_ko,
     hint:r.hint_en, hintLabel:'이렇게 시작해 보세요', model:null };
   if (turn.correction) {
-    T.cur = { kind:'correction', corrected:turn.correction.corrected, tip_en:turn.correction.tip_en, tip_ko:turn.correction.tip_ko, original:turn.answer, q_en:turn.q_en };
-    T.phase = 'correction'; T.repeat = null; T.repeatDraft = '';
+    const c = turn.correction, self = wantsSelfFix(turn, c);
+    T.cur = { kind:'correction', corrected:c.corrected, corrected_ko:c.corrected_ko || '', tip_en:c.tip_en, tip_ko:c.tip_ko,
+      hint_ko:c.hint_ko || '', category:c.category || '', original:turn.answer, q_en:turn.q_en, revealed:!self };
+    T.phase = self ? 'selffix' : 'correction'; T.repeat = null; T.repeatDraft = ''; T.selfMiss = null;
     paintTalk();
     Voice.speak(lineEn(T.cur));
   } else advance();
 }
 function advance() {
-  if (!T) return;
+  if (!T || !T.next) return;
   Mic.cancel();
-  T.cur = T.next; T.next = null; T.repeat = null; T.repeatDraft = '';
+  T.cur = T.next; T.next = null; T.repeat = null; T.repeatDraft = ''; T.selfMiss = null;
   T.phase = T.cur.kind === 'closing' ? 'done' : 'await';
   paintTalk();
   Voice.speak(lineEn(T.cur));
@@ -1060,7 +1302,7 @@ function practiceAnswer(turn, isLast) {
   paintTalk();
 }
 function practiceNext() {
-  if (!T) return;
+  if (!T || T.phase !== 'model') return;
   const pre = pick(PRACTICE_PRE);
   if (T.turns.length >= T.target || T.bankPos >= T.bank.length) {
     T.cur = { kind:'closing', pre_en:pre[0], pre_ko:pre[1], q_en:"That's the end of today's practice. Let's look at your answers together.", q_ko:'오늘 연습은 여기까지예요. 내 대답을 함께 확인해 봐요.' };
@@ -1074,6 +1316,7 @@ function practiceNext() {
   Voice.speak(lineEn(T.cur));
 }
 function skipFailed() {
+  if (!T || T.phase !== 'error') return;
   const turn = T.failed; T.failed = null; T.error = null;
   if (turn) { T.turns.push(turn); }
   const isLast = T.turns.length >= T.target;
@@ -1086,6 +1329,11 @@ function skipFailed() {
   }
   paintTalk();
   Voice.speak(lineEn(T.cur));
+}
+function retryFailed() {
+  if (!T || T.phase !== 'error') return;
+  const t = T.failed; T.failed = null; T.phase = 'await';
+  submitAnswer(t ? t.answer : '');
 }
 async function askEasier() {
   if (!T || T.phase !== 'await' || T.mode !== 'ai') return;
@@ -1104,16 +1352,45 @@ async function askEasier() {
     toast('지금은 쉬운 질문을 만들지 못했어요. 해석을 보고 대답해 보세요.');
   }
 }
+const scoreOf = (text, target) => Math.round(similarity(text, target) * 100) / 100;
 function checkRepeat(text) {
-  if (!T || T.cur.kind !== 'correction') return;
+  if (!T || T.cur.kind !== 'correction' || T.cur.revealed === false) return;
   text = String(text || '').trim();
   if (!text) return;
-  const score = Math.round(similarity(text, T.cur.corrected) * 100) / 100;
+  const score = scoreOf(text, T.cur.corrected);
   T.repeat = { text, score };
   const last = T.turns[T.turns.length - 1];
   if (last) last.repeat = { text, score };
   T.repeatDraft = ''; T.phase = 'repeat-result';
   paintTalk();
+}
+function checkSelfFix(text) {
+  if (!T || T.cur.kind !== 'correction' || T.cur.revealed !== false) return;
+  text = String(text || '').trim();
+  if (!text) return;
+  const score = scoreOf(text, T.cur.corrected), ok = score >= 0.85;
+  const last = T.turns[T.turns.length - 1];
+  if (last) last.selfFix = { text, score, ok };
+  T.cur.revealed = true; T.repeatDraft = '';
+  if (ok) {
+    T.repeat = { text, score, self:true }; T.selfMiss = null; T.phase = 'repeat-result';
+    if (last) last.repeat = { text, score };
+    paintTalk();
+    Voice.speak(SELF_OK[0]);
+  } else {
+    T.selfMiss = { text, score }; T.repeat = null; T.phase = 'correction';
+    paintTalk();
+    Voice.speak(lineEn(T.cur));
+  }
+}
+function revealCorrection() {
+  if (!T || T.cur.kind !== 'correction' || T.cur.revealed !== false) return;
+  Mic.cancel();
+  const last = T.turns[T.turns.length - 1];
+  if (last && !last.selfFix) last.selfFix = { text:'', score:0, ok:false, skipped:true };
+  T.cur.revealed = true; T.phase = 'correction'; T.repeatDraft = ''; T.selfMiss = null;
+  paintTalk();
+  Voice.speak(lineEn(T.cur));
 }
 
 /* mic orb */
@@ -1121,27 +1398,29 @@ function onOrb() {
   if (!T || !Mic.ok) return;
   const P = T.phase;
   if (P === 'await') { Mic.start('answer'); T.phase = 'listening'; T.showHint = false; paintTalk(); }
+  else if (P === 'selffix') { Mic.start('self'); T.phase = 'self-listen'; paintTalk(); }
   else if (P === 'correction' || P === 'repeat-result') { Mic.start('repeat'); T.phase = 'repeat-listen'; T.repeat = null; paintTalk(); }
   else if (P === 'listening') finishListening('answer');
   else if (P === 'repeat-listen') finishListening('repeat');
+  else if (P === 'self-listen') finishListening('self');
 }
 async function finishListening(kind) {
+  if (Mic.stopping) return;                 // a second tap while the first one is still closing the mic
   const lesson = T;
   const text = await Mic.finish();
   if (T !== lesson) return;
   if (!text) {
-    T.phase = kind === 'answer' ? 'await' : 'correction';
+    T.phase = kind === 'answer' ? 'await' : kind === 'self' ? 'selffix' : 'correction';
     paintTalk();
     toast('목소리가 잘 들리지 않았어요. 다시 말해 볼까요?');
     return;
   }
-  if (kind === 'answer') submitAnswer(text);
-  else checkRepeat(text);
+  routeMicText(kind, text);
 }
 function cancelListening() {
   Mic.cancel();
   if (!T) return;
-  T.phase = T.phase === 'repeat-listen' ? 'correction' : 'await';
+  T.phase = T.phase === 'repeat-listen' ? 'correction' : T.phase === 'self-listen' ? 'selffix' : 'await';
   paintTalk();
 }
 
@@ -1149,32 +1428,65 @@ function cancelListening() {
 function stopLessonIO() {
   Voice.stop(); Mic.cancel(); T?.ctl?.abort(); clearInterval(clock); clock = null;
 }
-function exitLesson() { stopLessonIO(); T = null; R = null; go('home'); }
-function finishLesson() {
+function exitLesson() { stopLessonIO(); T = null; R = null; clearLessonDraft(); go('home'); }
+function lessonReviewItems(sess) {
+  const items = [];
+  sess.turns.forEach((t, i) => {
+    const c = t.correction;
+    if (!c || !c.corrected) return;
+    if (hasLatin(t.answer)) items.push(newItem(sess.id, i, 'fix', t.answer, c.corrected, c.corrected_ko, c.tip_ko || c.tip_en, sess.topicId));
+    else items.push(newItem(sess.id, i, 'expr', c.corrected_ko || t.answer, c.corrected, c.corrected_ko || t.answer, c.tip_ko || c.tip_en, sess.topicId));
+  });
+  return items;
+}
+function finishLesson(silent) {
   if (!T) return;
   stopLessonIO();
+  if (T.pending) { T.turns.push(T.pending); T.pending = null; }          // an answer still being checked is kept as said
+  if (T.failed) { T.turns.push(T.failed); T.failed = null; }
   const end = Date.now();
   const sess = { id:T.id, v:1, topicId:T.topicId, coachId:T.coachId, level:T.level, mode:T.mode,
-    startedAt:T.startedAt, endedAt:end, durationSec:Math.round((end - T.startedAt) / 1000),
-    turns:T.turns.map(t => ({ q_en:t.q_en, q_ko:t.q_ko, answer:t.answer, correction:t.correction, reaction_en:t.reaction_en, reaction_ko:t.reaction_ko, repeat:t.repeat, model:t.model })),
+    startedAt:T.startedAt, endedAt:end, durationSec:Math.round(elapsed() / 1000),
+    turns:T.turns.map(t => ({ q_en:t.q_en, q_ko:t.q_ko, answer:t.answer, correction:t.correction, reaction_en:t.reaction_en,
+      reaction_ko:t.reaction_ko, repeat:t.repeat, selfFix:t.selfFix || null, model:t.model })),
     summary:null, summaryState:(T.mode === 'ai' && T.turns.length) ? 'pending' : 'none' };
   T = null; R = null;
+  clearLessonDraft();
   Store.saveSession(sess);
+  addReviewItems(lessonReviewItems(sess));
+  if (silent) { if (sess.summaryState === 'pending') requestSummary(sess); return; }
   S.reportId = sess.id; S.reportFrom = 'home';
   go('report');
   if (sess.summaryState === 'pending') requestSummary(sess);
 }
 function confirmExit() {
   if (!T) return go('home');
-  if (!T.turns.length) { exitLesson(); return; }
+  const n = T.turns.length + (T.pending ? 1 : 0) + (T.failed ? 1 : 0);
+  if (!n) { exitLesson(); return; }
   openSheet('수업을 끝낼까요?', () => [
-    h('p', { class:'meta' }, `지금까지 ${T ? T.turns.length : 0}번 대답했어요. 여기서 끝내도 지금까지의 리포트를 볼 수 있어요.`),
+    h('p', { class:'meta' }, `지금까지 ${n}번 대답했어요. 여기서 끝내도 지금까지의 리포트를 볼 수 있어요.`
+      + (T && T.phase === 'thinking' ? ' 코치가 살펴보던 마지막 대답은 교정 없이 기록돼요.' : '')),
     h('div', { class:'btn-col' },
       h('button', { class:'btn btn-primary btn-block', onclick:() => { closeSheet(); finishLesson(); } }, '끝내고 리포트 보기'),
       h('button', { class:'btn btn-ghost btn-block', onclick:closeSheet }, '계속하기'),
       h('button', { class:'btn btn-text btn-block', onclick:() => { closeSheet(); exitLesson(); } }, '기록하지 않고 나가기')),
   ]);
 }
+function openTranscript() {
+  if (!T) return;
+  openSheet('지금까지의 대화', () => {
+    const turns = T ? T.turns : [];
+    if (!turns.length) return h('p', { class:'meta' }, '아직 대답한 질문이 없어요.');
+    return h('div', { class:'tr' }, turns.map(t => [
+      h('p', { class:'tr-c' }, t.q_en),
+      h('p', { class:'tr-u' }, t.answer),
+      t.correction && (t.correction.corrected && (!T || T.cur.kind !== 'correction' || T.cur.revealed !== false || t !== T.turns[T.turns.length - 1]))
+        ? h('p', { class:'tr-u', style:'color:var(--good)' }, '→ ' + t.correction.corrected) : null]));
+  });
+}
+// Keep the paused point fresh when the page goes away (app switch, tab close, reload).
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveLessonDraft(); });
+window.addEventListener('pagehide', saveLessonDraft);
 
 /* ───────────────────────── views ───────────────────────── */
 
@@ -1185,10 +1497,12 @@ function go(view) {
 }
 function render() {
   const app = $('#app');
-  const views = { home:viewHome, coach:viewCoach, talk:viewTalk, report:viewReport, history:viewHistory };
+  const views = { home:viewHome, coach:viewCoach, talk:viewTalk, report:viewReport, history:viewHistory, review:viewReview, onboard:viewOnboard };
   if (S.view === 'talk' && !T) S.view = 'home';
+  if (S.view === 'review' && !RV) S.view = 'home';
   app.replaceChildren(views[S.view]());
   if (S.view === 'talk') paintTalk();
+  if (S.view === 'review') paintReview();
   if (S.sheet) app.append(S.sheet.el);
   document.querySelectorAll('.ava-live').forEach(el => el.classList.toggle('speaking', Voice.speaking));
 }
@@ -1224,6 +1538,8 @@ function viewHome() {
           h('p', { class:'today-big num' }, `${mins}분`, h('small', {}, ` / ${goal}분`)),
           st ? h('p', { class:'streak', html:icon('flame', 15) + `<span>${st}일 연속 공부 중</span>` })
              : h('p', { class:'meta' }, '오늘 첫 수업을 시작해 보세요'))),
+      S.resume ? resumeCard() : null,
+      reviewCard(),
       h('button', { class:'coach-card', onclick:() => { S.coachPick = null; go('coach'); }, 'aria-label':`코치 변경, 지금은 ${c.ko}` },
         h('div', { class:'ava-sm', html:avatarSVG(c) }),
         h('div', { class:'cc-text' },
@@ -1242,6 +1558,7 @@ function viewHome() {
           h('span', { class:'t-ko' }, t.ko),
           h('span', { class:'t-blurb' }, t.blurb),
           t.badge ? h('span', { class:'t-badge' }, t.badge) : null))),
+      recordsCard(),
       h('div', { class:'sec-head' },
         h('h2', { class:'sec-title' }, '학습 내역'),
         S.sessions.length ? h('button', { class:'link', onclick:() => go('history') }, '전체 보기') : null),
@@ -1250,6 +1567,57 @@ function viewHome() {
             h('b', {}, '아직 수업 기록이 없어요'),
             h('p', { class:'meta' }, '수업을 마치면 내가 한 말과 교정한 문장이 담긴 리포트가 여기에 쌓여요.'),
             h('button', { class:'link', onclick:() => { S.reportId = 'example'; S.reportFrom = 'home'; go('report'); } }, '예시 리포트 보기 →'))));
+}
+function resumeCard() {
+  const o = S.resume, tp = topicById(o.topicId);
+  return h('section', { class:'resume', 'aria-label':'멈춘 수업' },
+    h('div', {},
+      h('b', {}, `${tp.ko} 수업을 하다 멈췄어요`),
+      h('p', { class:'meta num' }, `대답 ${o.turns.length}/${o.target} · ${fmtTime(o.savedAt)}에 저장됨`)),
+    h('div', { class:'btn-row' },
+      h('button', { class:'btn btn-ghost', onclick:() => { const had = o.turns.length; endPaused(false); if (!had) toast('멈춘 수업을 지웠어요.'); } },
+        o.turns.length ? '여기서 끝내기' : '지우기'),
+      h('button', { class:'btn btn-primary', onclick:() => resumeLesson() }, '이어 하기')));
+}
+function reviewCard() {
+  if (!S.review.length) return null;
+  const due = dueItems().length;
+  if (due) return h('button', { class:'review-card', onclick:startReview, 'aria-label':`오늘 복습할 문장 ${due}개` },
+    h('span', { class:'rv-n num' }, Math.min(due, 99)),
+    h('span', { class:'rv-text' },
+      h('b', {}, '오늘 복습할 문장'),
+      h('span', { class:'meta' }, `지난 수업에서 교정한 문장을 다시 말해 봐요 · ${Math.min(due, REVIEW_BATCH)}문장`)),
+    h('span', { class:'meta', html:icon('chev', 18) }));
+  const next = Math.min(...S.review.map(i => i.due));
+  return h('div', { class:'review-card quiet' },
+    h('span', { class:'rv-n num', html:icon('check', 26) }),
+    h('span', { class:'rv-text' },
+      h('b', {}, '오늘 복습은 끝났어요'),
+      h('span', { class:'meta' }, `다음 복습 ${fmtDate(next)} · 복습 카드 ${S.review.length}개`)));
+}
+function categoryCounts(sessions) {
+  const n = {};
+  for (const s of sessions) for (const t of s.turns) {
+    const c = t.correction && t.correction.category;
+    if (c && c !== 'other' && CATEGORIES[c]) n[c] = (n[c] || 0) + 1;
+  }
+  return Object.entries(n).sort((a, b) => b[1] - a[1]);
+}
+const recRow = (k, v) => h('div', { class:'rec-row' }, h('span', {}, k), h('span', { class:'num' }, v));
+function recordsCard() {
+  const ai = S.sessions.filter(s => s.mode === 'ai' && s.turns.length);
+  if (!ai.length) return null;
+  const recent = ai.slice(0, 5), nums = recent.map(sessionNumbers);
+  const answers = nums.reduce((n, x) => n + x.answers, 0), words = nums.reduce((n, x) => n + x.words, 0), fixes = nums.reduce((n, x) => n + x.fixes, 0);
+  const total = S.sessions.reduce((n, s) => n + sessionNumbers(s).words, 0);
+  const cats = categoryCounts(ai.slice(0, 10));
+  return h('section', { class:'card records', 'aria-label':'나의 기록' },
+    h('h2', {}, '나의 기록'),
+    recRow('지금까지 영어로 말한 단어', `${total.toLocaleString()}개`),
+    recRow(`최근 ${recent.length}번 수업 · 대답 하나의 길이`, `평균 ${(words / answers).toFixed(1)}단어`),
+    recRow(`최근 ${recent.length}번 수업 · 교정받은 대답`, `${fixes}/${answers}`),
+    cats.length ? [h('p', { class:'eyebrow' }, '자주 교정된 부분 · 최근 10번 수업'),
+      h('div', { class:'tags' }, cats.slice(0, 4).map(([k, v]) => h('span', { class:'tag' }, CATEGORIES[k], h('b', {}, v))))] : null);
 }
 function histRow(s) {
   const c = coachById(s.coachId), tp = topicById(s.topicId);
@@ -1298,7 +1666,7 @@ function viewTalk() {
       h('div', { class:'tt-mid' },
         h('div', { class:'tt-topic' }, tp.ko, ' ', R.count = h('span', { class:'num' })),
         h('div', { class:'prog', role:'progressbar', 'aria-label':'수업 진행' }, R.prog = h('i'))),
-      R.time = h('span', { class:'tt-time num' }, fmtClock(Date.now() - T.startedAt)),
+      R.time = h('span', { class:'tt-time num' }, fmtClock(elapsed())),
       R.vol = h('button', { class:'iconbtn', onclick:toggleVoice })),
     R.line = h('section', { class:'coach-line', 'aria-live':'polite' }),
     h('section', { class:'stage' },
@@ -1309,6 +1677,7 @@ function viewTalk() {
     R.ctl = h('footer', { class:'controls' }));
 }
 const inputMode = () => (T.input === 'voice' && Mic.ok) ? 'voice' : 'text';
+const MOBILE_VOICE_TIP = '말로 하고 싶다면 휴대폰 키보드를 영어로 바꾸고 키보드의 마이크를 눌러 보세요. 그대로 받아 적혀요.';
 function paintTalk() {
   if (!T || !R || S.view !== 'talk') return;
   R.count.textContent = `${Math.min(T.turns.length, T.target)}/${T.target}`;
@@ -1320,14 +1689,20 @@ function paintTalk() {
   R.vol.setAttribute('aria-label', vOn ? '코치 목소리 끄기' : '코치 목소리 켜기');
   R.vol.hidden = !Voice.usable();
   paintLine(); paintCaption(); paintBubble(); paintCard(); paintControls();
+  saveLessonDraft();
 }
 function paintLine() {
   const cur = T.cur, L = R.line;
   L.replaceChildren();
-  if (cur.kind === 'correction') {
-    L.append(h('span', { class:'cl-tag' }, '이렇게 말해 보세요'),
+  if (cur.kind === 'correction' && cur.revealed === false) {
+    L.append(h('span', { class:'cl-tag' }, '스스로 고쳐 볼까요?'),
+      h('p', { class:'cl-en' }, SELF_LINE[0]));
+    if (T.showKo) L.append(h('p', { class:'cl-ko' }, SELF_LINE[1]));
+  } else if (cur.kind === 'correction') {
+    const cat = cur.category && cur.category !== 'other' ? CATEGORIES[cur.category] : '';
+    L.append(h('span', { class:'cl-tag' }, '이렇게 말해 보세요' + (cat ? ' · ' + cat : '')),
       h('p', { class:'cl-en' }, 'You should say, “', h('span', { class:'fix' }, cur.corrected), '”'));
-    if (T.showKo) L.append(h('p', { class:'cl-ko' }, `“${cur.corrected}” 라고 말하면 더 자연스러워요.`));
+    if (T.showKo) L.append(h('p', { class:'cl-ko' }, cur.corrected_ko ? '뜻: ' + cur.corrected_ko : `“${cur.corrected}” 라고 말하면 더 자연스러워요.`));
     if (cur.tip_en || cur.tip_ko) L.append(h('p', { class:'cl-tip' }, cur.tip_en || cur.tip_ko,
       T.showKo && cur.tip_ko && cur.tip_en ? h('span', {}, cur.tip_ko) : null));
   } else {
@@ -1336,22 +1711,28 @@ function paintLine() {
     const ko = [cur.pre_ko, cur.q_ko].filter(Boolean).join(' ');
     if (T.showKo && ko) L.append(h('p', { class:'cl-ko' }, ko));
   }
+  const on = Voice.on();
   L.append(h('div', { class:'cl-tools' },
-    Voice.on() ? h('button', { class:'chip', html:iconLabel('vol', '다시 듣기'), onclick:() => Voice.speak(lineEn(T.cur)) }) : null,
+    on ? h('button', { class:'chip', html:iconLabel('vol', '다시 듣기'), onclick:() => Voice.speak(lineEn(T.cur)) }) : null,
+    on ? h('button', { class:'chip', html:iconLabel('slow', '천천히'), onclick:() => Voice.speak(lineEn(T.cur), null, null, true) }) : null,
     h('button', { class:'chip' + (T.showKo ? ' on' : ''), 'aria-pressed':String(T.showKo),
-      onclick:() => { T.showKo = !T.showKo; paintLine(); } }, T.showKo ? '해석 숨기기' : '해석 보기')));
+      onclick:() => { T.showKo = !T.showKo; paintLine(); } }, T.showKo ? '해석 숨기기' : '해석 보기'),
+    T.turns.length ? h('button', { class:'chip', html:iconLabel('list', '지난 대화'), onclick:openTranscript }) : null));
   L.scrollTop = 0;
 }
 function paintCaption() {
   if (!R || !T) return;
-  const c = coachById(T.coachId);
+  const c = coachById(T.coachId), speaking = Voice.speaking ? `${c.subj} 이야기하고 있어요` : '';
+  const voice = inputMode() === 'voice';
   const map = {
-    await: Voice.speaking ? `${c.subj} 이야기하고 있어요` : (inputMode() === 'voice' ? '마이크를 누르고 영어로 대답해 보세요' : '아래 칸에 대답을 적어 보세요'),
+    await: speaking || (voice ? '마이크를 누르고 영어로 대답해 보세요' : '아래 칸에 대답을 적어 보세요'),
     listening: '듣고 있어요 · 다 말했으면 체크를 누르세요',
     thinking: `${c.subj} 대답을 살펴보고 있어요…`,
-    correction: Voice.speaking ? `${c.subj} 이야기하고 있어요` : '교정된 문장을 따라 말해 보세요',
+    selffix: speaking || (voice ? '어색한 곳을 고쳐서 다시 말해 보세요' : '어색한 곳을 고쳐서 다시 적어 보세요'),
+    'self-listen': '고친 문장을 말해 보세요 · 다 말했으면 체크를 누르세요',
+    correction: speaking || (T.selfMiss ? '코치의 문장과 비교하고 따라 말해 보세요' : '교정된 문장을 따라 말해 보세요'),
     'repeat-listen': '교정된 문장을 따라 말해 보세요',
-    'repeat-result': '따라 말하기 결과예요',
+    'repeat-result': T.repeat?.self ? '스스로 고친 결과예요' : '따라 말하기 결과예요',
     model: '모범 답안과 내 대답을 비교해 보세요',
     error: '잠시 문제가 생겼어요',
     done: '오늘 수업 끝! 리포트를 확인해 보세요',
@@ -1363,12 +1744,13 @@ function paintBubble() {
   const B = R.bubble, P = T.phase;
   B.replaceChildren(); B.classList.remove('live');
   let show = true;
-  if (P === 'listening' || P === 'repeat-listen') {
+  if (P === 'listening' || P === 'repeat-listen' || P === 'self-listen') {
     const t = Mic.text();
     B.classList.add('live');
-    B.append(t ? t : h('span', { class:'ph' }, P === 'listening' ? '말하는 내용이 여기에 보여요' : '따라 말한 내용이 여기에 보여요'));
+    B.append(t ? t : h('span', { class:'ph' }, P === 'listening' ? '말하는 내용이 여기에 보여요' : P === 'self-listen' ? '고쳐 말한 내용이 여기에 보여요' : '따라 말한 내용이 여기에 보여요'));
   } else if (P === 'thinking' && T.pending) B.append(T.pending.answer);
   else if (P === 'error' && T.failed) B.append(T.failed.answer);
+  else if (P === 'selffix' && T.cur.kind === 'correction') B.append(T.cur.original);
   else if (P === 'correction' && T.cur.kind === 'correction') B.append(diffView(T.cur.original, T.cur.corrected, 'a'));
   else if (P === 'repeat-result' && T.repeat) B.append(T.repeat.text);
   else if (P === 'model') B.append(T.turns[T.turns.length - 1]?.answer || '');
@@ -1376,7 +1758,7 @@ function paintBubble() {
   B.hidden = !show;
 }
 function paintCard() {
-  const C = R.card, P = T.phase;
+  const C = R.card, P = T.phase, cur = T.cur;
   C.replaceChildren();
   let show = true;
   if (P === 'model') {
@@ -1386,16 +1768,30 @@ function paintCard() {
       Voice.on() ? h('div', {}, h('button', { class:'chip', html:iconLabel('vol', '들어 보기'), onclick:() => Voice.speak(t.model) })) : null);
     else if (t?.hint) C.append(h('p', { class:'rc-lbl' }, '이렇게 시작해 볼 수 있어요'), h('p', { class:'rc-text' }, t.hint));
     else C.append(h('p', { class:'rc-sub' }, '이 질문에는 준비된 모범 답안이 없어요.'));
+  } else if ((P === 'selffix' || P === 'self-listen') && cur.kind === 'correction') {
+    const cat = cur.category && cur.category !== 'other' ? CATEGORIES[cur.category] : '';
+    C.append(h('p', { class:'rc-lbl' }, '힌트' + (cat ? ' · ' + cat : '')),
+      h('p', { class:'rc-title' }, cur.hint_ko || '위 내 대답에서 어색한 부분을 한 군데 찾아 고쳐 보세요.'),
+      h('p', { class:'rc-sub' }, '모르겠으면 ‘정답 보기’를 눌러도 괜찮아요.'));
+  } else if (P === 'correction' && T.selfMiss) {
+    C.append(h('p', { class:'rc-title' }, '코치가 생각한 문장과 조금 달라요'),
+      h('p', { class:'rc-lbl' }, '내가 고친 문장'), h('p', { class:'rc-text' }, T.selfMiss.text),
+      h('p', { class:'rc-sub' }, '위의 교정 문장과 비교해 보고, 그대로 따라 말해 보세요.'));
   } else if (P === 'repeat-result' && T.repeat) {
     const sc = T.repeat.score;
-    C.append(h('p', { class:'rc-title' + (sc >= 0.85 ? ' good' : '') },
-      sc >= 0.85 ? '완벽해요! 교정된 문장 그대로 말했어요.' : sc >= 0.6 ? '거의 맞았어요. 표시한 단어를 확인해 보세요.' : '한 번 더 들어 보고 따라 해 볼까요?'));
-    if (sc < 0.85) C.append(h('p', { class:'rc-sub' }, '표시한 단어가 빠졌거나 다르게 들렸어요'),
-      h('p', { class:'rc-text' }, diffView(T.repeat.text, T.cur.corrected, 'b')));
+    if (T.repeat.self) {
+      C.append(h('p', { class:'rc-title good' }, '스스로 고쳤어요! 코치가 생각한 문장과 같아요.'),
+        cur.tip_ko || cur.tip_en ? h('p', { class:'rc-sub' }, cur.tip_ko || cur.tip_en) : null);
+    } else {
+      C.append(h('p', { class:'rc-title' + (sc >= 0.85 ? ' good' : '') },
+        sc >= 0.85 ? '완벽해요! 교정된 문장 그대로 말했어요.' : sc >= 0.6 ? '거의 맞았어요. 표시한 단어를 확인해 보세요.' : '한 번 더 들어 보고 따라 해 볼까요?'));
+      if (sc < 0.85) C.append(h('p', { class:'rc-sub' }, '표시한 단어가 빠졌거나 다르게 들렸어요'),
+        h('p', { class:'rc-text' }, diffView(T.repeat.text, cur.corrected, 'b')));
+    }
   } else if (P === 'error') {
     C.append(h('p', { class:'rc-title' }, T.error || '문제가 생겼어요.'));
-  } else if (P === 'await' && T.showHint && T.cur.hint) {
-    C.append(h('p', { class:'rc-lbl' }, T.cur.hintLabel || '힌트'), h('p', { class:'rc-text' }, T.cur.hint));
+  } else if (P === 'await' && T.showHint && cur.hint) {
+    C.append(h('p', { class:'rc-lbl' }, cur.hintLabel || '힌트'), h('p', { class:'rc-text' }, cur.hint));
   } else if (P === 'await' && T.notice) {
     C.append(h('p', { class:'rc-sub' }, T.notice));
   } else show = false;
@@ -1406,12 +1802,13 @@ function sideBtn(label, ic, onclick, disabled) {
 }
 function paintControls() {
   const mode = inputMode(), P = T.phase;
-  const key = [P, mode, T.mode, Mic.ok ? 1 : 0, T.cur.kind, T.lastAnswer ? 1 : 0].join('|');
+  const key = [P, mode, T.mode, Mic.ok ? 1 : 0, T.cur.kind, T.lastAnswer ? 1 : 0, T.next ? T.next.kind : ''].join('|');
   if (R.ctlKey === key) { paintOrb(); return; }
   R.ctlKey = key;
   const F = R.ctl;
   F.replaceChildren();
   R.orb = null; R.orbLabel = null;
+  const nextLabel = T.next?.kind === 'closing' ? '마무리' : '다음';
   if (P === 'await' || P === 'listening' || P === 'thinking') {
     if (P === 'await') F.append(h('div', { class:'chips' },
       mode === 'text' && T.cur.hint ? h('button', { class:'chip', html:iconLabel('bulb', '힌트'), onclick:toggleHint }) : null,
@@ -1426,12 +1823,20 @@ function paintControls() {
         sideBtn('키보드', 'kb', () => setInput('text'), P !== 'await')),
         R.orbLabel = h('p', { class:'orb-label' }));
     } else F.append(typeBar('answer'));
+  } else if (P === 'selffix' || P === 'self-listen') {
+    if (mode === 'voice') {
+      F.append(h('div', { class:'ctl-row' },
+        P === 'self-listen' ? sideBtn('취소', 'close', cancelListening) : sideBtn('키보드', 'kb', () => setInput('text')),
+        R.orb = h('button', { class:'orb', onclick:onOrb }),
+        sideBtn('정답 보기', 'eye', revealCorrection, P === 'self-listen')),
+        R.orbLabel = h('p', { class:'orb-label' }));
+    } else F.append(typeBar('self'), h('button', { class:'btn btn-ghost btn-block', html:iconLabel('eye', '정답 보기', 18), onclick:revealCorrection }));
   } else if (P === 'correction' || P === 'repeat-listen') {
     if (mode === 'voice') {
       F.append(h('div', { class:'ctl-row' },
         P === 'repeat-listen' ? sideBtn('취소', 'close', cancelListening) : sideBtn('키보드', 'kb', () => setInput('text')),
         R.orb = h('button', { class:'orb', onclick:onOrb }),
-        sideBtn(T.next?.kind === 'closing' ? '마무리' : '다음', 'next', advance, P === 'repeat-listen')),
+        sideBtn(nextLabel, 'next', advance, P === 'repeat-listen')),
         R.orbLabel = h('p', { class:'orb-label' }));
     } else F.append(typeBar('repeat'), h('button', { class:'btn btn-ghost btn-block', onclick:advance }, '건너뛰고 다음으로'));
   } else if (P === 'repeat-result') {
@@ -1443,46 +1848,49 @@ function paintControls() {
   } else if (P === 'error') {
     F.append(h('div', { class:'btn-row' },
       h('button', { class:'btn btn-ghost', onclick:skipFailed }, '건너뛰기'),
-      h('button', { class:'btn btn-primary', html:iconLabel('retry', '다시 시도', 18), onclick:() => { const t = T.failed; T.failed = null; T.phase = 'await'; submitAnswer(t ? t.answer : ''); } })));
+      h('button', { class:'btn btn-primary', html:iconLabel('retry', '다시 시도', 18), onclick:retryFailed })));
   } else if (P === 'done') {
-    F.append(h('button', { class:'btn btn-primary btn-block', onclick:finishLesson }, '리포트 보기'));
+    F.append(h('button', { class:'btn btn-primary btn-block', onclick:() => finishLesson() }, '리포트 보기'));
   }
   paintOrb();
 }
 function paintOrb() {
   if (!R.orb) return;
   const P = T.phase, O = R.orb;
-  const listening = P === 'listening' || P === 'repeat-listen';
+  const listening = P === 'listening' || P === 'repeat-listen' || P === 'self-listen';
   O.classList.toggle('listening', listening);
   O.disabled = P === 'thinking';
+  const idle = P === 'await' ? ['말로 대답하기', '눌러서 대답하기'] : P === 'selffix' ? ['고쳐서 말하기', '눌러서 고쳐 말하기'] : ['따라 말하기', '눌러서 따라 말하기'];
   if (P === 'thinking') { O.innerHTML = '<span class="spin" aria-hidden="true"></span>'; O.setAttribute('aria-label', '확인하는 중'); }
   else if (listening) { O.innerHTML = icon('check', 34); O.setAttribute('aria-label', '다 말했어요'); }
-  else { O.innerHTML = icon('mic', 32); O.setAttribute('aria-label', P === 'await' ? '말로 대답하기' : '따라 말하기'); }
-  if (R.orbLabel) R.orbLabel.textContent = P === 'thinking' ? '확인하고 있어요' : listening ? '다 말했으면 눌러 주세요'
-    : P === 'await' ? '눌러서 대답하기' : '눌러서 따라 말하기';
+  else { O.innerHTML = icon('mic', 32); O.setAttribute('aria-label', idle[0]); }
+  if (R.orbLabel) R.orbLabel.textContent = P === 'thinking' ? '확인하고 있어요' : listening ? '다 말했으면 눌러 주세요' : idle[1];
 }
 function typeBar(kind) {
-  const answer = kind === 'answer';
-  const ta = h('textarea', { id:answer ? 'answer' : 'repeat', rows:'1', enterkeyhint:'send', 'aria-label':answer ? '대답 입력' : '따라 쓰기 입력',
-    placeholder:answer ? (T.ansLang === 'ko' ? '한국어로 적어도 돼요' : '영어로 대답을 적어 보세요') : '교정된 문장을 따라 적어 보세요',
+  const answer = kind === 'answer', self = kind === 'self';
+  const ta = h('textarea', { id:kind, rows:'1', enterkeyhint:'send',
+    'aria-label':answer ? '대답 입력' : self ? '고친 문장 입력' : '따라 쓰기 입력',
+    placeholder:answer ? (T.ansLang === 'ko' ? '한국어로 적어도 돼요' : '영어로 대답을 적어 보세요') : self ? '고친 문장을 적어 보세요' : '교정된 문장을 따라 적어 보세요',
     disabled:T.phase === 'thinking' });
+  // Self-repair in text starts from the learner's own sentence, so the fix is an edit, not a retype.
+  if (self && !T.repeatDraft && T.cur.original) T.repeatDraft = T.cur.original;
   ta.value = answer ? T.draft : T.repeatDraft;
   const grow = () => { ta.style.height = 'auto'; ta.style.height = Math.min(132, ta.scrollHeight + 3) + 'px'; };
-  const send = () => { const v = ta.value.trim(); if (!v) { ta.focus(); return; } if (answer) submitAnswer(v); else checkRepeat(v); };
+  const send = () => { const v = ta.value.trim(); if (!v) { ta.focus(); return; } if (answer) submitAnswer(v); else if (self) checkSelfFix(v); else checkRepeat(v); };
   ta.addEventListener('input', () => { grow(); if (answer) T.draft = ta.value; else T.repeatDraft = ta.value; });
   ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } });
   requestAnimationFrame(grow);
   return h('div', {},
     h('div', { class:'typebar' },
-      Mic.ok ? h('button', { class:'iconbtn round', 'aria-label':'말로 대답하기', html:icon('mic'), onclick:() => setInput('voice') }) : null,
+      Mic.ok ? h('button', { class:'iconbtn round', 'aria-label':'말로 하기', html:icon('mic'), onclick:() => setInput('voice') }) : null,
       ta,
       h('button', { class:'sendbtn', 'aria-label':answer ? '보내기' : '확인', html:icon(answer ? 'send' : 'check'), onclick:send, disabled:T.phase === 'thinking' })),
-    !Mic.ok && answer && T.turns.length < 2 ? h('p', { class:'tip-line', style:'margin-top:6px' }, '휴대폰 키보드의 음성 입력(영어 키보드)으로 말해서 적어도 돼요.') : null);
+    !Mic.ok && answer && T.turns.length < 2 ? h('p', { class:'tip-line', style:'margin-top:6px' }, MOBILE_VOICE_TIP) : null);
 }
 function setInput(m) {
   T.input = m; T.inputAuto = false;
   paintTalk();
-  if (m === 'text') requestAnimationFrame(() => $('#answer, #repeat')?.focus());
+  if (m === 'text') requestAnimationFrame(() => $('#answer, #repeat, #self')?.focus());
 }
 function toggleHint() { T.showHint = !T.showHint; paintCard(); }
 function toggleVoice() {
@@ -1499,6 +1907,8 @@ function viewReport() {
   if (!sess) { S.view = 'home'; return viewHome(); }
   const c = coachById(sess.coachId), tp = topicById(sess.topicId), L = levelById(sess.level);
   const fixes = sess.turns.filter(t => t.correction);
+  const nums = sessionNumbers(sess), cats = categoryCounts([sess]);
+  const cards = sess.example ? 0 : S.review.filter(i => i.id.startsWith('r' + sess.id + '_')).length;
   const goods = sess.mode === 'ai' ? sess.turns.filter(t => !t.correction && t.reaction_en) : [];
   const back = () => go(S.reportFrom === 'history' ? 'history' : 'home');
   const playBtn = text => Voice.on() ? h('button', { class:'play', 'aria-label':'들어 보기', html:icon('vol', 18), onclick:() => Voice.speak(text, c, sess.level) }) : null;
@@ -1511,14 +1921,19 @@ function viewReport() {
         h('p', { class:'eyebrow num' }, `${fmtDate(sess.startedAt)} ${fmtTime(sess.startedAt)}`),
         h('h2', { class:'rep-title' }, `${tp.ko} 수업`, sess.mode === 'practice' ? h('span', { class:'badge' }, '연습 모드') : null),
         h('div', { class:'rep-coach' }, h('span', { class:'ava-xs', html:avatarSVG(c) }), `${c.ko} 코치 · ${L.ko} 레벨`),
-        h('div', { class:'stats' },
+        h('div', { class:'stats s4' },
           h('div', { class:'stat' }, h('b', { class:'num' }, fmtClock(sess.durationSec * 1000)), h('span', {}, '대화 시간')),
           h('div', { class:'stat' }, h('b', { class:'num' }, sess.turns.length), h('span', {}, '내 대답')),
-          h('div', { class:'stat' }, h('b', { class:'num' }, sess.mode === 'ai' ? fixes.length : '—'), h('span', {}, '교정한 문장')))),
+          h('div', { class:'stat' }, h('b', { class:'num' }, nums.words), h('span', {}, '영어로 말한 단어')),
+          h('div', { class:'stat' }, h('b', { class:'num' }, sess.mode === 'ai' ? fixes.length : '—'), h('span', {}, '교정한 문장'))),
+        trendLine(sess, nums)),
+      levelSuggest(sess, nums),
       summaryCard(sess),
       fixes.length ? h('div', { class:'sec-head' }, h('h2', { class:'sec-title' }, '교정 피드백'), h('span', { class:'meta' }, `${fixes.length}개`)) : null,
+      cats.length ? h('div', { class:'tags', 'aria-label':'교정된 부분' }, cats.map(([k, v]) => h('span', { class:'tag' }, CATEGORIES[k], h('b', {}, v)))) : null,
       fixes.map((t, i) => h('article', { class:'fb' },
-        h('p', { class:'fb-no' }, `FEEDBACK ${i + 1}`),
+        h('p', { class:'fb-no' }, `FEEDBACK ${i + 1}`, t.correction.category && t.correction.category !== 'other' && CATEGORIES[t.correction.category]
+          ? h('span', { class:'tag', style:'margin-left:8px' }, CATEGORIES[t.correction.category]) : null),
         h('p', { class:'fb-q' }, 'Q. ' + t.q_en),
         h('span', { class:'fb-lbl' }, '내가 말한 문장'),
         h('p', { class:'fb-said' }, diffView(t.answer, t.correction.corrected, 'a')),
@@ -1526,7 +1941,9 @@ function viewReport() {
         h('div', { class:'fb-fix' }, h('p', {}, diffView(t.answer, t.correction.corrected, 'b')), playBtn(t.correction.corrected)),
         (t.correction.tip_en || t.correction.tip_ko) ? h('p', { class:'fb-tip' }, t.correction.tip_en || t.correction.tip_ko,
           t.correction.tip_en && t.correction.tip_ko ? h('span', {}, t.correction.tip_ko) : null) : null,
-        t.repeat ? h('p', { class:'fb-rep' }, `따라 말하기 · ${t.repeat.score >= 0.85 ? '정확하게 따라 했어요' : t.repeat.score >= 0.6 ? '거의 맞았어요' : '다시 연습해 보세요'}`) : null)),
+        t.selfFix && !t.selfFix.skipped ? h('p', { class:'fb-rep' }, `스스로 고치기 · ${t.selfFix.ok ? '혼자서 고쳤어요' : '코치 문장으로 확인했어요'}`) : null,
+        t.repeat && !(t.selfFix && t.selfFix.ok) ? h('p', { class:'fb-rep' }, `따라 말하기 · ${t.repeat.score >= 0.85 ? '정확하게 따라 했어요' : t.repeat.score >= 0.6 ? '거의 맞았어요' : '다시 연습해 보세요'}`) : null)),
+      cards ? h('p', { class:'note' }, h('b', {}, `복습 카드 ${cards}개를 만들었어요. `), '교정한 문장과 표현이 내일부터 홈의 ‘오늘 복습할 문장’에 다시 나와요.') : null,
       goods.length ? h('section', { class:'card' },
         h('h2', {}, '자연스럽게 말한 문장'),
         h('ul', { class:'good-list' }, goods.map(t => h('li', {}, h('p', {}, t.answer, h('small', {}, t.q_en)), playBtn(t.answer))))) : null,
@@ -1543,7 +1960,43 @@ function viewReport() {
         h('div', { class:'tr' }, sess.turns.map(t => [h('p', { class:'tr-c' }, t.q_en), h('p', { class:'tr-u' }, t.answer)]))) : null,
       h('div', { class:'btn-col' },
         h('button', { class:'btn btn-primary btn-block', onclick:() => startLesson(sess.topicId, sess.coachId) }, `${tp.ko} 다시 연습하기`),
-        h('button', { class:'btn btn-ghost btn-block', onclick:() => go('home') }, '홈으로'))));
+        h('button', { class:'btn btn-ghost btn-block', onclick:() => go('home') }, '홈으로'),
+        sess.example ? null : h('button', { class:'btn btn-text btn-block', onclick:() => confirmDelete(sess) }, '이 기록 지우기'))));
+}
+// Average answer length against the learner's own previous lessons. Facts only, no score.
+function trendLine(sess, nums) {
+  if (sess.example || sess.mode !== 'ai' || !nums.answers) return null;
+  const prev = S.sessions.filter(s => s.mode === 'ai' && s.turns.length && s.startedAt < sess.startedAt).slice(0, 3);
+  const base = `대답 하나에 평균 ${nums.avg.toFixed(1)}단어`;
+  if (!prev.length) return h('p', { class:'meta num' }, base + ' · 다음 수업부터 지난 수업과 비교해 보여 줘요');
+  const pw = prev.reduce((n, s) => n + sessionNumbers(s).words, 0), pa = prev.reduce((n, s) => n + s.turns.length, 0);
+  const pavg = pa ? pw / pa : 0, d = nums.avg - pavg;
+  const cmp = Math.abs(d) < 0.5 ? '비슷해요' : d > 0 ? `${d.toFixed(1)}단어 길어졌어요` : `${(-d).toFixed(1)}단어 짧아졌어요`;
+  return h('p', { class:'meta num' }, `${base} · 지난 ${prev.length}번 수업(평균 ${pavg.toFixed(1)}단어)보다 ${cmp}`);
+}
+// A level change is only ever suggested, after a full enough lesson, on the newest report.
+function levelSuggest(sess, nums) {
+  if (sess.example || sess.mode !== 'ai' || nums.answers < 5 || S.sessions[0]?.id !== sess.id) return null;
+  if (sess.level !== S.profile.level) return null;
+  const i = LEVELS.findIndex(l => l.id === sess.level);
+  const hard = (nums.fixes + nums.ko) / nums.answers >= 0.75 && nums.avg < 5;
+  const easy = nums.ko === 0 && nums.fixes / nums.answers <= 0.2 && nums.avg >= 7;
+  let to = null, why = '';
+  if (hard && i > 0) { to = LEVELS[i - 1]; why = `이번 수업에서 대답 ${nums.answers}개 중 ${nums.fixes}개가 교정됐어요. ${to.ko} 레벨에서는 질문이 더 짧고 쉬워요.`; }
+  else if (easy && i < LEVELS.length - 1) { to = LEVELS[i + 1]; why = `대답 ${nums.answers}개 중 교정은 ${nums.fixes}개였고 평균 ${nums.avg.toFixed(1)}단어로 길게 말했어요. ${to.ko} 레벨에서는 질문이 더 깊어져요.`; }
+  if (!to) return null;
+  return h('section', { class:'suggest' },
+    h('b', {}, `${to.ko} 레벨로 바꿔 볼까요?`),
+    h('p', { class:'meta' }, why),
+    h('div', {}, h('button', { class:'chip on', onclick:() => { setProfile({ level:to.id }); toast(`다음 수업부터 ${to.ko} 레벨로 진행해요.`); } }, `${to.ko}로 바꾸기`)));
+}
+function confirmDelete(sess) {
+  openSheet('이 기록을 지울까요?', () => [
+    h('p', { class:'meta' }, `${fmtDate(sess.startedAt)} ${topicById(sess.topicId).ko} 수업의 리포트를 지워요. 이 수업에서 만든 복습 카드는 남아 있어요.`),
+    h('div', { class:'btn-col' },
+      h('button', { class:'btn btn-primary btn-block', onclick:() => { closeSheet(); Store.deleteSession(sess.id); go(S.reportFrom === 'history' && S.sessions.length ? 'history' : 'home'); toast('기록을 지웠어요.'); } }, '지우기'),
+      h('button', { class:'btn btn-ghost btn-block', onclick:closeSheet }, '취소')),
+  ]);
 }
 function summaryCard(sess) {
   if (sess.summaryState === 'none' || sess.mode !== 'ai') return h('p', { class:'note' }, 'AI 교정 없이 진행한 연습 수업이라 총평이 없어요. 아래에서 내 대답과 모범 답안을 비교해 보세요.');
@@ -1581,6 +2034,231 @@ function viewHistory() {
         : h('div', { class:'empty' }, h('b', {}, '아직 수업 기록이 없어요'), h('p', { class:'meta' }, '홈에서 주제를 골라 첫 수업을 시작해 보세요.'))));
 }
 
+/* review */
+const REVIEW_BATCH = 10;
+const rvItem = () => RV && S.review.find(i => i.id === RV.items[RV.pos]);
+function startReview() {
+  const items = dueItems().slice(0, REVIEW_BATCH).map(i => i.id);
+  if (!items.length) return;
+  RV = { items, pos:0, phase:'ask', draft:'', input:Mic.ok ? 'voice' : 'text', result:null, right:0, showKo:false, log:[] };
+  S.view = 'review';
+  render();
+}
+function endReview() { Mic.cancel(); Voice.stop(); RV = null; R = null; go('home'); }
+function viewReview() {
+  R = { rvKey:'' };
+  return h('div', { class:'screen talk' },
+    h('header', { class:'talk-top' },
+      h('button', { class:'iconbtn', 'aria-label':'복습 끝내기', html:icon('close'), onclick:endReview }),
+      h('div', { class:'tt-mid' },
+        h('div', { class:'tt-topic' }, '오늘의 복습 ', R.rvCount = h('span', { class:'num' })),
+        h('div', { class:'prog', role:'progressbar', 'aria-label':'복습 진행' }, R.rvProg = h('i')))),
+    R.rvBody = h('section', { class:'rv-body', 'aria-live':'polite' }),
+    R.rvCtl = h('footer', { class:'controls' }));
+}
+function paintReview() {
+  if (!RV || !R || !R.rvBody || S.view !== 'review') return;
+  const n = RV.items.length, doneN = RV.pos + (RV.phase === 'result' ? 1 : 0);
+  R.rvCount.textContent = `${Math.min(doneN, n)}/${n}`;
+  R.rvProg.style.width = (100 * Math.min(1, doneN / n)) + '%';
+  const B = R.rvBody;
+  B.replaceChildren();
+  if (RV.phase === 'end') {
+    B.append(h('div', { class:'rv-cue' },
+      h('span', { class:'rv-lbl' }, '복습 끝'),
+      h('p', { class:'rv-q ko' }, `${n}문장 중 ${RV.right}문장을 바로 말했어요`),
+      h('p', { class:'meta' }, '맞힌 문장은 더 긴 간격을 두고, 놓친 문장은 내일 다시 나와요.')),
+      h('div', { class:'tr' }, RV.log.map(l => [h('p', { class:'tr-c' }, l.target), h('p', { class:'tr-u' }, l.ok ? `바로 말했어요 · ${l.days}일 뒤` : '내일 다시')])));
+  } else {
+    const it = rvItem();
+    if (!it) { RV.phase = 'end'; paintReview(); return; }
+    const fix = it.kind === 'fix';
+    B.append(h('div', { class:'rv-cue' },
+      h('span', { class:'rv-lbl' }, fix ? '지난 수업에서 내가 한 말 · 고쳐서 말해 보세요' : '이 뜻을 영어로 말해 보세요'),
+      h('p', { class:'rv-q' + (fix ? '' : ' ko') }, it.cue),
+      fix && it.ko ? (RV.showKo || RV.phase === 'result' ? h('p', { class:'meta' }, '뜻: ' + it.ko)
+        : h('div', {}, h('button', { class:'chip', onclick:() => { RV.showKo = true; paintReview(); } }, '뜻 보기'))) : null));
+    if (RV.phase === 'listening') {
+      const t = Mic.text();
+      B.append(h('div', { class:'bubble live', style:'align-self:center' }, t || h('span', { class:'ph' }, '말하는 내용이 여기에 보여요')));
+    } else if (RV.phase === 'result') {
+      const r = RV.result;
+      if (r.text) B.append(h('div', { class:'bubble', style:'align-self:center' }, r.text));
+      B.append(h('div', { class:'rcard' },
+        h('p', { class:'rc-title' + (r.ok ? ' good' : '') }, r.ok ? '정확해요!' : r.text ? '거의 다 왔어요. 표시한 부분을 확인해 보세요.' : '이렇게 말하면 돼요'),
+        h('p', { class:'rc-lbl' }, '정답'),
+        h('p', { class:'rc-text' }, r.text && !r.ok ? diffView(r.text, it.target, 'b') : it.target),
+        it.tip ? h('p', { class:'rc-sub' }, it.tip) : null,
+        h('p', { class:'rc-sub' }, r.ok ? `${r.days}일 뒤에 다시 나와요` : '내일 다시 나와요'),
+        Voice.on() ? h('div', {}, h('button', { class:'chip', html:iconLabel('vol', '들어 보기'), onclick:() => Voice.speak(it.target) }),
+          ' ', h('button', { class:'chip', html:iconLabel('slow', '천천히'), onclick:() => Voice.speak(it.target, null, null, true) })) : null));
+    }
+  }
+  paintReviewCtl();
+}
+function paintReviewCtl() {
+  const P = RV.phase, voice = RV.input === 'voice' && Mic.ok;
+  const key = [P, voice ? 1 : 0, RV.pos, RV.result && RV.result.ok ? 1 : 0, RV.result && RV.result.text ? 1 : 0].join('|');
+  if (R.rvKey === key) { paintReviewOrb(); return; }
+  R.rvKey = key;
+  const F = R.rvCtl;
+  F.replaceChildren(); R.orb = null; R.orbLabel = null;
+  const last = RV.pos >= RV.items.length - 1;
+  if (P === 'ask' || P === 'listening') {
+    if (voice) {
+      F.append(h('div', { class:'ctl-row' },
+        P === 'listening' ? sideBtn('취소', 'close', () => { Mic.cancel(); RV.phase = 'ask'; paintReview(); }) : sideBtn('키보드', 'kb', () => { RV.input = 'text'; paintReview(); requestAnimationFrame(() => $('#rv-in')?.focus()); }),
+        R.orb = h('button', { class:'orb', onclick:onReviewOrb }),
+        sideBtn('정답 보기', 'eye', showReviewAnswer, P === 'listening')),
+        R.orbLabel = h('p', { class:'orb-label' }));
+    } else {
+      const ta = h('textarea', { id:'rv-in', rows:'1', enterkeyhint:'send', 'aria-label':'영어 문장 입력', placeholder:'영어로 적어 보세요' });
+      ta.value = RV.draft;
+      const grow = () => { ta.style.height = 'auto'; ta.style.height = Math.min(132, ta.scrollHeight + 3) + 'px'; };
+      const send = () => { const v = ta.value.trim(); if (!v) { ta.focus(); return; } checkReview(v); };
+      ta.addEventListener('input', () => { grow(); RV.draft = ta.value; });
+      ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } });
+      requestAnimationFrame(grow);
+      F.append(h('div', { class:'typebar' },
+        Mic.ok ? h('button', { class:'iconbtn round', 'aria-label':'말로 하기', html:icon('mic'), onclick:() => { RV.input = 'voice'; paintReview(); } }) : null,
+        ta, h('button', { class:'sendbtn', 'aria-label':'확인', html:icon('check'), onclick:send })),
+        h('button', { class:'btn btn-ghost btn-block', html:iconLabel('eye', '정답 보기', 18), onclick:showReviewAnswer }),
+        !Mic.ok && RV.pos === 0 ? h('p', { class:'tip-line' }, MOBILE_VOICE_TIP) : null);
+    }
+  } else if (P === 'result') {
+    const r = RV.result;
+    F.append(h('div', { class:'btn-row' },
+      !r.ok && r.text ? h('button', { class:'btn btn-ghost', onclick:acceptReview }, '내 말도 맞아요') : null,
+      h('button', { class:'btn btn-primary', onclick:nextReview }, last ? '복습 마치기' : '다음 문장')));
+  } else if (P === 'end') {
+    F.append(h('button', { class:'btn btn-primary btn-block', onclick:endReview }, '홈으로'));
+  }
+  paintReviewOrb();
+}
+function paintReviewOrb() {
+  if (!R.orb) return;
+  const listening = RV.phase === 'listening';
+  R.orb.classList.toggle('listening', listening);
+  R.orb.innerHTML = listening ? icon('check', 34) : icon('mic', 32);
+  R.orb.setAttribute('aria-label', listening ? '다 말했어요' : '영어로 말하기');
+  if (R.orbLabel) R.orbLabel.textContent = listening ? '다 말했으면 눌러 주세요' : '눌러서 영어로 말하기';
+}
+function onReviewOrb() {
+  if (!RV || !Mic.ok) return;
+  if (RV.phase === 'ask') { Mic.start('review'); RV.phase = 'listening'; paintReview(); return; }
+  if (RV.phase !== 'listening' || Mic.stopping) return;
+  const rv = RV;
+  Mic.finish().then(text => {
+    if (RV !== rv || RV.phase !== 'listening') return;
+    if (!text) { RV.phase = 'ask'; paintReview(); toast('목소리가 잘 들리지 않았어요. 다시 말해 볼까요?'); return; }
+    checkReview(text);
+  });
+}
+function gradeReview(it, ok, text, score) {
+  RV.prev = { box:it.box, due:it.due, seen:it.seen, right:it.right, u:it.u };
+  const days = scheduleReview(it, ok);
+  Store.saveReview();
+  if (ok) RV.right++;
+  RV.result = { text, score, ok, days }; RV.draft = ''; RV.phase = 'result';
+  RV.log.push({ target:it.target, ok, days });
+}
+function checkReview(text) {
+  if (!RV || !['ask', 'listening'].includes(RV.phase)) return;
+  text = String(text || '').trim();
+  const it = rvItem();
+  if (!text || !it) return;
+  const score = scoreOf(text, it.target);
+  gradeReview(it, score >= 0.85, text, score);
+  paintReview();
+  Voice.speak(it.target);
+}
+function showReviewAnswer() {
+  if (!RV || !['ask', 'listening'].includes(RV.phase)) return;
+  const it = rvItem();
+  if (!it) return;
+  Mic.cancel();
+  gradeReview(it, false, '', 0);
+  paintReview();
+  Voice.speak(it.target);
+}
+// The learner can overrule a word-match miss when their own sentence was also right.
+function acceptReview() {
+  const it = rvItem();
+  if (!RV || RV.phase !== 'result' || !it || !RV.prev || RV.result.ok) return;
+  Object.assign(it, RV.prev);
+  const days = scheduleReview(it, true);
+  Store.saveReview();
+  RV.right++;
+  RV.result = { ...RV.result, ok:true, days, own:true };
+  RV.log[RV.log.length - 1] = { target:it.target, ok:true, days };
+  R.rvKey = '';
+  paintReview();
+}
+function nextReview() {
+  if (!RV || RV.phase !== 'result') return;
+  Voice.stop();
+  RV.pos++; RV.result = null; RV.prev = null; RV.showKo = false; RV.draft = '';
+  RV.phase = RV.pos >= RV.items.length ? 'end' : 'ask';
+  paintReview();
+}
+
+/* onboarding */
+const GOALS = [
+  { id:'daily', ko:'일상 대화', desc:'친구·동료와 편하게 이야기하고 싶어요', coach:'jake' },
+  { id:'work', ko:'회사·면접', desc:'회의, 발표, 영어 면접을 준비해요', coach:'olivia' },
+  { id:'confidence', ko:'말하는 자신감', desc:'틀릴까 봐 말을 못 꺼내요', coach:'hannah' },
+  { id:'accuracy', ko:'정확한 문법', desc:'문법과 어순을 꼼꼼하게 고치고 싶어요', coach:'oliver' },
+];
+function viewOnboard() {
+  const O = S.ob || (S.ob = { step:0, level:S.profile.level, goal:'confidence', goalMin:S.profile.goalMin });
+  const steps = h('div', { class:'ob-steps', 'aria-hidden':'true' }, [0, 1, 2].map(i => h('i', { class:i <= O.step ? 'on' : '' })));
+  const skip = () => { S.ob = null; setProfile({ onboarded:true }); go('home'); };
+  const next = () => { O.step++; render(); };
+  const opt = (sel, title, desc, onclick) => h('button', { class:'opt' + (sel ? ' sel' : ''), role:'radio', 'aria-checked':String(sel), onclick },
+    h('span', { class:'dot' }), h('span', {}, h('b', {}, title), h('span', {}, desc)));
+  let body, foot;
+  if (O.step === 0) {
+    body = [h('h2', { class:'ob-title' }, '영어로 얼마나 말할 수 있나요?'),
+      h('p', { class:'meta' }, '언제든 설정에서 바꿀 수 있어요. 레벨에 따라 질문 길이와 교정 방식이 달라져요.'),
+      h('div', { class:'btn-col', role:'radiogroup', 'aria-label':'레벨', style:'margin-top:0' },
+        LEVELS.map(L => opt(O.level === L.id, `${L.ko} · ${L.en}`, L.desc, () => { O.level = L.id; render(); })))];
+    foot = h('button', { class:'btn btn-primary btn-block', onclick:next }, '다음');
+  } else if (O.step === 1) {
+    const starter = O.level === 'starter';
+    const rec = coachById(starter ? 'lumi' : (GOALS.find(g => g.id === O.goal) || GOALS[2]).coach);
+    body = [h('h2', { class:'ob-title' }, starter ? '왕초보에게 맞는 코치예요' : '어떤 영어가 필요하세요?'),
+      starter ? null : h('div', { class:'btn-col', role:'radiogroup', 'aria-label':'목표', style:'margin-top:0' },
+        GOALS.map(g => opt(O.goal === g.id, g.ko, g.desc, () => { O.goal = g.id; render(); }))),
+      h('div', { class:'ob-coach' }, h('div', { class:'ava-sm', html:avatarSVG(rec) }),
+        h('div', {}, h('b', {}, `${rec.ko} 코치 추천`), h('p', {}, rec.lines[0]), h('p', {}, '코치는 홈에서 언제든 바꿀 수 있어요.')))];
+    O.coach = rec.id;
+    foot = h('div', { class:'btn-row' }, h('button', { class:'btn btn-ghost', onclick:() => { O.step--; render(); } }, '이전'), h('button', { class:'btn btn-primary', onclick:next }, '다음'));
+  } else {
+    const seg = h('div', { class:'seg', role:'radiogroup', 'aria-label':'하루 목표' }, [10, 15, 20, 30].map(v =>
+      h('button', { class:v === O.goalMin ? 'sel' : '', role:'radio', 'aria-checked':String(v === O.goalMin), onclick:() => { O.goalMin = v; render(); } }, `${v}분`)));
+    body = [h('h2', { class:'ob-title' }, '이렇게 공부해요'),
+      h('ol', { class:'how' },
+        h('li', {}, h('span', {}, '1'), '코치가 영어로 묻고, 해석도 볼 수 있어요'),
+        h('li', {}, h('span', {}, '2'), O.level === 'starter' ? '말하거나 적어서 대답해요. 한국어나 단어로 답해도 돼요' : '말하거나 적어서 대답해요. 막히면 한국어로 말해도 돼요'),
+        h('li', {}, h('span', {}, '3'), O.level === 'starter' ? '코치가 고쳐 준 문장을 따라 말해요' : '어색한 문장은 힌트를 보고 먼저 스스로 고쳐 봐요'),
+        h('li', {}, h('span', {}, '4'), '교정한 문장은 복습 카드가 되어 1·3·7일 뒤에 다시 나와요')),
+      Mic.ok ? null : h('p', { class:'note' }, h('b', {}, '이 화면에서는 말로 대답하기를 쓸 수 없어요. '), MOBILE_VOICE_TIP, ' PC의 Chrome·Edge나 Claude 데스크톱 앱에서 열면 바로 말로 대답할 수 있어요.'),
+      h('div', { class:'grp', style:'border-top:0' }, h('h3', {}, '하루 목표'), seg)];
+    foot = h('div', { class:'btn-row' }, h('button', { class:'btn btn-ghost', onclick:() => { O.step--; render(); } }, '이전'),
+      h('button', { class:'btn btn-primary', onclick:() => {
+        const low = O.level === 'starter' || O.level === 'basic';
+        S.ob = null;
+        setProfile({ level:O.level, coachId:O.coach || 'hannah', goalMin:O.goalMin, showKo:low, selfFix:O.level !== 'starter', onboarded:true });
+        go('home');
+        toast(`${coachById(S.profile.coachId).ko} 코치와 시작해요. 주제를 골라 보세요!`);
+      } }, '시작하기'));
+  }
+  return h('div', { class:'screen' },
+    h('header', { class:'topbar' }, logo(), h('div', { class:'grow' }), h('button', { class:'btn-text', onclick:skip }, '건너뛰기')),
+    h('div', { class:'scroll' }, steps, body),
+    h('footer', { class:'bar' }, foot));
+}
+
 /* sheets */
 function openSheet(title, bodyFn) {
   closeSheet(true);
@@ -1606,7 +2284,7 @@ function openSettings() {
     const tog = (id, label, on, set) => h('button', { class:'tog', id, role:'switch', 'aria-checked':String(on), onclick:() => set(!on) }, label, h('i'));
     const ai = S.aiState === 'ready' ? [true, 'Claude 연결 · 첫 대답 때 허락을 물어봐요'] : S.aiState === 'off' ? [false, '쓸 수 없어요 · 연습 모드'] : [false, '확인 중'];
     const vo = Voice.blocked ? [false, '꺼져 있어요 · 아티팩트 권한 메뉴에서 켤 수 있어요'] : Voice.mode === 'claude' ? [true, 'Claude 목소리'] : Voice.mode === 'browser' ? [true, '브라우저 목소리'] : [false, '없음 · 자막으로 진행'];
-    const mi = Mic.ok ? [true, '말로 대답 가능 · 처음 누를 때 허락을 물어봐요'] : [false, '키보드로 대답 (휴대폰 키보드의 음성 입력은 쓸 수 있어요)'];
+    const mi = Mic.ok ? [true, '말로 대답 가능 · 처음 누를 때 허락을 물어봐요'] : [false, '키보드로 대답'];
     const st = Store.mode === 'db' ? [true, '내 Claude 계정 · 다른 기기에서도 보여요'] : Store.mode === 'local' ? [true, '이 브라우저에만 저장돼요'] : [false, '저장할 수 없어 기록이 남지 않아요'];
     const row = (k, [ok, v]) => h('li', {}, h('span', {}, k), h('span', {}, h('i', { class:ok ? 'ok-dot' : 'off-dot' }), v));
     return [
@@ -1617,10 +2295,14 @@ function openSettings() {
       h('div', { class:'grp' }, h('h3', {}, '하루 목표'), seg('goalMin', [10, 15, 20, 30], P.goalMin, v => `${v}분`, v => setProfile({ goalMin:v }))),
       h('div', { class:'grp' }, h('h3', {}, '보기와 소리'),
         tog('showKo', '한국어 해석 기본으로 보기', P.showKo, v => setProfile({ showKo:v })),
+        tog('selfFix', '틀린 문장은 먼저 스스로 고쳐 보기', P.selfFix, v => setProfile({ selfFix:v })),
+        h('p', { class:'meta' }, '초급 이상에서 교정 문장을 바로 보여 주지 않고 힌트를 먼저 보여 줘요. 스스로 고쳐 말해 보는 연습이 오래 기억에 남아요.'),
         Voice.usable() ? tog('voiceOn', '코치 목소리', P.voiceOn, v => { setProfile({ voiceOn:v }); if (!v) Voice.stop(); }) : null),
       h('div', { class:'grp' }, h('h3', {}, '지금 이 화면에서'),
         h('ul', { class:'env' }, row('AI 대화·교정', ai), row('코치 목소리', vo), row('대답 방법', mi), row('학습 기록', st)),
+        Mic.ok ? null : h('p', { class:'note' }, MOBILE_VOICE_TIP + ' PC의 Chrome·Edge 브라우저나 Claude 데스크톱 앱에서는 앱 안에서 바로 말로 대답할 수 있어요.'),
         h('p', { class:'meta' }, 'AI 대화와 교정, 코치 목소리는 지금 보고 있는 사람의 Claude 사용량을 써요.')),
+      h('div', { class:'grp' }, h('button', { class:'link', onclick:() => { closeSheet(); S.ob = null; go('onboard'); } }, '처음 안내 다시 보기')),
     ];
   });
 }
@@ -1633,6 +2315,11 @@ function openSettings() {
   S.sessions = (Array.isArray(local.sessions) ? local.sessions : []).filter(validSession)
     .map(s => (s.summaryState === 'pending' ? { ...s, summaryState:'failed' } : s))
     .sort((a, b) => b.startedAt - a.startedAt);
+  S.review = Store.loadReview();
+  S.resume = loadLessonDraft();
+  // Learners who used the app before onboarding existed are not sent through it.
+  if (!S.profile.onboarded && (S.sessions.length || (local.profile && typeof local.profile === 'object' && typeof local.profile.onboarded !== 'boolean'))) S.profile.onboarded = true;
+  if (!S.profile.onboarded) S.view = 'onboard';
   render();
   initCaps();
 })();

@@ -304,6 +304,13 @@ details.transcript summary{cursor:pointer;min-height:46px;display:flex;align-ite
 .tag b{color:var(--accent);font-variant-numeric:tabular-nums}
 .suggest{background:var(--coach-soft);border-radius:16px;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
 .suggest b{font-size:15px}
+.suggest .btn-row .btn{min-height:44px;font-size:15px}
+.daily{display:flex;flex-direction:column;gap:10px;padding:16px;border-radius:20px;background:var(--coach-soft)}
+.daily.done{background:var(--surface-2)}
+.daily ol{display:flex;flex-direction:column;gap:8px;padding:0;margin:0}
+.daily li{display:flex;gap:10px;align-items:flex-start;font-size:15px;font-weight:600}
+.daily li>span{flex:none;width:22px;height:22px;border-radius:50%;background:var(--coach);color:var(--surface);font-size:12px;font-weight:700;display:grid;place-items:center;margin-top:1px}
+.daily li small{display:block;font-weight:400;color:var(--ink-2);font-size:12.5px;margin-top:1px}
 .stats.s4{grid-template-columns:repeat(2,minmax(0,1fr))}
 .rv-cue{border:1px solid var(--line);border-radius:20px;padding:18px;display:flex;flex-direction:column;gap:8px}
 .rv-cue .rv-lbl{font-size:12.5px;font-weight:700;color:var(--muted)}
@@ -479,7 +486,7 @@ const TOPICS = [
 const PRACTICE_PRE = [['Thanks for sharing!','이야기해 줘서 고마워요!'],['Nice answer.','좋은 대답이에요.'],['Got it.','그렇군요.'],['Good job!','잘했어요!']];
 
 const EXAMPLE = {
-  id:'example', example:true, v:1, topicId:'travel', coachId:'hannah', level:'basic', mode:'ai',
+  id:'example', example:true, v:1, topicId:'travel', coachId:'hannah', level:'basic', step:2, plan:{ daily:true, rung:'b2', focus:'' }, mode:'ai',
   startedAt:Date.UTC(2026,10,26,11,10), endedAt:Date.UTC(2026,10,26,11,22), durationSec:724,
   summaryState:'ok',
   summary:{
@@ -667,7 +674,8 @@ function avatarSVG(c) {
 
 /* ───────────────────────── state ───────────────────────── */
 
-const DEFAULT_PROFILE = { coachId:'hannah', level:'basic', lessonLen:8, goalMin:15, showKo:true, voiceOn:true, selfFix:true, onboarded:false };
+const DEFAULT_PROFILE = { coachId:'hannah', level:'basic', lessonLen:8, goalMin:15, showKo:true, voiceOn:true, selfFix:true, onboarded:false,
+  step:1, autoAdjust:true, goal:'', adapt:null };
 const S = {
   view:'home', profile:{ ...DEFAULT_PROFILE }, sessions:[], reportId:null, reportFrom:'home', coachPick:null,
   aiState:'unknown', caps:{ sample:null }, sheet:null, review:[], resume:null,
@@ -689,6 +697,10 @@ function sanitizeProfile(p) {
   if (typeof p.voiceOn === 'boolean') o.voiceOn = p.voiceOn;
   if (typeof p.selfFix === 'boolean') o.selfFix = p.selfFix;
   if (typeof p.onboarded === 'boolean') o.onboarded = p.onboarded;
+  if ([1, 2, 3].includes(p.step)) o.step = p.step;
+  if (typeof p.autoAdjust === 'boolean') o.autoAdjust = p.autoAdjust;
+  if (['daily', 'work', 'confidence', 'accuracy'].includes(p.goal)) o.goal = p.goal;
+  if (p.adapt && typeof p.adapt === 'object') o.adapt = sanitizeAdapt(p.adapt);
   return o;
 }
 const validSession = s => s && typeof s === 'object' && typeof s.id === 'string' && Array.isArray(s.turns) && typeof s.startedAt === 'number';
@@ -847,6 +859,171 @@ function scheduleReview(item, ok) {
   return days;
 }
 
+/* ───────────────────────── adaptive difficulty ─────────────────────────
+   Each level has three steps; a step sets the speaking goal and how much to say.
+   A step moves by itself, one at a time, only after two lessons in a row point the same way
+   (or right away when the learner says a lesson was hard). Moving into another level is always
+   asked first. The thresholds below are working values to tune, not validated cut-offs. */
+
+const RUNGS = {
+  starter:[
+    { id:'s1', ko:'나에 대해 짧게 말하기', ex:'I like …', en:'say simple facts about themselves (I am …, I like …, I have …)' },
+    { id:'s2', ko:'하는 일·좋아하는 것 말하기', ex:'I usually …', en:'say what they usually do or like, in one short sentence (I usually …, I like to …)' },
+    { id:'s3', ko:'간단한 이유 붙이기', ex:'… because …', en:'add a simple reason with "because"' } ],
+  basic:[
+    { id:'b1', ko:'일상과 습관 말하기', ex:'On weekends, I usually …', en:'describe routines and habits with the present simple and words like usually, often, on weekends' },
+    { id:'b2', ko:'지난 일 말하기', ex:'Last weekend, I …', en:'talk about finished past events with the past simple' },
+    { id:'b3', ko:'계획 말하기', ex:"I'm going to …", en:'talk about plans and intentions with "going to" and "will"' } ],
+  inter:[
+    { id:'i1', ko:'비교하며 말하기', ex:'I prefer … to … because …', en:'compare two things or options (better than, more … than, I prefer … to …)' },
+    { id:'i2', ko:'의견과 이유 말하기', ex:'I think … because … For example, …', en:'give an opinion with a reason and an example (I think … because … For example, …)' },
+    { id:'i3', ko:'경험 말하기', ex:"I've … before.", en:"talk about experiences with the present perfect (I've …, Have you ever …?)" } ],
+  adv:[
+    { id:'a1', ko:'가정해서 말하기', ex:'If I were …, I would …', en:'talk about hypothetical situations (If I were …, I would …)' },
+    { id:'a2', ko:'장단점 따지고 설득하기', ex:'On the one hand, …', en:'weigh pros and cons and persuade (On the one hand …, I would argue that …)' },
+    { id:'a3', ko:'뉘앙스 살려 말하기', ex:'It depends on …', en:'express nuance with hedging and natural idioms (I tend to …, It depends on …)' } ],
+};
+const RUNG_BY_ID = Object.fromEntries(Object.values(RUNGS).flat().map(r => [r.id, r]));
+const MIN_WORDS = { starter:3, basic:6, inter:8, adv:10 };
+const LEN_HINT = {
+  starter:['a single word or a very short sentence', 'one short sentence', 'one short sentence with "because"'],
+  other:['one sentence', 'one or two sentences with one detail', 'two or three connected sentences with a reason or an example'] };
+const CATEGORY_EN = { tense:'verb tenses', article:'articles (a, the)', preposition:'prepositions', word_choice:'word choice',
+  word_order:'word order', agreement:'subject-verb agreement', plural:'singular and plural nouns', missing_word:'missing small words',
+  structure:'sentence structure' };
+const FEEL_KO = { easy:'쉬웠어요', ok:'적당했어요', hard:'어려웠어요' };
+const DEFAULT_ADAPT = { streak:0, dir:'', upBlock:0, offer:null, last:null };
+const stepOf = () => [1, 2, 3].includes(S.profile.step) ? S.profile.step : 1;
+const rungOf = (level, step) => (RUNGS[level] || RUNGS.basic)[clamp(step || 1, 1, 3) - 1];
+const posLabel = (level, step) => `${levelById(level).ko} ${step}단계`;
+const lenHint = (level, step) => (level === 'starter' ? LEN_HINT.starter : LEN_HINT.other)[clamp(step || 1, 1, 3) - 1];
+const adaptState = () => ({ ...DEFAULT_ADAPT, ...(S.profile.adapt || {}) });
+
+function sanitizeAdapt(a) {
+  const pos = x => x && LEVELS.some(l => l.id === x.level) && [1, 2, 3].includes(x.step) ? { level:x.level, step:x.step } : null;
+  const dir = d => (d === 'up' || d === 'down') ? d : '';
+  const out = { streak:Number.isInteger(a.streak) ? clamp(a.streak, 0, 5) : 0, dir:dir(a.dir),
+    upBlock:Number.isInteger(a.upBlock) ? clamp(a.upBlock, 0, 3) : 0, offer:null, last:null };
+  if (a.offer && pos(a.offer) && dir(a.offer.dir)) out.offer = { ...pos(a.offer), dir:a.offer.dir, why:String(a.offer.why || '').slice(0, 300), sessId:String(a.offer.sessId || '') };
+  if (a.last && pos(a.last.from) && pos(a.last.to)) out.last = { from:pos(a.last.from), to:pos(a.last.to), dir:dir(a.last.dir),
+    why:String(a.last.why || '').slice(0, 300), at:Number(a.last.at) || 0, sessId:String(a.last.sessId || ''), kind:String(a.last.kind || 'auto').slice(0, 10) };
+  return out;
+}
+// What one finished lesson says. Only answers the coach actually checked count; typed answers must be longer.
+const needsHelp = t => !hasLatin(t.answer) || !!(t.help && (t.help.hint || t.help.easier)) || !!(t.selfFix && t.selfFix.skipped);
+function lessonEvidence(sess) {
+  const done = (sess.turns || []).filter(t => t.checked), n = done.length;
+  const out = { dir:'', n };
+  if (sess.mode !== 'ai' || n < 5) return out;
+  const clean = done.filter(t => hasLatin(t.answer) && !t.correction).length;
+  const words = done.reduce((k, t) => k + englishWords(t.answer), 0) / n;
+  const helped = done.filter(needsHelp).length;
+  const typed = done.filter(t => t.via !== 'voice').length / n;
+  const minW = Math.round((MIN_WORDS[sess.level] || 6) * (1 + 0.3 * typed) * 10) / 10;
+  Object.assign(out, { clean, words, helped, minW });
+  if (clean / n >= 0.7 && words >= minW && helped / n <= 0.2) out.dir = 'up';
+  else if (clean / n < 0.4 || helped / n >= 0.5) out.dir = 'down';
+  return out;
+}
+const evidenceText = ev => `교정 없이 통과 ${ev.clean}/${ev.n} · 대답 평균 ${ev.words.toFixed(1)}단어 · 도움 ${ev.helped}번`;
+// Moves one step from `base` (default: where the learner is now). A level boundary turns into an offer.
+function moveStep(A, dir, why, sessId, kind, base) {
+  const from = { level:S.profile.level, step:stepOf() }, b = base || from;
+  const li = LEVELS.findIndex(l => l.id === b.level);
+  let to = dir === 'up' ? (b.step < 3 ? { level:b.level, step:b.step + 1 } : null) : (b.step > 1 ? { level:b.level, step:b.step - 1 } : null);
+  A.offer = null;
+  if (!to) {
+    const nl = LEVELS[li + (dir === 'up' ? 1 : -1)];
+    if (nl) A.offer = { level:nl.id, step:dir === 'up' ? 1 : 3, dir, why, sessId };
+    to = b;
+  }
+  if (to.level !== from.level || to.step !== from.step) {
+    A.last = { from, to, dir, why, at:Date.now(), sessId, kind };
+    if (dir === 'down') A.upBlock = 1;
+  }
+  setProfile({ level:to.level, step:to.step, adapt:A });
+}
+function adaptAfterLesson(sess) {
+  const ev = lessonEvidence(sess);
+  sess.evidence = ev.n >= 5 && sess.mode === 'ai' ? { dir:ev.dir, n:ev.n, clean:ev.clean, words:ev.words, helped:ev.helped } : null;
+  const P = S.profile;
+  if (!P.autoAdjust || !sess.evidence || sess.level !== P.level || sess.step !== stepOf()) return;
+  const A = adaptState();
+  if (A.upBlock > 0) { A.upBlock--; if (ev.dir === 'up') { A.streak = 0; A.dir = ''; setProfile({ adapt:A }); return; } }
+  if (!ev.dir) { A.streak = 0; A.dir = ''; setProfile({ adapt:A }); return; }
+  if (A.dir === ev.dir) A.streak++; else { A.dir = ev.dir; A.streak = 1; }
+  if (A.streak < 2) { setProfile({ adapt:A }); return; }
+  A.streak = 0; A.dir = '';
+  moveStep(A, ev.dir, ev.dir === 'up' ? '최근 2번 수업이 연달아 넉넉했어요.' : '최근 2번 수업이 연달아 벅찼어요.', sess.id, 'auto');
+}
+function setFeel(sess, v) {
+  if (sess.feel || !FEEL_KO[v]) return;
+  sess.feel = v;
+  Store.saveSession(sess);
+  const P = S.profile;
+  if (v === 'hard' && P.autoAdjust && S.sessions[0]?.id === sess.id && sess.mode === 'ai' && sess.step) {
+    moveStep({ ...adaptState(), streak:0, dir:'' }, 'down', '이번 수업이 어려웠다고 하셔서 한 단계 낮췄어요.', sess.id, 'feel', { level:sess.level, step:sess.step });
+  }
+  render();
+  toast('고마워요. 다음 수업 난이도에 반영해요.');
+}
+function acceptOffer() {
+  const A = adaptState(), o = A.offer;
+  if (!o) return;
+  const from = { level:S.profile.level, step:stepOf() };
+  A.offer = null; A.streak = 0; A.dir = ''; A.upBlock = o.dir === 'down' ? 1 : 0;
+  A.last = { from, to:{ level:o.level, step:o.step }, dir:o.dir, why:'레벨 변경을 고르셨어요.', at:Date.now(), sessId:o.sessId, kind:'level' };
+  setProfile({ level:o.level, step:o.step, adapt:A });
+  toast(`다음 수업부터 ${posLabel(o.level, o.step)}로 해요.`);
+}
+function declineOffer() {
+  setProfile({ adapt:{ ...adaptState(), offer:null, streak:0, dir:'' } });
+  toast('지금 레벨에서 계속해요.');
+}
+function undoChange() {
+  const A = adaptState(), l = A.last;
+  if (!l) return;
+  setProfile({ level:l.from.level, step:l.from.step, adapt:{ ...DEFAULT_ADAPT, upBlock:l.dir === 'up' ? 1 : 0 } });
+  toast(`${posLabel(l.from.level, l.from.step)}로 되돌렸어요.`);
+}
+const setManual = patch => setProfile({ ...patch, adapt:{ ...DEFAULT_ADAPT } });
+// A change is shown (with undo) until the next lesson is finished.
+const freshChange = () => { const l = adaptState().last; return l && !S.sessions.some(x => x.startedAt > l.at) ? l : null; };
+
+/* daily lesson: review warm-up, then a conversation on a topic the learner has not done lately */
+const GOAL_TOPICS = { daily:['daily', 'hobby', 'food', 'movies', 'travel', 'free'], work:['work', 'interview', 'intro', 'daily'],
+  confidence:['intro', 'hobby', 'daily', 'food', 'travel'], accuracy:['daily', 'travel', 'work', 'movies', 'intro'] };
+const NO_FOCUS = ['other', 'korean', 'fragment', 'naturalness'];
+// The most frequent correction type, only if it came up in at least two of the last five lessons.
+function focusCategory() {
+  const by = {};
+  for (const x of S.sessions.filter(x => x.mode === 'ai' && x.turns.length).slice(0, 5)) {
+    new Set(x.turns.map(t => t.correction && t.correction.category).filter(c => c && CATEGORIES[c] && !NO_FOCUS.includes(c))).forEach(c => { by[c] = (by[c] || 0) + 1; });
+  }
+  const best = Object.entries(by).sort((a, b) => b[1] - a[1])[0];
+  return best && best[1] >= 2 ? best[0] : '';
+}
+function dailyPlan() {
+  const today = dayKey(Date.now());
+  const doneToday = S.sessions.filter(x => x.plan && x.plan.daily && dayKey(x.startedAt) === today);
+  const used = new Set(doneToday.map(x => x.topicId));
+  const ids = TOPICS.map(t => t.id), day = Math.floor(startOfDay(Date.now()) / DAY);
+  const last = id => (S.sessions.find(x => x.topicId === id) || {}).startedAt || 0;
+  const order = list => list.filter(id => !used.has(id)).map((id, i) => ({ id, t:last(id), k:(i + day) % list.length }))
+    .sort((a, b) => (a.t - b.t) || (a.k - b.k));
+  let pick = order(GOAL_TOPICS[S.profile.goal] || ids)[0];
+  const any = order(ids)[0];
+  if (!pick || (pick.t && Date.now() - pick.t < 2 * DAY && any && any.t < pick.t)) pick = any || pick;
+  const due = dueItems().slice(0, 5);
+  const seen = S.review.filter(i => i.seen > 0).sort((a, b) => (b.u || 0) - (a.u || 0));
+  return { daily:true, topicId:pick ? pick.id : ids[0], focus:focusCategory(), reviewIds:due.map(i => i.id),
+    reuse:(due.length ? due : seen).slice(0, 2).map(i => i.target), doneToday:doneToday.length };
+}
+function startDaily() {
+  const plan = dailyPlan();
+  if (plan.reviewIds.length) startReview(plan); else startLesson(plan.topicId, null, false, plan);
+}
+
 /* ───────────────────────── lesson draft (resume after reload) ───────────────────────── */
 
 const elapsed = () => T ? T.activeMs + (Date.now() - T.resumedAt) : 0;
@@ -857,7 +1034,8 @@ function lessonSnapshot() {
   return { v:1, savedAt:Date.now(), id:T.id, topicId:T.topicId, coachId:T.coachId, level:T.level, mode:T.mode,
     startedAt:T.startedAt, activeMs:elapsed(), target:T.target, bank:T.bank, bankPos:T.bankPos, turns:T.turns,
     cur:T.cur, next:T.next, phase, showKo:T.showKo, ansLang:T.ansLang, draft:draft || '', repeat:T.repeat,
-    selfMiss:T.selfMiss || null, lastAnswer:!!T.lastAnswer, asked:T.asked || null };
+    selfMiss:T.selfMiss || null, lastAnswer:!!T.lastAnswer, asked:T.asked || null, step:T.step || null, plan:T.plan || null,
+    qHelp:T.qHelp || null };
 }
 function saveLessonDraft() {
   if (!T) return;
@@ -928,7 +1106,8 @@ const Voice = {
   speak(text, coach, levelId, slow) {
     if (!text || !this.on()) return;
     coach = coach || coachById(T ? T.coachId : S.profile.coachId);
-    const rate = clamp(levelById(levelId || (T ? T.level : S.profile.level)).rate * coach.rate * (slow ? 0.75 : 1), 0.7, 1.5);
+    const stepRate = T && T.step ? 1 + 0.03 * (T.step - 2) : 1;
+    const rate = clamp(levelById(levelId || (T ? T.level : S.profile.level)).rate * coach.rate * stepRate * (slow ? 0.75 : 1), 0.7, 1.5);
     if (this.mode === 'claude') {
       this.t.speak(text, { voice:coach.voice, rate, language:coach.lang }).catch(e => {
         if (e?.code === 'not_granted') { this.blocked = true; toast('이 앱의 소리 읽기가 꺼져 있어요. 아티팩트의 권한 메뉴에서 켤 수 있어요.'); refreshLight(); }
@@ -1075,12 +1254,28 @@ function historyText() {
   }
   return lines.length ? lines.join('\n') : '(This is the first question of the lesson.)';
 }
+// How hard to make the next question: the step's goal, plus a nudge from the last answers of this lesson.
+function stepLines(turn) {
+  const step = T.step || 1, rung = rungOf(T.level, step), plan = T.plan || {};
+  const lines = [`Lesson step: ${step} of 3 within this level. Speaking goal: help the learner ${rung.en}. Stay on the topic, but shape your questions so that a natural answer uses this goal. Invite answers of about ${lenHint(T.level, step)}.`];
+  if (plan.focus && CATEGORY_EN[plan.focus]) lines.push(`The learner has often been corrected on ${CATEGORY_EN[plan.focus]}. When it fits naturally, ask questions that give them a chance to use it correctly. Do not mention this to the learner.`);
+  if (plan.reuse && plan.reuse.length) lines.push(`Expressions the learner practiced before: ${plan.reuse.map(x => `"${x}"`).join('; ')}. If it fits naturally, ask one question that lets them reuse one of these in a new situation. Do not quote them.`);
+  if (turn) {
+    const minW = MIN_WORDS[T.level] || 6, prev = T.turns.slice(-2), last = prev[prev.length - 1];
+    const strong = t => hasLatin(t.answer) && t.checked && !t.correction && englishWords(t.answer) >= minW + 2 && !needsHelp(t);
+    if (last && needsHelp(last) && needsHelp(turn)) lines.push('The learner needed help with the last two questions. Make your next question shorter and easier than usual for this step, and keep the hint very simple.');
+    else if (prev.length === 2 && prev.every(strong) && hasLatin(turn.answer) && englishWords(turn.answer) >= minW + 2 && !needsHelp(turn))
+      lines.push('The learner has answered fully and correctly several times in a row. Make your next question one notch more demanding: ask why, how, or for an example.');
+  }
+  return lines.join('\n');
+}
 function turnPrompt(turn, isLast, easier) {
   const c = coachById(T.coachId), L = levelById(T.level), tp = topicById(T.topicId);
   const head = `${c.persona}
 You coach inside a Korean app where Korean adults practice speaking English with an AI coach, one question at a time.
 Learner level: ${L.ai}
 Lesson topic: ${tp.prompt}
+${stepLines(turn)}
 
 Conversation so far, oldest first:
 ${historyText()}
@@ -1192,7 +1387,7 @@ function startClock() {
   clearInterval(clock);
   clock = setInterval(() => { if (T && R && R.time) R.time.textContent = fmtClock(elapsed()); }, 1000);
 }
-function startLesson(topicId, coachId, force) {
+function startLesson(topicId, coachId, force, plan) {
   if (!force && S.resume && !S.resume.turns.length) clearLessonDraft();
   if (!force && S.resume) {                 // never overwrite a paused lesson with answers without asking
     const o = S.resume, tp0 = topicById(o.topicId);
@@ -1200,7 +1395,7 @@ function startLesson(topicId, coachId, force) {
       h('p', { class:'meta' }, `${tp0.ko} 수업에서 ${o.turns.length}번 대답하고 멈췄어요. 새 수업을 시작하면 멈춘 수업은 ${o.turns.length ? '지금까지의 대답으로 리포트를 만들고 끝내요' : '사라져요'}.`),
       h('div', { class:'btn-col' },
         h('button', { class:'btn btn-primary btn-block', onclick:() => { closeSheet(); resumeLesson(); } }, '멈춘 수업 이어 하기'),
-        h('button', { class:'btn btn-ghost btn-block', onclick:() => { closeSheet(); endPaused(true); startLesson(topicId, coachId, true); } }, '새 수업 시작하기')),
+        h('button', { class:'btn btn-ghost btn-block', onclick:() => { closeSheet(); endPaused(true); startLesson(topicId, coachId, true, plan); } }, '새 수업 시작하기')),
     ]);
     return;
   }
@@ -1209,11 +1404,15 @@ function startLesson(topicId, coachId, force) {
   const mode = S.aiState === 'off' ? 'practice' : 'ai';
   const pre_en = c.greet[0] + ' ' + (tp.intro ? tp.intro[0] : c.greet[2].replace('{t}', tp.about));
   const pre_ko = c.greet[1] + ' ' + (tp.intro ? tp.intro[1] : c.greet[3].replace('{t}', tp.aboutKo));
-  T = { id:newId(), topicId:tp.id, coachId:c.id, level:L.id, mode, startedAt:Date.now(), activeMs:0, resumedAt:Date.now(),
+  const step = stepOf(), rung = rungOf(L.id, step);
+  plan = plan || { daily:false, focus:focusCategory(), reuse:[] };
+  const goalNote = mode === 'ai' ? `오늘의 목표 · ${rung.ko} (예: ${rung.ex})` + (plan.focus ? ` · ${CATEGORIES[plan.focus]}도 함께 챙겨요` : '') : '';
+  T = { id:newId(), topicId:tp.id, coachId:c.id, level:L.id, step, mode, startedAt:Date.now(), activeMs:0, resumedAt:Date.now(),
+    plan:{ daily:!!plan.daily, rung:rung.id, focus:plan.focus || '', reuse:(plan.reuse || []).slice(0, 2) }, qHelp:{ hint:false, easier:0 },
     target: mode === 'practice' ? Math.min(S.profile.lessonLen, bank.length) : S.profile.lessonLen,
     bank, bankPos:1, turns:[], cur:bankQ(bank[0], pre_en, pre_ko), next:null,
     phase:'await', showKo:S.profile.showKo, showHint:false, input:Mic.ok ? 'voice' : 'text', inputAuto:true,
-    ansLang:'en', draft:'', repeatDraft:'', repeat:null, selfMiss:null, error:null, failed:null, pending:null, notice:'', ctl:null };
+    ansLang:'en', draft:'', repeatDraft:'', repeat:null, selfMiss:null, error:null, failed:null, pending:null, notice:goalNote, ctl:null };
   S.resume = null;
   S.view = 'talk';
   render();
@@ -1249,7 +1448,7 @@ function endPaused(silent) {
 }
 
 function newTurn(answer, via) {
-  return { q_en:T.cur.q_en, q_ko:T.cur.q_ko || '', answer, via:via === 'voice' ? 'voice' : 'text', correction:null, reaction_en:'', reaction_ko:'', repeat:null, selfFix:null,
+  return { q_en:T.cur.q_en, q_ko:T.cur.q_ko || '', answer, via:via === 'voice' ? 'voice' : 'text', help:{ hint:!!(T.qHelp && T.qHelp.hint), easier:(T.qHelp && T.qHelp.easier) || 0 }, correction:null, reaction_en:'', reaction_ko:'', repeat:null, selfFix:null,
     model:T.cur.model || null, hint:T.cur.model ? null : (T.cur.hint || null) };
 }
 async function submitAnswer(text, via) {
@@ -1258,6 +1457,7 @@ async function submitAnswer(text, via) {
   if (!text || !['await', 'listening', 'error'].includes(T.phase)) return;
   Voice.stop();
   const turn = newTurn(text, via);
+  T.qHelp = { hint:false, easier:0 };
   T.draft = ''; T.showHint = false; T.error = null; T.notice = '';
   const isLast = T.turns.length + 1 >= T.target;
   if (T.mode === 'practice') { practiceAnswer(turn, isLast); return; }
@@ -1279,7 +1479,7 @@ async function submitAnswer(text, via) {
 // Self-repair first (prompt, then the answer if needed) for learners past the starter level.
 const wantsSelfFix = (turn, c) => S.profile.selfFix && T.level !== 'starter' && hasLatin(turn.answer) && !['korean', 'fragment'].includes(c.category);
 function applyTurn(turn, r, isLast) {
-  turn.correction = r.correction; turn.reaction_en = r.reaction_en; turn.reaction_ko = r.reaction_ko;
+  turn.correction = r.correction; turn.reaction_en = r.reaction_en; turn.reaction_ko = r.reaction_ko; turn.checked = true;
   T.turns.push(turn); T.pending = null;
   T.next = { kind:isLast ? 'closing' : 'question', pre_en:r.reaction_en, pre_ko:r.reaction_ko, q_en:r.question_en, q_ko:r.question_ko,
     hint:r.hint_en, hintLabel:'이렇게 시작해 보세요', model:null };
@@ -1352,6 +1552,7 @@ async function askEasier() {
   try {
     const r = await askTurn(null, false, true);
     if (T !== lesson) return;
+    (T.qHelp = T.qHelp || { hint:false, easier:0 }).easier++;
     T.cur = { kind:'question', pre_en:r.reaction_en, pre_ko:r.reaction_ko, q_en:r.question_en, q_ko:r.question_ko,
       hint:r.hint_en || T.cur.hint, hintLabel:'이렇게 시작해 보세요', model:T.cur.model };
     T.phase = 'await'; paintTalk(); Voice.speak(lineEn(T.cur));
@@ -1476,13 +1677,15 @@ function finishLesson(silent) {
   if (T.pending) { T.turns.push(T.pending); T.pending = null; }          // an answer still being checked is kept as said
   if (T.failed) { T.turns.push(T.failed); T.failed = null; }
   const end = Date.now();
-  const sess = { id:T.id, v:1, topicId:T.topicId, coachId:T.coachId, level:T.level, mode:T.mode,
+  const sess = { id:T.id, v:1, topicId:T.topicId, coachId:T.coachId, level:T.level, step:T.step || null, mode:T.mode,
+    plan:T.plan ? { daily:!!T.plan.daily, rung:T.plan.rung || '', focus:T.plan.focus || '' } : null,
     startedAt:T.startedAt, endedAt:end, durationSec:Math.round(elapsed() / 1000),
     turns:T.turns.map(t => ({ q_en:t.q_en, q_ko:t.q_ko, answer:t.answer, correction:t.correction, reaction_en:t.reaction_en,
-      reaction_ko:t.reaction_ko, repeat:t.repeat, selfFix:t.selfFix || null, model:t.model })),
+      reaction_ko:t.reaction_ko, repeat:t.repeat, selfFix:t.selfFix || null, model:t.model, via:t.via || 'text', help:t.help || null, checked:!!t.checked })),
     summary:null, summaryState:(T.mode === 'ai' && T.turns.length) ? 'pending' : 'none' };
   T = null; R = null;
   clearLessonDraft();
+  adaptAfterLesson(sess);
   Store.saveSession(sess);
   addReviewItems(lessonReviewItems(sess));
   if (silent) { if (sess.summaryState === 'pending') requestSummary(sess); return; }
@@ -1557,7 +1760,7 @@ function ringSVG(p) {
 function viewHome() {
   const c = coachById(S.profile.coachId), L = levelById(S.profile.level);
   const mins = todayMinutes(), goal = S.profile.goalMin, st = streak();
-  const recent = S.sessions.slice(0, 3);
+  const recent = S.sessions.slice(0, 3), plan = dailyPlan(), step = stepOf();
   return h('div', { class:'screen' },
     h('header', { class:'topbar' }, logo(), h('div', { class:'grow' }),
       h('button', { class:'iconbtn', 'aria-label':'설정', html:icon('sliders'), onclick:openSettings })),
@@ -1572,7 +1775,10 @@ function viewHome() {
       Store.mode === 'none' ? h('p', { class:'note' }, h('b', {}, '이 화면에서는 기록이 저장되지 않아요. '),
         '브라우저 저장 공간을 쓸 수 없어요. 수업은 할 수 있지만 리포트와 복습 카드는 화면을 닫으면 사라져요.') : null,
       S.resume ? resumeCard() : null,
-      reviewCard(),
+      dailyCard(plan),
+      offerBox(),
+      changeNote(),
+      plan.doneToday || !plan.reviewIds.length ? reviewCard() : null,
       h('button', { class:'coach-card', onclick:() => { S.coachPick = null; go('coach'); }, 'aria-label':`코치 변경, 지금은 ${c.ko}` },
         h('div', { class:'ava-sm', html:avatarSVG(c) }),
         h('div', { class:'cc-text' },
@@ -1580,8 +1786,8 @@ function viewHome() {
           h('p', { class:'cc-tag' }, c.tags.join(' '))),
         h('span', { class:'cc-change', html:'코치 변경' + icon('chev', 16) })),
       h('div', { class:'level-row' },
-        h('button', { class:'chip on', onclick:openSettings }, `내 레벨 · ${L.ko}`),
-        h('span', { class:'meta' }, L.desc)),
+        h('button', { class:'chip on', onclick:openSettings, 'aria-label':`내 단계 ${posLabel(L.id, step)}, 설정 열기` }, posLabel(L.id, step)),
+        h('span', { class:'meta' }, `${rungOf(L.id, step).ko} · ${S.aiState === 'off' ? 'AI 교정이 있는 수업에서 단계가 조정돼요' : S.profile.autoAdjust ? '실력에 맞춰 자동 조정' : '단계 고정'}`)),
       S.aiState === 'off' ? h('p', { class:'note' }, h('b', {}, '연습 모드로 진행돼요. '),
         '이 화면에서는 Claude를 부를 수 없어 AI 교정 대신 질문마다 모범 답안과 비교해 볼 수 있어요.') : null,
       h('div', { class:'sec-head' }, h('h2', { class:'sec-title' }, '오늘은 무엇에 대해 말해 볼까요?')),
@@ -1600,6 +1806,38 @@ function viewHome() {
             h('b', {}, '아직 수업 기록이 없어요'),
             h('p', { class:'meta' }, '수업을 마치면 내가 한 말과 교정한 문장이 담긴 리포트가 여기에 쌓여요.'),
             h('button', { class:'link', onclick:() => { S.reportId = 'example'; S.reportFrom = 'home'; go('report'); } }, '예시 리포트 보기 →'))));
+}
+function dailyCard(plan) {
+  const tp = topicById(plan.topicId), rung = rungOf(S.profile.level, stepOf()), n = plan.reviewIds.length;
+  if (plan.doneToday) return h('section', { class:'daily done', 'aria-label':'오늘의 수업' },
+    h('p', { class:'eyebrow' }, '오늘의 수업'),
+    h('b', {}, '오늘의 수업을 마쳤어요'),
+    h('button', { class:'btn btn-ghost btn-block', onclick:startDaily }, `한 번 더 · ${tp.ko}`));
+  const ai = S.aiState !== 'off';
+  return h('section', { class:'daily', 'aria-label':'오늘의 수업' },
+    h('p', { class:'eyebrow' }, '오늘의 수업'),
+    h('ol', {},
+      n ? h('li', {}, h('span', {}, '1'), h('div', {}, `복습 ${n}문장`, h('small', {}, '지난 수업에서 교정한 문장을 다시 말해요'))) : null,
+      h('li', {}, h('span', {}, n ? '2' : '1'), h('div', {}, `${tp.ko} 대화`,
+        h('small', {}, ai ? `목표 · ${rung.ko}` + (plan.focus ? ` · ${CATEGORIES[plan.focus]}도 함께` : '') : '준비된 질문으로 연습해요')))),
+    h('button', { class:'btn btn-primary btn-block', onclick:startDaily }, '오늘의 수업 시작'));
+}
+function offerParts() {
+  const o = adaptState().offer;
+  if (!o) return [];
+  const up = o.dir === 'up', L = levelById(o.level);
+  return [h('b', {}, `${posLabel(o.level, o.step)}로 ${up ? '올라갈까요' : '내려갈까요'}?`),
+    h('p', { class:'meta' }, `${o.why} ${up ? `${L.ko}에서는 질문이 더 깊어지고 ‘${rungOf(o.level, o.step).ko}’부터 시작해요.` : `${L.ko}에서는 질문이 더 짧고 쉬워요.`}`),
+    h('div', { class:'btn-row' },
+      h('button', { class:'btn btn-ghost', onclick:declineOffer }, '지금 레벨에 머물기'),
+      h('button', { class:'btn btn-primary', onclick:acceptOffer }, up ? '올라가기' : '내려가기'))];
+}
+function offerBox() { const p = offerParts(); return p.length ? h('section', { class:'suggest', 'aria-label':'레벨 변경 제안' }, p) : null; }
+function changeNote() {
+  const l = freshChange();
+  if (!l || l.kind === 'level') return null;
+  return h('p', { class:'note' }, h('b', {}, `${posLabel(l.to.level, l.to.step)}로 ${l.dir === 'up' ? '올라갔어요' : '내려왔어요'} · ${rungOf(l.to.level, l.to.step).ko}. `),
+    l.why + ' ', h('button', { class:'link', onclick:undoChange }, '되돌리기'));
 }
 function resumeCard() {
   const o = S.resume, tp = topicById(o.topicId);
@@ -1929,7 +2167,7 @@ function setInput(m) {
   paintTalk();
   if (m === 'text') requestAnimationFrame(() => $('#answer, #repeat, #self')?.focus());
 }
-function toggleHint() { T.showHint = !T.showHint; paintCard(); }
+function toggleHint() { T.showHint = !T.showHint; if (T.showHint) (T.qHelp = T.qHelp || { hint:false, easier:0 }).hint = true; paintCard(); }
 function toggleVoice() {
   S.profile.voiceOn = !S.profile.voiceOn;
   Store.saveProfile();
@@ -1957,14 +2195,15 @@ function viewReport() {
       h('section', { class:'rep-head' },
         h('p', { class:'eyebrow num' }, `${fmtDate(sess.startedAt)} ${fmtTime(sess.startedAt)}`),
         h('h2', { class:'rep-title' }, `${tp.ko} 수업`, sess.mode === 'practice' ? h('span', { class:'badge' }, '연습 모드') : null),
-        h('div', { class:'rep-coach' }, h('span', { class:'ava-xs', html:avatarSVG(c) }), `${c.ko} 코치 · ${L.ko} 레벨`),
+        h('div', { class:'rep-coach' }, h('span', { class:'ava-xs', html:avatarSVG(c) }), `${c.ko} 코치 · ${sess.step ? posLabel(sess.level, sess.step) : L.ko + ' 레벨'}`
+          + (sess.plan && RUNG_BY_ID[sess.plan.rung] ? ` · ${RUNG_BY_ID[sess.plan.rung].ko}` : '')),
         h('div', { class:'stats s4' },
           h('div', { class:'stat' }, h('b', { class:'num' }, fmtClock(sess.durationSec * 1000)), h('span', {}, '대화 시간')),
           h('div', { class:'stat' }, h('b', { class:'num' }, sess.turns.length), h('span', {}, '내 대답')),
           h('div', { class:'stat' }, h('b', { class:'num' }, nums.words), h('span', {}, '영어로 말한 단어')),
           h('div', { class:'stat' }, h('b', { class:'num' }, sess.mode === 'ai' ? fixes.length : '—'), h('span', {}, '교정한 문장'))),
         trendLine(sess, nums)),
-      levelSuggest(sess, nums),
+      adaptCard(sess),
       summaryCard(sess),
       fixes.length ? h('div', { class:'sec-head' }, h('h2', { class:'sec-title' }, '교정 피드백'), h('span', { class:'meta' }, `${fixes.length}개`)) : null,
       cats.length ? h('div', { class:'tags', 'aria-label':'교정된 부분' }, cats.map(([k, v]) => h('span', { class:'tag' }, CATEGORIES[k], h('b', {}, v)))) : null,
@@ -2011,21 +2250,28 @@ function trendLine(sess, nums) {
   const cmp = Math.abs(d) < 0.5 ? '비슷해요' : d > 0 ? `${d.toFixed(1)}단어 길어졌어요` : `${(-d).toFixed(1)}단어 짧아졌어요`;
   return h('p', { class:'meta num' }, `${base} · 지난 ${prev.length}번 수업(평균 ${pavg.toFixed(1)}단어)보다 ${cmp}`);
 }
-// A level change is only ever suggested, after a full enough lesson, on the newest report.
-function levelSuggest(sess, nums) {
-  if (sess.example || sess.mode !== 'ai' || nums.answers < 5 || S.sessions[0]?.id !== sess.id) return null;
-  if (sess.level !== S.profile.level) return null;
-  const i = LEVELS.findIndex(l => l.id === sess.level);
-  const hard = (nums.fixes + nums.ko) / nums.answers >= 0.75 && nums.avg < 5;
-  const easy = nums.ko === 0 && nums.fixes / nums.answers <= 0.2 && nums.avg >= 7;
-  let to = null, why = '';
-  if (hard && i > 0) { to = LEVELS[i - 1]; why = `이번 수업에서 대답 ${nums.answers}개 중 ${nums.fixes}개가 교정됐어요. ${to.ko} 레벨에서는 질문이 더 짧고 쉬워요.`; }
-  else if (easy && i < LEVELS.length - 1) { to = LEVELS[i + 1]; why = `대답 ${nums.answers}개 중 교정은 ${nums.fixes}개였고 평균 ${nums.avg.toFixed(1)}단어로 길게 말했어요. ${to.ko} 레벨에서는 질문이 더 깊어져요.`; }
-  if (!to) return null;
-  return h('section', { class:'suggest' },
-    h('b', {}, `${to.ko} 레벨로 바꿔 볼까요?`),
-    h('p', { class:'meta' }, why),
-    h('div', {}, h('button', { class:'chip on', onclick:() => { setProfile({ level:to.id }); toast(`다음 수업부터 ${to.ko} 레벨로 진행해요.`); } }, `${to.ko}로 바꾸기`)));
+// After a lesson: how it felt (one tap), what the next lesson will be, and the numbers behind it.
+function adaptCard(sess) {
+  if (sess.example || sess.mode !== 'ai') return null;
+  const latest = S.sessions[0]?.id === sess.id, A = adaptState(), ev = sess.evidence, P = S.profile;
+  const parts = [h('b', {}, '다음 수업 난이도')];
+  if (latest && !sess.feel) parts.push(h('p', { class:'meta' }, '이번 수업 어땠어요? 고른 답은 다음 수업 난이도에 반영돼요.'),
+    h('div', { class:'chips', style:'justify-content:flex-start' }, Object.entries(FEEL_KO).map(([v, l]) => h('button', { class:'chip', onclick:() => setFeel(sess, v) }, l))));
+  else if (sess.feel) parts.push(h('p', { class:'meta' }, `내가 느낀 난이도 · ${FEEL_KO[sess.feel]}`));
+  if (latest) {
+    const pos = posLabel(P.level, stepOf()), rung = rungOf(P.level, stepOf());
+    if (A.offer && A.offer.sessId === sess.id) parts.push(...offerParts());
+    else if (A.last && A.last.sessId === sess.id) parts.push(
+      h('p', {}, `다음 수업부터 ${posLabel(A.last.to.level, A.last.to.step)} · ${rungOf(A.last.to.level, A.last.to.step).ko}`),
+      h('p', { class:'meta' }, A.last.why), h('div', {}, h('button', { class:'chip', onclick:undoChange }, '되돌리기')));
+    else if (!P.autoAdjust) parts.push(h('p', { class:'meta' }, `단계 자동 조정이 꺼져 있어요. 다음 수업도 ${pos} · ${rung.ko}`));
+    else if (ev) parts.push(h('p', {}, `다음 수업도 ${pos} · ${rung.ko}`),
+      h('p', { class:'meta' }, A.streak === 1 && A.dir === 'up' ? '이번 수업은 넉넉했어요. 한 번 더 이러면 다음 단계로 올라가요.'
+        : A.streak === 1 && A.dir === 'down' ? '이번 수업은 벅찼어요. 한 번 더 이러면 한 단계 쉬워져요.' : '이번 수업은 지금 단계에 맞았어요.'));
+    else parts.push(h('p', { class:'meta' }, `코치가 확인한 대답이 5개 이상인 수업부터 단계 조정에 반영해요. 다음 수업도 ${pos} · ${rung.ko}`));
+  }
+  if (ev) parts.push(h('p', { class:'meta num' }, evidenceText(ev)));
+  return parts.length > 1 ? h('section', { class:'suggest' }, parts) : null;
 }
 function confirmDelete(sess) {
   openSheet('이 기록을 지울까요?', () => [
@@ -2074,14 +2320,17 @@ function viewHistory() {
 /* review */
 const REVIEW_BATCH = 10;
 const rvItem = () => RV && S.review.find(i => i.id === RV.items[RV.pos]);
-function startReview() {
-  const items = dueItems().slice(0, REVIEW_BATCH).map(i => i.id);
-  if (!items.length) return;
-  RV = { items, pos:0, phase:'ask', draft:'', input:Mic.ok ? 'voice' : 'text', result:null, right:0, showKo:false, log:[] };
+function startReview(plan) {
+  plan = plan && plan.daily ? plan : null;
+  const items = plan ? plan.reviewIds.filter(id => S.review.some(i => i.id === id)) : dueItems().slice(0, REVIEW_BATCH).map(i => i.id);
+  if (!items.length) { if (plan) startLesson(plan.topicId, null, false, plan); return; }
+  RV = { items, pos:0, phase:'ask', draft:'', input:Mic.ok ? 'voice' : 'text', result:null, right:0, showKo:false, log:[], plan };
   S.view = 'review';
   render();
 }
 function endReview() { Mic.cancel(); Voice.stop(); RV = null; R = null; go('home'); }
+// Daily lesson: from the warm-up straight into the conversation (this runs inside the tap).
+function continuePlan() { const plan = RV && RV.plan; Mic.cancel(); Voice.stop(); RV = null; R = null; if (plan) startLesson(plan.topicId, null, false, plan); else go('home'); }
 function viewReview() {
   R = { rvKey:'' };
   return h('div', { class:'screen talk' },
@@ -2104,7 +2353,8 @@ function paintReview() {
     B.append(h('div', { class:'rv-cue' },
       h('span', { class:'rv-lbl' }, '복습 끝'),
       h('p', { class:'rv-q ko' }, `${n}문장 중 ${RV.right}문장을 바로 말했어요`),
-      h('p', { class:'meta' }, '맞힌 문장은 더 긴 간격을 두고, 놓친 문장은 내일 다시 나와요.')),
+      h('p', { class:'meta' }, '맞힌 문장은 더 긴 간격을 두고, 놓친 문장은 내일 다시 나와요.'),
+      RV.plan ? h('p', { class:'meta' }, h('b', {}, `이제 ${topicById(RV.plan.topicId).ko} 대화로 넘어가요.`)) : null),
       h('div', { class:'tr' }, RV.log.map(l => [h('p', { class:'tr-c' }, l.target), h('p', { class:'tr-u' }, l.ok ? `바로 말했어요 · ${l.days}일 뒤` : '내일 다시')])));
   } else {
     const it = rvItem();
@@ -2169,7 +2419,9 @@ function paintReviewCtl() {
       !r.ok && r.text ? h('button', { class:'btn btn-ghost', onclick:acceptReview }, '내 말도 맞아요') : null,
       h('button', { class:'btn btn-primary', onclick:nextReview }, last ? '복습 마치기' : '다음 문장')));
   } else if (P === 'end') {
-    F.append(h('button', { class:'btn btn-primary btn-block', onclick:endReview }, '홈으로'));
+    if (RV.plan) F.append(h('button', { class:'btn btn-primary btn-block', onclick:continuePlan }, '대화 수업 시작'),
+      h('button', { class:'btn btn-text btn-block', onclick:endReview }, '오늘은 여기까지'));
+    else F.append(h('button', { class:'btn btn-primary btn-block', onclick:endReview }, '홈으로'));
   }
   paintReviewOrb();
 }
@@ -2286,7 +2538,8 @@ function viewOnboard() {
       h('button', { class:'btn btn-primary', onclick:() => {
         const low = O.level === 'starter' || O.level === 'basic';
         S.ob = null;
-        setProfile({ level:O.level, coachId:O.coach || 'hannah', goalMin:O.goalMin, showKo:low, selfFix:O.level !== 'starter', onboarded:true });
+        setProfile({ level:O.level, step:1, goal:O.level === 'starter' ? '' : O.goal, autoAdjust:true, adapt:{ ...DEFAULT_ADAPT },
+          coachId:O.coach || 'hannah', goalMin:O.goalMin, showKo:low, selfFix:O.level !== 'starter', onboarded:true });
         go('home');
         toast(`${coachById(S.profile.coachId).ko} 코치와 시작해요. 주제를 골라 보세요!`);
       } }, '시작하기'));
@@ -2358,8 +2611,13 @@ function openSettings() {
     const row = (k, [ok, v]) => h('li', {}, h('span', {}, k), h('span', {}, h('i', { class:ok ? 'ok-dot' : 'off-dot' }), v));
     return [
       h('div', { class:'grp', role:'radiogroup', 'aria-label':'내 레벨' }, h('h3', {}, '내 레벨'), LEVELS.map(L =>
-        h('button', { class:'opt' + (P.level === L.id ? ' sel' : ''), role:'radio', 'aria-checked':String(P.level === L.id), onclick:() => setProfile({ level:L.id }) },
+        h('button', { class:'opt' + (P.level === L.id ? ' sel' : ''), role:'radio', 'aria-checked':String(P.level === L.id), onclick:() => setManual({ level:L.id, step:L.id === P.level ? stepOf() : 1 }) },
           h('span', { class:'dot' }), h('span', {}, h('b', {}, `${L.ko} · ${L.en}`), h('span', {}, L.desc))))),
+      h('div', { class:'grp' }, h('h3', {}, `단계 · ${levelById(P.level).ko}`),
+        seg('step', [1, 2, 3], stepOf(), v => `${v}단계`, v => setManual({ step:v })),
+        h('p', { class:'meta' }, RUNGS[P.level].map((r, i) => `${i + 1}단계 ${r.ko}`).join(' · ')),
+        tog('autoAdjust', '실력에 맞춰 단계 자동 조정', P.autoAdjust, v => setProfile({ autoAdjust:v, adapt:{ ...DEFAULT_ADAPT } })),
+        h('p', { class:'meta' }, '두 번 연속 넉넉하거나 벅찬 수업이면 한 단계씩 옮기고, 수업 끝에 ‘어려웠어요’를 고르면 바로 한 단계 낮춰요. 다른 레벨로 넘어갈 때는 먼저 물어봐요.')),
       h('div', { class:'grp' }, h('h3', {}, '한 수업의 질문 수'), seg('lessonLen', [5, 8, 12], P.lessonLen, v => `${v}문답`, v => setProfile({ lessonLen:v }))),
       h('div', { class:'grp' }, h('h3', {}, '하루 목표'), seg('goalMin', [10, 15, 20, 30], P.goalMin, v => `${v}분`, v => setProfile({ goalMin:v }))),
       h('div', { class:'grp' }, h('h3', {}, '보기와 소리'),

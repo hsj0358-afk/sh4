@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>말문</title>
+<meta name="application-name" content="말문">
+<meta name="apple-mobile-web-app-title" content="말문">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#C8401A">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
+<script>
+/* Home-screen launcher for the 말문 영어코치 Claude artifact.
+   claude.ai is an installable web app, so "Add to home screen" on claude.ai itself opens Claude's
+   start page. This page lives elsewhere: added to the home screen it keeps its own address, and
+   once set up it forwards straight to the artifact. ?setup shows the setup screen again. */
+(function () {
+  var APP = 'https://claude.ai/artifact/3ZXyr5ctuNwMHs9Q29LMQ9', KEY = 'malmun.launcher.ready';
+  var setup = /[?&]setup(=|&|$)/.test(location.search), ready = false;
+  try { ready = localStorage.getItem(KEY) === '1'; } catch (e) {}
+  window.MALMUN = { APP: APP, KEY: KEY };
+  if (ready && !setup) { document.documentElement.className = 'go'; location.replace(APP); return; }
+  // The shortcut must point at the plain address, not at ?setup.
+  if (setup && history.replaceState) history.replaceState(null, '', location.pathname);
+})();
+</script>
+<style>
+:root{--bg:#F4F6F9;--card:#FFFFFF;--ink:#162033;--ink-2:#46516A;--muted:#6F7A91;--line:#DCE2EB;--accent:#C8401A;--accent-ink:#FFFFFF;--soft:#FCE4D8}
+@media (prefers-color-scheme:dark){:root{--bg:#0B1018;--card:#141B27;--ink:#EAF0F8;--ink-2:#B3BDCD;--muted:#8792A6;--line:#283347;--accent:#FF7442;--accent-ink:#1A0B04;--soft:#3A1E13}}
+*{box-sizing:border-box}
+html{color-scheme:light dark}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Apple SD Gothic Neo","Malgun Gothic",system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.55}
+main{max-width:460px;margin:0 auto;padding:28px 16px 40px;display:flex;flex-direction:column;gap:16px}
+.head{display:flex;align-items:center;gap:14px}
+.head img{width:56px;height:56px;border-radius:14px;flex:none}
+h1{font-size:21px;margin:0;line-height:1.3}
+.sub{margin:2px 0 0;color:var(--muted);font-size:14px}
+ol{list-style:none;margin:0;padding:16px;background:var(--card);border:1px solid var(--line);border-radius:16px;display:flex;flex-direction:column;gap:12px}
+li{display:flex;gap:10px;font-size:15px}
+li>span{flex:none;width:24px;height:24px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font-size:13px;font-weight:700;display:grid;place-items:center;margin-top:1px}
+.btn{display:block;width:100%;min-height:52px;border:0;border-radius:999px;background:var(--accent);color:var(--accent-ink);font:inherit;font-size:16px;font-weight:700;cursor:pointer;text-align:center;text-decoration:none;line-height:52px}
+.btn.ghost{background:transparent;color:var(--ink-2);border:1.5px solid var(--line);line-height:49px}
+.note{margin:0;padding:12px 14px;background:var(--soft);border-radius:14px;font-size:13.5px;color:var(--ink-2)}
+.meta{margin:0;color:var(--muted);font-size:13px}
+.going{display:none;max-width:460px;margin:0 auto;padding:40px 16px;color:var(--muted)}
+.go main{display:none}
+.go .going{display:block}
+</style>
+</head>
+<body>
+<p class="going">말문 영어코치를 여는 중… <a href="https://claude.ai/artifact/3ZXyr5ctuNwMHs9Q29LMQ9">바로 열기</a></p>
+<main>
+  <div class="head">
+    <img src="icon-192.png" alt="">
+    <div>
+      <h1>말문 영어코치 바로가기</h1>
+      <p class="sub">홈 화면에 추가하면 아이콘 한 번으로 크롬에서 바로 열려요</p>
+    </div>
+  </div>
+  <ol>
+    <li><span>1</span><div>크롬 오른쪽 위 <b>⋮</b> → <b>홈 화면에 추가</b> → <b>추가</b>를 누르세요. 이름은 ‘말문’으로 들어가요.</div></li>
+    <li><span>2</span><div>추가했으면 아래 <b>설정 끝내고 열기</b>를 누르세요. 다음부터는 아이콘을 누르면 이 화면 없이 말문 영어코치가 바로 열려요.</div></li>
+  </ol>
+  <button class="btn" id="done" type="button">설정 끝내고 열기</button>
+  <a class="btn ghost" id="once" href="https://claude.ai/artifact/3ZXyr5ctuNwMHs9Q29LMQ9">이번만 열기</a>
+  <p class="note">말문 영어코치는 비공개 앱이에요. 앱을 만든 Claude 계정으로 크롬에 로그인돼 있어야 열려요.</p>
+  <p class="meta">이 안내를 다시 보려면 주소 끝에 <b>?setup</b>을 붙여 여세요.</p>
+</main>
+<script>
+document.getElementById('done').addEventListener('click', function () {
+  try { localStorage.setItem(MALMUN.KEY, '1'); } catch (e) {}
+  location.replace(MALMUN.APP);
+});
+</script>
+</body>
+</html>
